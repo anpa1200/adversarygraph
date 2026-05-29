@@ -1,0 +1,47 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Config
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# MITRE ATT&CK STIX parsing
+mitreattack-python==3.0.6
+stix2==3.0.1
+requests==2.32.3
+aiohttp==3.11.10
+
+# Task queue
+celery[redis]==5.4.0
+redis==5.2.1
+
+# AI providers
+anthropic==0.40.0
+openai==1.58.1
+google-generativeai==0.8.3
+
+# File parsing
+PyMuPDF==1.25.1
+python-docx==1.1.2
+
+# PDF generation
+fpdf2==2.8.1
+
+# Utilities
+httpx==0.28.1
+structlog==24.4.0
+python-slugify==8.0.4
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0

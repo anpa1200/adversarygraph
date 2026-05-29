@@ -1,0 +1,48 @@
+"""Google Gemini adapter."""
+
+from __future__ import annotations
+
+from typing import AsyncIterator
+
+from app.core.config import settings
+from app.services.ai.base import LLMAdapter
+
+DEFAULT_MODEL = "gemini-2.0-flash"
+
+
+class GeminiAdapter(LLMAdapter):
+    def __init__(self, model: str = DEFAULT_MODEL) -> None:
+        self._model_name = model
+
+    @property
+    def provider(self) -> str:
+        return "gemini"
+
+    @property
+    def model(self) -> str:
+        return self._model_name
+
+    def _build_model(self, system: str):
+        import google.generativeai as genai
+        from google.generativeai.types import GenerationConfig
+        genai.configure(api_key=settings.gemini_api_key)
+        return genai.GenerativeModel(
+            model_name=self._model_name,
+            system_instruction=system,
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                max_output_tokens=4096,
+                temperature=0.2,
+            ),
+        )
+
+    async def _raw_complete(self, system: str, user: str) -> str:
+        model = self._build_model(system)
+        response = await model.generate_content_async(user)
+        return response.text
+
+    async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
+        model = self._build_model(system)
+        async for chunk in await model.generate_content_async(user, stream=True):
+            if chunk.text:
+                yield chunk.text
