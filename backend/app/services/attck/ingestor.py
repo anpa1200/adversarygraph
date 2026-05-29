@@ -106,10 +106,11 @@ def parse_bundle(bundle_path: Path) -> dict:
             if aid:
                 is_sub = bool(obj.get("x_mitre_is_subtechnique"))
                 parent = aid.split(".")[0] if is_sub and "." in aid else None
+                # Accept mitre-attack / mitre-mobile-attack / mitre-ics-attack
                 tactic_shortnames = [
                     kcp["phase_name"]
                     for kcp in obj.get("kill_chain_phases", [])
-                    if kcp.get("kill_chain_name") == "mitre-attack"
+                    if kcp.get("kill_chain_name", "").startswith("mitre-")
                 ]
                 techniques.append({
                     "attack_id":        aid,
