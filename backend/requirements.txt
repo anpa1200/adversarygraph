@@ -1,6 +1,3 @@
-# Python 3.12 compat — restores distutils removed from stdlib (needed by mitreattack-python → stix2elevator → mixbox)
-setuptools>=69.0.0
-
 # Web framework
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
@@ -17,9 +14,7 @@ pydantic==2.10.3
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
-# MITRE ATT&CK STIX parsing
-mitreattack-python==3.0.6
-stix2==3.0.1
+# MITRE ATT&CK STIX parsing (plain JSON — no mitreattack-python, avoids Python 3.12 breakage)
 requests==2.32.3
 aiohttp==3.11.10
 
