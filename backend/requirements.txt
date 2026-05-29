@@ -1,3 +1,6 @@
+# Python 3.12 compat — restores distutils removed from stdlib (needed by mitreattack-python → stix2elevator → mixbox)
+setuptools>=69.0.0
+
 # Web framework
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
