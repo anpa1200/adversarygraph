@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.services.ai.base import LLMAdapter
 
 DEFAULT_MODEL = "gpt-4o"
-MAX_TOKENS = 4096
+MAX_TOKENS = 8192
 
 
 class OpenAIAdapter(LLMAdapter):

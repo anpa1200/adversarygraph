@@ -32,7 +32,7 @@ class GeminiAdapter(LLMAdapter):
             system_instruction=system,
             generation_config=GenerationConfig(
                 response_mime_type="application/json",
-                max_output_tokens=4096,
+                max_output_tokens=8192,
                 temperature=0.2,
             ),
         )
