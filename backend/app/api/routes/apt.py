@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -145,9 +145,13 @@ async def get_group(
     )
 
 
+class CompareRequest(BaseModel):
+    technique_ids: list[str] = Field(..., min_length=1, max_length=500)
+
+
 @router.post("/compare", response_model=list[CompareResult])
 async def compare_ttps(
-    technique_ids: list[str],
+    req: CompareRequest,
     domain: str = Query("enterprise-attack"),
     version: str | None = Query(None),
     top_n: int = Query(10, le=50),
@@ -157,8 +161,7 @@ async def compare_ttps(
     Given a list of ATT&CK technique IDs, return the top-N APT groups
     ranked by Jaccard similarity.
     """
-    if not technique_ids:
-        raise HTTPException(400, "Provide at least one technique ID")
+    technique_ids = req.technique_ids
 
     ver_id = await _resolve_version_id(session, domain, version)
     user_set = set(t.upper() for t in technique_ids)

@@ -13,6 +13,9 @@ DEFAULT_MODEL = "gemini-2.0-flash"
 class GeminiAdapter(LLMAdapter):
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self._model_name = model
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        self._genai = genai
 
     @property
     def provider(self) -> str:
@@ -23,10 +26,8 @@ class GeminiAdapter(LLMAdapter):
         return self._model_name
 
     def _build_model(self, system: str):
-        import google.generativeai as genai
         from google.generativeai.types import GenerationConfig
-        genai.configure(api_key=settings.gemini_api_key)
-        return genai.GenerativeModel(
+        return self._genai.GenerativeModel(
             model_name=self._model_name,
             system_instruction=system,
             generation_config=GenerationConfig(

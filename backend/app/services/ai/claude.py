@@ -14,6 +14,8 @@ MAX_TOKENS = 4096
 class ClaudeAdapter(LLMAdapter):
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self._model = model
+        import anthropic
+        self._api_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     @property
     def provider(self) -> str:
@@ -23,12 +25,8 @@ class ClaudeAdapter(LLMAdapter):
     def model(self) -> str:
         return self._model
 
-    def _client(self):
-        import anthropic
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
     async def _raw_complete(self, system: str, user: str) -> str:
-        msg = await self._client().messages.create(
+        msg = await self._api_client.messages.create(
             model=self._model,
             max_tokens=MAX_TOKENS,
             system=system,
@@ -37,7 +35,7 @@ class ClaudeAdapter(LLMAdapter):
         return msg.content[0].text  # type: ignore[index]
 
     async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
-        async with self._client().messages.stream(
+        async with self._api_client.messages.stream(
             model=self._model,
             max_tokens=MAX_TOKENS,
             system=system,

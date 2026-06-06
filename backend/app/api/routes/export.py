@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,10 @@ async def export_analysis_pdf(
     if not db_session:
         raise HTTPException(404, "Session not found")
     if db_session.status != "completed":
-        raise HTTPException(202, f"Session is {db_session.status}")
+        return JSONResponse(
+            status_code=202,
+            content={"detail": f"Session is {db_session.status}"},
+        )
 
     res_row = await db.execute(
         select(AnalysisResult).where(AnalysisResult.session_id == sid)
@@ -59,7 +62,7 @@ async def export_analysis_pdf(
         "session_id": session_id,
         "provider":   db_session.llm_provider,
         "model":      db_session.model,
-        "domain":     "enterprise-attack",
+        "domain":     db_session.domain,
         "summary":    res.summary,
         "techniques": res.extracted_techniques,
         "apt_matches":res.apt_matches,
@@ -120,7 +123,9 @@ async def export_layer_pdf(
 
     from app.services.report_generator import generate_layer_report
 
-    pdf_bytes = generate_layer_report(req.technique_ids, req.domain, details)
+    # Use the DB-normalised IDs so the header count matches the table rows
+    found_ids = [d["attack_id"] for d in details]
+    pdf_bytes = generate_layer_report(found_ids, req.domain, details)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

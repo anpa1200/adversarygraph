@@ -22,6 +22,7 @@ class AnalysisSession(Base):
     filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     llm_provider: Mapped[str] = mapped_column(String(20))  # claude | openai | gemini
     model: Mapped[str] = mapped_column(String(100), default="")
+    domain: Mapped[str] = mapped_column(String(50), default="enterprise-attack")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

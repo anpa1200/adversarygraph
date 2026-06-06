@@ -127,15 +127,13 @@ def _parse_response(raw: str, provider: str, model: str) -> ExtractionResult:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        # Try to pull the first JSON object out of noisy output
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group())
-            except json.JSONDecodeError:
-                return ExtractionResult(raw_response=raw, provider=provider, model=model,
-                                        summary="Failed to parse LLM response as JSON.")
-        else:
+        # Try to decode the first complete JSON object from noisy output.
+        # raw_decode stops at the end of the first object rather than
+        # greedily consuming everything up to the last closing brace.
+        try:
+            start = text.index("{")
+            data, _ = json.JSONDecoder().raw_decode(text, start)
+        except (ValueError, json.JSONDecodeError):
             return ExtractionResult(raw_response=raw, provider=provider, model=model,
                                     summary="Failed to parse LLM response as JSON.")
 

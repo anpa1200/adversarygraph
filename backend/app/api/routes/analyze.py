@@ -10,12 +10,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Annotated, AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,11 +62,14 @@ class AnalysisOut(BaseModel):
     apt_hints: list[str]
 
 
+_MODEL_RE = re.compile(r'^[\w./:@-]{1,100}$')
+
+
 class ChatRequest(BaseModel):
     message: str
     provider: str = "claude"
-    model: str | None = None
-    context: str = ""          # optional: pasted text / selected technique IDs
+    model: str | None = Field(default=None, max_length=100)
+    context: str = Field(default="", max_length=8000)
 
 
 # ── Full analysis (JSON response) ─────────────────────────────────────────────
@@ -89,6 +93,7 @@ async def analyze(
         filename=filename,
         llm_provider=provider,
         model=adapter.model,
+        domain=domain,
     )
     session.add(db_session)
     await session.flush()
@@ -135,6 +140,7 @@ async def analyze_stream(
         filename=filename,
         llm_provider=provider,
         model=adapter.model,
+        domain=domain,
     )
     session.add(db_session)
     await session.flush()
@@ -156,9 +162,17 @@ async def analyze_stream(
             async with async_session_factory() as fresh:
                 db_s = await fresh.get(AnalysisSession, db_session.id)
                 if db_s:
-                    apt_matches = await _rank_apt_groups(result, domain, fresh)
-                    await _store_result(db_s, result, apt_matches, fresh)
-                    await fresh.commit()
+                    try:
+                        apt_matches = await _rank_apt_groups(result, domain, fresh)
+                        await _store_result(db_s, result, apt_matches, fresh)
+                        await fresh.commit()
+                    except Exception as store_exc:
+                        db_s.status = "failed"
+                        db_s.error = str(store_exc)
+                        await fresh.commit()
+                        logger.error("Stream DB write failed: %s", store_exc, exc_info=True)
+                        yield _sse({"type": "error", "message": str(store_exc)})
+                        return
                 else:
                     apt_matches = []
 
@@ -199,7 +213,10 @@ async def get_result(
         raise HTTPException(404, "Session not found")
 
     if db_session.status != "completed":
-        raise HTTPException(202, f"Analysis is {db_session.status}")
+        return JSONResponse(
+            status_code=202,
+            content={"detail": f"Analysis is {db_session.status}"},
+        )
 
     res_row = await db.execute(
         select(AnalysisResult).where(AnalysisResult.session_id == sid)
@@ -261,9 +278,21 @@ async def _read_input(
     text: str | None, file: UploadFile | None
 ) -> tuple[str, str | None]:
     if file:
-        raw = await file.read()
-        if len(raw) > MAX_UPLOAD_BYTES:
+        # Reject early using Content-Length if the header is present
+        if file.size is not None and file.size > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "File exceeds 50 MB limit")
+        # Stream with a hard cap so we never buffer more than the limit in RAM
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await file.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, "File exceeds 50 MB limit")
+            chunks.append(chunk)
+        raw = b"".join(chunks)
         return extract_text(raw, file.filename or "upload"), file.filename
     if text and text.strip():
         return text.strip(), None
@@ -273,6 +302,8 @@ async def _read_input(
 def _get_adapter(provider: str, model: str | None):
     if provider not in ALLOWED_PROVIDERS:
         raise HTTPException(400, f"provider must be one of {sorted(ALLOWED_PROVIDERS)}")
+    if model is not None and not _MODEL_RE.match(model):
+        raise HTTPException(400, "Invalid model name")
     try:
         return get_adapter(provider, model)
     except ValueError as exc:
