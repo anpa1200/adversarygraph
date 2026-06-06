@@ -12,6 +12,7 @@
 - [Setting Up (10 Minutes)](#setting-up-10-minutes)
 - [Core Workflow: Analysing a Threat Report](#core-workflow-analysing-a-threat-report)
 - [The Navigator: Your ATT&CK Workspace](#the-navigator-your-attck-workspace)
+- [Saving and Loading Named Layers](#saving-and-loading-named-layers)
 - [APT Attribution Deep-Dive: The Compare View](#apt-attribution-deep-dive-the-compare-view)
 - [Two Databases: Actor Profiles and Your Report Library](#two-databases-actor-profiles-and-your-report-library)
 - [Generating Reports](#generating-reports)
@@ -45,7 +46,7 @@ In one sentence: **you give it a threat report, it gives you ATT&CK technique ID
 Concretely:
 
 - **AI Analysis** — upload a PDF, DOCX, or TXT file (or paste text), pick Claude, GPT-4o, or Gemini, and get a streamed extraction of every ATT&CK technique the LLM identifies with evidence snippets and confidence scores
-- **ATT&CK Navigator** — an interactive heatmap of the full ATT&CK matrix (Enterprise, Mobile, ICS) where you build and explore your TTP layer
+- **ATT&CK Navigator** — an interactive heatmap of the full ATT&CK matrix (Enterprise, Mobile, ICS) where you build, save, and reload named TTP layers
 - **APT Attribution** — automatic Jaccard similarity ranking of every extraction against 174+ named ATT&CK threat groups and 56+ named campaigns (e.g. "Operation Ghost", "SolarWinds Compromise")
 - **Compare** — deep side-by-side comparison of your TTP set against groups, MITRE named campaigns, or your own stored report library; with visual matrix diff, tactic breakdown chart, and gap analysis
 - **Export** — ATT&CK Navigator-compatible JSON layers and multi-page PDF reports suitable for executive briefings
@@ -220,6 +221,40 @@ This visual immediately answers: *"Which of this group's known techniques am I n
 ### Importing an existing layer
 
 If you already have ATT&CK Navigator layers from previous work, click **↑ Import layer** and upload the JSON. ThreatMapper will load it as your active layer, which you can then enrich with AI analysis or compare against APT groups.
+
+---
+
+## Saving and Loading Named Layers
+
+Once you have built a TTP layer — whether through AI analysis, manual selection, or an APT campaign overlay — you can save it to the database with a name and reload it in any future session.
+
+### Why this matters
+
+Without persistence, every session starts blank. You would have to re-inject or re-select all your techniques each time you come back to a piece of work. Named layers let you:
+
+- **Bookmark a specific investigation.** Save "Lazarus Q1 2025 incident" at 47 techniques and return to it a week later exactly where you left off.
+- **Build a fingerprint library.** Save a layer for each major campaign you track — "Operation Ghost TTPs", "SolarWinds Compromise TTPs" — and reload any of them for comparison without re-running AI analysis.
+- **Maintain a baseline.** Keep a "What we detect" layer with your detection coverage and a "What we've seen" layer of your observed incidents. Load each into a fresh session to compare.
+- **Share work across team members.** Layers are stored in the shared PostgreSQL database, so a layer saved by one analyst is visible to all.
+
+### Saving a layer
+
+1. Select your techniques in Navigator (they turn red)
+2. Click **↓ Save layer** in the toolbar — this button appears only when at least one technique is selected
+3. Enter a descriptive name (e.g. *"MuddyWater CTI analysis — April 2025"*)
+4. Press Enter or click **Save**
+
+The layer is immediately written to the database. The technique IDs are stored in sorted, deduplicated form together with the domain.
+
+### Loading a layer
+
+1. Click **📂 Load layer** in the toolbar (always visible)
+2. A list of all saved layers appears, each showing the name, technique count, domain, and last-modified date
+3. Click **Load** — the layer's techniques are merged into your current selection
+
+**Tip:** If you want to start fresh with just the saved layer, click **Clear my TTPs** first, then load.
+
+To delete a layer you no longer need, click the **✕** button next to it in the Load dialog and confirm.
 
 ---
 
@@ -478,6 +513,26 @@ curl -X POST "http://localhost:8000/api/apt/compare?domain=enterprise-attack&top
   | python -m json.tool
 ```
 
+### Manage saved layers via API
+
+```bash
+# List all saved layers (optionally filter by domain)
+curl "http://localhost:8000/api/layers?domain=enterprise-attack" | python -m json.tool
+
+# Save a layer
+curl -X POST http://localhost:8000/api/layers \
+  -H "Content-Type: application/json" \
+  -d '{"name": "MuddyWater Q1 indicators", "domain": "enterprise-attack",
+       "technique_ids": ["T1566.001", "T1059.001", "T1078", "T1021.001"]}'
+
+# Load a specific layer (returns technique_ids)
+LAYER_ID="550e8400-e29b-41d4-a716-446655440000"
+curl "http://localhost:8000/api/layers/$LAYER_ID" | python -m json.tool
+
+# Delete a layer
+curl -X DELETE "http://localhost:8000/api/layers/$LAYER_ID"
+```
+
 ### Stream an analysis (Python example)
 
 ```python
@@ -534,6 +589,8 @@ The sync downloads only the new bundle version and ingests it alongside the exis
 **Chat is good for detection rules.** The AI assistant is particularly strong at generating SIGMA rules, KQL queries, and Splunk SPL from ATT&CK technique IDs. Give it the full ATT&CK technique description plus any specific context from your environment (OS, logging stack) and you'll get useful starting points rather than generic templates.
 
 **Import your existing layers.** If your team already maintains ATT&CK Navigator layers for your environment (e.g. a "what we detect" layer and a "what we've seen" layer), import them via the ↑ Import button. ThreatMapper will let you compare them against APT profiles and run AI chat against the techniques in the layer.
+
+**Save named layers as investigation checkpoints.** After any significant piece of work — a completed AI analysis, a finished APT comparison session, a purple-team prep layer — click **↓ Save layer** and give it a meaningful name. This takes 10 seconds and means you never lose work between sessions. You can reload any saved layer instantly from **📂 Load layer** without re-running analysis.
 
 **Use text paste for quick triage.** You don't need a formatted document. Paste raw Slack thread text, a SIEM alert body, or a vendor advisory into the text box. The AI is good at extracting signal from noisy, informal text.
 

@@ -115,6 +115,32 @@ export const analyzeApi = {
     http.get(`/analyze/${sessionId}`).then(r => r.data),
 };
 
+// ── Saved Layers ──────────────────────────────────────────────────────────────
+
+export interface SavedLayer {
+  id: string;
+  name: string;
+  domain: string;
+  technique_count: number;
+  created_at: string;
+  updated_at: string;
+  technique_ids?: string[];
+}
+
+export const layersApi = {
+  list: (domain?: string): Promise<SavedLayer[]> =>
+    http.get('/layers', { params: domain ? { domain } : {} }).then(r => r.data),
+
+  save: (name: string, technique_ids: string[], domain: string): Promise<SavedLayer> =>
+    http.post('/layers', { name, technique_ids, domain }).then(r => r.data),
+
+  load: (id: string): Promise<SavedLayer & { technique_ids: string[] }> =>
+    http.get(`/layers/${id}`).then(r => r.data),
+
+  remove: (id: string): Promise<void> =>
+    http.delete(`/layers/${id}`).then(() => {}),
+};
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 export const healthApi = {

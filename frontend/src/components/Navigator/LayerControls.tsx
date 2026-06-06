@@ -1,6 +1,7 @@
 /**
  * Toolbar beneath the Navigator header.
- * Handles: colour legend, expand/collapse all, layer stats, exports, clear actions.
+ * Handles: colour legend, expand/collapse all, layer stats, exports, clear actions,
+ * save/load named layers.
  */
 
 import { useCallback } from 'react';
@@ -19,6 +20,8 @@ interface Props {
   onExportLayer: () => void;
   onExportNavigator: () => void;
   onImportClick: () => void;
+  onSaveClick: () => void;
+  onLoadClick: () => void;
 }
 
 export function LayerControls({
@@ -34,6 +37,8 @@ export function LayerControls({
   onExportLayer,
   onExportNavigator,
   onImportClick,
+  onSaveClick,
+  onLoadClick,
 }: Props) {
   const { parentsWithSubs } = matrixData;
   const sharedCount = [...selectedTechniques].filter((id) => overlayTechniques.has(id)).length;
@@ -88,6 +93,26 @@ export function LayerControls({
       >
         ↑ Import layer
       </button>
+
+      <div className="w-px h-4 bg-gray-700 shrink-0" />
+
+      {/* ── Save / Load named layers ───────────────────────────────────── */}
+      <button
+        onClick={onLoadClick}
+        className="text-gray-400 hover:text-white transition-colors shrink-0"
+        title="Load a previously saved layer"
+      >
+        📂 Load layer
+      </button>
+      {selectedTechniques.size > 0 && (
+        <button
+          onClick={onSaveClick}
+          className="text-gray-400 hover:text-white transition-colors shrink-0"
+          title="Save current selection as a named layer"
+        >
+          ↓ Save layer
+        </button>
+      )}
 
       <div className="w-px h-4 bg-gray-700 shrink-0" />
 

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import attack, apt, analyze, sync, export
+from app.api.routes import attack, apt, analyze, sync, export, layers
 from app.core.config import settings
 from app.core.database import create_tables
 
@@ -53,6 +53,7 @@ app.include_router(apt.router,     prefix="/api")
 app.include_router(analyze.router, prefix="/api")
 app.include_router(sync.router,    prefix="/api")
 app.include_router(export.router,  prefix="/api")
+app.include_router(layers.router,  prefix="/api")
 
 
 @app.get("/api/health")

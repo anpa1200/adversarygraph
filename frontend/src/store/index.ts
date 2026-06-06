@@ -14,6 +14,7 @@ interface AppState {
   selectedTechniques: Set<string>;
   toggleTechnique: (id: string) => void;
   addTechniques: (ids: string[]) => void;
+  replaceTechniques: (ids: string[]) => void;
   clearTechniques: () => void;
 
   // ── APT overlay layer ───────────────────────────────────────────────────
@@ -53,6 +54,8 @@ export const useAppStore = create<AppState>((set) => ({
       ids.forEach((id) => next.add(id));
       return { selectedTechniques: next };
     }),
+  replaceTechniques: (ids) =>
+    set({ selectedTechniques: new Set(ids) }),
   clearTechniques: () => set({ selectedTechniques: new Set() }),
 
   // APT overlay

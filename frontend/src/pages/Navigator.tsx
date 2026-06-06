@@ -6,6 +6,8 @@ import { useAttackMatrix } from '@/hooks/useAttackMatrix';
 import { AttackMatrix } from '@/components/Navigator/AttackMatrix';
 import { LayerControls } from '@/components/Navigator/LayerControls';
 import { LayerImport } from '@/components/Navigator/LayerImport';
+import { SaveLayerModal } from '@/components/Navigator/SaveLayerModal';
+import { LoadLayerModal } from '@/components/Navigator/LoadLayerModal';
 import { TechniquePanel } from '@/components/Navigator/TechniquePanel';
 import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
 import { Header } from '@/components/Layout/Header';
@@ -17,13 +19,15 @@ export function Navigator() {
     overlayGroupId, overlayGroupName,
     expandedTechniques,
     toggleTechnique, toggleExpanded,
-    addTechniques, clearTechniques, clearOverlay,
+    addTechniques, replaceTechniques, clearTechniques, clearOverlay,
     setOverlayTechniques, expandAll, collapseAll,
   } = useAppStore();
 
   // ── Panel state ────────────────────────────────────────────────────────────
   const [selectedAttackId, setSelectedAttackId] = useState<string | null>(null);
   const [importOpen, setImportOpen]             = useState(false);
+  const [saveOpen,   setSaveOpen]               = useState(false);
+  const [loadOpen,   setLoadOpen]               = useState(false);
 
   // ── Filter state ───────────────────────────────────────────────────────────
   const [search, setSearch]                       = useState('');
@@ -126,6 +130,8 @@ export function Navigator() {
         onExportLayer={exportJson}
         onExportNavigator={exportNavigatorLayer}
         onImportClick={() => setImportOpen(true)}
+        onSaveClick={() => setSaveOpen(true)}
+        onLoadClick={() => setLoadOpen(true)}
       />
 
       <MatrixFilters
@@ -184,6 +190,25 @@ export function Navigator() {
         <LayerImport
           onImport={ids => { addTechniques(ids); }}
           onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {/* Save layer modal */}
+      {saveOpen && (
+        <SaveLayerModal
+          techniqueIds={Array.from(selectedTechniques)}
+          domain={domain}
+          onClose={() => setSaveOpen(false)}
+          onSaved={() => {}}
+        />
+      )}
+
+      {/* Load layer modal */}
+      {loadOpen && (
+        <LoadLayerModal
+          domain={domain}
+          onLoad={(ids) => { replaceTechniques(ids); }}
+          onClose={() => setLoadOpen(false)}
         />
       )}
     </div>

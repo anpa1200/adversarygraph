@@ -8,7 +8,7 @@ import type { CampaignListItem } from '@/types/attack';
 type GroupTab = 'techniques' | 'campaigns';
 
 export function APTLibrary() {
-  const { domain, version, addTechniques, setOverlayGroup } = useAppStore();
+  const { domain, version, addTechniques, replaceTechniques, setOverlayGroup } = useAppStore();
   const [search, setSearch] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [groupTab, setGroupTab] = useState<GroupTab>('techniques');
@@ -114,10 +114,18 @@ export function APTLibrary() {
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
-                    onClick={() => addTechniques(groupDetail.techniques.map((t) => t.attack_id))}
+                    onClick={() => replaceTechniques(groupDetail.techniques.map((t) => t.attack_id))}
                     className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
+                    title="Replace your current TTP selection with this group's techniques"
                   >
-                    Add all to my TTPs
+                    Load as my TTPs
+                  </button>
+                  <button
+                    onClick={() => addTechniques(groupDetail.techniques.map((t) => t.attack_id))}
+                    className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded transition-colors"
+                    title="Merge this group's techniques into your existing selection"
+                  >
+                    + Merge into TTPs
                   </button>
                   <button
                     onClick={() => setOverlayGroup(groupDetail.attack_id, groupDetail.name)}
