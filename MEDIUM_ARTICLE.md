@@ -46,7 +46,7 @@ Concretely:
 
 - **AI Analysis** — upload a PDF, DOCX, or TXT file (or paste text), pick Claude, GPT-4o, or Gemini, and get a streamed extraction of every ATT&CK technique the LLM identifies with evidence snippets and confidence scores
 - **ATT&CK Navigator** — an interactive heatmap of the full ATT&CK matrix (Enterprise, Mobile, ICS) where you build and explore your TTP layer
-- **APT Attribution** — automatic Jaccard similarity ranking of every extraction against 160+ named ATT&CK threat groups and named campaigns (e.g. "Operation Ghost")
+- **APT Attribution** — automatic Jaccard similarity ranking of every extraction against 174+ named ATT&CK threat groups and 56+ named campaigns (e.g. "Operation Ghost", "SolarWinds Compromise")
 - **Compare** — deep side-by-side comparison of your TTP set against groups, MITRE named campaigns, or your own stored report library; with visual matrix diff, tactic breakdown chart, and gap analysis
 - **Export** — ATT&CK Navigator-compatible JSON layers and multi-page PDF reports suitable for executive briefings
 
@@ -86,6 +86,8 @@ cd threatmapper
 cp .env.example .env
 ```
 
+**Important:** you must create `.env` before running `docker compose up`. Without it the container starts with empty API keys and AI Analysis returns 500.
+
 Open `.env` and add your keys. You only need one:
 
 ```env
@@ -119,13 +121,13 @@ docker compose logs -f api
 You'll see something like:
 
 ```
-Parsing enterprise-attack-16.1.json ...
-  Parsed: 14 tactics, 641 techniques, 163 groups, 8234 usages
-Finished ingesting enterprise-attack v16.1
+Parsing enterprise-attack-19.1.json ...
+  Parsed: 15 tactics, 760 techniques, 174 groups, 56 campaigns, 9100+ usages
+Finished ingesting enterprise-attack v19.1
 INFO:     Application startup complete.
 ```
 
-This takes 5–15 minutes depending on your network speed. Subsequent startups are instant (data is cached).
+This takes 5–15 minutes depending on your network speed. Subsequent startups are instant (data is cached in the PostgreSQL volume).
 
 ### Step 3: Open
 
@@ -172,13 +174,13 @@ When the stream completes, three tabs appear:
 
 The evidence field is a direct quote or paraphrase from your source document — you can use it to trace every mapping back to its origin in the text. High confidence (≥ 80%) means the text explicitly described the behaviour; lower scores mean it was inferred.
 
-**APT Matches tab** — the attribution layer. This is computed locally using Jaccard similarity between your extracted techniques and every named ATT&CK group's known TTP set. The top 10 are shown with:
+**APT Matches tab** — the attribution layer. Computed locally using Jaccard similarity between your extracted techniques and every named ATT&CK group's known TTP set. The top 10 are shown with:
 
 - Similarity score (0–100%)
 - Shared technique count
 - List of the overlapping technique IDs
 
-A match above 30% is worth investigating. Don't treat this as definitive attribution — use it as a lead for further research.
+A match above 25–30% is worth investigating. Don't treat this as definitive attribution — use it as a lead for further research.
 
 **Raw Response** — the LLM's full JSON output. Useful for debugging when the model outputs something unexpected.
 
@@ -223,31 +225,41 @@ If you already have ATT&CK Navigator layers from previous work, click **↑ Impo
 
 ## APT Attribution Deep-Dive: The Compare View
 
-The Compare view is where ThreatMapper earns its name for attribution work.
+The Compare view has three modes selectable from a switcher at the top of the page.
 
-### Running a comparison
+### Mode 1 — Groups (DB 1)
 
-With techniques selected in Navigator (or injected from an AI analysis), navigate to **Compare**. The left panel immediately shows all ATT&CK groups ranked by Jaccard similarity with your current layer.
+With techniques selected in Navigator (or injected from an AI analysis), navigate to **Compare**, make sure **Groups (DB 1)** is selected, and click **Compare vs APT Groups**. This ranks all 174+ threat groups by Jaccard similarity.
 
-Click any group to open the four-tab detail view.
+Click any group to open the four-tab detail view:
 
-### What each tab tells you
+**Overview** — similarity score, shared technique chips (amber), techniques only in your layer (red). Answers: *"How much of our observed behaviour matches this group's known playbook?"*
 
-**Overview** — numbers first. You see the similarity score, how many techniques you share, and two chip groups: techniques in both sets (amber) and techniques only in your layer (red). This answers the question: *"How much of our observed behaviour matches this group's known playbook?"*
+**Tactic Breakdown** — stacked bar per kill-chain phase: shared / user-only / APT-only. Reveals *where* in the kill chain the overlap is concentrated.
 
-**Tactic Breakdown** — a stacked bar chart with one bar per kill-chain tactic. Each bar is divided into three segments: shared, yours-only, and APT-only. This view reveals *where* in the kill chain the overlap is concentrated. If you share 5 techniques in lateral movement but none in initial access, that's information about what you may have missed in the early stages.
+**Visual Diff** — compact colour-strip matrix. Best for presentations.
 
-**Visual Diff** — a compact colour-strip rendering of the full ATT&CK matrix showing the overlap. This is the best view for presentations — it makes the comparison immediately legible to a non-technical stakeholder.
+**Gap Analysis** — every technique in the group's known profile not in your layer. This is your detection backlog.
 
-**Gap Analysis** — a flat list of every technique in the APT group's known profile that you have not yet observed or selected. This is your detection backlog: what additional rules or hunts would you need to fully cover this group's known tradecraft?
+### Mode 2 — Campaigns (DB 1)
+
+Switch to **Campaigns (DB 1)** and click **Compare vs Campaigns**. This ranks all 56+ named MITRE operations by Jaccard similarity.
+
+**Why this is more precise than group comparison:** A group's aggregate profile spans years. A campaign profile is one specific attack. Matching your TTPs against C0024 (SolarWinds Compromise) at 40% is a sharper lead than matching against G0016 (APT29) at 15%.
+
+### Mode 3 — Reports (DB 2)
+
+Switch to **Reports (DB 2)**. The left panel lists every AI analysis you have ever run. Click any report to re-run Jaccard comparison against all ATT&CK groups — without re-calling the LLM.
+
+Use this for retrospective attribution after ATT&CK releases new group data, or to cluster multiple incidents under a common actor.
 
 ### Practical attribution workflow
 
-1. Run AI analysis on your incident data
+1. Run AI analysis on your incident data (give it a descriptive name)
 2. Inject extracted techniques into Navigator
-3. Open Compare
-4. Look for groups with similarity > 25%
-5. For each candidate group, review the Gap Analysis tab — does the group use techniques that would be consistent with the parts of the attack you haven't fully characterised yet?
+3. Compare → Groups mode: look for similarity > 25%
+4. Compare → Campaigns mode: check if the top group has a campaign that fits the timeline
+5. Gap Analysis tab: use the technique gap as a structured hunt checklist
 6. Download the PDF report for your findings
 
 ---
@@ -273,8 +285,8 @@ ThreatMapper parses all of this during ATT&CK ingestion. The result is two searc
 
 | Dataset | What it contains | ID format |
 |---|---|---|
-| APT Groups | Aggregate TTP profile of each named threat group | G0001 – G0163+ |
-| Campaigns | TTP profile of each named operation/campaign | C0001 – C0030+ |
+| APT Groups | Aggregate TTP profile of each named threat group | G0001 – G0174+ |
+| Campaigns | TTP profile of each named operation/campaign | C0001 – C0063+ |
 
 **Why campaigns matter:** A group's aggregate profile is the union of everything ever attributed to them across all operations and years. A campaign profile is specific to one attack. Comparing your incident TTPs against campaigns is often more discriminating than comparing against the full group — an incident that matches C0023 (Operation Ghost) at 45% similarity is a more specific lead than a match against G0016 (APT29) at 15%.
 
@@ -507,7 +519,7 @@ curl -X POST http://localhost:8000/api/sync/trigger
 curl http://localhost:8000/api/sync/status
 ```
 
-The sync downloads only the new bundle version and ingests it alongside the existing data without deleting anything. Both versions remain queryable — endpoints accept an optional `?version=16.1` parameter to target a specific release.
+The sync downloads only the new bundle version and ingests it alongside the existing data without deleting anything. Both versions remain queryable — endpoints accept an optional `?version=19.1` parameter to target a specific release.
 
 ---
 

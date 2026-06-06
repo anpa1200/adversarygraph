@@ -2,7 +2,7 @@
 
 **AI-powered MITRE ATT&CK threat intelligence platform.**
 
-Map adversary behaviours to ATT&CK, compare against 160+ APT group profiles, analyse incident reports with Claude / GPT-4o / Gemini, and export Navigator-compatible layers — all in one self-hosted tool.
+Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 56+ named campaigns, analyse incident reports with Claude / GPT-4o / Gemini, and export Navigator-compatible layers — all in one self-hosted tool.
 
 ---
 
@@ -18,6 +18,7 @@ Map adversary behaviours to ATT&CK, compare against 160+ APT group profiles, ana
   - [Compare](#compare)
   - [Export](#export)
   - [MITRE Sync](#mitre-sync)
+- [Two-Database Architecture](#two-database-architecture)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
 - [Development](#development)
@@ -32,9 +33,11 @@ Map adversary behaviours to ATT&CK, compare against 160+ APT group profiles, ana
 | Module | Capability |
 |---|---|
 | **Navigator** | Full ATT&CK matrix (Enterprise, Mobile, ICS) with D3.js zoom/pan, sub-technique expansion, dual-layer colouring |
-| **APT Library** | 160+ named threat groups from MITRE ATT&CK with full TTP profiles, aliases, and overlay-to-Navigator |
-| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK techniques + APT attribution |
-| **Compare** | Jaccard similarity ranking of your TTPs vs every APT group; visual matrix diff, tactic breakdown, gap analysis |
+| **APT Library** | 174+ named threat groups from MITRE ATT&CK; full TTP profiles, aliases, overlay-to-Navigator; **Campaigns tab** shows named operations per group |
+| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK techniques + APT attribution; results saved to Reports Library (DB 2) |
+| **Compare — Groups** | Jaccard similarity ranking of your TTPs vs every APT group; visual matrix diff, tactic breakdown, gap analysis |
+| **Compare — Campaigns** | Jaccard similarity ranking of your TTPs vs every named MITRE campaign (e.g. SolarWinds C0024, Operation Ghost C0023) |
+| **Compare — Reports** | Browse your stored AI analyses (DB 2); re-run attribution against any saved report without re-calling the LLM |
 | **Export** | ATT&CK Navigator JSON layers, PDF threat intelligence reports, plain JSON |
 | **MITRE Sync** | Auto-detects new ATT&CK releases daily (Celery beat), manual sync via API; sidebar shows staleness indicator |
 
@@ -49,15 +52,15 @@ Map adversary behaviours to ATT&CK, compare against 160+ APT group profiles, ana
 │  React / Vite  │   FastAPI     │  PostgreSQL  │  Redis + Celery │
 │  (port 3000)   │  (port 8000)  │     16       │  worker + beat  │
 │                │               │              │                 │
-│  nginx proxy   │  SQLAlchemy   │  JSONB for   │  daily MITRE    │
-│  serves SPA    │  async ORM    │  STIX data   │  sync job       │
+│  Vite proxy    │  SQLAlchemy   │  DB 1: ATT&CK│  daily MITRE    │
+│  /api → :8000  │  async ORM    │  DB 2: Reports  sync job       │
 └────────────────┴───────────────┴──────────────┴─────────────────┘
 ```
 
 **Backend** — Python 3.12, FastAPI, SQLAlchemy 2.x (async), Celery  
 **Frontend** — React 18, TypeScript, Vite, D3.js, Tailwind CSS, Zustand  
 **Database** — PostgreSQL 16 with JSONB for ATT&CK STIX data  
-**Queue** — Redis + Celery (async LLM jobs, daily MITRE sync at 03:00 UTC)
+**Queue** — Redis + Celery (daily MITRE sync at 03:00 UTC)
 
 ### Data flow
 
@@ -74,14 +77,21 @@ User uploads report
   _parse_response()      ← JSON extraction with raw_decode fallback
         │
         ▼
-  _rank_apt_groups()     ← Jaccard similarity vs every APT group in DB
+  _rank_apt_groups()     ← Jaccard similarity vs every APT group in DB 1
         │
         ▼
-  AnalysisResult → DB    ← session, techniques, APT matches
+  AnalysisResult → DB 2  ← session + name, techniques, APT matches, domain
         │
         ▼
   Frontend renders       ← techniques table, APT ranking, Navigator injection
 ```
+
+### Two-database model
+
+| Database | What it holds | Key tables |
+|---|---|---|
+| **DB 1 (MITRE)** | ATT&CK groups, campaigns, techniques, relationships — ingested from official STIX bundles | `apt_groups`, `campaigns`, `campaign_techniques`, `apt_group_campaigns`, `techniques` |
+| **DB 2 (Reports)** | Every AI analysis you run: extracted techniques, summary, APT matches, name, domain | `analysis_sessions`, `analysis_results` |
 
 ---
 
@@ -119,7 +129,9 @@ ATTCK_DOMAINS=enterprise-attack,mobile-attack,ics-attack
 LOG_LEVEL=info
 ```
 
-> You only need one LLM key. The others can be left blank — the UI will only show providers that have a key configured.
+> You only need one LLM key. The others can be left blank — the UI only shows providers that have a key configured.
+>
+> **You must create `.env` before running `docker compose up`.** Without it the API keys are empty and AI Analysis will return 500.
 
 ### 2 — Start
 
@@ -130,8 +142,8 @@ docker compose up
 **First startup takes 5–15 minutes.** The API container automatically:
 1. Runs `create_tables()` to initialise the PostgreSQL schema
 2. Downloads the latest ATT&CK STIX bundles from MITRE's GitHub (~105 MB total for all three domains)
-3. Parses the STIX 2.1 JSON directly (no third-party ATT&CK library required — Python 3.12 compatible)
-4. Upserts tactics, techniques, groups, and all relationships into PostgreSQL
+3. Parses the STIX 2.1 JSON directly (no third-party ATT&CK library — Python 3.12 compatible)
+4. Upserts tactics, techniques, groups, campaigns, and all relationships into PostgreSQL
 
 Watch progress:
 
@@ -139,17 +151,17 @@ Watch progress:
 docker compose logs -f api
 ```
 
-Expected output:
+Expected output (v19.1):
 
 ```
-Parsing enterprise-attack-16.1.json ...
-  Parsed: 14 tactics, 641 techniques, 163 groups, 8234 usages
-  Ingested 14 tactics
-  Ingested 641 techniques
-  Ingested 8234 technique-tactic links
-  Ingested 163 APT groups
-  Ingested 8234 group-technique usages
-Finished ingesting enterprise-attack v16.1
+Parsing enterprise-attack-19.1.json ...
+  Parsed: 15 tactics, 760 techniques, 174 groups, 56 campaigns, 9100+ usages
+  Ingested 15 tactics
+  Ingested 760 techniques
+  Ingested 174 APT groups
+  Ingested 56 campaigns
+  Ingested campaign-technique and group-campaign attribution links
+Finished ingesting enterprise-attack v19.1
 ```
 
 ### 3 — Open
@@ -176,7 +188,6 @@ The central workspace. The full ATT&CK matrix renders as a colour-coded heatmap.
 | Select a technique | Click any cell — turns red, added to your TTP layer |
 | Expand sub-techniques | Click the ▶ arrow on any parent cell |
 | Open detail panel | Click a cell to open the right-side panel (full description, detection notes, data sources, AI assistant) |
-| Multi-select | Hold Shift and click multiple cells |
 | Search | Type in the search box to filter by name or ATT&CK ID |
 | Filter by platform | Use the platform dropdown (Windows, Linux, macOS, Cloud, etc.) |
 | Filter by tactic | Use the tactic dropdown to focus on a specific kill-chain phase |
@@ -187,10 +198,8 @@ The central workspace. The full ATT&CK matrix renders as a colour-coded heatmap.
 |---|---|
 | ↑ Import layer | Load an existing ATT&CK Navigator `.json` layer |
 | ↓ Navigator layer | Export your TTPs + overlay as ATT&CK Navigator JSON |
-| ↓ JSON | Export selected technique IDs as plain JSON |
 | ↓ PDF | Export current layer as a formatted PDF report |
-| Expand all | Expand all sub-techniques |
-| Collapse all | Collapse all sub-techniques |
+| Expand all / Collapse all | Toggle sub-technique visibility |
 | Clear my TTPs | Reset your selection |
 | Clear overlay | Remove the APT group overlay |
 
@@ -203,48 +212,45 @@ The central workspace. The full ATT&CK matrix renders as a colour-coded heatmap.
 | Amber `#f59e0b` | In both layers (shared TTPs) |
 | Dark | Not selected |
 
-#### AI Assistant (technique panel)
+#### AI Assistant
 
-When you click a technique, the detail panel opens with an embedded chat. Ask anything:
+Click any technique to open the detail panel with an embedded chat. The full ATT&CK description for the selected technique is already in context. Example prompts:
 
 - *"What are the most common detections for this technique?"*
-- *"Show me a SIGMA rule skeleton for T1059.001"*
+- *"Write a SIGMA rule skeleton for T1059.001"*
 - *"What APT groups use this in combination with lateral movement?"*
-
-Select a provider (Claude / GPT-4o / Gemini) from the dropdown. The context includes the full ATT&CK description for the selected technique.
 
 ---
 
 ### AI Analysis
 
-Analyse threat intelligence documents — incident reports, malware analysis write-ups, OSINT, CTI feeds — and automatically map every observable behaviour to ATT&CK.
+Analyse threat intelligence documents and automatically map every observable behaviour to ATT&CK. Each completed analysis is saved to the **Reports Library (DB 2)**.
 
 #### Step-by-step
 
 1. Click **Analyze** in the sidebar
 2. Select an LLM provider and optionally specify a model
 3. Choose a domain (`enterprise-attack`, `mobile-attack`, or `ics-attack`)
-4. Either:
-   - **Paste text** directly (investigation notes, copy-pasted report sections), or
-   - **Upload a file** — PDF, DOCX, or TXT up to 50 MB
-5. Click **Analyse with AI**
-6. Watch the live SSE token stream as the model thinks
-7. When complete, review the three tabs:
+4. Optionally enter a **name** for this analysis (shown in the Reports Library later)
+5. Either paste text or upload a file (PDF, DOCX, TXT — up to 50 MB)
+6. Click **Analyse with AI**
+7. Watch the live SSE token stream as the model thinks
+8. Review the three tabs:
 
 | Tab | Content |
 |---|---|
-| **Techniques** | Extracted ATT&CK technique mappings with confidence score (0–100 %), tactic, and a quoted evidence snippet from your text |
-| **APT Matches** | Top 10 APT groups ranked by Jaccard similarity against the extracted techniques |
-| **Raw Response** | The full LLM JSON output for debugging |
+| **Techniques** | ATT&CK technique mappings with confidence score, tactic, and evidence snippet |
+| **APT Matches** | Top 10 APT groups ranked by Jaccard similarity |
+| **Raw Response** | Full LLM JSON output for debugging |
 
-8. Click **→ Inject into Navigator** to push all extracted techniques into your layer
+9. Click **→ Inject into Navigator** to push all extracted techniques into your layer
 
 #### Confidence score guide
 
 | Score | Meaning |
 |---|---|
-| 90–100 % | Explicitly stated in the text (e.g. "used PowerShell to run encoded commands") |
-| 70–89 % | Strongly implied (e.g. "established persistence via registry") |
+| 90–100 % | Explicitly stated in the text |
+| 70–89 % | Strongly implied |
 | 40–69 % | Weakly implied or inferred from context |
 | < 40 % | Speculative — treat with caution |
 
@@ -252,74 +258,79 @@ Analyse threat intelligence documents — incident reports, malware analysis wri
 
 | Type | Notes |
 |---|---|
-| `.pdf` | Text extraction via PyMuPDF; tables and multi-column layouts supported |
+| `.pdf` | Text extraction via PyMuPDF |
 | `.docx` | Paragraphs and table cells extracted via python-docx |
-| `.txt` / plain text | UTF-8, UTF-8-BOM, latin-1, CP1252 — auto-detected |
+| `.txt` / plain text | UTF-8, latin-1, CP1252 auto-detected |
 
-Files are truncated at 120,000 characters before being sent to the LLM (~30 k tokens).
-
-#### LLM Chat
-
-The **Chat** button at the bottom of any analysis opens a free-form assistant. Use it to:
-
-- Ask follow-up questions about a specific technique
-- Request detection logic (SIGMA rules, KQL queries, Splunk SPL)
-- Ask for attacker perspective / defensive controls
-- Discuss ATT&CK sub-technique differences
-
-The context field pre-populates with your selected technique IDs. You can also paste arbitrary context (max 8,000 characters).
+Files are truncated at 120,000 characters before being sent to the LLM.
 
 ---
 
 ### APT Library
 
-Browse all ATT&CK threat groups.
+Browse all 174+ ATT&CK threat groups. Each group has two tabs:
 
-| Control | Action |
-|---|---|
-| Search box | Filter by group name or ATT&CK ID (e.g. "APT29", "G0016") |
-| Group card | Click to open the full TTP profile |
-| Add all to my TTPs | Bulk-load every technique this group uses into your Navigator layer |
-| Overlay on Navigator | Show the group's TTPs as a blue overlay on the matrix |
-| ATT&CK ↗ | Open the official MITRE group page |
+#### Techniques tab
 
-**Full TTP profile** includes:
 - All known techniques with ATT&CK IDs, tactic, and use description
-- Aliases (other names the group is known by)
-- MITRE ATT&CK attribution notes
+- **Add all to my TTPs** — bulk-load every technique into your Navigator layer
+- **Overlay on Navigator** — show the group's TTPs as a blue overlay on the matrix
 
-> **Tip:** Overlay a group, then go to Navigator to see where your selected TTPs overlap with theirs using the amber/blue colour coding.
+#### Campaigns tab (DB 1)
+
+Named operations attributed to this group, parsed from MITRE ATT&CK STIX data.
+
+Each campaign card shows:
+- ATT&CK campaign ID (e.g. C0024), name, and date range
+- Technique count for that specific operation
+- Expand to see the full technique list with tactic tags
+- **Add to my TTPs** — load this campaign's specific TTP fingerprint into Navigator
+
+> **Why campaigns matter:** A group's aggregate profile is the union of all operations over years. A campaign profile is specific to one attack. Matching against C0024 (SolarWinds Compromise) at 45% similarity is a more specific lead than matching against G0016 (APT29) at 15%.
 
 ---
 
 ### Compare
 
-Rank every ATT&CK group against your layer by Jaccard similarity index.
+Rank ATT&CK groups and campaigns against your TTPs using Jaccard similarity.
 
 **Jaccard similarity** = `|shared techniques| / |union of all techniques|`
 
-A score of 1.0 means the two sets are identical; 0.0 means no overlap. Scores above 0.3 typically indicate a meaningful behavioural match.
+Use the **mode switcher** at the top of the Compare page to choose what to compare against:
 
-#### Workflow
+#### Mode: Groups (DB 1)
 
-1. Select techniques in Navigator (or run an AI Analysis and inject results)
-2. Navigate to **Compare**
-3. The ranked list on the left updates in real-time
-4. Click any group to open the detail view on the right
+Rank every ATT&CK group against your current Navigator selection.
 
-#### Detail view tabs
-
-| Tab | Content |
+| Detail tab | Content |
 |---|---|
-| **Overview** | Similarity score, shared technique chips (clickable), techniques unique to your layer |
-| **Tactic Breakdown** | Stacked bar chart — shared / user-only / APT-only counts per kill-chain phase |
-| **Visual Diff** | Compact colour-strip matrix showing the overlap across the full ATT&CK matrix |
-| **Gap Analysis** | Every technique in the group's known profile that is *not* in your layer |
+| **Overview** | Similarity score, shared techniques (amber chips), your-only techniques |
+| **Tactic Breakdown** | Stacked bar per kill-chain phase: shared / user-only / APT-only |
+| **Visual Diff** | Compact matrix colour-strip showing the full overlap |
+| **Gap Analysis** | Every technique in the group's profile not in your layer — your detection backlog |
 
-#### Actions
+**Actions:**
+- **Overlay in Navigator** — visualise the overlap on the full matrix
+- **↓ PDF Report** — export a formatted comparison report
 
-- **Overlay in Navigator** — send the group to Navigator with your layer as your TTPs and the group as overlay
-- **↓ PDF Report** — generate a formatted PDF analysis report combining your TTPs, similarity scores, and gap analysis
+#### Mode: Campaigns (DB 1)
+
+Rank every named MITRE campaign (56+ in Enterprise) against your current Navigator selection.
+
+The detail panel shows:
+- Similarity score, shared techniques highlighted in purple
+- Full campaign technique list with overlap indicators
+- Attribution (which group conducted this campaign)
+- Date range of the campaign
+
+#### Mode: Reports (DB 2)
+
+Browse your stored AI analysis sessions. Click any report to see which APT groups best match its extracted TTP profile — without re-running the expensive LLM call.
+
+Use cases:
+- **Retrospective attribution** after a new ATT&CK version is released
+- **Cross-incident correlation** across multiple saved reports
+- **Environmental profiling** — which groups keep appearing across your incident set
 
 ---
 
@@ -327,30 +338,30 @@ A score of 1.0 means the two sets are identical; 0.0 means no overlap. Scores ab
 
 #### Analysis PDF
 
-From the **Analyze** page, click **Download PDF** on any completed analysis. The report includes:
-- Cover page with metadata (provider, model, domain, session ID)
+From **Analyze**, click **Download PDF** on any completed analysis. Includes:
+- Cover page with provider, model, domain, session ID, timestamp
 - Executive summary (AI-generated)
 - Extracted techniques table sorted by confidence
-- APT attribution section with top 10 matches
+- APT attribution section with top 10 Jaccard matches
 - Tactic coverage breakdown
 
 #### Navigator layer PDF
 
-From the **Navigator**, click **↓ PDF** in the toolbar. The report lists all techniques in your current layer with tactics and platforms.
+From **Navigator**, click **↓ PDF** in the toolbar. Lists all techniques in your current layer with tactics and platforms.
 
 #### ATT&CK Navigator JSON
 
-Click **↓ Navigator layer** to download a `.json` file compatible with [MITRE ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/). Import it there for sharing or further annotation.
+Click **↓ Navigator layer** to download a `.json` file compatible with [MITRE ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/).
 
 ---
 
 ### MITRE Sync
 
-ThreatMapper tracks new ATT&CK releases and keeps the local database up to date.
+ThreatMapper tracks new ATT&CK releases automatically.
 
 #### Automatic sync (daily)
 
-A Celery Beat scheduler runs `check_and_sync` every day at 03:00 UTC. It queries MITRE's GitHub repository for new bundle versions and ingests any updates without downtime.
+A Celery Beat scheduler runs `check_and_sync` every day at 03:00 UTC. It queries MITRE's GitHub repository for new bundle versions and ingests updates without downtime.
 
 #### Staleness indicator
 
@@ -361,9 +372,6 @@ The sidebar footer shows:
 #### Manual sync
 
 ```bash
-# Via Make
-make ingest
-
 # Via API
 curl -X POST http://localhost:8000/api/sync/trigger
 
@@ -371,63 +379,95 @@ curl -X POST http://localhost:8000/api/sync/trigger
 curl http://localhost:8000/api/sync/status
 ```
 
-The `/api/sync/status` response shows the current and latest version for each domain:
+---
 
-```json
-{
-  "domains": [
-    {
-      "domain": "enterprise-attack",
-      "current_version": "16.1",
-      "latest_version": "16.1",
-      "needs_update": false,
-      "last_ingested": "2025-01-15T03:00:00Z"
-    }
-  ],
-  "any_updates_needed": false
-}
-```
+## Two-Database Architecture
+
+### DB 1 — MITRE ATT&CK (read-only reference data)
+
+Populated from MITRE's official STIX 2.1 bundles on startup and on each sync. Contains:
+
+- **Groups** (G0001–G0174+) — named threat actors with aggregate TTP profiles
+- **Campaigns** (C0001–C0063+) — named operations with per-operation TTP profiles
+- **Attribution links** — which group conducted which campaign (`attributed-to` relationships)
+- **Technique usage** — the specific techniques observed in each group/campaign with use descriptions
+
+**Coverage as of ATT&CK v19.1:**
+
+| Domain | Groups | Campaigns | Techniques |
+|---|---|---|---|
+| Enterprise | 174 | 56 | 760+ |
+| ICS | 14 | 8 | 80+ |
+| Mobile | 20 | 3 | 70+ |
+
+### DB 2 — User Report Sessions (append-only)
+
+Created by every AI Analysis you run. Each session stores:
+
+- `name` — the label you gave when uploading (or the filename)
+- `domain` — which ATT&CK domain was used
+- `provider` / `model` — which LLM was used
+- `extracted_techniques` — JSON array of `{attack_id, name, tactic, confidence, evidence}`
+- `apt_matches` — JSON array of the Jaccard ranking computed at analysis time
+- `summary` — the AI-generated summary
+- `status` — `processing` / `completed` / `failed`
+
+Sessions in DB 2 can be re-compared at any time via `POST /api/analyze/sessions/{id}/compare` — this re-runs Jaccard against the *current* DB 1 (useful after a new ATT&CK version has been ingested).
 
 ---
 
 ## API Reference
 
-Full interactive documentation is available at **http://localhost:8000/docs**.
+Full interactive documentation at **http://localhost:8000/docs**.
+
+All 21 registered routes:
 
 ### ATT&CK Data
 
 ```
 GET  /api/attack/versions
-GET  /api/attack/tactics?domain=enterprise-attack&version=16.1
-GET  /api/attack/techniques?domain=enterprise-attack&tactic=initial-access&search=phish&platform=Windows&subtechniques=true
+GET  /api/attack/tactics?domain=enterprise-attack[&version=19.1]
+GET  /api/attack/techniques?domain=enterprise-attack[&tactic=initial-access&search=phish&platform=Windows&subtechniques=true]
 GET  /api/attack/techniques/{attack_id}?domain=enterprise-attack
 ```
 
-### APT Groups
+### APT Groups (DB 1)
 
 ```
-GET  /api/apt/groups?domain=enterprise-attack&search=APT29
-GET  /api/apt/groups/{attack_id}
-POST /api/apt/compare?domain=enterprise-attack&top_n=10
-     body: { "technique_ids": ["T1566", "T1059", "T1078"] }
+GET  /api/apt/groups?domain=enterprise-attack[&search=APT29&version=19.1]
+GET  /api/apt/groups/{attack_id}?domain=enterprise-attack
+POST /api/apt/compare?domain=enterprise-attack[&top_n=10&version=19.1]
+     body: { "technique_ids": ["T1566", "T1059", "T1078"] }   ← max 500 IDs
 ```
 
-> `technique_ids` is capped at 500 entries.
+### Campaigns (DB 1)
+
+```
+GET  /api/apt/campaigns?domain=enterprise-attack[&group_id=G0016&search=solar&version=19.1]
+GET  /api/apt/campaigns/{attack_id}?domain=enterprise-attack
+POST /api/apt/campaigns/compare?domain=enterprise-attack[&top_n=20&version=19.1]
+     body: { "technique_ids": ["T1566", "T1059", "T1078"] }   ← max 500 IDs
+```
 
 ### Analysis
 
 ```
 POST /api/analyze
-     multipart: provider={claude|openai|gemini}, domain=enterprise-attack, text=... | file=@report.pdf
+     multipart: provider={claude|openai|gemini}, domain=enterprise-attack,
+                name="My Report", text=... | file=@report.pdf
 
-POST /api/analyze/stream          ← Server-Sent Events
-     multipart: same as above
+POST /api/analyze/stream          ← Server-Sent Events (same fields)
 
-GET  /api/analyze/{session_id}    ← returns AnalysisOut or 202 if still processing
+GET  /api/analyze/sessions[?limit=50&offset=0]    ← DB 2 report library
+POST /api/analyze/sessions/{session_id}/compare[?top_n=10]  ← re-run Jaccard
+
+GET  /api/analyze/{session_id}    ← returns AnalysisOut or 202 if processing
 
 POST /api/analyze/chat
-     body: { "message": "...", "provider": "claude", "model": "claude-opus-4-8", "context": "..." }
+     body: { "message": "...", "provider": "claude", "model": "...", "context": "..." }
 ```
+
+> **Route order note:** `GET /analyze/sessions` must be registered before `GET /analyze/{session_id}` in the router — it is. Do not reorder these routes or the literal string `sessions` will be treated as a UUID and return 400.
 
 #### SSE event types
 
@@ -455,11 +495,17 @@ POST /api/sync/trigger
 GET  /api/sync/task/{task_id}
 ```
 
+### Health
+
+```
+GET  /api/health
+```
+
 ---
 
 ## Configuration
 
-All configuration is via environment variables in `.env`. The table below lists every available setting.
+All configuration is via environment variables in `.env`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -469,10 +515,10 @@ All configuration is via environment variables in `.env`. The table below lists 
 | `ANTHROPIC_API_KEY` | — | Anthropic / Claude API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
-| `ATTCK_DOMAINS` | `enterprise-attack,mobile-attack,ics-attack` | Domains to download and ingest |
+| `ATTCK_DOMAINS` | `enterprise-attack,mobile-attack,ics-attack` | Comma-separated domains to ingest |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warning` / `error` |
 
-You can restrict ingestion to a single domain to speed up first start:
+To ingest only Enterprise (faster first start):
 
 ```env
 ATTCK_DOMAINS=enterprise-attack
@@ -488,52 +534,51 @@ ATTCK_DOMAINS=enterprise-attack
 threatmapper/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes/          # FastAPI routers
-│   │   │   ├── analyze.py       # POST /analyze, /analyze/stream, /analyze/chat
-│   │   │   ├── attack.py        # GET /attack/tactics, /techniques
-│   │   │   ├── apt.py           # GET /apt/groups, POST /apt/compare
-│   │   │   ├── export.py        # POST /export/analysis, /export/layer
-│   │   │   └── sync.py          # GET /sync/status, POST /sync/trigger
+│   │   ├── api/routes/
+│   │   │   ├── analyze.py      # /analyze, /analyze/stream, /analyze/sessions, /analyze/chat
+│   │   │   ├── attack.py       # /attack/tactics, /attack/techniques
+│   │   │   ├── apt.py          # /apt/groups, /apt/compare, /apt/campaigns, /apt/campaigns/compare
+│   │   │   ├── export.py       # /export/analysis, /export/layer
+│   │   │   └── sync.py         # /sync/status, /sync/trigger
 │   │   ├── core/
-│   │   │   ├── config.py        # Pydantic Settings from .env
-│   │   │   └── database.py      # async engine, session factory, create_tables
+│   │   │   ├── config.py       # Pydantic Settings from .env
+│   │   │   └── database.py     # async engine, session factory, create_tables
 │   │   ├── models/
-│   │   │   ├── analysis.py      # AnalysisSession, AnalysisResult, UserLayer
-│   │   │   └── attack.py        # AttackVersion, Tactic, Technique, AptGroup, …
+│   │   │   ├── analysis.py     # AnalysisSession (name, domain), AnalysisResult
+│   │   │   └── attack.py       # AttackVersion, Tactic, Technique, AptGroup,
+│   │   │                       # Campaign, CampaignTechnique, AptGroupCampaign
 │   │   ├── services/
 │   │   │   ├── ai/
-│   │   │   │   ├── base.py      # LLMAdapter ABC, SYSTEM_PROMPT, _parse_response
-│   │   │   │   ├── claude.py    # Anthropic adapter
-│   │   │   │   ├── openai.py    # OpenAI adapter
-│   │   │   │   ├── gemini.py    # Google Gemini adapter
-│   │   │   │   └── factory.py   # get_adapter(provider, model)
+│   │   │   │   ├── base.py     # LLMAdapter ABC, SYSTEM_PROMPT, _parse_response (raw_decode)
+│   │   │   │   ├── claude.py   # Anthropic adapter (cached client)
+│   │   │   │   ├── openai.py   # OpenAI adapter (cached client)
+│   │   │   │   ├── gemini.py   # Gemini adapter (cached genai instance)
+│   │   │   │   └── factory.py  # get_adapter(provider, model)
 │   │   │   ├── attck/
-│   │   │   │   ├── downloader.py     # Fetch STIX bundles from MITRE GitHub
-│   │   │   │   ├── ingestor.py       # Parse STIX 2.1 JSON, upsert to PostgreSQL
+│   │   │   │   ├── downloader.py      # Fetch STIX bundles from MITRE GitHub
+│   │   │   │   ├── ingestor.py        # Parse STIX 2.1, upsert groups+campaigns
 │   │   │   │   └── version_checker.py
-│   │   │   ├── file_parser.py   # PDF / DOCX / TXT text extraction
+│   │   │   ├── file_parser.py  # PDF / DOCX / TXT text extraction
 │   │   │   └── report_generator.py  # fpdf2 PDF builder
 │   │   └── tasks/
-│   │       ├── celery_app.py    # Celery + Redis config
-│   │       ├── analysis.py      # Background analysis tasks
-│   │       └── sync.py          # check_and_sync Celery task
-│   ├── tests/
-│   │   ├── unit/                # No DB required
-│   │   └── integration/         # FastAPI TestClient + mocked DB
+│   │       ├── celery_app.py   # Celery + Redis config
+│   │       └── sync.py         # check_and_sync Celery beat task
 │   ├── main.py
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
+│       ├── api/client.ts       # attackApi, aptApi, reportsApi, analyzeApi, exportApi
+│       ├── types/attack.ts     # TS interfaces for all DB 1 + DB 2 types
 │       ├── components/
-│       │   ├── Navigator/       # AttackMatrix, LayerControls, TechniquePanel,
-│       │   │                    # LLMChat, MatrixFilters, LayerImport
-│       │   └── Compare/         # MatrixDiff, TacticBreakdown
-│       ├── hooks/               # useAttackMatrix, useSseStream
-│       ├── pages/               # Navigator, APTLibrary, Analyze, Compare
-│       ├── store/               # Zustand global state
-│       ├── api/client.ts        # Axios + TanStack Query setup
-│       └── types/attack.ts      # TypeScript interfaces
-├── nginx/nginx.conf             # Reverse proxy + Vite dev proxy config
+│       │   ├── Navigator/      # AttackMatrix, LayerControls, TechniquePanel, LLMChat
+│       │   └── Compare/        # MatrixDiff, TacticBreakdown
+│       ├── pages/
+│       │   ├── Navigator.tsx
+│       │   ├── APTLibrary.tsx  # Groups list + Techniques tab + Campaigns tab
+│       │   ├── Analyze.tsx
+│       │   └── Compare.tsx     # Mode switcher: Groups / Campaigns / Reports
+│       ├── hooks/              # useAttackMatrix, useSseStream
+│       └── store/              # Zustand global state (domain, version, selectedTechniques)
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
@@ -543,7 +588,6 @@ threatmapper/
 
 ```bash
 make up           # docker compose up --build
-make build        # rebuild all images
 make down         # stop and remove containers
 make logs         # follow api + worker logs
 make shell-api    # bash into the api container
@@ -558,21 +602,31 @@ make reset        # tear down volumes and rebuild from scratch (destructive)
 # Inside the api container (real PostgreSQL):
 docker compose exec api pytest tests/ -v
 
-# Locally (unit + mocked DB, no PostgreSQL needed):
+# Locally (unit tests, no DB):
 cd backend
 pip install -r requirements.txt
-PYTHONPATH=. pytest tests/ -v --no-cov
+PYTHONPATH=. pytest tests/unit/ -v
 ```
 
-**Test suite:**
+### Database schema and migrations
 
-| Suite | Tests | Coverage |
-|---|---|---|
-| `unit/test_file_parser.py` | 9 | PDF/DOCX/TXT extraction, truncation, encoding edge cases |
-| `unit/test_ai_base.py` | 11 | JSON parsing, code-fence stripping, noise extraction, prompt structure |
-| `unit/test_comparison.py` | 10 | Jaccard similarity, ranking, empty-set edge cases |
-| `integration/test_attack_routes.py` | 10 | Health, versions, tactics, techniques — API shape and error paths |
-| `integration/test_apt_routes.py` | 9 | Group listing, compare endpoint, export, analysis input validation |
+ThreatMapper uses SQLAlchemy `create_all()` on startup — no migration framework required for a fresh install.
+
+If upgrading an existing deployment, apply these `ALTER TABLE` statements manually:
+
+```sql
+-- v0.2.1: stores the ATT&CK domain used for each analysis session
+ALTER TABLE analysis_sessions
+  ADD COLUMN IF NOT EXISTS domain VARCHAR(50) NOT NULL DEFAULT 'enterprise-attack';
+
+-- v0.3.0: user-defined label for each report session
+ALTER TABLE analysis_sessions
+  ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+
+-- v0.3.0: campaigns, campaign-technique links, campaign-group attribution
+-- (created automatically by create_all() if tables don't exist)
+-- If upgrading a v0.2.x DB, restart the API container and it will create them.
+```
 
 ### Adding a new LLM provider
 
@@ -585,33 +639,18 @@ class MyProviderAdapter(LLMAdapter):
         self._api_client = MySDK(api_key=settings.my_provider_api_key)
 
     @property
-    def provider(self) -> str:
-        return "myprovider"
+    def provider(self) -> str: return "myprovider"
 
     @property
-    def model(self) -> str:
-        return self._model
+    def model(self) -> str: return self._model
 
-    async def _raw_complete(self, system: str, user: str) -> str:
-        ...
-
-    async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
-        ...
+    async def _raw_complete(self, system: str, user: str) -> str: ...
+    async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]: ...
 ```
 
-2. Register in `factory.py`'s `get_adapter`
+2. Register in `factory.py`
 3. Add to `ALLOWED_PROVIDERS` in `analyze.py`
-4. Add the provider to the frontend dropdowns in `Analyze.tsx` and `LLMChat.tsx`
-
-### Database schema notes
-
-ThreatMapper uses SQLAlchemy's `create_all()` on startup — no migration framework is required for a fresh install. If you are upgrading an existing deployment, apply these `ALTER TABLE` statements manually:
-
-```sql
--- Added in v0.2.1: stores the ATT&CK domain for each analysis session
-ALTER TABLE analysis_sessions
-  ADD COLUMN IF NOT EXISTS domain VARCHAR(50) NOT NULL DEFAULT 'enterprise-attack';
-```
+4. Add to the frontend provider dropdowns in `Analyze.tsx` and `LLMChat.tsx`
 
 ---
 
@@ -621,28 +660,15 @@ ALTER TABLE analysis_sessions
 
 - [ ] Set a strong `DB_PASS` in `.env`
 - [ ] Never commit `.env` to git (it is in `.gitignore`)
-- [ ] For any internet-facing deployment, place ThreatMapper behind a reverse proxy (nginx, Caddy) with TLS and authentication (HTTP Basic Auth, OAuth 2.0 proxy, or VPN)
-- [ ] ThreatMapper has no built-in user authentication — all endpoints are open on the local network
-- [ ] API keys are read from environment variables at startup and never stored in the database
+- [ ] For any internet-facing deployment, place ThreatMapper behind nginx or Caddy with TLS and authentication (HTTP Basic Auth, OAuth proxy, or VPN)
+- [ ] ThreatMapper has no built-in user authentication — all endpoints are open on the Docker network
+- [ ] API keys are read from environment variables and never stored in the database
 
 ### Scaling
 
-- The API runs a single uvicorn worker by default. For concurrent users, add `--workers 4` in `docker-compose.yml`.
-- Celery workers scale horizontally — add additional `worker` service instances in `docker-compose.yml`.
-- The PostgreSQL connection pool is set to 10 connections (max 20 overflow) — adequate for most single-server deployments.
-
-### Updating ATT&CK data
-
-```bash
-# Quickest:
-curl -X POST http://localhost:8000/api/sync/trigger
-
-# Via Makefile:
-make ingest
-
-# Check what version is currently ingested:
-curl http://localhost:8000/api/sync/status | python -m json.tool
-```
+- The API runs a single uvicorn worker by default. For concurrent users add `--workers 4` in `docker-compose.yml`.
+- Celery workers scale horizontally — add additional `worker` service instances.
+- The PostgreSQL connection pool is set to 10 connections (max 20 overflow).
 
 ---
 
@@ -653,13 +679,13 @@ curl http://localhost:8000/api/sync/status | python -m json.tool
 | Backend framework | FastAPI 0.115 | Async, OpenAPI auto-docs |
 | ORM | SQLAlchemy 2.x (async) | asyncpg driver |
 | Database | PostgreSQL 16 | JSONB for STIX arrays |
-| Task queue | Celery 5.4 + Redis 7 | Daily ATT&CK sync, async LLM jobs |
+| Task queue | Celery 5.4 + Redis 7 | Daily ATT&CK sync |
 | ATT&CK parsing | stdlib `json` only | No mitreattack-python; Python 3.12-compatible |
-| AI — Claude | `anthropic` SDK | Cached async client |
-| AI — OpenAI | `openai` SDK | JSON mode on non-streaming; cached client |
-| AI — Gemini | `google-generativeai` | JSON MIME type; `configure()` called once |
+| AI — Claude | `anthropic` SDK | Cached async client in `__init__` |
+| AI — OpenAI | `openai` SDK | Cached client; JSON mode on non-streaming |
+| AI — Gemini | `google-generativeai` | `configure()` called once in `__init__` |
 | File parsing | PyMuPDF (PDF), python-docx (DOCX) | Streamed with 50 MB hard cap |
-| PDF reports | fpdf2 | Multi-page with tactic coverage charts |
+| PDF reports | fpdf2 | Multi-page with tactic coverage chart |
 | Frontend framework | React 18 + TypeScript | |
 | Build tool | Vite 6 | |
 | Visualisation | D3.js 7 | ATT&CK matrix heatmap |
@@ -672,28 +698,46 @@ curl http://localhost:8000/api/sync/status | python -m json.tool
 
 ## Changelog
 
+### v0.3.0 (2026-06-06)
+
+**Two-database architecture:**
+- Added `Campaign`, `CampaignTechnique`, `AptGroupCampaign` SQLAlchemy models
+- STIX ingestor now parses `campaign` objects and `attributed-to` / `uses` relationships; 56+ named campaigns ingested for Enterprise ATT&CK v19.1
+- New API endpoints:
+  - `GET /api/apt/campaigns` — list all campaigns, filterable by domain, group, search, version
+  - `GET /api/apt/campaigns/{attack_id}` — full campaign detail with technique list
+  - `POST /api/apt/campaigns/compare` — Jaccard ranking vs all campaigns (body: `{technique_ids: [...]}`)
+  - `GET /api/analyze/sessions` — DB 2 report library (all completed analysis sessions)
+  - `POST /api/analyze/sessions/{id}/compare` — re-run Jaccard for a stored report
+- `AnalysisSession` gains `name VARCHAR(255)` column; name is set from the `name` form field or filename
+- **APT Library** — new Campaigns tab per group: expandable campaign cards with technique list, date range, "Add to my TTPs" action
+- **Compare page** — three-mode switcher: Groups (DB 1) / Campaigns (DB 1) / Reports (DB 2)
+
+**Bug fix:**
+- `GET /api/analyze/sessions` was shadowed by `GET /api/analyze/{session_id}` because the wildcard route was registered first; fixed by reordering routes so static paths precede parameterised ones
+
 ### v0.2.1 (2026-06-06)
 
 **Security fixes:**
-- File uploads are now streamed with a 64 KB chunk reader; the 50 MB guard fires before the entire body is buffered in RAM, eliminating a memory-DoS window
-- `/apt/compare` now enforces a maximum of 500 technique IDs to prevent CPU-exhaustion attacks
-- `ChatRequest.context` is capped at 8,000 characters; `model` is validated against an allowlist pattern before being forwarded to LLM provider SDKs
+- File uploads streamed with 64 KB chunk reader; 50 MB guard fires before entire body is buffered
+- `/apt/compare` enforces max 500 technique IDs
+- `ChatRequest.context` capped at 8,000 characters; `model` validated against pattern
+- `_parse_response` uses `json.JSONDecoder().raw_decode()` — greedy regex replaced
 
 **Correctness fixes:**
-- Analysis sessions that fail during the post-stream DB write are now marked `status=failed` — they no longer appear as orphaned `processing` sessions that return 404 on retrieval
-- `AnalysisSession` gains a `domain` column; PDF exports now show the domain used for the actual analysis instead of always showing `enterprise-attack`
-- `GET /analyze/{id}` and `POST /export/analysis/{id}` now return `JSONResponse(status_code=202)` instead of raising `HTTPException(202)` — clients that check `response.ok` no longer mishandle the in-progress state
-- Layer PDF technique count now matches the table rows (derived from DB results, not the raw client-supplied ID list)
+- Failed post-stream DB writes now set `status=failed` correctly
+- `AnalysisSession` gains `domain` column; PDF exports show the actual analysis domain
+- `GET /analyze/{id}` returns `JSONResponse(status_code=202)` instead of raising `HTTPException(202)`
+- Layer PDF technique count derived from DB results, not raw client-supplied IDs
 
-**Performance / reliability:**
-- Anthropic, OpenAI, and Gemini SDK clients are cached in each adapter's `__init__`; connection pools are now reused across requests instead of being created on every LLM call
-- `_parse_response` fallback now uses `json.JSONDecoder().raw_decode()` instead of a greedy `re.DOTALL` regex; trailing prose containing bare braces no longer corrupts the JSON extraction
+**Performance:**
+- Anthropic, OpenAI, and Gemini SDK clients cached in `__init__`; connection pools reused across requests
 
 ### v0.2.0 (2026-06-06)
 
 - Initial release: Navigator, AI Analysis, APT Library, Compare, Export, MITRE Sync
-- STIX bundle parsing rewritten to use stdlib `json` only (Python 3.12 compatibility, drops `mitreattack-python` dependency)
-- Fixed tactic matrix ordering: uses canonical ATT&CK kill-chain sort instead of alphabetical
+- STIX bundle parsing rewritten to use stdlib `json` only (Python 3.12, drops `mitreattack-python`)
+- Fixed tactic matrix ordering: canonical ATT&CK kill-chain sort
 
 ---
 
