@@ -63,6 +63,58 @@ export interface CompareResult {
   shared_techniques: string[];
 }
 
+// ── DB 1: MITRE Campaigns ─────────────────────────────────────────────────────
+
+export interface CampaignListItem {
+  attack_id: string;       // C0023
+  name: string;
+  description: string;
+  url: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  domain: string;
+  technique_count: number;
+  group_names: string[];
+}
+
+export interface CampaignTechniqueUsage {
+  attack_id: string;
+  name: string;
+  tactics: string[];
+  platforms: string[];
+  is_subtechnique: boolean;
+  use_description: string;
+}
+
+export interface CampaignDetail extends CampaignListItem {
+  techniques: CampaignTechniqueUsage[];
+}
+
+export interface CampaignResult {
+  campaign_attack_id: string;
+  campaign_name: string;
+  group_names: string[];
+  first_seen: string | null;
+  last_seen: string | null;
+  similarity: number;
+  shared_count: number;
+  shared_techniques: string[];
+}
+
+// ── DB 2: User report sessions ────────────────────────────────────────────────
+
+export interface ReportSession {
+  session_id: string;
+  name: string | null;
+  status: string;
+  provider: string;
+  model: string;
+  domain: string;
+  filename: string | null;
+  created_at: string;
+  technique_count: number;
+}
+
 export type Domain = 'enterprise-attack' | 'mobile-attack' | 'ics-attack';
 
 export const DOMAIN_LABELS: Record<Domain, string> = {

@@ -16,8 +16,11 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.attack import (
     AptGroup,
+    AptGroupCampaign,
     AptGroupTechnique,
     AttackVersion,
+    Campaign,
+    CampaignTechnique,
     Tactic,
     Technique,
     TechniqueTactic,
@@ -83,6 +86,7 @@ def parse_bundle(bundle_path: Path) -> dict:
     tactics:    list[dict] = []
     techniques: list[dict] = []
     groups:     list[dict] = []
+    campaigns:  list[dict] = []
 
     for obj in by_id.values():
         if _is_stale(obj):
@@ -140,33 +144,73 @@ def parse_bundle(bundle_path: Path) -> dict:
                     "url":         _attack_url(obj),
                 })
 
-    # Group → Technique usage relationships
-    group_stix_ids = {g["stix_id"] for g in groups}
-    tech_stix_ids  = {t["stix_id"] for t in techniques}
+        elif t == "campaign":
+            aid = _attack_id(obj)
+            if aid:
+                campaigns.append({
+                    "attack_id":   aid,
+                    "stix_id":     obj["id"],
+                    "name":        obj.get("name", ""),
+                    "description": obj.get("description", ""),
+                    "url":         _attack_url(obj),
+                    "first_seen":  obj.get("first_seen", "") or "",
+                    "last_seen":   obj.get("last_seen", "") or "",
+                })
 
+    group_stix_ids    = {g["stix_id"] for g in groups}
+    campaign_stix_ids = {c["stix_id"] for c in campaigns}
+    tech_stix_ids     = {t["stix_id"] for t in techniques}
+
+    # Group → Technique usage relationships
     usages: list[dict] = []
+    # Campaign → Technique usage relationships
+    campaign_tech_usages: list[dict] = []
+    # Campaign → Group attribution relationships
+    campaign_group_links: list[dict] = []
+
     for rel in relationships:
-        if (
-            rel.get("relationship_type") == "uses"
-            and rel.get("source_ref") in group_stix_ids
-            and rel.get("target_ref") in tech_stix_ids
-        ):
-            usages.append({
-                "group_stix_id":     rel["source_ref"],
-                "technique_stix_id": rel["target_ref"],
-                "description":       rel.get("description", "") or "",
-                "refs":              _ext_refs(rel),
-            })
+        rtype      = rel.get("relationship_type")
+        source_ref = rel.get("source_ref", "")
+        target_ref = rel.get("target_ref", "")
+
+        if rtype == "uses":
+            if source_ref in group_stix_ids and target_ref in tech_stix_ids:
+                usages.append({
+                    "group_stix_id":     source_ref,
+                    "technique_stix_id": target_ref,
+                    "description":       rel.get("description", "") or "",
+                    "refs":              _ext_refs(rel),
+                })
+            elif source_ref in campaign_stix_ids and target_ref in tech_stix_ids:
+                campaign_tech_usages.append({
+                    "campaign_stix_id":  source_ref,
+                    "technique_stix_id": target_ref,
+                    "description":       rel.get("description", "") or "",
+                    "refs":              _ext_refs(rel),
+                })
+
+        elif rtype == "attributed-to":
+            # campaign --attributed-to--> intrusion-set
+            if source_ref in campaign_stix_ids and target_ref in group_stix_ids:
+                campaign_group_links.append({
+                    "campaign_stix_id": source_ref,
+                    "group_stix_id":    target_ref,
+                })
 
     logger.info(
-        "  Parsed: %d tactics, %d techniques, %d groups, %d usages",
+        "  Parsed: %d tactics, %d techniques, %d groups, %d usages, "
+        "%d campaigns, %d campaign-tech, %d campaign-group",
         len(tactics), len(techniques), len(groups), len(usages),
+        len(campaigns), len(campaign_tech_usages), len(campaign_group_links),
     )
     return {
-        "tactics":    tactics,
-        "techniques": techniques,
-        "groups":     groups,
-        "usages":     usages,
+        "tactics":              tactics,
+        "techniques":           techniques,
+        "groups":               groups,
+        "usages":               usages,
+        "campaigns":            campaigns,
+        "campaign_tech_usages": campaign_tech_usages,
+        "campaign_group_links": campaign_group_links,
     }
 
 
@@ -319,6 +363,68 @@ def ingest_domain(domain: str, bundle_path: Path, version: str) -> None:
             usage_count += 1
 
         logger.info("  Ingested %d group-technique usages", usage_count)
+
+        # ── Campaigns (DB 1: named operations / specific attacks) ─────────────
+        campaign_stix_to_db_id: dict[str, int] = {}
+        for c in data["campaigns"]:
+            stmt = (
+                insert(Campaign)
+                .values(
+                    attack_id=c["attack_id"], stix_id=c["stix_id"],
+                    name=c["name"], description=c["description"],
+                    url=c["url"], first_seen=c["first_seen"] or None,
+                    last_seen=c["last_seen"] or None,
+                    domain=domain, version_id=version_id,
+                )
+                .on_conflict_do_nothing(constraint="uq_campaign_version")
+                .returning(Campaign.id)
+            )
+            row = session.execute(stmt).fetchone()
+            db_id = row[0] if row else session.scalar(
+                select(Campaign.id).where(
+                    Campaign.attack_id == c["attack_id"],
+                    Campaign.version_id == version_id,
+                )
+            )
+            if db_id:
+                campaign_stix_to_db_id[c["stix_id"]] = db_id
+
+        logger.info("  Ingested %d campaigns", len(campaign_stix_to_db_id))
+
+        # ── Campaign → Technique usages ───────────────────────────────────────
+        camp_tech_count = 0
+        for u in data["campaign_tech_usages"]:
+            camp_db_id = campaign_stix_to_db_id.get(u["campaign_stix_id"])
+            tech_db_id = stix_id_to_tech_db_id.get(u["technique_stix_id"])
+            if not camp_db_id or not tech_db_id:
+                continue
+            session.execute(
+                insert(CampaignTechnique)
+                .values(
+                    campaign_id=camp_db_id, technique_id=tech_db_id,
+                    use_description=u["description"], references=u["refs"],
+                )
+                .on_conflict_do_nothing(constraint="uq_campaign_technique")
+            )
+            camp_tech_count += 1
+
+        logger.info("  Ingested %d campaign-technique links", camp_tech_count)
+
+        # ── Campaign → Group attribution ──────────────────────────────────────
+        camp_group_count = 0
+        for link in data["campaign_group_links"]:
+            camp_db_id  = campaign_stix_to_db_id.get(link["campaign_stix_id"])
+            group_db_id = group_stix_to_db_id.get(link["group_stix_id"])
+            if not camp_db_id or not group_db_id:
+                continue
+            session.execute(
+                insert(AptGroupCampaign)
+                .values(group_id=group_db_id, campaign_id=camp_db_id)
+                .on_conflict_do_nothing(constraint="uq_group_campaign")
+            )
+            camp_group_count += 1
+
+        logger.info("  Ingested %d campaign-group attribution links", camp_group_count)
         session.commit()
 
     logger.info("Finished ingesting %s v%s", domain, version)

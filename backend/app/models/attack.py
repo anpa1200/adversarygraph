@@ -107,6 +107,9 @@ class AptGroup(Base):
 
     version: Mapped["AttackVersion"] = relationship(back_populates="groups")
     technique_usages: Mapped[list["AptGroupTechnique"]] = relationship(back_populates="group")
+    campaigns: Mapped[list["Campaign"]] = relationship(
+        secondary="apt_group_campaigns", back_populates="groups"
+    )
 
 
 class AptGroupTechnique(Base):
@@ -125,3 +128,59 @@ class AptGroupTechnique(Base):
 
     group: Mapped["AptGroup"] = relationship(back_populates="technique_usages")
     technique: Mapped["Technique"] = relationship(back_populates="group_usages")
+
+
+# ── DB 1: MITRE Campaigns (named operations / specific attacks) ───────────────
+
+class Campaign(Base):
+    """A specific named ATT&CK campaign / operation attributed to one or more groups."""
+
+    __tablename__ = "campaigns"
+    __table_args__ = (UniqueConstraint("attack_id", "version_id", name="uq_campaign_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attack_id: Mapped[str] = mapped_column(String(20), index=True)   # C0023
+    stix_id: Mapped[str] = mapped_column(String(100), index=True)    # campaign--uuid
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(String(500), default="")
+    first_seen: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_seen: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    domain: Mapped[str] = mapped_column(String(50))
+    version_id: Mapped[int] = mapped_column(ForeignKey("attack_versions.id"))
+
+    technique_usages: Mapped[list["CampaignTechnique"]] = relationship(back_populates="campaign")
+    groups: Mapped[list["AptGroup"]] = relationship(
+        secondary="apt_group_campaigns", back_populates="campaigns"
+    )
+
+
+class CampaignTechnique(Base):
+    """Technique used in a specific campaign, with STIX usage description."""
+
+    __tablename__ = "campaign_techniques"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "technique_id", name="uq_campaign_technique"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"))
+    technique_id: Mapped[int] = mapped_column(ForeignKey("techniques.id", ondelete="CASCADE"))
+    use_description: Mapped[str] = mapped_column(Text, default="")
+    references: Mapped[list] = mapped_column(JSONB, default=list)
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="technique_usages")
+    technique: Mapped["Technique"] = relationship()
+
+
+class AptGroupCampaign(Base):
+    """Attribution link: campaign attributed-to group (from STIX)."""
+
+    __tablename__ = "apt_group_campaigns"
+    __table_args__ = (
+        UniqueConstraint("group_id", "campaign_id", name="uq_group_campaign"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("apt_groups.id", ondelete="CASCADE"))
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"))

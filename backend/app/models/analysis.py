@@ -18,6 +18,7 @@ class AnalysisSession(Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="pending")
     # pending | processing | completed | failed
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # user-supplied label
     input_type: Mapped[str] = mapped_column(String(10))   # text | file
     filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     llm_provider: Mapped[str] = mapped_column(String(20))  # claude | openai | gemini

@@ -4,6 +4,28 @@
 
 ---
 
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [What ThreatMapper Does](#what-threatmapper-does)
+- [Architecture in Brief](#architecture-in-brief)
+- [Setting Up (10 Minutes)](#setting-up-10-minutes)
+- [Core Workflow: Analysing a Threat Report](#core-workflow-analysing-a-threat-report)
+- [The Navigator: Your ATT&CK Workspace](#the-navigator-your-attck-workspace)
+- [APT Attribution Deep-Dive: The Compare View](#apt-attribution-deep-dive-the-compare-view)
+- [Two Databases: Actor Profiles and Your Report Library](#two-databases-actor-profiles-and-your-report-library)
+- [Generating Reports](#generating-reports)
+- [Using the AI Chat Assistant](#using-the-ai-chat-assistant)
+- [Working with All Three ATT&CK Domains](#working-with-all-three-attck-domains)
+- [API Usage (Headless / CI Integration)](#api-usage-headless--ci-integration)
+- [Keeping ATT&CK Data Fresh](#keeping-attck-data-fresh)
+- [Tips for Analysts](#tips-for-analysts)
+- [Security Considerations](#security-considerations)
+- [What's Coming Next](#whats-coming-next)
+- [Final Thoughts](#final-thoughts)
+
+---
+
 ## The Problem
 
 Every threat intelligence analyst knows the workflow: you receive a malware report, an IR summary, or a threat feed entry, and you need to translate it into ATT&CK technique IDs so you can slot it into a detection backlog or a purple-team plan.
@@ -24,8 +46,8 @@ Concretely:
 
 - **AI Analysis** — upload a PDF, DOCX, or TXT file (or paste text), pick Claude, GPT-4o, or Gemini, and get a streamed extraction of every ATT&CK technique the LLM identifies with evidence snippets and confidence scores
 - **ATT&CK Navigator** — an interactive heatmap of the full ATT&CK matrix (Enterprise, Mobile, ICS) where you build and explore your TTP layer
-- **APT Attribution** — automatic Jaccard similarity ranking of every extraction against 160+ named ATT&CK threat groups
-- **Compare** — deep side-by-side comparison of your TTP set against any group: visual matrix diff, tactic breakdown chart, and gap analysis
+- **APT Attribution** — automatic Jaccard similarity ranking of every extraction against 160+ named ATT&CK threat groups and named campaigns (e.g. "Operation Ghost")
+- **Compare** — deep side-by-side comparison of your TTP set against groups, MITRE named campaigns, or your own stored report library; with visual matrix diff, tactic breakdown chart, and gap analysis
 - **Export** — ATT&CK Navigator-compatible JSON layers and multi-page PDF reports suitable for executive briefings
 
 Everything runs locally in Docker. Your threat reports never leave your machine.
@@ -230,6 +252,107 @@ Click any group to open the four-tab detail view.
 
 ---
 
+## Two Databases: Actor Profiles and Your Report Library
+
+When you dig into attribution you quickly realise there are two different things you want to compare against:
+
+1. **What MITRE says groups have done** — the curated ATT&CK dataset of group TTP profiles, including named campaigns (specific operations like "Operation Ghost")
+2. **What you have actually observed** — your own library of analysed reports, each with its own extracted TTP mapping
+
+ThreatMapper v0.3 builds both into a single comparison workflow via three modes in the **Compare** view.
+
+### DB 1: MITRE Actor Profiles and Named Campaigns
+
+The ATT&CK STIX 2.1 bundle contains more than just group TTP profiles. It also includes:
+
+- **`campaign` objects** — named operations with their own ATT&CK IDs (e.g. C0023 = "Operation Ghost", C0025 = "2016 Ukraine Electric Power Attack")
+- **`attributed-to` relationships** — which group conducted which campaign
+- **`uses` relationships at the campaign level** — the specific techniques observed in each named operation (often different from the group's aggregate profile)
+
+ThreatMapper parses all of this during ATT&CK ingestion. The result is two searchable, comparable datasets that both live in DB 1:
+
+| Dataset | What it contains | ID format |
+|---|---|---|
+| APT Groups | Aggregate TTP profile of each named threat group | G0001 – G0163+ |
+| Campaigns | TTP profile of each named operation/campaign | C0001 – C0030+ |
+
+**Why campaigns matter:** A group's aggregate profile is the union of everything ever attributed to them across all operations and years. A campaign profile is specific to one attack. Comparing your incident TTPs against campaigns is often more discriminating than comparing against the full group — an incident that matches C0023 (Operation Ghost) at 45% similarity is a more specific lead than a match against G0016 (APT29) at 15%.
+
+### Viewing campaigns in the APT Library
+
+The APT Library now has two tabs per group:
+
+- **Techniques** — the full aggregate TTP list (existing behaviour)
+- **Campaigns (DB 1)** — all named operations attributed to this group
+
+Each campaign card shows the date range, technique count, and ATT&CK ID. Click to expand and see the full technique list with the use description from STIX.
+
+The **"Add to my TTPs"** button on each campaign card pushes all of that campaign's techniques into your Navigator layer — useful for building a "this specific operation's TTP fingerprint" layer to compare against your detection coverage.
+
+### DB 2: Your Report Library
+
+Every time you run an AI analysis in ThreatMapper, the result is stored: the extracted techniques, the summary, the APT matches, and the provider/model used. DB 2 is this library of past analyses.
+
+Access it via **Compare → Reports (DB 2)**.
+
+The left panel lists every completed report session with:
+- Name (the filename or label you gave it when you uploaded)
+- Technique count
+- Domain
+- Provider and model used
+- Date
+
+Click any report to run a fresh Jaccard comparison of that report's extracted techniques against all ATT&CK groups. This answers: *"If I come back to this report from three months ago — which groups match its TTP profile?"*
+
+This is useful in a few scenarios:
+
+**Retrospective attribution:** You analysed a report before you had a strong hypothesis about the actor. A new ATT&CK version was released that added new groups or techniques. Rerun the comparison against the updated ATT&CK data without re-running the expensive LLM analysis.
+
+**Cross-incident correlation:** If two reports from different incidents both have high similarity to the same APT group, that's a data point for clustering the incidents under the same actor.
+
+**Building a baseline:** Accumulate 20 reports over a quarter. In the Reports library you can see at a glance which groups are recurring themes across your incident set — a form of environmental threat profiling.
+
+### The three Compare modes
+
+| Mode | What you compare | Against |
+|---|---|---|
+| **Groups (DB 1)** | Your selected TTPs (from Navigator) | All 160+ ATT&CK groups |
+| **Campaigns (DB 1)** | Your selected TTPs (from Navigator) | All named MITRE campaigns |
+| **Reports (DB 2)** | A stored report's extracted TTPs | All 160+ ATT&CK groups |
+
+Use the mode switcher at the top of the Compare page to move between them.
+
+### API for both databases
+
+Compare against campaigns:
+
+```bash
+curl -X POST "http://localhost:8000/api/apt/campaigns/compare?domain=enterprise-attack&top_n=10" \
+  -H "Content-Type: application/json" \
+  -d '{"technique_ids": ["T1566.001", "T1059.001", "T1078", "T1021.001"]}'
+```
+
+List your stored report sessions:
+
+```bash
+curl "http://localhost:8000/api/analyze/sessions?limit=20" | python -m json.tool
+```
+
+Re-compare a stored report:
+
+```bash
+SESSION_ID="550e8400-e29b-41d4-a716-446655440000"
+curl -X POST "http://localhost:8000/api/analyze/sessions/$SESSION_ID/compare?top_n=10"
+```
+
+List campaigns for a specific group:
+
+```bash
+curl "http://localhost:8000/api/apt/campaigns?domain=enterprise-attack&group_id=G0016"
+```
+
+---
+
 ## Generating Reports
 
 ThreatMapper generates two types of PDF reports.
@@ -424,7 +547,6 @@ Your threat intelligence reports are stored in PostgreSQL inside the Docker volu
 The tool is functional but there is plenty of room to grow. Things I'm actively thinking about:
 
 - **TAXII/STIX import** — accept threat intelligence directly from TAXII feeds (MISP, OpenCTI, commercial CTI platforms)
-- **Saved sessions** — a session library view so you can browse past analyses without knowing the session UUID
 - **Team collaboration** — shared TTP layers with user namespacing
 - **Detection coverage overlay** — import your existing SIGMA rule library and visualise which ATT&CK techniques you have coverage for vs which are blind spots
 - **Automatic APT tracking** — when ATT&CK releases a new version that adds techniques to a group you're tracking, send a notification

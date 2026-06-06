@@ -1,9 +1,13 @@
 import axios from 'axios';
 import type {
   AttackVersion,
+  CampaignDetail,
+  CampaignListItem,
+  CampaignResult,
   CompareResult,
   GroupDetail,
   GroupListItem,
+  ReportSession,
   Tactic,
   TechniqueDetail,
   TechniqueListItem,
@@ -42,9 +46,39 @@ export const aptApi = {
   group: (id: string, domain: string, version?: string): Promise<GroupDetail> =>
     http.get(`/apt/groups/${id}`, { params: { domain, ...(version && { version }) } }).then(r => r.data),
 
+  // Body uses CompareRequest wrapper {technique_ids: [...]}
   compare: (params: { technique_ids: string[]; domain: string; version?: string; top_n?: number }): Promise<CompareResult[]> =>
-    http.post('/apt/compare', params.technique_ids, {
+    http.post('/apt/compare', { technique_ids: params.technique_ids }, {
       params: { domain: params.domain, version: params.version, top_n: params.top_n },
+    }).then(r => r.data),
+
+  // ── DB 1: Campaigns ──────────────────────────────────────────────────────
+
+  campaigns: (params: {
+    domain: string; version?: string; group_id?: string; search?: string;
+  }): Promise<CampaignListItem[]> =>
+    http.get('/apt/campaigns', { params }).then(r => r.data),
+
+  campaign: (id: string, domain: string, version?: string): Promise<CampaignDetail> =>
+    http.get(`/apt/campaigns/${id}`, { params: { domain, ...(version && { version }) } }).then(r => r.data),
+
+  compareCampaigns: (params: {
+    technique_ids: string[]; domain: string; version?: string; top_n?: number;
+  }): Promise<CampaignResult[]> =>
+    http.post('/apt/campaigns/compare', { technique_ids: params.technique_ids }, {
+      params: { domain: params.domain, version: params.version, top_n: params.top_n },
+    }).then(r => r.data),
+};
+
+// ── DB 2: Report sessions ─────────────────────────────────────────────────────
+
+export const reportsApi = {
+  list: (limit = 50, offset = 0): Promise<ReportSession[]> =>
+    http.get('/analyze/sessions', { params: { limit, offset } }).then(r => r.data),
+
+  compare: (sessionId: string, topN = 10): Promise<CompareResult[]> =>
+    http.post(`/analyze/sessions/${sessionId}/compare`, null, {
+      params: { top_n: topN },
     }).then(r => r.data),
 };
 
