@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/store';
-import { analyzeApi } from '@/api/client';
+import { analyzeApi, exportApi } from '@/api/client';
 import type { AnalysisResult } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
@@ -213,12 +213,21 @@ function ResultsView({
           <div>
             <span className="text-xs text-gray-500 font-mono">{result.provider} / {result.model}</span>
           </div>
-          <button
-            onClick={injectAndNavigate}
-            className="text-xs bg-mitre-accent hover:bg-red-600 text-white px-3 py-1.5 rounded transition-colors"
-          >
-            → Inject into Navigator
-          </button>
+          <div className="flex gap-2">
+            <a
+              href={exportApi.analysisUrl(result.session_id)}
+              download={`analysis-${result.session_id.slice(0, 8)}.pdf`}
+              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
+            >
+              ↓ PDF report
+            </a>
+            <button
+              onClick={injectAndNavigate}
+              className="text-xs bg-mitre-accent hover:bg-red-600 text-white px-3 py-1.5 rounded transition-colors"
+            >
+              → Inject into Navigator
+            </button>
+          </div>
         </div>
         {result.summary && (
           <p className="text-sm text-gray-300 leading-relaxed">{result.summary}</p>

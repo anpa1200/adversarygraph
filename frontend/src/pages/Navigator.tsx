@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
-import { aptApi } from '@/api/client';
+import { aptApi, exportApi } from '@/api/client';
 import { useAttackMatrix } from '@/hooks/useAttackMatrix';
 import { AttackMatrix } from '@/components/Navigator/AttackMatrix';
 import { LayerControls } from '@/components/Navigator/LayerControls';
@@ -113,6 +113,14 @@ export function Navigator() {
     downloadJson({ techniques: Array.from(selectedTechniques).sort(), domain }, 'my-ttps.json');
   }, [selectedTechniques, domain]);
 
+  const exportLayerPdf = useCallback(async () => {
+    const blob = await exportApi.layer(Array.from(selectedTechniques), domain);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'layer-report.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  }, [selectedTechniques, domain]);
+
   return (
     <div className="flex flex-col h-full">
       <Header title="ATT&CK Navigator" />
@@ -129,6 +137,7 @@ export function Navigator() {
         onClearOverlay={clearOverlay}
         onExportLayer={exportJson}
         onExportNavigator={exportNavigatorLayer}
+        onExportPdf={exportLayerPdf}
         onImportClick={() => setImportOpen(true)}
         onSaveClick={() => setSaveOpen(true)}
         onLoadClick={() => setLoadOpen(true)}

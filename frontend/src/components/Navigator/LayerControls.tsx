@@ -19,6 +19,7 @@ interface Props {
   onClearOverlay: () => void;
   onExportLayer: () => void;
   onExportNavigator: () => void;
+  onExportPdf: () => void;
   onImportClick: () => void;
   onSaveClick: () => void;
   onLoadClick: () => void;
@@ -36,6 +37,7 @@ export function LayerControls({
   onClearOverlay,
   onExportLayer,
   onExportNavigator,
+  onExportPdf,
   onImportClick,
   onSaveClick,
   onLoadClick,
@@ -119,6 +121,13 @@ export function LayerControls({
       {/* ── Export actions ─────────────────────────────────────────────── */}
       {selectedTechniques.size > 0 && (
         <>
+          <button
+            onClick={onExportPdf}
+            className="text-gray-400 hover:text-white transition-colors shrink-0"
+            title="Download PDF report of current layer"
+          >
+            ↓ PDF
+          </button>
           <button
             onClick={onExportNavigator}
             className="text-gray-400 hover:text-white transition-colors shrink-0"
