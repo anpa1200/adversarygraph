@@ -17,7 +17,7 @@ from typing import Annotated, AsyncIterator
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
@@ -299,11 +299,10 @@ async def delete_session(
     except ValueError:
         raise HTTPException(400, "Invalid session ID")
 
-    row = await db.execute(select(AnalysisSession).where(AnalysisSession.id == sid))
-    session = row.scalar_one_or_none()
-    if not session:
+    exists = await db.execute(select(AnalysisSession.id).where(AnalysisSession.id == sid))
+    if not exists.scalar_one_or_none():
         raise HTTPException(404, "Session not found")
-    await db.delete(session)
+    await db.execute(sql_delete(AnalysisSession).where(AnalysisSession.id == sid))
     await db.commit()
 
 

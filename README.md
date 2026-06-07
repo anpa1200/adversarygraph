@@ -325,12 +325,16 @@ The detail panel shows:
 
 #### Mode: Reports (DB 2)
 
-Browse your stored AI analysis sessions. Click any report to see which APT groups best match its extracted TTP profile — without re-running the expensive LLM call.
+Browse your stored AI analysis sessions. Click any report body to see which APT groups best match its extracted TTP profile — without re-running the expensive LLM call.
 
 Use cases:
 - **Retrospective attribution** after a new ATT&CK version is released
 - **Cross-incident correlation** across multiple saved reports
 - **Environmental profiling** — which groups keep appearing across your incident set
+
+**Per-session actions:**
+- **↓ PDF** — download the full analysis PDF for that session at any time
+- **✕ Remove** — delete the session from DB 2 (browser confirm required; list refreshes automatically)
 
 ---
 
@@ -458,8 +462,9 @@ POST /api/analyze
 
 POST /api/analyze/stream          ← Server-Sent Events (same fields)
 
-GET  /api/analyze/sessions[?limit=50&offset=0]    ← DB 2 report library
-POST /api/analyze/sessions/{session_id}/compare[?top_n=10]  ← re-run Jaccard
+GET    /api/analyze/sessions[?limit=50&offset=0]              ← DB 2 report library
+POST   /api/analyze/sessions/{session_id}/compare[?top_n=10]  ← re-run Jaccard
+DELETE /api/analyze/sessions/{session_id}                     ← remove from DB 2
 
 GET  /api/analyze/{session_id}    ← returns AnalysisOut or 202 if processing
 
@@ -481,7 +486,7 @@ POST /api/analyze/chat
 ### Export
 
 ```
-POST /api/export/analysis/{session_id}   → PDF download
+GET  /api/export/analysis/{session_id}   → PDF download
 POST /api/export/layer
      body: { "technique_ids": ["T1059"], "domain": "enterprise-attack" }
      → PDF download

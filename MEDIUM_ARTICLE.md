@@ -282,7 +282,12 @@ Switch to **Campaigns (DB 1)** and click **Compare vs Campaigns**. This ranks al
 
 ### Mode 3 — Reports (DB 2)
 
-Switch to **Reports (DB 2)**. The left panel lists every AI analysis you have ever run. Click any report to re-run Jaccard comparison against all ATT&CK groups — without re-calling the LLM.
+Switch to **Reports (DB 2)**. The left panel lists every AI analysis you have ever run. Click any report body to re-run Jaccard comparison against all ATT&CK groups — without re-calling the LLM.
+
+Each report entry also has two action buttons directly below the session info:
+
+- **↓ PDF** — download the full multi-page analysis report (cover, summary, techniques table, APT attribution, tactic coverage) directly from the browser without re-running analysis
+- **✕ Remove** — permanently delete the session from DB 2; a browser confirmation prompt guards against accidents, and the list refreshes automatically; if the deleted session was selected, the comparison results are cleared
 
 Use this for retrospective attribution after ATT&CK releases new group data, or to cluster multiple incidents under a common actor.
 
@@ -347,7 +352,12 @@ The left panel lists every completed report session with:
 - Provider and model used
 - Date
 
-Click any report to run a fresh Jaccard comparison of that report's extracted techniques against all ATT&CK groups. This answers: *"If I come back to this report from three months ago — which groups match its TTP profile?"*
+Click any report body to run a fresh Jaccard comparison of that report's extracted techniques against all ATT&CK groups. This answers: *"If I come back to this report from three months ago — which groups match its TTP profile?"*
+
+Each row also exposes two action buttons:
+
+- **↓ PDF** — downloads the full analysis PDF for that session (identical to the PDF you can generate immediately after an analysis, but retrievable at any time from the library)
+- **✕ Remove** — deletes the session from DB 2; a browser confirmation prevents accidental deletion; the session list updates immediately and any displayed comparison results for that session are cleared
 
 This is useful in a few scenarios:
 

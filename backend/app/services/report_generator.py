@@ -34,7 +34,7 @@ class _Report(FPDF):
             return
         self.set_font("Helvetica", "B", 8)
         self.set_text_color(*_RED)
-        self.cell(0, 7, "ThreatMapper — Threat Intelligence Report", align="R")
+        self.cell(0, 7, "ThreatMapper - Threat Intelligence Report", align="R")
         self.ln(1)
         self.set_draw_color(*_RED)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -169,7 +169,7 @@ def _cover(pdf: _Report, data: dict) -> None:
               "Techniques\nextracted")
     _stat_box(pdf, str(len(apt_matches)),
               "APT groups\nmatched")
-    top_sim = f"{apt_matches[0]['similarity']*100:.0f}%" if apt_matches else "—"
+    top_sim = f"{apt_matches[0]['similarity']*100:.0f}%" if apt_matches else "N/A"
     _stat_box(pdf, top_sim,
               "Top APT\nsimilarity")
     high_conf = sum(1 for t in techniques if t.get("confidence", 0) >= 0.8)
@@ -231,7 +231,7 @@ def _apt_attribution(
         pdf.set_text_color(*_RED)
         pdf.cell(0, 7,
                  f"#{i}  {m.get('group_name', '?')}  "
-                 f"({m.get('group_attack_id', '?')})  —  {sim}% similarity",
+                 f"({m.get('group_attack_id', '?')})  -  {sim}% similarity",
                  ln=True)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 9)
