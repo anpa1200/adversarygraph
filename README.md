@@ -2,6 +2,8 @@
 
 **AI-powered MITRE ATT&CK threat intelligence platform.**
 
+**[Documentation & Usage Guide](https://anpa1200.github.io/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
+
 Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 56+ named campaigns, analyse incident reports with Claude / GPT-4o / Gemini, and export Navigator-compatible layers — all in one self-hosted tool.
 
 ---
