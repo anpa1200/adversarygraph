@@ -8,6 +8,8 @@ The overall taxonomy is grounded in established statistical-outlier and anomaly-
 
 ## Fundamental Observation-Level Anomalies
 
+This group defines the basic units at which anomalousness can be expressed: an individual observation, an observation evaluated within context, a collection of observations, a conditionally improbable value, or a large model residual. These concepts form the foundation of the taxonomy because most specialized anomaly types can also be described using one or more of these observation-level perspectives.
+
 Academic grounding: [1-4, 6-8].
 
 ### 1. Global Point Anomaly
@@ -48,6 +50,8 @@ Residual anomalies depend on model adequacy. A large residual can indicate an un
 
 ## Baseline-Relative Anomalies
 
+This group distinguishes anomalies by the reference population used for comparison. An observation may be evaluated against its own history, a peer group, the full population, another cohort, or a canonical profile. Selecting the correct baseline is often more consequential than selecting the anomaly-scoring method because a poorly chosen reference can make ordinary differences appear anomalous.
+
 Academic grounding: [1, 2, 6, 7, 9].
 
 ### 7. Self-Baseline Anomaly
@@ -81,6 +85,8 @@ An observation differs from a predefined or learned canonical profile. The profi
 Unlike a self-baseline, the reference profile may be external or shared. The anomaly score reflects distance from that profile and depends strongly on how the profile and distance function are defined.
 
 ## Magnitude, Frequency, and Rate Anomalies
+
+This group covers anomalies in scalar size, event frequency, accumulated quantity, timing intervals, duration, and relative composition. These anomalies are usually defined over explicit windows or exposure units and can often be measured with univariate statistical models, provided that denominator effects, dispersion, seasonality, and irregular observation processes are handled correctly.
 
 Academic grounding: [2, 3, 10, 11].
 
@@ -139,6 +145,8 @@ A ratio, share, composition percentage, or success fraction deviates from its ex
 Ratios become unstable with small denominators. Statistical evaluation should account for denominator size and the bounded nature of proportions.
 
 ## Time-Series and Temporal Anomalies
+
+This group describes deviations whose meaning depends on temporal order or the evolving structure of a process. It includes abnormal trends, shifts, cycles, phases, persistence, synchronization, and temporal dependence. Unlike isolated point anomalies, temporal anomalies may remain invisible unless observations are evaluated as an ordered series with an appropriate historical and seasonal model.
 
 Academic grounding: [12-16].
 
@@ -221,6 +229,8 @@ Multiple series become unusually synchronized, desynchronized, or phase-locked. 
 Synchronization analysis must account for shared seasonality and common external drivers that can create expected co-movement.
 
 ## Distributional Anomalies
+
+This group treats the probability distribution itself as the object being monitored. An anomaly occurs when location, spread, shape, tails, quantiles, entropy, modality, or another distributional property differs from the reference distribution. Distributional analysis is especially useful when individual observations appear plausible but the population generating them has changed.
 
 Academic grounding: [17-20].
 
@@ -310,6 +320,8 @@ Quantile anomalies are useful for detecting changes concentrated in the lower ta
 
 ## Multivariate and Geometric Anomalies
 
+This group covers observations that become anomalous only when several variables and their geometric relationships are considered jointly. It includes unusual feature combinations, distances, directions, covariance structures, manifolds, clusters, and subspaces. These methods can reveal behavior hidden from univariate analysis but require careful scaling, representation, and dimensionality control.
+
 Academic grounding: [2, 5-9, 21-23].
 
 ### 48. Multivariate Combination Anomaly
@@ -386,6 +398,8 @@ Influential observations deserve investigation because they can dominate results
 
 ## Sequential and Process Anomalies
 
+This group focuses on ordered events, state transitions, subsequences, workflows, and process executions. An anomaly may be caused by an unusual event order, an improbable transition, a missing or repeated step, or a deviation from an expected process model. The individual events may be common; their ordering and process context create the anomaly.
+
 Academic grounding: [1, 2, 12, 24, 25].
 
 ### 60. Sequence-Order Anomaly
@@ -437,6 +451,8 @@ A sequence or group contains an unusual mixture of event types, even if its tota
 Composition anomalies are often evaluated using category proportions, divergence measures, or topic-like representations.
 
 ## Graph and Relationship Anomalies
+
+This group represents data as entities connected by relationships and identifies unusual nodes, edges, paths, neighborhoods, subgraphs, or changes in graph structure. Graph anomalies are appropriate when interactions and connectivity carry more information than isolated entity attributes. Their interpretation depends on the graph definition, edge semantics, and observation period.
 
 Academic grounding: [26-30].
 
@@ -508,6 +524,8 @@ Fan-out should be normalized by the source node's role, activity level, and expe
 
 ## Spatial and Spatiotemporal Anomalies
 
+This group describes deviations involving physical or logical location, spatial neighborhoods, movement, trajectories, and the interaction between space and time. Spatial context can make an otherwise ordinary value anomalous when it occurs in an unexpected region or movement pattern. Reliable analysis must account for spatial dependence, boundaries, scale, and sampling density.
+
 Academic grounding: [2, 31-33].
 
 ### 79. Spatial Point Anomaly
@@ -541,6 +559,8 @@ An observation or cluster is unusual only when both location and time are consid
 These anomalies require models that represent spatial dependence, temporal dependence, and their interaction.
 
 ## Categorical, Textual, and Structured-Data Anomalies
+
+This group covers anomalies in non-continuous and structured representations, including categories, combinations of categories, strings, documents, schemas, and hierarchical records. Anomalousness may arise from rarity, novelty, unexpected composition, unusual textual structure, or violation of an expected schema. Meaningful feature representation is essential because ordinary geometric distance is often inappropriate for these data types.
 
 Academic grounding: [2, 34, 35].
 
@@ -588,6 +608,8 @@ Schema anomalies may indicate valid evolution or data-quality problems. They sho
 
 ## Cross-Source and Cross-View Anomalies
 
+This group identifies anomalies that emerge only when multiple observations, representations, sensors, or data sources are compared. The anomaly may be a contradiction, a missing correspondence, or an improbable relationship across otherwise normal views. Cross-source analysis can expose behavior that no single source can identify, but it depends on reliable entity resolution, temporal alignment, and source semantics.
+
 Academic grounding: [36, 37].
 
 ### 91. Cross-Source Inconsistency Anomaly
@@ -615,6 +637,8 @@ Data from different modalities form an unusual combination, such as an unexpecte
 Multimodal anomalies require aligned observations and a model of normal cross-modal dependence.
 
 ## Model, Prediction, and Uncertainty Anomalies
+
+This group defines anomalousness through the behavior of predictive or probabilistic models. Relevant signals include large prediction errors, disagreement among models, unusual uncertainty, low confidence, or observations outside the model's learned domain. These anomalies may indicate unusual data, model degradation, insufficient knowledge, or a mismatch between training and deployment conditions.
 
 Academic grounding: [5, 9, 20, 38-41].
 
@@ -655,6 +679,8 @@ The magnitude, distribution, or source of uncertainty changes unexpectedly. Meas
 This anomaly can reveal changing data quality, model degradation, or a transition into unfamiliar operating conditions.
 
 ## Data-Quality and Measurement Anomalies
+
+This group concerns anomalies introduced by collection, measurement, transmission, transformation, or storage rather than by the underlying phenomenon being studied. Missingness, duplication, impossible values, timestamp defects, sampling changes, and sensor drift can all resemble substantive anomalies. Identifying these conditions is necessary before interpreting statistical deviations as meaningful behavior.
 
 Academic grounding: [3, 42-45].
 
@@ -707,6 +733,8 @@ The observed data become unexpectedly limited by detection bounds, reporting cap
 Censoring changes the visible distribution without necessarily changing the underlying process. Statistical models must represent the observation mechanism.
 
 ## Composite and Higher-Order Anomalies
+
+This group captures anomalies formed by combinations, interactions, propagation patterns, or emerging structures that exceed a single statistical dimension. Such anomalies may combine several weak signals, spread across entities, evolve through stages, or appear only at a higher level of aggregation. They are useful for representing complex systems but require explicit definitions to avoid vague or unfalsifiable anomaly labels.
 
 Academic grounding: [2, 4, 5, 23, 46-48].
 

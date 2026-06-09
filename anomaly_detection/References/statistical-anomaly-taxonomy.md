@@ -8,6 +8,8 @@ The overall taxonomy is grounded in established statistical-outlier and anomaly-
 
 ## Fundamental Observation-Level Anomalies
 
+This group defines the basic units at which anomalousness can be expressed: an individual observation, an observation evaluated within context, a collection of observations, a conditionally improbable value, or a large model residual. These concepts form the foundation of the taxonomy because most specialized anomaly types can also be described using one or more of these observation-level perspectives.
+
 Academic grounding: [1-4, 6-8].
 
 ### 1. Global Point Anomaly
@@ -48,6 +50,8 @@ Residual anomalies depend on model adequacy. A large residual can indicate an un
 
 ## Baseline-Relative Anomalies
 
+This group distinguishes anomalies by the reference population used for comparison. An observation may be evaluated against its own history, a peer group, the full population, another cohort, or a canonical profile. Selecting the correct baseline is often more consequential than selecting the anomaly-scoring method because a poorly chosen reference can make ordinary differences appear anomalous.
+
 Academic grounding: [1, 2, 6, 7, 9].
 
 ### 7. Self-Baseline Anomaly
@@ -81,6 +85,8 @@ An observation differs from a predefined or learned canonical profile. The profi
 Unlike a self-baseline, the reference profile may be external or shared. The anomaly score reflects distance from that profile and depends strongly on how the profile and distance function are defined.
 
 ## Magnitude, Frequency, and Rate Anomalies
+
+This group covers anomalies in scalar size, event frequency, accumulated quantity, timing intervals, duration, and relative composition. These anomalies are usually defined over explicit windows or exposure units and can often be measured with univariate statistical models, provided that denominator effects, dispersion, seasonality, and irregular observation processes are handled correctly.
 
 Academic grounding: [2, 3, 10, 11].
 
@@ -139,6 +145,8 @@ A ratio, share, composition percentage, or success fraction deviates from its ex
 Ratios become unstable with small denominators. Statistical evaluation should account for denominator size and the bounded nature of proportions.
 
 ## Time-Series and Temporal Anomalies
+
+This group describes deviations whose meaning depends on temporal order or the evolving structure of a process. It includes abnormal trends, shifts, cycles, phases, persistence, synchronization, and temporal dependence. Unlike isolated point anomalies, temporal anomalies may remain invisible unless observations are evaluated as an ordered series with an appropriate historical and seasonal model.
 
 Academic grounding: [12-16].
 
@@ -221,6 +229,8 @@ Multiple series become unusually synchronized, desynchronized, or phase-locked. 
 Synchronization analysis must account for shared seasonality and common external drivers that can create expected co-movement.
 
 ## Distributional Anomalies
+
+This group treats the probability distribution itself as the object being monitored. An anomaly occurs when location, spread, shape, tails, quantiles, entropy, modality, or another distributional property differs from the reference distribution. Distributional analysis is especially useful when individual observations appear plausible but the population generating them has changed.
 
 Academic grounding: [17-20].
 
@@ -310,6 +320,8 @@ Quantile anomalies are useful for detecting changes concentrated in the lower ta
 
 ## Multivariate and Geometric Anomalies
 
+This group covers observations that become anomalous only when several variables and their geometric relationships are considered jointly. It includes unusual feature combinations, distances, directions, covariance structures, manifolds, clusters, and subspaces. These methods can reveal behavior hidden from univariate analysis but require careful scaling, representation, and dimensionality control.
+
 Academic grounding: [2, 5-9, 21-23].
 
 ### 48. Multivariate Combination Anomaly
@@ -386,6 +398,8 @@ Influential observations deserve investigation because they can dominate results
 
 ## Sequential and Process Anomalies
 
+This group focuses on ordered events, state transitions, subsequences, workflows, and process executions. An anomaly may be caused by an unusual event order, an improbable transition, a missing or repeated step, or a deviation from an expected process model. The individual events may be common; their ordering and process context create the anomaly.
+
 Academic grounding: [1, 2, 12, 24, 25].
 
 ### 60. Sequence-Order Anomaly
@@ -437,6 +451,8 @@ A sequence or group contains an unusual mixture of event types, even if its tota
 Composition anomalies are often evaluated using category proportions, divergence measures, or topic-like representations.
 
 ## Graph and Relationship Anomalies
+
+This group represents data as entities connected by relationships and identifies unusual nodes, edges, paths, neighborhoods, subgraphs, or changes in graph structure. Graph anomalies are appropriate when interactions and connectivity carry more information than isolated entity attributes. Their interpretation depends on the graph definition, edge semantics, and observation period.
 
 Academic grounding: [26-30].
 
@@ -508,6 +524,8 @@ Fan-out should be normalized by the source node's role, activity level, and expe
 
 ## Spatial and Spatiotemporal Anomalies
 
+This group describes deviations involving physical or logical location, spatial neighborhoods, movement, trajectories, and the interaction between space and time. Spatial context can make an otherwise ordinary value anomalous when it occurs in an unexpected region or movement pattern. Reliable analysis must account for spatial dependence, boundaries, scale, and sampling density.
+
 Academic grounding: [2, 31-33].
 
 ### 79. Spatial Point Anomaly
@@ -541,6 +559,8 @@ An observation or cluster is unusual only when both location and time are consid
 These anomalies require models that represent spatial dependence, temporal dependence, and their interaction.
 
 ## Categorical, Textual, and Structured-Data Anomalies
+
+This group covers anomalies in non-continuous and structured representations, including categories, combinations of categories, strings, documents, schemas, and hierarchical records. Anomalousness may arise from rarity, novelty, unexpected composition, unusual textual structure, or violation of an expected schema. Meaningful feature representation is essential because ordinary geometric distance is often inappropriate for these data types.
 
 Academic grounding: [2, 34, 35].
 
@@ -588,6 +608,8 @@ Schema anomalies may indicate valid evolution or data-quality problems. They sho
 
 ## Cross-Source and Cross-View Anomalies
 
+This group identifies anomalies that emerge only when multiple observations, representations, sensors, or data sources are compared. The anomaly may be a contradiction, a missing correspondence, or an improbable relationship across otherwise normal views. Cross-source analysis can expose behavior that no single source can identify, but it depends on reliable entity resolution, temporal alignment, and source semantics.
+
 Academic grounding: [36, 37].
 
 ### 91. Cross-Source Inconsistency Anomaly
@@ -615,6 +637,8 @@ Data from different modalities form an unusual combination, such as an unexpecte
 Multimodal anomalies require aligned observations and a model of normal cross-modal dependence.
 
 ## Model, Prediction, and Uncertainty Anomalies
+
+This group defines anomalousness through the behavior of predictive or probabilistic models. Relevant signals include large prediction errors, disagreement among models, unusual uncertainty, low confidence, or observations outside the model's learned domain. These anomalies may indicate unusual data, model degradation, insufficient knowledge, or a mismatch between training and deployment conditions.
 
 Academic grounding: [5, 9, 20, 38-41].
 
@@ -655,6 +679,8 @@ The magnitude, distribution, or source of uncertainty changes unexpectedly. Meas
 This anomaly can reveal changing data quality, model degradation, or a transition into unfamiliar operating conditions.
 
 ## Data-Quality and Measurement Anomalies
+
+This group concerns anomalies introduced by collection, measurement, transmission, transformation, or storage rather than by the underlying phenomenon being studied. Missingness, duplication, impossible values, timestamp defects, sampling changes, and sensor drift can all resemble substantive anomalies. Identifying these conditions is necessary before interpreting statistical deviations as meaningful behavior.
 
 Academic grounding: [3, 42-45].
 
@@ -707,6 +733,8 @@ The observed data become unexpectedly limited by detection bounds, reporting cap
 Censoring changes the visible distribution without necessarily changing the underlying process. Statistical models must represent the observation mechanism.
 
 ## Composite and Higher-Order Anomalies
+
+This group captures anomalies formed by combinations, interactions, propagation patterns, or emerging structures that exceed a single statistical dimension. Such anomalies may combine several weak signals, spread across entities, evolve through stages, or appear only at a higher level of aggregation. They are useful for representing complex systems but require explicit definitions to avoid vague or unfalsifiable anomaly labels.
 
 Academic grounding: [2, 4, 5, 23, 46-48].
 
@@ -769,6 +797,54 @@ Swamping is the counterpart to masking. Robust estimation and iterative analysis
 Observations are deliberately constructed to alter, evade, or exploit a statistical model. This includes gradual contamination, crafted boundary cases, and manipulation of reference data.
 
 From a purely statistical perspective, the defining feature is that the data-generating process responds strategically to the detector rather than remaining passive.
+
+## Cybersecurity Activity Examples
+
+The following examples show how statistical anomaly types can explain observable suspicious or malicious activity. These links lead to the [activity-to-anomaly mapping catalog](attack-statistical-anomaly-mapping.md), where each activity is described in terms of its comparison unit, expected behavior, measurable deviation, ATT&CK technique, and evidence sources. Statistical deviation is supporting evidence, not proof of malicious intent.
+
+| Statistical anomaly type | Linked suspicious or malicious activity examples |
+|---|---|
+| [Collective Anomaly](#4-collective-anomaly) | [Low-volume password failures distributed across many accounts](attack-statistical-anomaly-mapping.md#password-spraying) |
+| [Conditional Anomaly](#5-conditional-anomaly) | [Trusted system binary launches unexpected content](attack-statistical-anomaly-mapping.md#trusted-binary-proxy-execution), [object renamed to resemble a trusted object](attack-statistical-anomaly-mapping.md#masquerading), [protected credential resource accessed by an unusual process](attack-statistical-anomaly-mapping.md#credential-dumping) |
+| [Self-Baseline Anomaly](#7-self-baseline-anomaly) | [Valid credentials used from an unexpected context](attack-statistical-anomaly-mapping.md#valid-account-abuse), [command interpreter execution outside a host or user's normal pattern](attack-statistical-anomaly-mapping.md#command-interpreter-execution), [new autostart configuration](attack-statistical-anomaly-mapping.md#autostart-change) |
+| [Peer-Group Anomaly](#8-peer-group-anomaly) | [Unexpected container administration command](attack-statistical-anomaly-mapping.md#container-exec), [privileged container unlike peer workloads](attack-statistical-anomaly-mapping.md#privileged-container), [cloud-resource enumeration unlike role peers](attack-statistical-anomaly-mapping.md#cloud-enumeration) |
+| [Population Anomaly](#9-population-anomaly) | [Synchronized behavioral change after a compromised software installation](attack-statistical-anomaly-mapping.md#supply-chain-installation) |
+| [Count Anomaly](#13-count-anomaly) | [Unusually many public web paths requested in a session](attack-statistical-anomaly-mapping.md#public-web-enumeration) |
+| [Rate Anomaly](#14-rate-anomaly) | [External service scanning](attack-statistical-anomaly-mapping.md#external-service-scanning), [password guessing](attack-statistical-anomaly-mapping.md#password-guessing), [internal service scanning](attack-statistical-anomaly-mapping.md#internal-service-scanning), [service disruption](attack-statistical-anomaly-mapping.md#service-disruption) |
+| [Volume Anomaly](#15-volume-anomaly) | [DNS enumeration](attack-statistical-anomaly-mapping.md#dns-enumeration), [bulk data access](attack-statistical-anomaly-mapping.md#bulk-data-access), [large outbound transfer](attack-statistical-anomaly-mapping.md#large-outbound-transfer), [data destruction](attack-statistical-anomaly-mapping.md#data-destruction) |
+| [Burst Anomaly](#16-burst-anomaly) | [Repeated MFA prompts](attack-statistical-anomaly-mapping.md#mfa-fatigue), [service-ticket request burst](attack-statistical-anomaly-mapping.md#kerberoasting), [sudden secret retrieval](attack-statistical-anomaly-mapping.md#secret-retrieval) |
+| [Drought or Silence Anomaly](#17-drought-or-silence-anomaly) | [Indicator or telemetry removal](attack-statistical-anomaly-mapping.md#indicator-removal), [security sensor or logging disabled](attack-statistical-anomaly-mapping.md#tool-disablement) |
+| [Duration Anomaly](#18-duration-anomaly) | [External remote-service session with unusual duration](attack-statistical-anomaly-mapping.md#external-remote-session) |
+| [Inter-Arrival-Time Anomaly](#19-inter-arrival-time-anomaly) | [Repeated MFA prompts](attack-statistical-anomaly-mapping.md#mfa-fatigue), [periodic command-and-control communication](attack-statistical-anomaly-mapping.md#periodic-c2) |
+| [Ratio or Proportion Anomaly](#20-ratio-or-proportion-anomaly) | [Abnormal web response-code composition](attack-statistical-anomaly-mapping.md#public-web-enumeration), [password-guessing failure ratio](attack-statistical-anomaly-mapping.md#password-guessing), [MFA denial ratio](attack-statistical-anomaly-mapping.md#mfa-fatigue) |
+| [Temporal-Context Anomaly](#21-temporal-context-anomaly) | [Valid-account use at an unusual time](attack-statistical-anomaly-mapping.md#valid-account-abuse), [external remote session outside normal hours](attack-statistical-anomaly-mapping.md#external-remote-session), [unexpected serverless invocation](attack-statistical-anomaly-mapping.md#serverless-execution) |
+| [Level-Shift Anomaly](#23-level-shift-anomaly) | [Security telemetry drops to zero](attack-statistical-anomaly-mapping.md#tool-disablement), [sustained bulk data access](attack-statistical-anomaly-mapping.md#bulk-data-access), [resource hijacking](attack-statistical-anomaly-mapping.md#resource-hijacking) |
+| [Change-Point Anomaly](#25-change-point-anomaly) | [Startup or logon configuration abruptly changes](attack-statistical-anomaly-mapping.md#autostart-change) |
+| [Periodicity Anomaly](#27-periodicity-anomaly) | [Low-and-slow exfiltration](attack-statistical-anomaly-mapping.md#low-and-slow-exfiltration), [periodic command-and-control communication](attack-statistical-anomaly-mapping.md#periodic-c2) |
+| [Phase Anomaly](#28-phase-anomaly) | [Scheduled execution occurs at a changed phase](attack-statistical-anomaly-mapping.md#scheduled-execution) |
+| [Subsequence Anomaly](#30-subsequence-anomaly) | [Unusual DNS command-and-control query sequence](attack-statistical-anomaly-mapping.md#dns-c2) |
+| [Autocorrelation Anomaly](#32-autocorrelation-anomaly) | [Repeated low-and-slow exfiltration](attack-statistical-anomaly-mapping.md#low-and-slow-exfiltration), [periodic command-and-control communication](attack-statistical-anomaly-mapping.md#periodic-c2) |
+| [Synchronization Anomaly](#33-synchronization-anomaly) | [Compromised software produces synchronized endpoint changes](attack-statistical-anomaly-mapping.md#supply-chain-installation), [synchronized service errors during disruption](attack-statistical-anomaly-mapping.md#service-disruption) |
+| [Distribution-Shift Anomaly](#34-distribution-shift-anomaly) | [DNS enumeration changes query distribution](attack-statistical-anomaly-mapping.md#dns-enumeration), [obfuscated content changes character distribution](attack-statistical-anomaly-mapping.md#obfuscated-content), [firewall policy shifts toward permissive rules](attack-statistical-anomaly-mapping.md#firewall-impairment) |
+| [Tail Anomaly](#41-tail-anomaly) | [Obfuscated content with extreme entropy](attack-statistical-anomaly-mapping.md#obfuscated-content), [large outbound transfer](attack-statistical-anomaly-mapping.md#large-outbound-transfer), [resource hijacking with extreme consumption](attack-statistical-anomaly-mapping.md#resource-hijacking) |
+| [Entropy Anomaly](#43-entropy-anomaly) | [Encoded or obfuscated content](attack-statistical-anomaly-mapping.md#obfuscated-content), [DNS carrying encoded command-and-control data](attack-statistical-anomaly-mapping.md#dns-c2) |
+| [Multivariate Combination Anomaly](#48-multivariate-combination-anomaly) | [Phishing message with unusual combined features](attack-statistical-anomaly-mapping.md#phishing-delivery), [valid-account use from an unexpected context](attack-statistical-anomaly-mapping.md#valid-account-abuse), [privileged container with an unusual runtime profile](attack-statistical-anomaly-mapping.md#privileged-container) |
+| [Sequence-Order Anomaly](#60-sequence-order-anomaly) | [Delivered content followed by process execution](attack-statistical-anomaly-mapping.md#phishing-execution-sequence), [PowerShell abuse sequence](attack-statistical-anomaly-mapping.md#powershell-abuse), [lateral tool transfer followed by execution](attack-statistical-anomaly-mapping.md#lateral-tool-transfer) |
+| [Transition Anomaly](#61-transition-anomaly) | [Public request followed by an application child process](attack-statistical-anomaly-mapping.md#public-app-exploitation), [process injection write-to-execution transition](attack-statistical-anomaly-mapping.md#process-injection), [data collection followed by staging](attack-statistical-anomaly-mapping.md#data-staging) |
+| [Edge Anomaly](#69-edge-anomaly) | [First-seen sender-recipient relationship](attack-statistical-anomaly-mapping.md#phishing-delivery), [new privilege relationship](attack-statistical-anomaly-mapping.md#account-manipulation), [new lateral-administration path](attack-statistical-anomaly-mapping.md#remote-service-lateral-movement), [new exfiltration destination](attack-statistical-anomaly-mapping.md#web-service-exfiltration) |
+| [Subgraph Anomaly](#70-subgraph-anomaly) | [Unusual process-injection relationship pattern](attack-statistical-anomaly-mapping.md#process-injection) |
+| [Graph-Path-Length Anomaly](#74-graph-path-length-anomaly) | [Unexpected path to privilege](attack-statistical-anomaly-mapping.md#account-manipulation), [unusual lateral-administration path](attack-statistical-anomaly-mapping.md#remote-service-lateral-movement) |
+| [Graph-Evolution Anomaly](#75-graph-evolution-anomaly) | [Privilege graph abruptly restructures](attack-statistical-anomaly-mapping.md#account-manipulation), [password spraying expands the authentication graph](attack-statistical-anomaly-mapping.md#password-spraying), [internal scanning rapidly grows the communication graph](attack-statistical-anomaly-mapping.md#internal-service-scanning) |
+| [Fan-Out Anomaly](#78-fan-out-anomaly) | [External service scanning](attack-statistical-anomaly-mapping.md#external-service-scanning), [password spraying](attack-statistical-anomaly-mapping.md#password-spraying), [account enumeration](attack-statistical-anomaly-mapping.md#account-enumeration), [lateral movement across many systems](attack-statistical-anomaly-mapping.md#remote-service-lateral-movement) |
+| [Rare-Category Anomaly](#84-rare-category-anomaly) | [Rare DNS query type during enumeration](attack-statistical-anomaly-mapping.md#dns-enumeration), [rare command-interpreter argument pattern](attack-statistical-anomaly-mapping.md#command-interpreter-execution), [unusual service-ticket encryption category](attack-statistical-anomaly-mapping.md#kerberoasting) |
+| [Novel-Category Anomaly](#85-novel-category-anomaly) | [First-seen PowerShell script feature](attack-statistical-anomaly-mapping.md#powershell-abuse), [new system service](attack-statistical-anomaly-mapping.md#service-persistence), [new forwarding destination](attack-statistical-anomaly-mapping.md#mail-forwarding-rule) |
+| [Category-Combination Anomaly](#86-category-combination-anomaly) | [Unexpected package-publisher combination](attack-statistical-anomaly-mapping.md#supply-chain-installation), [trusted binary in an unusual execution context](attack-statistical-anomaly-mapping.md#trusted-binary-proxy-execution), [unusual process-path archive creation](attack-statistical-anomaly-mapping.md#data-staging) |
+| [Categorical-Distribution Anomaly](#87-categorical-distribution-anomaly) | [Public web enumeration changes response-code composition](attack-statistical-anomaly-mapping.md#public-web-enumeration), [cloud enumeration changes API action mix](attack-statistical-anomaly-mapping.md#cloud-enumeration), [ransomware changes file-extension distribution](attack-statistical-anomaly-mapping.md#ransomware-encryption) |
+| [Cross-Source Inconsistency Anomaly](#91-cross-source-inconsistency-anomaly) | [Message or file activity followed by unexpected process execution](attack-statistical-anomaly-mapping.md#phishing-execution-sequence) |
+| [Missing-Correspondence Anomaly](#92-missing-correspondence-anomaly) | [Expected telemetry disappears after indicator removal](attack-statistical-anomaly-mapping.md#indicator-removal), [sensor heartbeat disappears after tool disablement](attack-statistical-anomaly-mapping.md#tool-disablement), [expected backup does not occur](attack-statistical-anomaly-mapping.md#recovery-impairment) |
+| [Persistent Anomaly](#111-persistent-anomaly) | [Repeated low-and-slow exfiltration](attack-statistical-anomaly-mapping.md#low-and-slow-exfiltration), [persistent web-service command-and-control traffic](attack-statistical-anomaly-mapping.md#web-service-c2) |
+| [Emerging Anomaly](#113-emerging-anomaly) | [Resource hijacking produces an emerging consumption trend](attack-statistical-anomaly-mapping.md#resource-hijacking) |
+| [Cascading Anomaly](#114-cascading-anomaly) | [Ransomware encryption spreads across directories](attack-statistical-anomaly-mapping.md#ransomware-encryption) |
 
 ## Interpretation Principles
 
