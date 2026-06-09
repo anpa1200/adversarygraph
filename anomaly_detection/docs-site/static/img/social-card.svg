@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#071013"/>
+  <g opacity=".13" stroke="#9ef5e5">
+    <path d="M0 90h1200M0 180h1200M0 270h1200M0 360h1200M0 450h1200M0 540h1200"/>
+    <path d="M100 0v630M200 0v630M300 0v630M400 0v630M500 0v630M600 0v630M700 0v630M800 0v630M900 0v630M1000 0v630M1100 0v630"/>
+  </g>
+  <text x="90" y="220" fill="#22d3b6" font-size="28" font-family="sans-serif" font-weight="700" letter-spacing="5">DETECTION ENGINEERING REFERENCE</text>
+  <text x="90" y="320" fill="#f4fffd" font-size="74" font-family="sans-serif" font-weight="800">Anomaly Detection Atlas</text>
+  <text x="90" y="385" fill="#a9c0c1" font-size="30" font-family="sans-serif">Statistical anomalies and observable security telemetry.</text>
+  <path d="M90 505h70l30-80 42 125 45-210 45 165h210" fill="none" stroke="#22d3b6" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="322" cy="505" r="13" fill="#ffb347"/>
+</svg>

@@ -20,6 +20,7 @@ Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 
   - [Compare](#compare)
   - [Export](#export)
   - [MITRE Sync](#mitre-sync)
+  - [Reference Book and Exact TTP Crosslinks](#reference-book-and-exact-ttp-crosslinks)
 - [Two-Database Architecture](#two-database-architecture)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
@@ -42,6 +43,7 @@ Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 
 | **Compare — Reports** | Browse your stored AI analyses (DB 2); re-run attribution against any saved report without re-calling the LLM |
 | **Export** | ATT&CK Navigator JSON layers, PDF threat intelligence reports, plain JSON |
 | **MITRE Sync** | Auto-detects new ATT&CK releases daily (Celery beat), manual sync via API; sidebar shows staleness indicator |
+| **Anomaly Detection Reference Book** | Docker-served, autonomously synchronized reference catalogs with exact paragraph-level links from every mapped matrix TTP |
 
 ---
 
@@ -147,6 +149,11 @@ docker compose up
 3. Parses the STIX 2.1 JSON directly (no third-party ATT&CK library — Python 3.12 compatible)
 4. Upserts tactics, techniques, groups, campaigns, and all relationships into PostgreSQL
 
+The `atlas-builder` container builds the embedded reference-book snapshot immediately,
+then synchronizes it with the standalone Anomaly Detection Atlas repository every hour.
+Set `ATLAS_SYNC_INTERVAL=0` to disable remote synchronization. Run `make sync-atlas`
+to import unpushed changes from a local sibling `anomaly-detection-atlas` checkout.
+
 Watch progress:
 
 ```bash
@@ -171,6 +178,7 @@ Finished ingesting enterprise-attack v19.1
 | Service | URL |
 |---|---|
 | **Frontend** | http://localhost:3000 |
+| **Reference book** | http://localhost:3001/anomaly-detection-atlas/ |
 | **API docs** | http://localhost:8000/docs |
 | **Health** | http://localhost:8000/api/health |
 
@@ -189,7 +197,7 @@ The central workspace. The full ATT&CK matrix renders as a colour-coded heatmap.
 | Zoom / pan | Scroll to zoom, drag to pan. Double-click resets view. |
 | Select a technique | Click any cell — turns red, added to your TTP layer |
 | Expand sub-techniques | Click the ▶ arrow on any parent cell |
-| Open detail panel | Click a cell to open the right-side panel (full description, detection notes, data sources, AI assistant) |
+| Open detail panel | Click a cell to open the right-side panel (full description, detection notes, data sources, exact reference paragraphs, AI assistant) |
 | Search | Type in the search box to filter by name or ATT&CK ID |
 | Filter by platform | Use the platform dropdown (Windows, Linux, macOS, Cloud, etc.) |
 | Filter by tactic | Use the tactic dropdown to focus on a specific kill-chain phase |
@@ -221,6 +229,31 @@ Click any technique to open the detail panel with an embedded chat. The full ATT
 - *"What are the most common detections for this technique?"*
 - *"Write a SIGMA rule skeleton for T1059.001"*
 - *"What APT groups use this in combination with lateral movement?"*
+
+### Reference Book and Exact TTP Crosslinks
+
+ThreatMapper integrates the complete Anomaly Detection Atlas as an autonomous Docker service.
+Click **Reference Book** in the sidebar to open the full documentation site.
+
+Each matrix technique panel loads `ttp-reference-index.json` and shows links only to exact matching
+paragraphs or table rows. A technique can link to multiple relevant activity descriptions, basic
+detection rules, and statistical-anomaly mappings. The links use stable generated anchors such as:
+
+```text
+http://localhost:3001/anomaly-detection-atlas/attack-basic-detection-rule-catalog/#ttp-t1059-001
+http://localhost:3001/anomaly-detection-atlas/attack-statistical-anomaly-mapping/#ttp-t1030
+```
+
+The embedded snapshot makes the book usable without a successful remote synchronization. The
+`atlas-builder` service checks the standalone atlas repository every hour, regenerates exact TTP
+anchors and the crosslink index, then atomically publishes the updated Docusaurus build.
+
+Manual local synchronization:
+
+```bash
+make sync-atlas
+docker compose up -d --build atlas-builder atlas-docs frontend
+```
 
 ---
 

@@ -5,7 +5,8 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { attackApi, aptApi } from '@/api/client';
+import { attackApi } from '@/api/client';
+import { loadTechniqueReferenceIndex, techniqueReferenceUrl } from '@/config/references';
 import { useAppStore } from '@/store';
 import { LLMChat } from './LLMChat';
 
@@ -23,13 +24,12 @@ export function TechniquePanel({ attackId, onClose }: Props) {
     queryFn: () => attackApi.technique(attackId, domain, version ?? undefined),
     staleTime: 30 * 60 * 1000,
   });
-
-  // Find which groups use this technique
-  const { data: groups = [] } = useQuery({
-    queryKey: ['apt-groups', domain, version],
-    queryFn: () => aptApi.groups({ domain, version: version ?? undefined }),
-    staleTime: 10 * 60 * 1000,
+  const { data: referenceIndex = {} } = useQuery({
+    queryKey: ['ttp-reference-index'],
+    queryFn: loadTechniqueReferenceIndex,
+    staleTime: 5 * 60 * 1000,
   });
+  const techniqueReferences = referenceIndex[attackId] || [];
 
   return (
     <div className="flex flex-col h-full bg-gray-900 border-l border-gray-700 w-[420px] shrink-0">
@@ -84,7 +84,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
             {/* Description */}
             {tech.description && (
               <Section title="Description">
-                <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-12">
+                <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
                   {tech.description}
                 </p>
                 <a
@@ -115,6 +115,29 @@ export function TechniquePanel({ attackId, onClose }: Props) {
                     <span key={ds} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
                       {ds}
                     </span>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {techniqueReferences.length > 0 && (
+              <Section title="Exact Reference Paragraphs">
+                <div className="space-y-2.5">
+                  {techniqueReferences.map(reference => (
+                    <a
+                      key={`${reference.path}-${reference.anchor}`}
+                      href={techniqueReferenceUrl(reference)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block group"
+                    >
+                      <span className="block text-[10px] text-gray-500 group-hover:text-gray-400">
+                        {reference.label}
+                      </span>
+                      <span className="block text-xs text-mitre-accent group-hover:underline">
+                        {reference.context} ↗
+                      </span>
+                    </a>
                   ))}
                 </div>
               </Section>

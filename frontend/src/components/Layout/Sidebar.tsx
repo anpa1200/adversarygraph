@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { syncApi } from '@/api/client';
+import { REFERENCE_BASE_URL } from '@/config/references';
 import clsx from 'clsx';
 
 const nav = [
@@ -51,6 +52,15 @@ export function Sidebar() {
             {label}
           </NavLink>
         ))}
+        <a
+          href={`${REFERENCE_BASE_URL}/`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors"
+        >
+          <span className="text-base">▤</span>
+          Reference Book
+        </a>
       </nav>
 
       {/* Footer — ATT&CK sync status */}

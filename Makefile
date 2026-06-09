@@ -1,4 +1,4 @@
-.PHONY: up down build logs shell-api shell-db ingest reset
+.PHONY: up down build logs shell-api shell-db ingest reset sync-atlas
 
 up:
 	docker compose up
@@ -24,3 +24,6 @@ ingest:
 reset:
 	docker compose down -v
 	docker compose up --build
+
+sync-atlas:
+	./scripts/sync-anomaly-atlas.sh

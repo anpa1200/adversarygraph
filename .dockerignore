@@ -1,0 +1,10 @@
+.git
+.env
+**/.docusaurus
+**/build
+**/dist
+**/node_modules
+**/.vite
+**/__pycache__
+**/.pytest_cache
+pg_data

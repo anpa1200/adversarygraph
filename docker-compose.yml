@@ -81,11 +81,35 @@ services:
       - ./frontend/index.html:/app/index.html
     environment:
       VITE_API_URL: http://api:8000
+      VITE_REFERENCE_URL: ${REFERENCE_URL:-http://localhost:3001/anomaly-detection-atlas}
     ports:
       - "3000:3000"
     depends_on:
       - api
 
+  atlas-builder:
+    build:
+      context: .
+      dockerfile: anomaly_detection/docs-site/Dockerfile
+    restart: unless-stopped
+    environment:
+      ATLAS_REPOSITORY: ${ATLAS_REPOSITORY:-https://github.com/anpa1200/anomaly-detection-atlas.git}
+      ATLAS_SYNC_INTERVAL: ${ATLAS_SYNC_INTERVAL:-3600}
+    volumes:
+      - atlas_site:/output
+
+  atlas-docs:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - atlas_site:/usr/share/nginx/html:ro
+      - ./anomaly_detection/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "3001:80"
+    depends_on:
+      - atlas-builder
+
 volumes:
   pg_data:
   attck_data:
+  atlas_site:
