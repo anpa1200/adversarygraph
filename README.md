@@ -738,6 +738,25 @@ class MyProviderAdapter(LLMAdapter):
 
 ## Changelog
 
+### v0.4.0 (2026-06-11)
+
+**Group vs Group comparison:**
+- New **Group vs Group** page (sidebar → ◉ Group vs Group): compare up to 6 APT groups simultaneously
+- **Overlap Matrix** tab — N×N Jaccard similarity table; pairwise shared-technique cards with amber badges
+- **ATT&CK View** tab — compact combined matrix filtered to techniques used by ≥ 1 selected group; each cell shows coloured dots for every group that uses the technique
+- **Technique Table** tab — sortable by ID or per-group column, filterable (All / Shared 2+ / Exclusive), ✓ checkmarks per group, count column
+
+**Clickable TTP detail panels:**
+- Every technique ID throughout the UI is now a clickable link — click to open a slide-in detail panel
+- Panel shows: technique name and ID, tactics, platforms, full description, detection guidance, Anomaly Detection Atlas cross-references, Ecosystem Resources section
+- **Ecosystem Resources** links: Anomaly Detection Atlas (per-technique deep links), ITDR Handbook (auto-linked for identity techniques: T1078, T1098, T1110, T1111, T1136, T1531, T1539, T1550, T1552, T1555, T1556, T1558, T1606, T1621), CTI Analyst Field Manual, ThreatMapper Web Tool
+- Wired in: Navigator matrix cells, APT Library technique list, Compare (shared/gap/overview badges), Group vs Group (overlap badges and technique table)
+- Close with **Esc** or click outside
+
+**Ecosystem integration:**
+- Sidebar links added: ThreatMapper Web Tool (no-Docker browser version), CTI Knowledge Base, 1200km.com
+- Anomaly Detection Atlas links now point to `https://1200km.com/anomaly-detection-atlas` (previously `localhost`) — works without running the full Docker stack
+
 ### v0.3.0 (2026-06-06)
 
 **Two-database architecture:**
