@@ -5,6 +5,7 @@ import { Navigator } from '@/pages/Navigator';
 import { APTLibrary } from '@/pages/APTLibrary';
 import { Analyze } from '@/pages/Analyze';
 import { Compare } from '@/pages/Compare';
+import { GroupCompare } from '@/pages/GroupCompare';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/apt" element={<APTLibrary />} />
               <Route path="/analyze" element={<Analyze />} />
               <Route path="/compare" element={<Compare />} />
+              <Route path="/group-compare" element={<GroupCompare />} />
             </Routes>
           </main>
         </div>

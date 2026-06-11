@@ -5,10 +5,11 @@ import { REFERENCE_BASE_URL } from '@/config/references';
 import clsx from 'clsx';
 
 const nav = [
-  { to: '/navigator', label: 'Navigator', icon: '⬡' },
-  { to: '/apt',       label: 'APT Library', icon: '◈' },
-  { to: '/analyze',   label: 'AI Analysis', icon: '⬢' },
-  { to: '/compare',   label: 'Compare', icon: '⬡' },
+  { to: '/navigator',     label: 'Navigator',     icon: '⬡' },
+  { to: '/apt',           label: 'APT Library',   icon: '◈' },
+  { to: '/analyze',       label: 'AI Analysis',   icon: '⬢' },
+  { to: '/compare',       label: 'Compare',       icon: '⬡' },
+  { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
 ];
 
 export function Sidebar() {
