@@ -12,7 +12,6 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
-import clsx from 'clsx';
 import type { Tactic, TechniqueListItem } from '@/types/attack';
 import type { MatrixData } from '@/hooks/useAttackMatrix';
 

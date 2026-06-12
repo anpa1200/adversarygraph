@@ -167,7 +167,6 @@ export function Analyze() {
           {result && (
             <ResultsView
               result={result}
-              domain={domain}
               addTechniques={addTechniques}
               navigate={navigate}
             />
@@ -177,7 +176,6 @@ export function Analyze() {
           {!result && !streaming && tokens && (
             <StreamResultParser
               tokens={tokens}
-              domain={domain}
               addTechniques={addTechniques}
               navigate={navigate}
             />
@@ -191,10 +189,9 @@ export function Analyze() {
 // ── Result view ───────────────────────────────────────────────────────────────
 
 function ResultsView({
-  result, domain, addTechniques, navigate,
+  result, addTechniques, navigate,
 }: {
   result: AnalysisResult;
-  domain: string;
   addTechniques: (ids: string[]) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
@@ -316,10 +313,9 @@ function ResultsView({
 
 // Parses stream tokens into a result when no explicit result event arrived
 function StreamResultParser({
-  tokens, domain, addTechniques, navigate,
+  tokens, addTechniques, navigate,
 }: {
   tokens: string;
-  domain: string;
   addTechniques: (ids: string[]) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
@@ -341,7 +337,7 @@ function StreamResultParser({
       apt_matches: [],
       apt_hints: data.apt_hints || [],
     };
-    return <ResultsView result={result} domain={domain} addTechniques={addTechniques} navigate={navigate} />;
+    return <ResultsView result={result} addTechniques={addTechniques} navigate={navigate} />;
   } catch {
     // Couldn't parse yet — show raw
     return (

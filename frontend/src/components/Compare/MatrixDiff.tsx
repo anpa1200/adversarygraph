@@ -9,7 +9,6 @@
  */
 
 import { useMemo } from 'react';
-import * as d3 from 'd3';
 import type { Tactic, TechniqueListItem } from '@/types/attack';
 
 interface Props {
@@ -20,13 +19,6 @@ interface Props {
   /** If true, hide cells that appear in neither set */
   diffOnly?: boolean;
 }
-
-// D3 colour scale used for blending — kept here so it's reusable in Phase 5
-const _blendScale = d3
-  .scaleLinear<string>()
-  .domain([0, 0.5, 1])
-  .range(['#1f2937', '#3b82f6', '#e94560'])
-  .interpolate(d3.interpolateRgb.gamma(2.2));
 
 function cellColor(id: string, userIds: Set<string>, aptIds: Set<string>): string {
   const u = userIds.has(id);

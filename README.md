@@ -2,7 +2,7 @@
 
 **AI-powered MITRE ATT&CK threat intelligence platform.**
 
-**[Documentation & Usage Guide](https://anpa1200.github.io/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
+**Current release: v0.5.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
 
 Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 56+ named campaigns, analyse incident reports with Claude / GPT-4o / Gemini, and export Navigator-compatible layers — all in one self-hosted tool.
 
@@ -737,6 +737,16 @@ class MyProviderAdapter(LLMAdapter):
 ---
 
 ## Changelog
+
+### v0.5.0 (2026-06-12)
+
+**Public intelligence and ecosystem release:**
+- ThreatMapper Web promoted as the public intelligence workspace and primary ecosystem entry point
+- Permanent crawlable pages for 160 threat actors and 656 ATT&CK techniques
+- Global actor, alias, technique, report, publisher, and evidence search
+- Intelligence discovery dashboard, shareable deep links, report filtering, and event-level Google Analytics
+- Correlated CTI/IR reports, defensive guidance, threat hunting, evidence assessment, and detection coverage workflows
+- Strong cross-links to ThreatMapper docs, CTI Analyst Field Manual, Israel Threat Actors CTI, Anomaly Detection Atlas, ITDR Handbook, and 1200km Medium research
 
 ### v0.4.0 (2026-06-11)
 

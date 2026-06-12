@@ -11,6 +11,7 @@ import { LoadLayerModal } from '@/components/Navigator/LoadLayerModal';
 import { TechniquePanel } from '@/components/Navigator/TechniquePanel';
 import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
 import { Header } from '@/components/Layout/Header';
+import type { TechniqueListItem } from '@/types/attack';
 
 export function Navigator() {
   const {
@@ -62,12 +63,9 @@ export function Navigator() {
   // ── Filtered matrix ────────────────────────────────────────────────────────
   const filteredByTactic = useMemo(() => {
     const term = search.toLowerCase();
-    const map = new Map<string, typeof tactics[number][]>(
-      Array.from(techniquesByTactic.entries()).map(([k, v]) => [k, v])
-    );
     if (!term && !platform && !showOnlySelected && !showOnlyOverlay) return techniquesByTactic;
 
-    const result = new Map<string, typeof tactics[number][]>();
+    const result = new Map<string, TechniqueListItem[]>();
     for (const [tactic, techs] of techniquesByTactic) {
       let filtered = techs;
       if (term)             filtered = filtered.filter(t => t.name.toLowerCase().includes(term) || t.attack_id.toLowerCase().includes(term));
@@ -78,19 +76,6 @@ export function Navigator() {
     }
     return result;
   }, [techniquesByTactic, search, platform, showOnlySelected, showOnlyOverlay, selectedTechniques, overlayTechniques]);
-
-  // ── Technique click: open panel on single click, toggle on ctrl+click ──────
-  const handleCellClick = useCallback(
-    (id: string, ctrl: boolean) => {
-      if (ctrl) {
-        toggleTechnique(id);
-      } else {
-        toggleTechnique(id);
-        setSelectedAttackId(prev => (prev === id ? null : id));
-      }
-    },
-    [toggleTechnique]
-  );
 
   // Simplified: toggle + open panel together (detail panel on click)
   const handleToggle = useCallback(
