@@ -113,7 +113,7 @@ export function Sidebar() {
             <span className="text-[10px] text-gray-500">ATT&CK up to date</span>
           </div>
         )}
-        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v0.8.0</div>
+        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v0.8.1</div>
       </div>
     </aside>
   );

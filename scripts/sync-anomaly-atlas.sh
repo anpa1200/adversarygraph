@@ -40,7 +40,13 @@ cp "$SOURCE_DIR/package.json" "$SOURCE_DIR/package-lock.json" \
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 node "$SCRIPT_DIR/generate-ttp-reference-index.mjs" "$TARGET_DIR"
-OVERLAY_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../anomaly_detection/docs-overlay" && pwd)"
+if [ -n "${ATLAS_OVERLAY_DIR:-}" ]; then
+  OVERLAY_DIR="$ATLAS_OVERLAY_DIR"
+elif [ -d /seed-overlay ]; then
+  OVERLAY_DIR="/seed-overlay"
+else
+  OVERLAY_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../anomaly_detection/docs-overlay" && pwd)"
+fi
 node "$SCRIPT_DIR/apply-threatmapper-docs-overlay.mjs" "$TARGET_DIR" "$OVERLAY_DIR"
 
 echo "Synchronized Anomaly Detection Atlas from $SOURCE_DIR to $TARGET_DIR"
