@@ -3,16 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import { syncApi } from '@/api/client';
 import { REFERENCE_BASE_URL } from '@/config/references';
 import clsx from 'clsx';
+import { GlobalSearch } from '@/components/GlobalSearch';
+import { useAppStore } from '@/store';
+import { useState } from 'react';
 
 const nav = [
+  { to: '/discover',      label: 'Discover',      icon: '⌕' },
   { to: '/navigator',     label: 'Navigator',     icon: '⬡' },
   { to: '/apt',           label: 'APT Library',   icon: '◈' },
   { to: '/analyze',       label: 'AI Analysis',   icon: '⬢' },
   { to: '/compare',       label: 'Compare',       icon: '⬡' },
   { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
+  { to: '/report',        label: 'Investigation Report', icon: '▤' },
 ];
 
 export function Sidebar() {
+  const { workspaces, saveWorkspace, loadWorkspace, deleteWorkspace } = useAppStore();
+  const [showWorkspaces, setShowWorkspaces] = useState(false);
   const { data: syncStatus } = useQuery({
     queryKey: ['sync-status'],
     queryFn: syncApi.status,
@@ -36,6 +43,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
+        <div className="pb-3"><GlobalSearch /></div>
         {nav.map(({ to, label, icon }) => (
           <NavLink
             key={to}
@@ -66,6 +74,13 @@ export function Sidebar() {
 
       {/* Ecosystem links */}
       <div className="px-3 pb-3 space-y-1">
+        <button onClick={() => setShowWorkspaces(value => !value)} className="w-full flex items-center px-3 py-1.5 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 hover:bg-gray-700/40">
+          Workspaces ({workspaces.length})
+        </button>
+        {showWorkspaces && <div className="rounded border border-gray-700 bg-gray-900 p-2 space-y-1">
+          <button onClick={() => saveWorkspace(prompt('Workspace name') ?? '')} className="w-full text-left text-[10px] text-blue-400 px-2 py-1">+ Save current investigation</button>
+          {workspaces.map(item => <div key={item.id} className="flex items-center gap-1"><button onClick={() => loadWorkspace(item.id)} className="flex-1 truncate text-left text-[10px] text-gray-400 px-2 py-1">{item.name}</button><button onClick={() => deleteWorkspace(item.id)} className="text-[10px] text-gray-600">×</button></div>)}
+        </div>}
         {[
           { href: 'https://1200km.com/threat-matrix/', label: '◈ Web Tool (no Docker)' },
           { href: 'https://1200km.com/cti.html',      label: '↗ CTI Knowledge Base' },
@@ -96,7 +111,7 @@ export function Sidebar() {
             <span className="text-[10px] text-gray-500">ATT&CK up to date</span>
           </div>
         )}
-        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v0.2</div>
+        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v0.6.0</div>
       </div>
     </aside>
   );

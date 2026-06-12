@@ -50,6 +50,7 @@ function cellColors(
 interface Props extends Pick<MatrixData, 'tactics' | 'techniquesByTactic' | 'subtechsByParent' | 'parentsWithSubs'> {
   selectedTechniques: Set<string>;
   overlayTechniques:  Set<string>;
+  coverageTechniques: Set<string>;
   expandedTechniques: Set<string>;
   onToggleTechnique:  (id: string) => void;
   onToggleExpanded:   (id: string) => void;
@@ -64,6 +65,7 @@ export function AttackMatrix({
   parentsWithSubs,
   selectedTechniques,
   overlayTechniques,
+  coverageTechniques,
   expandedTechniques,
   onToggleTechnique,
   onToggleExpanded,
@@ -131,6 +133,7 @@ export function AttackMatrix({
             parentsWithSubs={parentsWithSubs}
             selectedTechniques={selectedTechniques}
             overlayTechniques={overlayTechniques}
+            coverageTechniques={coverageTechniques}
             expandedTechniques={expandedTechniques}
             onToggle={handleToggle}
             onToggleExpanded={handleExpanded}
@@ -150,6 +153,7 @@ interface ColumnProps {
   parentsWithSubs: Set<string>;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  coverageTechniques: Set<string>;
   expandedTechniques: Set<string>;
   onToggle: (id: string) => void;
   onToggleExpanded: (id: string) => void;
@@ -162,6 +166,7 @@ function TacticColumn({
   parentsWithSubs,
   selectedTechniques,
   overlayTechniques,
+  coverageTechniques,
   expandedTechniques,
   onToggle,
   onToggleExpanded,
@@ -209,6 +214,7 @@ function TacticColumn({
               expanded={expanded}
               selectedTechniques={selectedTechniques}
               overlayTechniques={overlayTechniques}
+              covered={coverageTechniques.has(tech.attack_id)}
               onToggle={onToggle}
               onToggleExpanded={onToggleExpanded}
             />
@@ -219,6 +225,7 @@ function TacticColumn({
                   tech={sub}
                   selectedTechniques={selectedTechniques}
                   overlayTechniques={overlayTechniques}
+                  covered={coverageTechniques.has(sub.attack_id)}
                   onToggle={onToggle}
                 />
               ))}
@@ -237,13 +244,14 @@ interface ParentCellProps {
   expanded: boolean;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  covered: boolean;
   onToggle: (id: string) => void;
   onToggleExpanded: (id: string) => void;
 }
 
 function ParentCell({
   tech, hasSubs, expanded,
-  selectedTechniques, overlayTechniques,
+  selectedTechniques, overlayTechniques, covered,
   onToggle, onToggleExpanded,
 }: ParentCellProps) {
   const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques);
@@ -309,6 +317,7 @@ function ParentCell({
           {expanded ? '▼' : '▶'}
         </button>
       )}
+      {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
     </div>
   );
 }
@@ -319,10 +328,11 @@ interface SubCellProps {
   tech: TechniqueListItem;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  covered: boolean;
   onToggle: (id: string) => void;
 }
 
-function SubtechCell({ tech, selectedTechniques, overlayTechniques, onToggle }: SubCellProps) {
+function SubtechCell({ tech, selectedTechniques, overlayTechniques, covered, onToggle }: SubCellProps) {
   const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques);
 
   return (
@@ -374,6 +384,7 @@ function SubtechCell({ tech, selectedTechniques, overlayTechniques, onToggle }: 
       >
         {tech.name}
       </div>
+      {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
     </button>
   );
 }

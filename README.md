@@ -2,7 +2,7 @@
 
 **AI-powered MITRE ATT&CK threat intelligence platform.**
 
-**Current release: v0.5.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
+**Current release: v0.6.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
 
 Map adversary behaviours to ATT&CK, compare against 174+ APT group profiles and 56+ named campaigns, analyse incident reports with Claude / GPT-4o / Gemini, and export Navigator-compatible layers — all in one self-hosted tool.
 
@@ -737,6 +737,18 @@ class MyProviderAdapter(LLMAdapter):
 ---
 
 ## Changelog
+
+### v0.6.0 (2026-06-12)
+
+**Web-workspace parity plus AI:**
+- Added intelligence discovery dashboard and global actor/TTP/report search
+- Bundled the same correlated CTI/IR report and 1200km resource indexes used by ThreatMapper Web
+- Added actor report tabs and technique-level reports, practical resources, detection logic, mitigation guidance, threat-hunting hypotheses, and hunt-plan export
+- Added persistent evidence, source, confidence, mapping quality, notes, and coverage maturity assessments
+- Added local investigation workspaces, coverage import/visualization, detection-backlog export, shareable deep links, and investigation-report export
+- Preserved Docker-only AI analysis, LLM technique assistant, private report sessions, campaigns, saved server layers, API workflows, PDF export, and automated ATT&CK synchronization
+
+**Known parity gap:** native MITRE ATLAS matrix ingestion remains separate from the embedded Anomaly Detection Atlas reference-book integration. Enterprise, Mobile, and ICS ATT&CK domains have full Docker support.
 
 ### v0.5.0 (2026-06-12)
 

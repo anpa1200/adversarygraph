@@ -6,6 +6,8 @@ import { APTLibrary } from '@/pages/APTLibrary';
 import { Analyze } from '@/pages/Analyze';
 import { Compare } from '@/pages/Compare';
 import { GroupCompare } from '@/pages/GroupCompare';
+import { Discover } from '@/pages/Discover';
+import { InvestigationReport } from '@/pages/InvestigationReport';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,12 +26,14 @@ export default function App() {
           <Sidebar />
           <main className="flex-1 flex flex-col overflow-hidden">
             <Routes>
-              <Route path="/" element={<Navigate to="/navigator" replace />} />
+              <Route path="/" element={<Navigate to="/discover" replace />} />
+              <Route path="/discover" element={<Discover />} />
               <Route path="/navigator" element={<Navigator />} />
               <Route path="/apt" element={<APTLibrary />} />
               <Route path="/analyze" element={<Analyze />} />
               <Route path="/compare" element={<Compare />} />
               <Route path="/group-compare" element={<GroupCompare />} />
+              <Route path="/report" element={<InvestigationReport />} />
             </Routes>
           </main>
         </div>

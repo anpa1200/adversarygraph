@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import { aptApi } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { TechniqueModal } from '@/components/TechniqueModal';
 import type { CampaignListItem } from '@/types/attack';
+import { useSearchParams } from 'react-router-dom';
+import { getActorReports } from '@/config/intelligence';
+import { ReportReferences } from '@/components/ReportReferences';
 
-type GroupTab = 'techniques' | 'campaigns';
+type GroupTab = 'techniques' | 'campaigns' | 'reports';
 
 export function APTLibrary() {
   const { domain, version, addTechniques, replaceTechniques, setOverlayGroup } = useAppStore();
@@ -15,6 +18,8 @@ export function APTLibrary() {
   const [groupTab, setGroupTab] = useState<GroupTab>('techniques');
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [techModalId, setTechModalId] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  useEffect(() => { const id = params.get('group'); if (id) setSelectedGroupId(id); }, [params]);
 
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['apt-groups', domain, version, search],
@@ -41,6 +46,7 @@ export function APTLibrary() {
     queryFn: () => aptApi.campaign(expandedCampaign!, domain, version ?? undefined),
     enabled: !!expandedCampaign,
   });
+  const { data: reports = [] } = useQuery({ queryKey: ['actor-reports', selectedGroupId], queryFn: () => getActorReports(selectedGroupId!), enabled: !!selectedGroupId });
 
   return (
     <div className="flex flex-col h-full">
@@ -123,6 +129,8 @@ export function APTLibrary() {
                   >
                     Load as my TTPs
                   </button>
+                  <button onClick={() => navigator.clipboard.writeText(`${location.origin}/apt?group=${groupDetail.attack_id}`)}
+                    className="text-xs text-gray-400 border border-gray-700 px-3 py-1.5 rounded">Copy link</button>
                   <button
                     onClick={() => addTechniques(groupDetail.techniques.map((t) => t.attack_id))}
                     className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded transition-colors"
@@ -158,6 +166,7 @@ export function APTLibrary() {
                 {([
                   ['techniques', `Techniques (${groupDetail.technique_count})`],
                   ['campaigns',  'Campaigns (DB 1)'],
+                  ['reports', `CTI / IR Reports (${reports.length})`],
                 ] as [GroupTab, string][]).map(([id, label]) => (
                   <button
                     key={id}
@@ -243,6 +252,7 @@ export function APTLibrary() {
                   )}
                 </div>
               )}
+              {groupTab === 'reports' && <ReportReferences reports={reports} limit={60} />}
             </div>
           )}
         </div>

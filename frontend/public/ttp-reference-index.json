@@ -1,0 +1,1770 @@
+{
+  "T1595": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1595",
+      "context": "Repeated probing of public services, ports, and protocols"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1595-2",
+      "context": "Discovery of newly exposed public assets and services"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1595",
+      "context": "T1595 Active Scanning"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1595",
+      "context": "Repeated probing of public services — T1595 Active Scanning"
+    }
+  ],
+  "T1595.003": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1595-003",
+      "context": "Enumeration of public web paths, APIs, parameters, and files"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1595-003",
+      "context": "T1595.003 Wordlist Scanning"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1595-003",
+      "context": "Enumeration of public web paths and APIs — T1595.003 Wordlist Scanning"
+    }
+  ],
+  "T1590": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1590",
+      "context": "DNS enumeration and attempted zone transfer"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1590",
+      "context": "T1590 Gather Victim Network Information"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1590",
+      "context": "DNS enumeration or zone-transfer attempts — T1590 Gather Victim Network Information"
+    }
+  ],
+  "T1593": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1593",
+      "context": "Scraping public applications, repositories, or exposed documents"
+    }
+  ],
+  "T1583": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1583",
+      "context": "Lookalike domain, certificate, or external infrastructure begins interacting with the environment"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1583",
+      "context": "T1583 Acquire Infrastructure"
+    }
+  ],
+  "T1608": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1608",
+      "context": "Staged malicious files or tools are delivered from external hosting"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1608",
+      "context": "T1608 Stage Capabilities"
+    }
+  ],
+  "T1584": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1584",
+      "context": "Compromised accounts or infrastructure are used to distribute content"
+    }
+  ],
+  "T1566": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1566",
+      "context": "Malicious attachment, link, or message delivered to a user"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1566-2",
+      "context": "User opens a delivered file or follows a malicious link"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1566-3",
+      "context": "Social interaction manipulates a user into taking an unsafe action"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1566",
+      "context": "Malicious attachment, link, or message delivery — T1566 Phishing"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1566-2",
+      "context": "User opens delivered content followed by execution — T1566 Phishing"
+    }
+  ],
+  "T1190": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1190",
+      "context": "Public-facing application receives exploit-like requests"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1190",
+      "context": "T1190 Exploit Public-Facing Application"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1190",
+      "context": "Public-facing application exploitation — T1190 Exploit Public-Facing Application"
+    }
+  ],
+  "T1078": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1078",
+      "context": "Valid credentials are used from an unusual source or context"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1078",
+      "context": "T1078 Valid Accounts"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1078",
+      "context": "Valid credentials used from an unexpected context — T1078 Valid Accounts"
+    }
+  ],
+  "T1133": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1133",
+      "context": "Remote service accepts an external login or session"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1133",
+      "context": "T1133 External Remote Services"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1133",
+      "context": "External remote-service session — T1133 External Remote Services"
+    }
+  ],
+  "T1659": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1659",
+      "context": "Malicious content is injected into an online traffic channel"
+    }
+  ],
+  "T1195": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1195",
+      "context": "Compromised software or update package is installed"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1195",
+      "context": "T1195 Supply Chain Compromise"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1195",
+      "context": "Compromised software or update installation — T1195 Supply Chain Compromise"
+    }
+  ],
+  "T1059": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1059",
+      "context": "Command shell or interpreter executes commands"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059",
+      "context": "T1059 Command and Scripting Interpreter"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1059",
+      "context": "Command or scripting interpreter execution — T1059 Command and Scripting Interpreter"
+    }
+  ],
+  "T1059.001": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1059-001",
+      "context": "PowerShell executes scripts, encoded content, or remote commands"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-001",
+      "context": "T1059.001 PowerShell"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1059-001",
+      "context": "PowerShell script, encoded content, or remote command execution — T1059.001 PowerShell"
+    }
+  ],
+  "T1204": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1204",
+      "context": "A user launches or approves execution of malicious content"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1204",
+      "context": "T1204 User Execution"
+    }
+  ],
+  "T1203": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1203",
+      "context": "Client application behavior changes immediately after exploitation"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1203",
+      "context": "T1203 Exploitation for Client Execution"
+    }
+  ],
+  "T1218": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1218",
+      "context": "Trusted or signed system binary launches unexpected content"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1218-2",
+      "context": "Existing trusted software or native functionality is abused"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1218",
+      "context": "T1218 System Binary Proxy Execution"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1218-2",
+      "context": "T1218 System Binary Proxy Execution"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1218",
+      "context": "Trusted system binary launches unexpected content — T1218 System Binary Proxy Execution"
+    }
+  ],
+  "T1053": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1053",
+      "context": "Scheduled job, service, or automation executes a payload"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1053-2",
+      "context": "Scheduled task or job is created or modified for recurring execution"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1053",
+      "context": "T1053 Scheduled Task/Job"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1053-2",
+      "context": "T1053 Scheduled Task/Job"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1053",
+      "context": "Scheduled job, service, or automation executes payload — T1053 Scheduled Task/Job"
+    }
+  ],
+  "T1609": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1609",
+      "context": "Container administration interface executes a command in a workload"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1609",
+      "context": "T1609 Container Administration Command"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1609",
+      "context": "Container administration interface executes command — T1609 Container Administration Command"
+    }
+  ],
+  "T1648": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1648",
+      "context": "Serverless function or cloud workload is invoked unexpectedly"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1648",
+      "context": "Unexpected serverless or cloud-workload invocation — T1648 Serverless Execution"
+    }
+  ],
+  "T1136": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1136",
+      "context": "New local, domain, cloud, or service account is created"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1136",
+      "context": "T1136 Create Account"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1136",
+      "context": "New local, domain, cloud, or service account — T1136 Create Account"
+    }
+  ],
+  "T1098": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1098",
+      "context": "Credentials, group memberships, roles, or account properties are modified"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1098-2",
+      "context": "New cloud role, key, token, application, or service identity is added"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1098-3",
+      "context": "Permissions, roles, or group memberships grant new administrative access"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1098",
+      "context": "T1098 Account Manipulation"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1098",
+      "context": "Credential, group, role, or account-property modification — T1098 Account Manipulation"
+    }
+  ],
+  "T1547": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1547",
+      "context": "Startup, logon, or shell configuration is changed to launch code"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1547",
+      "context": "Startup or logon configuration changed to launch code — T1547 Boot or Logon Autostart Execution"
+    }
+  ],
+  "T1543": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1543",
+      "context": "New or modified system service launches an executable"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1543",
+      "context": "T1543 Create or Modify System Process"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1543",
+      "context": "New or modified system service — T1543 Create or Modify System Process"
+    }
+  ],
+  "T1114.003": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1114-003",
+      "context": "Email forwarding or mailbox rule is created"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1114-003",
+      "context": "T1114.003 Email Forwarding Rule"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1114-003",
+      "context": "Email forwarding rule created — T1114.003 Email Forwarding Rule"
+    }
+  ],
+  "T1610": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1610",
+      "context": "New privileged or long-running container workload is deployed"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1610-2",
+      "context": "Privileged container or workload is created"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1610",
+      "context": "T1610 Deploy Container"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1610",
+      "context": "Privileged or long-running container workload deployed — T1610 Deploy Container"
+    }
+  ],
+  "T1548": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1548",
+      "context": "Process or account invokes an elevation-control mechanism"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1548",
+      "context": "T1548 Abuse Elevation Control Mechanism"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1548",
+      "context": "Process or account invokes elevation mechanism — T1548 Abuse Elevation Control Mechanism"
+    }
+  ],
+  "T1068": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1068",
+      "context": "Exploit causes a process to gain elevated privileges"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1068",
+      "context": "T1068 Exploitation for Privilege Escalation"
+    }
+  ],
+  "T1134": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1134",
+      "context": "Access token, process token, or security context is manipulated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1134",
+      "context": "T1134 Access Token Manipulation"
+    }
+  ],
+  "T1036": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1036",
+      "context": "File, process, service, account, or resource is renamed or made to resemble a trusted object"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1036",
+      "context": "T1036 Masquerading"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1036",
+      "context": "Object renamed to resemble trusted object — T1036 Masquerading"
+    }
+  ],
+  "T1027": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1027",
+      "context": "Payload, script, command, or file content is encoded, packed, or obfuscated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1027",
+      "context": "T1027 Obfuscated Files or Information"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1027",
+      "context": "Encoded, packed, or obfuscated content — T1027 Obfuscated Files or Information"
+    }
+  ],
+  "T1070": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1070",
+      "context": "File timestamps, metadata, or indicators are modified"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1070",
+      "context": "File timestamps, metadata, logs, or indicators modified — T1070 Indicator Removal"
+    }
+  ],
+  "T1055": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1055",
+      "context": "Process injection or in-memory execution changes another process"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1055",
+      "context": "T1055 Process Injection"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1055",
+      "context": "Process injection or in-memory execution — T1055 Process Injection"
+    }
+  ],
+  "T1562.010": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562-010",
+      "context": "Security capability is downgraded to an older or weaker version"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1562-010",
+      "context": "T1562.010 Downgrade Attack"
+    }
+  ],
+  "T1562.001": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562-001",
+      "context": "Security agent, monitoring process, or protection tool is stopped, disabled, or modified"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562-001-2",
+      "context": "Audit, logging, or telemetry collection is disabled or reduced"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1562-001",
+      "context": "T1562.001 Disable or Modify Tools"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1562-001",
+      "context": "Security tool, sensor, or logging disabled — T1562.001 Disable or Modify Tools"
+    }
+  ],
+  "T1070.001": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1070-001",
+      "context": "Security or system logs are cleared or deleted"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1070-001",
+      "context": "T1070.001 Clear Windows Event Logs"
+    }
+  ],
+  "T1562.004": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562-004",
+      "context": "Host, cloud, or network firewall policy is disabled or weakened"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1562-004",
+      "context": "T1562.004 Disable or Modify System Firewall"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1562-004",
+      "context": "Firewall policy disabled or weakened — T1562.004 Disable or Modify System Firewall"
+    }
+  ],
+  "T1562": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562",
+      "context": "Security policy, access control, or monitoring configuration is modified"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1562-2",
+      "context": "Vulnerability is exploited specifically to disable or bypass defenses"
+    }
+  ],
+  "T1110": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1110",
+      "context": "Repeated password guessing, spraying, or credential stuffing"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1110",
+      "context": "Repeated password guessing against an account — T1110 Brute Force"
+    }
+  ],
+  "T1621": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1621",
+      "context": "MFA prompts are repeatedly generated or denied"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1621",
+      "context": "T1621 Multi-Factor Authentication Request Generation"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1621",
+      "context": "Repeated MFA prompts and denials — T1621 Multi-Factor Authentication Request Generation"
+    }
+  ],
+  "T1555": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1555",
+      "context": "Password stores, browser credentials, keychains, or vaults are accessed"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1555",
+      "context": "T1555 Credentials from Password Stores"
+    }
+  ],
+  "T1003": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1003",
+      "context": "Operating-system credential material or protected memory is accessed"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1003",
+      "context": "T1003 OS Credential Dumping"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1003",
+      "context": "Protected credential memory or stores accessed — T1003 OS Credential Dumping"
+    }
+  ],
+  "T1558": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1558",
+      "context": "Kerberos tickets are requested or manipulated abnormally"
+    }
+  ],
+  "T1056": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1056",
+      "context": "Input, clipboard, or screen content is captured"
+    }
+  ],
+  "T1552": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1552",
+      "context": "Cloud secrets, keys, certificates, or tokens are retrieved"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1552",
+      "context": "T1552 Unsecured Credentials"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1552",
+      "context": "Cloud secrets, keys, or tokens retrieved — T1552 Unsecured Credentials"
+    }
+  ],
+  "T1087": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1087",
+      "context": "Accounts, groups, roles, or permissions are enumerated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1087",
+      "context": "T1087 Account Discovery"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1087",
+      "context": "Accounts, groups, roles, or permissions enumerated — T1087 Account Discovery"
+    }
+  ],
+  "T1083": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1083",
+      "context": "Files, directories, shares, or storage objects are enumerated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1083",
+      "context": "T1083 File and Directory Discovery"
+    }
+  ],
+  "T1046": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1046",
+      "context": "Network services, ports, systems, or subnets are scanned internally"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1046",
+      "context": "T1046 Network Service Discovery"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1046",
+      "context": "Internal network services or systems scanned — T1046 Network Service Discovery"
+    }
+  ],
+  "T1057": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1057",
+      "context": "Running processes, services, software, or security tools are enumerated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1057",
+      "context": "T1057 Process Discovery"
+    }
+  ],
+  "T1082": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1082",
+      "context": "System, host, domain, or operating-system information is collected"
+    }
+  ],
+  "T1580": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1580",
+      "context": "Cloud resources, services, regions, or configurations are enumerated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1580",
+      "context": "T1580 Cloud Infrastructure Discovery"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1580",
+      "context": "Cloud resources or configurations enumerated — T1580 Cloud Infrastructure Discovery"
+    }
+  ],
+  "T1613": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1613",
+      "context": "Container, cluster, namespace, secret, or workload information is enumerated"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1613",
+      "context": "T1613 Container and Resource Discovery"
+    }
+  ],
+  "T1021": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1021",
+      "context": "Remote desktop, shell, management, or administrative service is used between systems"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1021-2",
+      "context": "Remote service, task, or process is created on another host"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1021-3",
+      "context": "Internal host begins connecting broadly to peers or new administrative paths"
+    },
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1021-4",
+      "context": "Container or workload identity accesses another namespace, node, or service"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1021",
+      "context": "Remote administrative service used between systems — T1021 Remote Services"
+    }
+  ],
+  "T1550": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1550",
+      "context": "Valid credentials or alternate authentication material are reused on another system"
+    }
+  ],
+  "T1570": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1570",
+      "context": "Tool, payload, or file is transferred to another internal system"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1570",
+      "context": "T1570 Lateral Tool Transfer"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1570",
+      "context": "Tool or payload transferred internally — T1570 Lateral Tool Transfer"
+    }
+  ],
+  "T1119": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1119",
+      "context": "Files, records, messages, or objects are accessed in bulk"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1119",
+      "context": "T1119 Automated Collection"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1119",
+      "context": "Files, records, messages, or objects accessed in bulk — T1119 Automated Collection"
+    }
+  ],
+  "T1005": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1005",
+      "context": "Data is collected from local files, network shares, or repositories"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1005",
+      "context": "T1005 Data from Local System"
+    }
+  ],
+  "T1114": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1114",
+      "context": "Email messages, attachments, or mailbox content are collected"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1114",
+      "context": "T1114 Email Collection"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1114",
+      "context": "Email content collected — T1114 Email Collection"
+    }
+  ],
+  "T1213": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1213",
+      "context": "Database contents are queried, copied, or exported"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1213",
+      "context": "T1213 Data from Information Repositories"
+    }
+  ],
+  "T1530": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1530",
+      "context": "Cloud-hosted documents, objects, snapshots, or backups are accessed"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1530",
+      "context": "T1530 Data from Cloud Storage"
+    }
+  ],
+  "T1074": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1074",
+      "context": "Data is staged, compressed, encrypted, or archived before transfer"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1074",
+      "context": "T1074 Data Staged"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1074",
+      "context": "Data staged, compressed, or archived — T1074 Data Staged"
+    }
+  ],
+  "T1113": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1113",
+      "context": "Screens, input, audio, or video are captured"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1113",
+      "context": "T1113 Screen Capture"
+    }
+  ],
+  "T1071": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1071",
+      "context": "Endpoint or workload communicates periodically with an external destination"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1071",
+      "context": "Endpoint communicates periodically with external destination — T1071 Application Layer Protocol"
+    }
+  ],
+  "T1071.004": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1071-004",
+      "context": "DNS queries or responses carry command, control, or encoded data"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1071-004",
+      "context": "T1071.004 DNS"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1071-004",
+      "context": "DNS carries command, control, or encoded data — T1071.004 DNS"
+    }
+  ],
+  "T1573": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1573",
+      "context": "Encrypted or obfuscated network channel is established"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1573",
+      "context": "T1573 Encrypted Channel"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1573",
+      "context": "Encrypted or obfuscated network channel — T1573 Encrypted Channel"
+    }
+  ],
+  "T1102": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1102",
+      "context": "Web, cloud, social, or collaboration service is used as a control channel"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1102",
+      "context": "T1102 Web Service"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1102",
+      "context": "Web or collaboration service used as control channel — T1102 Web Service"
+    }
+  ],
+  "T1105": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1105",
+      "context": "Tool or payload is downloaded into the environment"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1105",
+      "context": "T1105 Ingress Tool Transfer"
+    }
+  ],
+  "T1090": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1090",
+      "context": "Proxy, relay, tunnel, or port forwarding is configured"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1090",
+      "context": "T1090 Proxy"
+    }
+  ],
+  "T1104": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1104",
+      "context": "Multiple staged communication channels are used"
+    }
+  ],
+  "T1041": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1041",
+      "context": "Large or unusual outbound transfer leaves the environment"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1041",
+      "context": "T1041 Exfiltration Over C2 Channel"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1041",
+      "context": "Large outbound transfer — T1041 Exfiltration Over C2 Channel"
+    }
+  ],
+  "T1567": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1567",
+      "context": "Data is uploaded to cloud storage, web service, or external repository"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1567",
+      "context": "T1567 Exfiltration Over Web Service"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1567",
+      "context": "Data uploaded to cloud or web service — T1567 Exfiltration Over Web Service"
+    }
+  ],
+  "T1048": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1048",
+      "context": "Data leaves through DNS, email, file transfer, or another alternate protocol"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1048",
+      "context": "T1048 Exfiltration Over Alternative Protocol"
+    }
+  ],
+  "T1052": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1052",
+      "context": "Removable media receives copied data"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1052",
+      "context": "T1052 Exfiltration Over Physical Medium"
+    }
+  ],
+  "T1020": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1020",
+      "context": "Automated process repeatedly transfers staged data"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1020",
+      "context": "T1020 Automated Exfiltration"
+    }
+  ],
+  "T1030": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1030",
+      "context": "Transfer size, timing, or channel is deliberately limited to evade controls"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1030",
+      "context": "T1030 Data Transfer Size Limits"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1030",
+      "context": "Transfers deliberately limited to evade controls — T1030 Data Transfer Size Limits"
+    }
+  ],
+  "T1485": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1485",
+      "context": "Files, records, cloud objects, or resources are deleted or destroyed"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1485",
+      "context": "T1485 Data Destruction"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1485",
+      "context": "Files, records, or resources deleted or destroyed — T1485 Data Destruction"
+    }
+  ],
+  "T1486": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1486",
+      "context": "Files or systems are encrypted for impact"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1486",
+      "context": "T1486 Data Encrypted for Impact"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1486",
+      "context": "Files encrypted for impact — T1486 Data Encrypted for Impact"
+    }
+  ],
+  "T1499": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1499",
+      "context": "Service, host, network, or account availability is disrupted"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1499",
+      "context": "T1499 Endpoint Denial of Service"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1499",
+      "context": "Service or system availability disrupted — T1499 Endpoint Denial of Service"
+    }
+  ],
+  "T1531": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1531",
+      "context": "Accounts, roles, or access are removed to lock out legitimate users"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1531",
+      "context": "T1531 Account Access Removal"
+    }
+  ],
+  "T1490": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1490",
+      "context": "Backup, snapshot, or recovery capability is deleted or impaired"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1490",
+      "context": "T1490 Inhibit System Recovery"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1490",
+      "context": "Backup, snapshot, or recovery capability impaired — T1490 Inhibit System Recovery"
+    }
+  ],
+  "T1495": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1495",
+      "context": "Configuration, firmware, or device state is modified to cause operational impact"
+    }
+  ],
+  "T1565": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1565",
+      "context": "Data or application content is manipulated to undermine integrity"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1565",
+      "context": "T1565 Data Manipulation"
+    }
+  ],
+  "T1496": [
+    {
+      "label": "ATT&CK Activities and Log Sources",
+      "path": "attack-activity-log-source-catalog",
+      "anchor": "ttp-t1496",
+      "context": "Resource use rises sharply due to unauthorized computation or abuse"
+    },
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1496",
+      "context": "T1496 Resource Hijacking"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1496",
+      "context": "Unauthorized computation or resource abuse — T1496 Resource Hijacking"
+    }
+  ],
+  "T1595.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1595-002",
+      "context": "T1595.002 Vulnerability Scanning"
+    }
+  ],
+  "T1566.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1566-001",
+      "context": "T1566.001 Spearphishing Attachment"
+    }
+  ],
+  "T1566.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1566-002",
+      "context": "T1566.002 Spearphishing Link"
+    }
+  ],
+  "T1566.003": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1566-003",
+      "context": "T1566.003 Spearphishing via Service"
+    }
+  ],
+  "T1059.003": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-003",
+      "context": "T1059.003 Windows Command Shell"
+    }
+  ],
+  "T1059.004": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-004",
+      "context": "T1059.004 Unix Shell"
+    }
+  ],
+  "T1059.005": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-005",
+      "context": "T1059.005 Visual Basic"
+    }
+  ],
+  "T1059.006": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-006",
+      "context": "T1059.006 Python"
+    }
+  ],
+  "T1059.007": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1059-007",
+      "context": "T1059.007 JavaScript"
+    }
+  ],
+  "T1047": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1047",
+      "context": "T1047 Windows Management Instrumentation"
+    }
+  ],
+  "T1547.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1547-001",
+      "context": "T1547.001 Registry Run Keys / Startup Folder"
+    }
+  ],
+  "T1505.003": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1505-003",
+      "context": "T1505.003 Web Shell"
+    }
+  ],
+  "T1548.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1548-001",
+      "context": "T1548.001 Setuid and Setgid"
+    }
+  ],
+  "T1548.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1548-002",
+      "context": "T1548.002 Bypass User Account Control"
+    }
+  ],
+  "T1611": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1611",
+      "context": "T1611 Escape to Host"
+    }
+  ],
+  "T1070.004": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1070-004",
+      "context": "T1070.004 File Deletion"
+    }
+  ],
+  "T1070.006": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1070-006",
+      "context": "T1070.006 Timestomp"
+    }
+  ],
+  "T1562.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1562-002",
+      "context": "T1562.002 Disable Windows Event Logging"
+    }
+  ],
+  "T1222": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1222",
+      "context": "T1222 File and Directory Permissions Modification"
+    }
+  ],
+  "T1110.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1110-001",
+      "context": "T1110.001 Password Guessing"
+    }
+  ],
+  "T1110.003": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1110-003",
+      "context": "T1110.003 Password Spraying"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1110-003",
+      "context": "Low-volume failures distributed across many accounts — T1110.003 Password Spraying"
+    }
+  ],
+  "T1110.004": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1110-004",
+      "context": "T1110.004 Credential Stuffing"
+    }
+  ],
+  "T1558.003": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1558-003",
+      "context": "T1558.003 Kerberoasting"
+    },
+    {
+      "label": "Statistical Anomaly Mappings",
+      "path": "attack-statistical-anomaly-mapping",
+      "anchor": "ttp-t1558-003",
+      "context": "Unusual service-ticket requests — T1558.003 Kerberoasting"
+    }
+  ],
+  "T1003.006": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1003-006",
+      "context": "T1003.006 DCSync"
+    }
+  ],
+  "T1069": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1069",
+      "context": "T1069 Permission Groups Discovery"
+    }
+  ],
+  "T1518": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1518",
+      "context": "T1518 Software Discovery"
+    }
+  ],
+  "T1518.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1518-001",
+      "context": "T1518.001 Security Software Discovery"
+    }
+  ],
+  "T1021.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1021-001",
+      "context": "T1021.001 Remote Desktop Protocol"
+    }
+  ],
+  "T1021.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1021-002",
+      "context": "T1021.002 SMB/Windows Admin Shares"
+    }
+  ],
+  "T1021.004": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1021-004",
+      "context": "T1021.004 SSH"
+    }
+  ],
+  "T1021.006": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1021-006",
+      "context": "T1021.006 Windows Remote Management"
+    }
+  ],
+  "T1550.002": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1550-002",
+      "context": "T1550.002 Pass the Hash"
+    }
+  ],
+  "T1039": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1039",
+      "context": "T1039 Data from Network Shared Drive"
+    }
+  ],
+  "T1071.001": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1071-001",
+      "context": "T1071.001 Web Protocols"
+    }
+  ],
+  "T1572": [
+    {
+      "label": "Basic Detection Rules",
+      "path": "attack-basic-detection-rule-catalog",
+      "anchor": "ttp-t1572",
+      "context": "T1572 Protocol Tunneling"
+    }
+  ]
+}

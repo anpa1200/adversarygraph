@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+.result {
+  @apply flex min-h-11 w-full flex-col rounded px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800;
+}
+.result small {
+  @apply block text-[10px] text-gray-600;
+}
+:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
 @layer base {
   ::-webkit-scrollbar {
     width: 6px;

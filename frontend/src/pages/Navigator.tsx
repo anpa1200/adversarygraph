@@ -12,6 +12,7 @@ import { TechniquePanel } from '@/components/Navigator/TechniquePanel';
 import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
 import { Header } from '@/components/Layout/Header';
 import type { TechniqueListItem } from '@/types/attack';
+import { useSearchParams } from 'react-router-dom';
 
 export function Navigator() {
   const {
@@ -21,7 +22,7 @@ export function Navigator() {
     expandedTechniques,
     toggleTechnique, toggleExpanded,
     addTechniques, replaceTechniques, clearTechniques, clearOverlay,
-    setOverlayTechniques, expandAll, collapseAll,
+    setOverlayTechniques, expandAll, collapseAll, coverageTechniques, setCoverageTechniques, clearCoverage,
   } = useAppStore();
 
   // ── Panel state ────────────────────────────────────────────────────────────
@@ -29,6 +30,9 @@ export function Navigator() {
   const [importOpen, setImportOpen]             = useState(false);
   const [saveOpen,   setSaveOpen]               = useState(false);
   const [loadOpen,   setLoadOpen]               = useState(false);
+  const [coverageImportOpen, setCoverageImportOpen] = useState(false);
+  const [params] = useSearchParams();
+  useEffect(() => { const id = params.get('technique'); if (id) setSelectedAttackId(id); }, [params]);
 
   // ── Filter state ───────────────────────────────────────────────────────────
   const [search, setSearch]                       = useState('');
@@ -136,6 +140,14 @@ export function Navigator() {
         showOnlyOverlay={showOnlyOverlay}    onToggleOverlay={() => setShowOnlyOverlay(v => !v)}
         hasOverlay={overlayTechniques.size > 0}
       />
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-gray-800 bg-gray-900 text-[10px]">
+        <button onClick={() => setCoverageImportOpen(true)} className="border border-green-800 text-green-400 px-2 py-1 rounded">Import coverage</button>
+        {coverageTechniques.size > 0 && <>
+          <span className="text-green-500">{coverageTechniques.size} covered</span>
+          <button onClick={() => exportBacklog(selectedTechniques, overlayTechniques, coverageTechniques)} className="border border-amber-800 text-amber-400 px-2 py-1 rounded">Export detection backlog</button>
+          <button onClick={clearCoverage} className="text-gray-600">Clear coverage</button>
+        </>}
+      </div>
 
       {/* Main workspace row */}
       <div className="flex flex-1 overflow-hidden">
@@ -153,6 +165,7 @@ export function Navigator() {
               parentsWithSubs={parentsWithSubs}
               selectedTechniques={selectedTechniques}
               overlayTechniques={overlayTechniques}
+              coverageTechniques={coverageTechniques}
               expandedTechniques={expandedTechniques}
               onToggleTechnique={handleToggle}
               onToggleExpanded={toggleExpanded}
@@ -186,6 +199,7 @@ export function Navigator() {
           onClose={() => setImportOpen(false)}
         />
       )}
+      {coverageImportOpen && <LayerImport onImport={ids => setCoverageTechniques(ids)} onClose={() => setCoverageImportOpen(false)} />}
 
       {/* Save layer modal */}
       {saveOpen && (
@@ -275,4 +289,11 @@ function downloadJson(data: unknown, filename: string) {
   const a    = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportBacklog(selected: Set<string>, overlay: Set<string>, coverage: Set<string>) {
+  const target = overlay.size ? overlay : selected;
+  const backlog = [...target].filter(id => !coverage.has(id)).sort();
+  const text = ['ThreatMapper Detection Backlog', `Generated: ${new Date().toISOString()}`, `Target techniques: ${target.size}`, `Covered: ${[...target].filter(id => coverage.has(id)).length}`, '', ...backlog.map(id => `- ${id}`)].join('\n');
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'threatmapper-detection-backlog.txt'; anchor.click(); URL.revokeObjectURL(url);
 }

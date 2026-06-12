@@ -31,9 +31,52 @@ interface AppState {
   toggleExpanded: (id: string) => void;
   expandAll: (parentIds: string[]) => void;
   collapseAll: () => void;
+
+  coverageTechniques: Set<string>;
+  setCoverageTechniques: (ids: string[]) => void;
+  clearCoverage: () => void;
+  techniqueAssessments: Record<string, TechniqueAssessment>;
+  updateTechniqueAssessment: (id: string, assessment: TechniqueAssessment) => void;
+  workspaces: InvestigationWorkspace[];
+  saveWorkspace: (name: string) => void;
+  loadWorkspace: (id: string) => void;
+  deleteWorkspace: (id: string) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export interface TechniqueAssessment {
+  evidence?: string;
+  source?: string;
+  confidence?: 'low' | 'medium' | 'high';
+  mapping?: 'direct' | 'inferred' | 'weak';
+  notes?: string;
+  maturity?: 'none' | 'hunt' | 'draft' | 'pilot' | 'production' | 'retired';
+}
+
+export interface InvestigationWorkspace {
+  id: string;
+  name: string;
+  domain: Domain;
+  selectedTechniques: string[];
+  coverageTechniques: string[];
+  overlayGroupId: string | null;
+  overlayGroupName: string;
+  techniqueAssessments: Record<string, TechniqueAssessment>;
+  updatedAt: string;
+}
+
+const STORAGE_KEY = 'threatmapper-docker-workbench-v1';
+const saved = (() => {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'); } catch { return {}; }
+})();
+const persist = (state: Partial<AppState>) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    coverageTechniques: [...(state.coverageTechniques ?? [])],
+    techniqueAssessments: state.techniqueAssessments ?? {},
+    workspaces: state.workspaces ?? [],
+  }));
+};
+
+export const useAppStore = create<AppState>((set, get) => ({
   domain: 'enterprise-attack',
   setDomain: (domain) => set({ domain }),
 
@@ -82,4 +125,43 @@ export const useAppStore = create<AppState>((set) => ({
     set({ expandedTechniques: new Set(parentIds) }),
   collapseAll: () =>
     set({ expandedTechniques: new Set() }),
+
+  coverageTechniques: new Set(saved.coverageTechniques ?? []),
+  setCoverageTechniques: (ids) => set(() => {
+    const next = new Set(ids); setTimeout(() => persist({ ...get(), coverageTechniques: next }), 0); return { coverageTechniques: next };
+  }),
+  clearCoverage: () => set(() => {
+    const next = new Set<string>(); setTimeout(() => persist({ ...get(), coverageTechniques: next }), 0); return { coverageTechniques: next };
+  }),
+  techniqueAssessments: saved.techniqueAssessments ?? {},
+  updateTechniqueAssessment: (id, assessment) => set(state => {
+    const techniqueAssessments = { ...state.techniqueAssessments, [id]: assessment };
+    const coverageTechniques = new Set(state.coverageTechniques);
+    assessment.maturity && !['none', 'retired'].includes(assessment.maturity) ? coverageTechniques.add(id) : coverageTechniques.delete(id);
+    setTimeout(() => persist({ ...get(), techniqueAssessments, coverageTechniques }), 0);
+    return { techniqueAssessments, coverageTechniques };
+  }),
+  workspaces: saved.workspaces ?? [],
+  saveWorkspace: (name) => set(state => {
+    const workspace: InvestigationWorkspace = {
+      id: crypto.randomUUID(), name: name.trim() || 'Untitled investigation', domain: state.domain,
+      selectedTechniques: [...state.selectedTechniques], coverageTechniques: [...state.coverageTechniques],
+      overlayGroupId: state.overlayGroupId, overlayGroupName: state.overlayGroupName,
+      techniqueAssessments: state.techniqueAssessments, updatedAt: new Date().toISOString(),
+    };
+    const workspaces = [workspace, ...state.workspaces];
+    setTimeout(() => persist({ ...get(), workspaces }), 0); return { workspaces };
+  }),
+  loadWorkspace: (id) => set(state => {
+    const workspace = state.workspaces.find(item => item.id === id);
+    return workspace ? {
+      domain: workspace.domain, selectedTechniques: new Set(workspace.selectedTechniques),
+      coverageTechniques: new Set(workspace.coverageTechniques), overlayGroupId: workspace.overlayGroupId,
+      overlayGroupName: workspace.overlayGroupName, techniqueAssessments: workspace.techniqueAssessments,
+    } : {};
+  }),
+  deleteWorkspace: (id) => set(state => {
+    const workspaces = state.workspaces.filter(item => item.id !== id);
+    setTimeout(() => persist({ ...get(), workspaces }), 0); return { workspaces };
+  }),
 }));
