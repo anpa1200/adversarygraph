@@ -228,6 +228,7 @@ Andrey Pautov
 - awesome-mitre-attack: https://github.com/infosecn1nja/awesome-mitre-attack/pull/6
 - awesome-detection-engineering: https://github.com/infosecB/awesome-detection-engineering/pull/28
 - secondary awesome-threat-intelligence: https://github.com/brandonhimpfen/awesome-threat-intelligence/pull/13
+- awesome threat hunting: https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5
 
 ## Next Manual Publishing Targets
 
@@ -242,4 +243,3 @@ Andrey Pautov
 - SigmaHQ / detection communities: position it as CTI-to-detection backlog
   material feeding rule development.
 - CTI newsletters: pitch the workflow and the live browser workspace.
-
