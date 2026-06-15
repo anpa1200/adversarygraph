@@ -264,8 +264,21 @@ function ResultsView({
                     <span className="text-sm text-white font-medium">{t.name}</span>
                     <span className="text-[10px] bg-gray-700 text-gray-300 px-1.5 rounded">{t.tactic}</span>
                     <ConfidenceBadge value={t.confidence} />
+                    <span className={`text-[10px] px-1.5 rounded border ${reviewStatusClass(t.review_status)}`}>
+                      {t.review_status ?? 'suggested'}
+                    </span>
+                    {t.evidence_source === 'source-text' && (
+                      <span className="text-[10px] px-1.5 rounded border border-green-800 bg-green-950/40 text-green-300">
+                        source-bound
+                      </span>
+                    )}
                   </div>
                   {t.evidence && <p className="text-xs text-gray-500 mt-1 italic">"{t.evidence}"</p>}
+                  {typeof t.evidence_start === 'number' && typeof t.evidence_end === 'number' && (
+                    <p className="text-[10px] text-gray-600 mt-1">
+                      Evidence span: chars {t.evidence_start}-{t.evidence_end}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -333,6 +346,10 @@ function StreamResultParser({
         tactic: String(t.tactic || ''),
         confidence: Number(t.confidence || 0.5),
         evidence: String(t.evidence || ''),
+        review_status: (t.review_status as AnalysisResult['techniques'][number]['review_status']) || 'suggested',
+        evidence_start: typeof t.evidence_start === 'number' ? t.evidence_start : null,
+        evidence_end: typeof t.evidence_end === 'number' ? t.evidence_end : null,
+        evidence_source: String(t.evidence_source || 'llm'),
       })),
       apt_matches: [],
       apt_hints: data.apt_hints || [],
@@ -345,6 +362,19 @@ function StreamResultParser({
         <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap">{tokens}</pre>
       </div>
     );
+  }
+}
+
+function reviewStatusClass(status: AnalysisResult['techniques'][number]['review_status']) {
+  switch (status) {
+    case 'accepted':
+      return 'border-green-800 bg-green-950/40 text-green-300';
+    case 'rejected':
+      return 'border-red-800 bg-red-950/40 text-red-300';
+    case 'needs-evidence':
+      return 'border-amber-800 bg-amber-950/40 text-amber-300';
+    default:
+      return 'border-blue-800 bg-blue-950/40 text-blue-300';
   }
 }
 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
-from app.services.ai.base import ExtractionResult
+from app.services.ai.base import ExtractionResult, technique_to_record
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -97,16 +97,7 @@ def _persist_result(session_id: str, result: ExtractionResult, domain: str) -> N
         db_s.status = "completed"
         session.add(AnalysisResult(
             session_id=sid,
-            extracted_techniques=[
-                {
-                    "attack_id": t.attack_id,
-                    "name":      t.name,
-                    "tactic":    t.tactic,
-                    "confidence": t.confidence,
-                    "evidence":  t.evidence,
-                }
-                for t in result.techniques
-            ],
+            extracted_techniques=[technique_to_record(t) for t in result.techniques],
             apt_matches=[m.model_dump() if hasattr(m, "model_dump") else m for m in apt_matches],
             summary=result.summary,
             raw_response=result.raw_response[:10_000],

@@ -9,6 +9,8 @@ from app.services.ai.base import (
     ExtractionResult,
     ExtractedTechnique,
     _parse_response,
+    bind_evidence_spans,
+    technique_to_record,
 )
 
 
@@ -38,6 +40,8 @@ def test_parse_valid_json():
     assert len(result.techniques) == 1
     assert result.techniques[0].attack_id == "T1566.001"
     assert result.techniques[0].confidence == pytest.approx(0.92)
+    assert result.techniques[0].review_status == "suggested"
+    assert result.techniques[0].evidence_source == "llm"
     assert result.apt_hints == ["APT29"]
     assert "Spearphishing" in result.summary
 
@@ -97,6 +101,70 @@ def test_evidence_truncated_at_200_chars():
     parsed["techniques"][0]["evidence"] = long_evidence
     result = _parse_response(json.dumps(parsed), "claude", "claude-opus-4-8")
     assert len(result.techniques[0].evidence) <= 200
+
+
+def test_parse_review_metadata_and_normalizes_bad_status():
+    parsed = json.loads(_valid_payload())
+    parsed["techniques"][0]["review_status"] = "accepted"
+    parsed["techniques"][0]["evidence_start"] = 10
+    parsed["techniques"][0]["evidence_end"] = 42
+    parsed["techniques"][0]["evidence_source"] = "source-text"
+    parsed["techniques"].append({
+        "attack_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic": "execution",
+        "confidence": 0.7,
+        "evidence": "cmd.exe launched",
+        "review_status": "final-truth",
+    })
+
+    result = _parse_response(json.dumps(parsed), "claude", "claude-opus-4-8")
+
+    assert result.techniques[0].review_status == "accepted"
+    assert result.techniques[0].evidence_start == 10
+    assert result.techniques[0].evidence_end == 42
+    assert result.techniques[0].evidence_source == "source-text"
+    assert result.techniques[1].review_status == "suggested"
+
+
+def test_bind_evidence_spans_when_quote_exists_in_source_text():
+    result = ExtractionResult(techniques=[
+        ExtractedTechnique(
+            attack_id="T1059",
+            name="Command and Scripting Interpreter",
+            tactic="execution",
+            confidence=0.8,
+            evidence="PowerShell launched encoded commands",
+        )
+    ])
+    source = "The intrusion began quietly. PowerShell launched encoded commands from a scheduled task."
+
+    bind_evidence_spans(result, source)
+
+    assert result.techniques[0].evidence_start == source.index("PowerShell")
+    assert result.techniques[0].evidence_end == result.techniques[0].evidence_start + len(result.techniques[0].evidence)
+    assert result.techniques[0].evidence_source == "source-text"
+
+
+def test_technique_to_record_includes_review_and_evidence_fields():
+    technique = ExtractedTechnique(
+        attack_id="T1003",
+        name="OS Credential Dumping",
+        tactic="credential-access",
+        confidence=0.9,
+        evidence="dumped LSASS memory",
+        review_status="needs-evidence",
+        evidence_start=5,
+        evidence_end=24,
+        evidence_source="source-text",
+    )
+
+    record = technique_to_record(technique)
+
+    assert record["review_status"] == "needs-evidence"
+    assert record["evidence_start"] == 5
+    assert record["evidence_end"] == 24
+    assert record["evidence_source"] == "source-text"
 
 
 # ── Prompt structure ───────────────────────────────────────────────────────────

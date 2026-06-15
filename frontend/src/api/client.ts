@@ -92,7 +92,17 @@ export interface AnalysisResult {
   provider: string;
   model: string;
   summary: string;
-  techniques: Array<{ attack_id: string; name: string; tactic: string; confidence: number; evidence: string }>;
+  techniques: Array<{
+    attack_id: string;
+    name: string;
+    tactic: string;
+    confidence: number;
+    evidence: string;
+    review_status?: 'suggested' | 'accepted' | 'rejected' | 'needs-evidence';
+    evidence_start?: number | null;
+    evidence_end?: number | null;
+    evidence_source?: string;
+  }>;
   apt_matches: Array<{ group_attack_id: string; group_name: string; similarity: number; shared_count: number; shared_techniques: string[] }>;
   apt_hints: string[];
 }
@@ -116,6 +126,18 @@ export const analyzeApi = {
 
   getResult: (sessionId: string): Promise<AnalysisResult> =>
     http.get(`/analyze/${sessionId}`).then(r => r.data),
+
+  updateTechniqueReview: (
+    sessionId: string,
+    attackId: string,
+    body: {
+      review_status: 'suggested' | 'accepted' | 'rejected' | 'needs-evidence';
+      evidence?: string;
+      review_note?: string;
+      reviewer?: string;
+    },
+  ): Promise<AnalysisResult['techniques'][number]> =>
+    http.patch(`/analyze/sessions/${sessionId}/techniques/${attackId}/review`, body).then(r => r.data),
 };
 
 // ── Saved Layers ──────────────────────────────────────────────────────────────

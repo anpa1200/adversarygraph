@@ -12,16 +12,16 @@ This roadmap tracks the work needed to move ThreatMapper from an early CTI workb
 
 ## v0.10 - Analyst Review Workflow
 
-- Add review states for AI-extracted techniques: `suggested`, `accepted`, `rejected`, `needs-evidence`.
-- Store analyst notes and source evidence per technique.
+- Add review states for AI-extracted techniques: `suggested`, `accepted`, `rejected`, `needs-evidence`. **Implemented for stored analysis records and API updates.**
+- Store analyst notes and source evidence per technique. **Implemented for JSONB analysis records; deeper UI review controls remain pending.**
 - Add report-level quality summary: number accepted, rejected, unresolved, and low-confidence.
 - Add UI filters for review status and confidence.
-- Raise enforced backend coverage gate from 45% to at least 60% with targeted tests for exports, LLM provider selection, report generation, and scheduled jobs.
+- Raise enforced backend coverage gate from 47% to at least 60% with targeted tests for exports, LLM provider selection, report generation, and scheduled jobs.
 
 ## v0.11 - Evidence Binding
 
-- Store source paragraph/span references for every extracted technique.
-- Display evidence snippets beside ATT&CK mappings.
+- Store source paragraph/span references for every extracted technique. **Implemented as best-effort character offsets when quoted evidence is found in source text.**
+- Display evidence snippets beside ATT&CK mappings. **Implemented in AI analysis results.**
 - Export evidence-backed mappings to Markdown and JSON.
 - Add validation warnings when techniques lack evidence.
 

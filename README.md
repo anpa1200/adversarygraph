@@ -39,6 +39,7 @@ ThreatMapper is pre-`v1.0`, but the repository now publishes the operational evi
 | Reviewability | [Demo dataset](docs/demo-dataset/public-report-excerpt.md), [expected mappings](docs/demo-dataset/expected-mappings.json), [sample outputs](docs/sample-outputs/) |
 | Validation | [Evaluation plan](docs/validation/evaluation-plan.md), [mapping review rubric](docs/validation/mapping-review-rubric.md) |
 | Maintenance | [Maintainers](MAINTAINERS.md), [roadmap](ROADMAP.md), [changelog](CHANGELOG.md), [contributing guide](CONTRIBUTING.md) |
+| Production readiness | [Production readiness tracker](docs/production-readiness.md) |
 
 Curated-list resubmission should wait until the project has additional release history and external usage evidence. The current documentation is intended to make that path measurable rather than promotional.
 

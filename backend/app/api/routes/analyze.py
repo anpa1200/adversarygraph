@@ -19,11 +19,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
-from app.services.ai.base import ExtractionResult
+from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
 from app.services.file_parser import extract_text
 
@@ -42,6 +43,10 @@ class TechniqueHit(BaseModel):
     tactic: str
     confidence: float
     evidence: str
+    review_status: str = "suggested"
+    evidence_start: int | None = None
+    evidence_end: int | None = None
+    evidence_source: str = "llm"
 
 
 class AptMatch(BaseModel):
@@ -82,6 +87,13 @@ class ChatRequest(BaseModel):
     provider: str = "claude"
     model: str | None = Field(default=None, max_length=100)
     context: str = Field(default="", max_length=8000)
+
+
+class TechniqueReviewUpdate(BaseModel):
+    review_status: str = Field(pattern="^(suggested|accepted|rejected|needs-evidence)$")
+    evidence: str | None = Field(default=None, max_length=500)
+    review_note: str | None = Field(default=None, max_length=1000)
+    reviewer: str | None = Field(default=None, max_length=120)
 
 
 # ── Full analysis (JSON response) ─────────────────────────────────────────────
@@ -172,6 +184,7 @@ async def analyze_stream(
 
             from app.services.ai.base import _parse_response
             result = _parse_response(buffer, adapter.provider, adapter.model)
+            bind_evidence_spans(result, body)
 
             # Re-open a fresh session for the post-stream DB writes
             from app.core.database import async_session_factory
@@ -304,6 +317,43 @@ async def delete_session(
         raise HTTPException(404, "Session not found")
     await db.execute(sql_delete(AnalysisSession).where(AnalysisSession.id == sid))
     await db.commit()
+
+
+# ── Review a stored technique mapping ─────────────────────────────────────────
+
+@router.patch("/sessions/{session_id}/techniques/{attack_id}/review", response_model=TechniqueHit)
+async def update_technique_review(
+    session_id: str,
+    attack_id: str,
+    body: TechniqueReviewUpdate,
+    db: AsyncSession = Depends(get_session),
+):
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session ID")
+
+    row = await db.execute(
+        select(AnalysisResult).where(AnalysisResult.session_id == sid)
+    )
+    result = row.scalar_one_or_none()
+    if not result:
+        raise HTTPException(404, "Result not found")
+
+    updated = update_extracted_technique_review(
+        result.extracted_techniques,
+        attack_id,
+        review_status=body.review_status,
+        evidence=body.evidence,
+        review_note=body.review_note,
+        reviewer=body.reviewer,
+    )
+    if not updated:
+        raise HTTPException(404, "Technique not found")
+
+    flag_modified(result, "extracted_techniques")
+    await db.commit()
+    return TechniqueHit(**updated)
 
 
 # ── Retrieve stored result ────────────────────────────────────────────────────
@@ -487,16 +537,7 @@ async def _store_result(
 
     res = AnalysisResult(
         session_id=db_session.id,
-        extracted_techniques=[
-            {
-                "attack_id": t.attack_id,
-                "name": t.name,
-                "tactic": t.tactic,
-                "confidence": t.confidence,
-                "evidence": t.evidence,
-            }
-            for t in result.techniques
-        ],
+        extracted_techniques=[technique_to_record(t) for t in result.techniques],
         apt_matches=[m.model_dump() for m in apt_matches],
         summary=result.summary,
         raw_response=result.raw_response[:10_000],
@@ -527,9 +568,42 @@ def _build_out(
                 tactic=t.tactic,
                 confidence=t.confidence,
                 evidence=t.evidence,
+                review_status=t.review_status,
+                evidence_start=t.evidence_start,
+                evidence_end=t.evidence_end,
+                evidence_source=t.evidence_source,
             )
             for t in result.techniques
         ],
         apt_matches=apt_matches,
         apt_hints=result.apt_hints,
     )
+
+
+def update_extracted_technique_review(
+    techniques: list[dict],
+    attack_id: str,
+    *,
+    review_status: str,
+    evidence: str | None = None,
+    review_note: str | None = None,
+    reviewer: str | None = None,
+) -> dict | None:
+    """Update a stored JSONB technique record with analyst review metadata."""
+    normalized_id = attack_id.upper()
+    for technique in techniques:
+        if str(technique.get("attack_id", "")).upper() != normalized_id:
+            continue
+
+        technique["review_status"] = review_status
+        if evidence is not None:
+            technique["evidence"] = evidence
+            technique["evidence_source"] = "analyst"
+            technique["evidence_start"] = None
+            technique["evidence_end"] = None
+        if review_note is not None:
+            technique["review_note"] = review_note
+        if reviewer is not None:
+            technique["reviewer"] = reviewer
+        return technique
+    return None
