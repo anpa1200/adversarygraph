@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ThreatMapper API",
     description="ATT&CK-based threat intelligence mapping with AI analysis",
-    version="0.8.5",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -60,4 +60,4 @@ app.include_router(pipeline.router, prefix="/api")
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.8.5"}
+    return {"status": "ok", "version": "0.9.0"}

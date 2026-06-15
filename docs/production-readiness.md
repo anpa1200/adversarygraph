@@ -27,6 +27,7 @@ ThreatMapper is not yet a hardened public SaaS or a `v1.0` production platform.
 | Security model | Implemented | `docs/security-model.md` |
 | Limitations | Implemented | `docs/limitations.md` |
 | Demo data and sample outputs | Implemented | `docs/demo-dataset/`, `docs/sample-outputs/` |
+| Release notes | Implemented | `docs/release-notes/` |
 
 ## Remaining Production Blockers
 
@@ -35,7 +36,6 @@ ThreatMapper is not yet a hardened public SaaS or a `v1.0` production platform.
 - Add full UI controls for accepting, rejecting, and filtering mappings.
 - Export review status and evidence spans in Markdown/PDF reports.
 - Add reverse-proxy hardening examples for production deployments.
-- Add release notes and migration notes for a tagged `v1.0`.
 - Collect at least one external quickstart validation report.
 
 ## Deployment Position

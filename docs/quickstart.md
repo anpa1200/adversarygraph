@@ -60,7 +60,7 @@ curl "http://localhost:8000/api/attack/versions"
 Expected health response:
 
 ```json
-{"status":"ok","version":"0.8.5"}
+{"status":"ok","version":"0.9.0"}
 ```
 
 ## 6. Demo Workflow

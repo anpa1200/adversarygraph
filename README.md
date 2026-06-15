@@ -3,7 +3,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/threatmapper/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/threatmapper/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.8.5-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v0.9.0-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -12,7 +12,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v0.8.5 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
+**Current release: v0.9.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
 
 ThreatMapper AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -51,16 +51,17 @@ The public Web workspace is intended for exploration. Do not upload confidential
 
 ThreatMapper assists analysts but does not replace analyst validation. LLM-generated ATT&CK mappings may include false positives, false negatives, or ambiguous technique assignments. Group and campaign similarity is based on TTP overlap and should be treated as an investigation lead, not attribution proof.
 
-## Screenshots
+## Screenshots And Visual Evidence
 
-Screenshots are planned for the following paths:
+Screenshot evidence is preserved in [`docs/screenshots/`](docs/screenshots/).
+The set covers the public ATT&CK matrix workspace, group overlay workflows,
+analysis views, report/evidence review, and ecosystem navigation from the
+companion walkthrough.
 
-- `docs/static/img/threatmapper-web-matrix.png`
-- `docs/static/img/threatmapper-group-overlay.png`
-- `docs/static/img/threatmapper-compare.png`
-- `docs/static/img/threatmapper-detection-backlog.png`
-- `docs/static/img/threatmapper-docker-ai-analysis.png`
-- `docs/static/img/threatmapper-report-export.png`
+| Matrix and actor workflow | Analysis and review workflow |
+|---|---|
+| ![ThreatMapper ATT&CK matrix workspace](docs/screenshots/02_1x07j05Kn78RJY96S3Ga4IVQ.png) | ![ThreatMapper analysis workflow](docs/screenshots/10_1xCsGSK7APVQvnvTDCLxXKNA.png) |
+| ![ThreatMapper actor overlay](docs/screenshots/13_1xFpAXPkiL1j3fiuOkL7tp8A.png) | ![ThreatMapper evidence review](docs/screenshots/20_1xVAfpLRWhfkB0pwRR5C4Nlw.png) |
 
 ---
 
