@@ -61,6 +61,19 @@ async def test_export_analysis_missing(client: AsyncClient):
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_export_analysis_stix_invalid_uuid(client: AsyncClient):
+    resp = await client.get("/api/export/analysis/not-a-uuid/stix")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_export_analysis_stix_missing(client: AsyncClient):
+    import uuid
+    resp = await client.get(f"/api/export/analysis/{uuid.uuid4()}/stix")
+    assert resp.status_code == 404
+
+
 # ── /api/analyze (POST, Celery path) ─────────────────────────────────────────
 
 @pytest.mark.asyncio

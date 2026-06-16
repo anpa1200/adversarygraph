@@ -215,6 +215,7 @@ export const syncApi = {
 
 export const exportApi = {
   analysisUrl: (sessionId: string) => `/api/export/analysis/${sessionId}`,
+  analysisStixUrl: (sessionId: string) => `/api/export/analysis/${sessionId}/stix`,
 
   layer: (techniqueIds: string[], domain: string): Promise<Blob> =>
     http.post(

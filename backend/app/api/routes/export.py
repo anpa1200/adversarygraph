@@ -1,6 +1,7 @@
 """
-GET  /api/export/analysis/{session_id}  — full PDF report from a stored analysis
-POST /api/export/layer                  — PDF report for the current Navigator layer
+GET  /api/export/analysis/{session_id}       — full PDF report from a stored analysis
+GET  /api/export/analysis/{session_id}/stix  — STIX 2.1 bundle for OpenCTI import
+POST /api/export/layer                       — PDF report for the current Navigator layer
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
+from app.models.attack import AptGroup, Technique
 
 router = APIRouter(prefix="/export", tags=["Export"])
 
@@ -75,6 +77,101 @@ async def export_analysis_pdf(
         media_type="application/pdf",
         headers={**_PDF_HEADERS,
                  "Content-Disposition": f'attachment; filename="analysis-{session_id[:8]}.pdf"'},
+    )
+
+
+# ── Analysis STIX 2.1 / OpenCTI ───────────────────────────────────────────────
+
+@router.get("/analysis/{session_id}/stix", response_class=Response)
+async def export_analysis_stix(
+    session_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    """Generate a STIX 2.1 bundle for OpenCTI import."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session ID")
+
+    row = await db.execute(
+        select(AnalysisSession, AnalysisResult)
+        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.id == sid)
+    )
+    pair = row.first()
+    if not pair:
+        raise HTTPException(404, "Session not found")
+
+    db_session, res = pair
+    if db_session.status != "completed":
+        return JSONResponse(
+            status_code=202,
+            content={"detail": f"Session is {db_session.status}"},
+        )
+    if not res:
+        raise HTTPException(404, "No result found for session")
+
+    attack_ids = {
+        str(item.get("attack_id", "")).upper()
+        for item in (res.extracted_techniques or [])
+        if item.get("attack_id")
+    }
+    group_ids = {
+        str(item.get("group_attack_id", "")).upper()
+        for item in (res.apt_matches or [])
+        if item.get("group_attack_id")
+    }
+
+    technique_lookup = {}
+    if attack_ids:
+        rows = await db.execute(
+            select(Technique).where(
+                Technique.attack_id.in_(sorted(attack_ids)),
+                Technique.domain == db_session.domain,
+            )
+        )
+        for technique in rows.scalars().all():
+            technique_lookup[technique.attack_id] = {
+                "stix_id": technique.stix_id,
+                "name": technique.name,
+                "description": technique.description,
+                "url": technique.url,
+            }
+
+    group_lookup = {}
+    if group_ids:
+        rows = await db.execute(
+            select(AptGroup).where(
+                AptGroup.attack_id.in_(sorted(group_ids)),
+                AptGroup.domain == db_session.domain,
+            )
+        )
+        for group in rows.scalars().all():
+            group_lookup[group.attack_id] = {
+                "stix_id": group.stix_id,
+                "name": group.name,
+                "description": group.description,
+                "aliases": group.aliases or [],
+                "url": group.url,
+            }
+
+    from app.services.stix_export import build_analysis_stix_bundle
+
+    bundle = build_analysis_stix_bundle(
+        db_session,
+        res,
+        technique_lookup=technique_lookup,
+        group_lookup=group_lookup,
+    )
+    import json
+    payload = json.dumps(bundle, indent=2).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/stix+json",
+        headers={
+            "Content-Disposition": f'attachment; filename="analysis-{session_id[:8]}-opencti.stix.json"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

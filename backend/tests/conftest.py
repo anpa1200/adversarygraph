@@ -47,6 +47,9 @@ class _MockScalarResult:
     def fetchone(self):
         return self._value
 
+    def first(self):
+        return self._value
+
 
 class _MockSession:
     """Async SQLAlchemy session that always returns empty results."""

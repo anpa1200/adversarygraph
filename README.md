@@ -473,6 +473,7 @@ Use cases:
 
 **Per-session actions:**
 - **↓ PDF** — download the full analysis PDF for that session at any time
+- **↓ STIX/OpenCTI** — download a STIX 2.1 bundle containing the report, ATT&CK attack-patterns, and similarity-lead intrusion sets for OpenCTI import
 - **✕ Remove** — delete the session from DB 2 (browser confirm required; list refreshes automatically)
 
 ---
@@ -487,6 +488,19 @@ From **Analyze**, click **Download PDF** on any completed analysis. Includes:
 - Extracted techniques table sorted by confidence
 - Group-similarity section with top Jaccard-overlap leads
 - Tactic coverage breakdown
+
+#### STIX 2.1 / OpenCTI Export
+
+From **Analyze**, click **↓ STIX/OpenCTI** on a completed analysis to download a
+STIX 2.1 bundle. The bundle is designed for OpenCTI import and contains:
+
+- a STIX `report` for the ThreatMapper analysis session
+- ATT&CK `attack-pattern` objects for extracted TTPs
+- optional `intrusion-set` objects for group-similarity leads
+- ThreatMapper custom metadata for confidence, review status, evidence source, similarity score, model, provider, and ATT&CK domain
+
+ThreatMapper does not export IOCs here. Group matches are exported as
+TTP-overlap investigation leads, not attribution claims.
 
 #### Navigator layer PDF
 
@@ -626,6 +640,8 @@ POST /api/analyze/chat
 
 ```
 GET  /api/export/analysis/{session_id}   → PDF download
+GET  /api/export/analysis/{session_id}/stix
+     → STIX 2.1 JSON bundle for OpenCTI import
 POST /api/export/layer
      body: { "technique_ids": ["T1059"], "domain": "enterprise-attack" }
      → PDF download
@@ -853,6 +869,7 @@ copy, newsletter pitch text, and current external submission tracking.
 | Database | PostgreSQL 16 | JSONB for STIX arrays |
 | Task queue | Celery 5.4 + Redis 7 | Daily ATT&CK sync |
 | ATT&CK parsing | stdlib `json` only | No mitreattack-python; Python 3.12-compatible |
+| STIX/OpenCTI export | stdlib `json` only | Report, ATT&CK attack-patterns, intrusion-set similarity leads |
 | AI — Claude | `anthropic` SDK | Cached async client in `__init__` |
 | AI — OpenAI | `openai` SDK | Cached client; JSON mode on non-streaming |
 | AI — Gemini | `google-generativeai` | `configure()` called once in `__init__` |

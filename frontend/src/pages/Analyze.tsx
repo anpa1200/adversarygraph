@@ -219,6 +219,14 @@ function ResultsView({
             >
               ↓ PDF report
             </a>
+            <a
+              href={exportApi.analysisStixUrl(result.session_id)}
+              download={`analysis-${result.session_id.slice(0, 8)}-opencti.stix.json`}
+              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
+              title="Download a STIX 2.1 bundle for OpenCTI import"
+            >
+              ↓ STIX/OpenCTI
+            </a>
             <button
               onClick={injectAndNavigate}
               className="text-xs bg-mitre-accent hover:bg-red-600 text-white px-3 py-1.5 rounded transition-colors"

@@ -127,6 +127,25 @@ Operators should define:
 
 - How long uploaded reports are retained.
 - Whether generated reports are stored.
+- Whether STIX/OpenCTI exports may be shared outside the local environment.
 - Whether raw LLM responses are retained.
 - Who can delete analyses.
 - How backups are purged.
+
+## OpenCTI Export
+
+ThreatMapper can export a completed analysis as a STIX 2.1 JSON bundle from:
+
+```bash
+GET /api/export/analysis/{session_id}/stix
+```
+
+The bundle is report/TTP-centric:
+
+- STIX `report` for the analysis session
+- ATT&CK `attack-pattern` objects for extracted techniques
+- optional `intrusion-set` objects for group-similarity leads
+- `x_threatmapper_*` custom fields for confidence, review status, model, provider, domain, and similarity metadata
+
+It intentionally does not model IOCs. Similarity leads are investigation leads
+based on TTP overlap and must not be treated as attribution.
