@@ -1,6 +1,6 @@
 # The Hacker News Pitch: ThreatMapper
 
-Prepared: 2026-06-15
+Prepared: 2026-06-16
 
 ## Positioning
 
@@ -33,7 +33,7 @@ Hi The Hacker News team,
 I’m Andrey Pautov, a Threat Intelligence Research Engineer and creator of the
 1200km security research ecosystem.
 
-I recently released ThreatMapper v0.9.0, an open-source self-hosted CTI
+I recently released ThreatMapper v2.0.0, an open-source self-hosted CTI
 platform that helps analysts convert threat reports into MITRE ATT&CK mappings,
 compare TTP overlap against known groups and campaigns, and generate
 analyst-ready outputs for detection engineering handoff.
@@ -53,7 +53,7 @@ Project:
 https://github.com/anpa1200/threatmapper
 
 Release:
-https://github.com/anpa1200/threatmapper/releases/tag/v0.9.0
+https://github.com/anpa1200/threatmapper/releases/tag/v2.0.0
 
 Project hub:
 https://1200km.com/threatmapper/
@@ -80,7 +80,7 @@ I’m Andrey Pautov, a Threat Intelligence Research Engineer and creator of
 analysis, OpenCTI, cloud security, and AI-assisted security tooling research.
 
 I’m submitting ThreatMapper as a potential tool-release / research story.
-ThreatMapper v0.9.0 is an open-source, self-hosted CTI-to-detection workbench
+ThreatMapper v2.0.0 is an open-source, self-hosted CTI-to-detection workbench
 for mapping threat reports to MITRE ATT&CK, comparing extracted TTP overlap with
 known groups and campaigns, and producing analyst-ready outputs.
 
@@ -90,7 +90,7 @@ mapping, group/campaign comparison, detection coverage review, and SOC handoff
 is still highly manual. ThreatMapper is designed to make that workflow more
 structured while keeping analyst review explicit.
 
-The v0.9.0 release includes:
+The v2.0.0 release includes:
 - self-hosted Docker Compose deployment
 - React/Vite frontend and FastAPI backend
 - ATT&CK Enterprise/Mobile/ICS data ingestion
@@ -106,7 +106,7 @@ review.
 
 Links:
 - GitHub: https://github.com/anpa1200/threatmapper
-- Release: https://github.com/anpa1200/threatmapper/releases/tag/v0.9.0
+- Release: https://github.com/anpa1200/threatmapper/releases/tag/v2.0.0
 - Project hub: https://1200km.com/threatmapper/
 - Public ATT&CK workspace: https://1200km.com/threat-matrix/
 - External validation: https://1200km.com/external-validation.html
@@ -136,7 +136,7 @@ operation.
 
 **Why now:**
 
-The v0.9.0 release adds the maturity evidence needed for outside review:
+The v2.0.0 release adds the maturity evidence needed for outside review:
 release notes, CI, screenshots, demo data, sample outputs, validation material,
 quickstart, and security/limitations documentation.
 
@@ -153,7 +153,7 @@ quickstart, and security/limitations documentation.
    FastAPI, React, and D3.js.
 6. Limitations: it is not attribution automation, and AI output must be
    validated.
-7. Release evidence: v0.9.0, green CI, docs, screenshots, demo data, validation
+7. Release evidence: v2.0.0, green CI, docs, screenshots, demo data, validation
    rubric, and public project hub.
 
 ## Facts To Use
@@ -161,17 +161,17 @@ quickstart, and security/limitations documentation.
 | Item | Value |
 |---|---|
 | Project | ThreatMapper |
-| Release | v0.9.0 |
-| Release date | 2026-06-15 |
+| Release | v2.0.0 |
+| Release date | 2026-06-16 |
 | License | MIT |
 | GitHub | https://github.com/anpa1200/threatmapper |
-| Release URL | https://github.com/anpa1200/threatmapper/releases/tag/v0.9.0 |
+| Release URL | https://github.com/anpa1200/threatmapper/releases/tag/v2.0.0 |
 | Project hub | https://1200km.com/threatmapper/ |
 | Public workspace | https://1200km.com/threat-matrix/ |
 | External validation | https://1200km.com/external-validation.html |
-| Current GitHub stats | 7 stars, 1 fork at preparation time |
-| Current CI | Passing on run 27565070537 |
-| Backend verification | `71 passed` |
+| Current GitHub stats | 8 stars, 1 fork at preparation time |
+| Current CI | Pending for v2.0.0 after release push |
+| Backend verification | `76 passed` |
 | Frontend verification | `npm run build` passed |
 
 ## Screenshot Suggestions

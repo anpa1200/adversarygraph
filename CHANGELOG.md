@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.0.0 - 2026-06-16
+
+- Added local LLM support through OpenAI-compatible endpoints such as Ollama,
+  LM Studio, LocalAI, and vLLM.
+- Added STIX 2.1 export for OpenCTI workflows from completed analysis sessions.
+- Added DFIR Examples with public report metadata, TTP/actor indexing, and a
+  local PDF workflow for private AI analysis.
+- Added Reference Sync UI/API for MITRE ATT&CK Enterprise, Mobile, and ICS
+  synchronization status and manual sync.
+- Enriched ATT&CK Group Library with actor metadata, aliases, external
+  references, technique evidence, tactic coverage, platform coverage, and
+  source context.
+- Added cached ATT&CK bundle fallback behavior to reduce GitHub API-rate and
+  startup fragility.
+- Added demo video, GIF, and poster for the report-to-analysis-to-comparison
+  workflow.
+- Added full v2 user/operator guide and OpenCTI export documentation.
+- Expanded backend coverage to 76 passing tests and kept frontend production
+  build green.
+
 ## v0.9.0 - 2026-06-15
 
 - Added maturity documentation package: security policy, contribution guide, maintainers file, roadmap, validation plan, demo dataset, sample outputs, and issue templates.

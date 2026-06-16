@@ -5,7 +5,7 @@
 **Source article:** https://infosecwriteups.com/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8
 **Canonical project:** https://github.com/anpa1200/threatmapper
 **Project hub:** https://1200km.com/threatmapper/
-**Release:** https://github.com/anpa1200/threatmapper/releases/tag/v0.9.0
+**Release:** https://github.com/anpa1200/threatmapper/releases/tag/v2.0.0
 **External validation:** https://1200km.com/external-validation.html
 
 ## Editorial Positioning Notes
@@ -238,7 +238,7 @@ Its role is narrower:
 - before SOC handoff, it helps organize extracted techniques into reviewable outputs;
 - before knowledge-graph promotion, it helps analysts validate whether the source evidence supports the mapping.
 
-The project is open source and currently pre-v1.0. The v0.9.0 release focuses on maturity evidence: release notes, CI, documentation, screenshots, demo data, sample outputs, validation material, and a public project hub.
+The project is open source and designed for self-hosted operation. The v2.0.0 release focuses on maturity evidence: release notes, CI, documentation, screenshots, demo data, sample outputs, validation material, and a public project hub.
 
 ![Project hub](../screenshots/32_1xoyHjzN-tAx7Lx19Xg0IPyA.png)
 
@@ -255,14 +255,14 @@ The project is open source and currently pre-v1.0. The v0.9.0 release focuses on
 ThreatMapper is available on GitHub under the MIT license.
 
 - GitHub: https://github.com/anpa1200/threatmapper
-- Release v0.9.0: https://github.com/anpa1200/threatmapper/releases/tag/v0.9.0
+- Release v2.0.0: https://github.com/anpa1200/threatmapper/releases/tag/v2.0.0
 - Project hub: https://1200km.com/threatmapper/
 - Public ATT&CK workspace: https://1200km.com/threat-matrix/
 - External validation and publications: https://1200km.com/external-validation.html
 
 ## Suggested Editor Summary
 
-ThreatMapper is an open-source, self-hosted CTI-to-detection workbench that maps threat reports to MITRE ATT&CK, compares TTP overlap against group and campaign profiles, and exports analyst-ready outputs. The tool is designed around analyst validation rather than automated attribution, and the v0.9.0 release includes Docker deployment, CI, documentation, demo data, screenshots, and validation material.
+ThreatMapper is an open-source, self-hosted CTI-to-detection workbench that maps threat reports to MITRE ATT&CK, compares TTP overlap against group and campaign profiles, and exports analyst-ready outputs. The tool is designed around analyst validation rather than automated attribution, and the v2.0.0 release includes Docker deployment, CI, documentation, demo data, screenshots, and validation material.
 
 ## Image Checklist From Source Article
 

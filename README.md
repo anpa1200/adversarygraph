@@ -3,7 +3,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/threatmapper/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/threatmapper/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v2.0.0-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -12,7 +12,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v0.9.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
+**Current release: v2.0.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8)**
 
 ThreatMapper AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -28,12 +28,12 @@ ThreatMapper AI is a self-hosted CTI-to-detection workbench for mapping threat r
 
 ## Project Maturity Evidence
 
-ThreatMapper is pre-`v1.0`, but the repository now publishes the operational evidence expected from a serious security tool:
+ThreatMapper v2.0.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
 | Installability | [Quickstart](docs/quickstart.md), Docker Compose deployment, `.env.example` |
-| Analyst documentation | [User guide](docs/user-guide.md), [comparison](docs/comparison.md), [limitations](docs/limitations.md) |
+| Analyst documentation | [Full v2 guide](docs/full-guide-v2.md), [user guide](docs/user-guide.md), [comparison](docs/comparison.md), [limitations](docs/limitations.md) |
 | Operations | [Admin guide](docs/admin-guide.md), [security model](docs/security-model.md), [security policy](SECURITY.md) |
 | Quality | Backend unit/integration tests, frontend build, [CI workflow](.github/workflows/ci.yml) |
 | Reviewability | [Demo dataset](docs/demo-dataset/public-report-excerpt.md), [expected mappings](docs/demo-dataset/expected-mappings.json), [sample outputs](docs/sample-outputs/) |
@@ -41,7 +41,7 @@ ThreatMapper is pre-`v1.0`, but the repository now publishes the operational evi
 | Maintenance | [Maintainers](MAINTAINERS.md), [roadmap](ROADMAP.md), [changelog](CHANGELOG.md), [contributing guide](CONTRIBUTING.md) |
 | Production readiness | [Production readiness tracker](docs/production-readiness.md) |
 
-Curated-list resubmission should wait until the project has additional release history and external usage evidence. The current documentation is intended to make that path measurable rather than promotional.
+The current documentation is intended to make external review practical rather than promotional.
 
 ## Public Demo Privacy Note
 
@@ -100,12 +100,13 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 |---|---|
 | **Navigator** | Full ATT&CK matrix (Enterprise, Mobile, ICS) with D3.js zoom/pan, sub-technique expansion, dual-layer colouring |
 | **Threat Actor Library** | Currently ingested MITRE ATT&CK group profiles, aliases, techniques, and named campaign relationships |
-| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK mapping candidates; results saved to Reports Library (DB 2) |
+| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK mapping candidates via Claude, OpenAI, Gemini, or a local OpenAI-compatible LLM; results saved to Reports Library (DB 2) |
 | **Compare — Groups** | Jaccard similarity ranking of your TTPs vs currently ingested group profiles; visual matrix diff, tactic breakdown, gap analysis |
 | **Compare — Campaigns** | Jaccard similarity ranking of your TTPs vs every named MITRE campaign (e.g. SolarWinds C0024, Operation Ghost C0023) |
 | **Compare — Reports** | Browse stored AI analyses (DB 2); re-run group-similarity comparison without re-calling the LLM |
-| **Export** | ATT&CK Navigator JSON layers, PDF threat intelligence reports, plain JSON |
-| **MITRE Sync** | Auto-detects new ATT&CK releases daily (Celery beat), manual sync via API; sidebar shows staleness indicator |
+| **DFIR Examples** | Indexed public DFIR Report examples with TTP/actor metadata and a local PDF workflow for private AI analysis |
+| **Export** | ATT&CK Navigator JSON layers, PDF reports, plain JSON, and STIX 2.1 bundles for OpenCTI import |
+| **Reference Sync** | Manual and scheduled MITRE ATT&CK sync for Enterprise, Mobile, and ICS with status reporting and stale-data indicators |
 | **Anomaly Detection Reference Book** | Docker-served, autonomously synchronized reference catalogs with exact paragraph-level links from every mapped matrix TTP |
 | **Intelligence Pipeline** | Scheduled reviewed RSS intake, STIX/TAXII, MISP and ATLAS imports, normalized observables, public enrichment, team audit trail |
 | **Detection Studio** | Versioned Sigma, KQL, SPL and EQL skeleton generation with structural validation and explicit analyst-review placeholders |
@@ -887,6 +888,17 @@ copy, newsletter pitch text, and current external submission tracking.
 ---
 
 ## Changelog
+
+### v2.0.0 (2026-06-16)
+
+**OpenCTI-ready self-hosted CTI workbench:**
+- Added local LLM provider support for OpenAI-compatible endpoints such as Ollama, LM Studio, LocalAI, and vLLM
+- Added STIX 2.1 export for OpenCTI import from completed AI analysis sessions
+- Added DFIR Examples with indexed public report metadata, TTPs, actor mappings, and a local PDF workflow
+- Added Reference Sync page and API for MITRE ATT&CK Enterprise, Mobile, and ICS status and manual sync
+- Enriched ATT&CK Group Library with aliases, external references, technique evidence, tactic coverage, platform coverage, source names, and metadata
+- Added cached ATT&CK bundle fallback behavior for more reliable startup and sync
+- Added reviewer-facing demo video, GIF, poster, release notes, and [full v2 guide](docs/full-guide-v2.md)
 
 ### v0.7.0 (2026-06-12)
 
