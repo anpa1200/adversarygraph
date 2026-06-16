@@ -9,27 +9,76 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/sync", tags=["MITRE Sync"])
 
 
 class DomainStatusOut(BaseModel):
+    source: str = "mitre-attack"
     domain: str
     current_version: str | None
     latest_version: str | None
     needs_update: bool
     last_ingested: str | None
+    content: list[str] = Field(default_factory=list)
+
+
+class SyncSourceOut(BaseModel):
+    id: str
+    label: str
+    status: str
+    content: list[str]
+    domains: list[str]
+    schedule: str | None = None
 
 
 class SyncStatusOut(BaseModel):
+    sources: list[SyncSourceOut]
     domains: list[DomainStatusOut]
     any_updates_needed: bool
+
+
+class TriggerRequest(BaseModel):
+    source: str = Field(default="mitre-attack")
+    domains: list[str] | None = None
+    force: bool = False
 
 
 class TriggerOut(BaseModel):
     task_id: str
     status: str
+    source: str
+    domains: list[str]
+    force: bool
+
+
+MITRE_CONTENT = [
+    "matrices",
+    "tactics",
+    "techniques",
+    "sub-techniques",
+    "APT groups",
+    "campaigns",
+    "group-technique relationships",
+    "campaign-technique relationships",
+    "references",
+]
+
+SUPPORTED_SOURCES = {
+    "mitre-attack": {
+        "label": "MITRE ATT&CK STIX",
+        "status": "active",
+        "content": MITRE_CONTENT,
+        "schedule": "daily at 03:00 UTC",
+    },
+    "other": {
+        "label": "Other CTI references",
+        "status": "planned",
+        "content": ["external CTI feeds", "internal reference indexes"],
+        "schedule": None,
+    },
+}
 
 
 @router.get("/status", response_model=SyncStatusOut)
@@ -46,15 +95,29 @@ async def sync_status():
 
         domains = [
             DomainStatusOut(
+                source="mitre-attack",
                 domain=s.domain,
                 current_version=s.current_version,
                 latest_version=s.latest_version,
                 needs_update=s.needs_update,
                 last_ingested=s.last_ingested,
+                content=MITRE_CONTENT,
             )
             for s in statuses
         ]
+        sources = [
+            SyncSourceOut(
+                id=source_id,
+                label=meta["label"],
+                status=meta["status"],
+                content=meta["content"],
+                domains=[d.domain for d in domains] if source_id == "mitre-attack" else [],
+                schedule=meta["schedule"],
+            )
+            for source_id, meta in SUPPORTED_SOURCES.items()
+        ]
         return SyncStatusOut(
+            sources=sources,
             domains=domains,
             any_updates_needed=any(d.needs_update for d in domains),
         )
@@ -63,15 +126,33 @@ async def sync_status():
 
 
 @router.post("/trigger", response_model=TriggerOut)
-async def trigger_sync():
+async def trigger_sync(body: TriggerRequest | None = None):
     """
     Submit a Celery task to download and ingest any out-of-date ATT&CK domains.
     Returns immediately; poll GET /sync/task/{task_id} for progress.
     """
+    body = body or TriggerRequest()
+    if body.source != "mitre-attack":
+        raise HTTPException(400, "Only source='mitre-attack' is currently supported")
+
+    from app.core.config import settings
+
+    configured_domains = settings.attck_domain_list
+    domains = body.domains or configured_domains
+    invalid = sorted(set(domains) - set(configured_domains))
+    if invalid:
+        raise HTTPException(400, f"Unsupported or disabled ATT&CK domains: {invalid}")
+
     try:
         from app.tasks.sync import check_and_sync
-        task = check_and_sync.delay()
-        return TriggerOut(task_id=task.id, status="queued")
+        task = check_and_sync.delay(domains=domains, force=body.force)
+        return TriggerOut(
+            task_id=task.id,
+            status="queued",
+            source=body.source,
+            domains=domains,
+            force=body.force,
+        )
     except Exception as exc:
         raise HTTPException(503, f"Celery unavailable: {exc}") from exc
 

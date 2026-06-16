@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1"
     gemini_api_key: str = ""
+    local_llm_base_url: str = "http://host.docker.internal:11434/v1"
+    local_llm_api_key: str = "local"
+    local_llm_model: str = "llama3.1:8b"
 
     # ATT&CK ingestion
     attck_domains: str = "enterprise-attack,mobile-attack,ics-attack"

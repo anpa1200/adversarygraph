@@ -10,13 +10,13 @@ import { getActorReports } from '@/config/intelligence';
 import { ReportReferences } from '@/components/ReportReferences';
 import { useMutation } from '@tanstack/react-query';
 
-type GroupTab = 'techniques' | 'campaigns' | 'reports';
+type GroupTab = 'overview' | 'techniques' | 'campaigns' | 'reports';
 
 export function APTLibrary() {
   const { domain, version, addTechniques, replaceTechniques, setOverlayGroup } = useAppStore();
   const [search, setSearch] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [groupTab, setGroupTab] = useState<GroupTab>('techniques');
+  const [groupTab, setGroupTab] = useState<GroupTab>('overview');
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [techModalId, setTechModalId] = useState<string | null>(null);
   const [params] = useSearchParams();
@@ -75,7 +75,7 @@ export function APTLibrary() {
               groups.map((group) => (
                 <button
                   key={group.attack_id}
-                  onClick={() => { setSelectedGroupId(group.attack_id); setGroupTab('techniques'); setExpandedCampaign(null); }}
+                  onClick={() => { setSelectedGroupId(group.attack_id); setGroupTab('overview'); setExpandedCampaign(null); }}
                   className={`w-full text-left px-4 py-3 border-b border-gray-800 hover:bg-gray-800 transition-colors ${
                     selectedGroupId === group.attack_id ? 'bg-gray-800 border-l-2 border-l-mitre-accent' : ''
                   }`}
@@ -109,8 +109,8 @@ export function APTLibrary() {
           {groupDetail && !detailLoading && (
             <div>
               {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div>
+              <div className="grid xl:grid-cols-[1fr_auto] gap-4 mb-4">
+                <div className="min-w-0">
                   <h2 className="text-xl font-bold text-white">{groupDetail.name}</h2>
                   <div className="flex gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded font-mono">
@@ -123,7 +123,7 @@ export function APTLibrary() {
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-2 shrink-0 flex-wrap justify-start xl:justify-end">
                   <button
                     onClick={() => replaceTechniques(groupDetail.techniques.map((t) => t.attack_id))}
                     className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
@@ -161,16 +161,17 @@ export function APTLibrary() {
               </div>
 
               {groupDetail.description && (
-                <p className="text-sm text-gray-400 mb-5 leading-relaxed line-clamp-4">
-                  {groupDetail.description}
-                </p>
+                <div className="text-sm text-gray-400 mb-5 leading-relaxed max-w-6xl">
+                  <AttackText text={groupDetail.description} />
+                </div>
               )}
 
               {/* Tabs */}
               <div className="flex gap-5 text-xs border-b border-gray-800 mb-5">
                 {([
+                  ['overview', 'Overview'],
                   ['techniques', `Techniques (${groupDetail.technique_count})`],
-                  ['campaigns',  'Campaigns (DB 1)'],
+                  ['campaigns',  `Campaigns (${groupDetail.campaign_count})`],
                   ['reports', `CTI / IR Reports (${reports.length})`],
                 ] as [GroupTab, string][]).map(([id, label]) => (
                   <button
@@ -187,33 +188,130 @@ export function APTLibrary() {
                 ))}
               </div>
 
+              {/* ── Overview tab ──────────────────────────────────────────── */}
+              {groupTab === 'overview' && (
+                <div className="grid xl:grid-cols-[1fr_360px] gap-5">
+                  <div className="space-y-5">
+                    <InfoPanel title="Actor Profile">
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <Info label="ATT&CK ID" value={groupDetail.attack_id} mono />
+                        <Info label="STIX ID" value={groupDetail.stix_id} mono />
+                        <Info label="Domain" value={groupDetail.domain} />
+                        <Info label="ATT&CK object version" value={groupDetail.attack_version || '-'} />
+                        <Info label="Created" value={fmtDate(groupDetail.created)} />
+                        <Info label="Modified" value={fmtDate(groupDetail.modified)} />
+                        <Info label="Mapped techniques" value={String(groupDetail.technique_count)} />
+                        <Info label="Named campaigns" value={String(groupDetail.campaign_count)} />
+                      </div>
+                    </InfoPanel>
+
+                    {groupDetail.aliases.length > 0 && (
+                      <InfoPanel title="Known Aliases">
+                        <div className="flex flex-wrap gap-2">
+                          {groupDetail.aliases.map(alias => <span key={alias} className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-300">{alias}</span>)}
+                        </div>
+                      </InfoPanel>
+                    )}
+
+                    <InfoPanel title="Technique Usage Evidence">
+                      <div className="space-y-3">
+                        {groupDetail.techniques.filter(item => item.use_description).slice(0, 12).map(tech => (
+                          <div key={tech.attack_id} className="rounded border border-gray-800 bg-gray-950/40 p-3">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => setTechModalId(tech.attack_id)} className="font-mono text-xs text-mitre-accent hover:underline">{tech.attack_id}</button>
+                              <span className="text-sm text-white">{tech.name}</span>
+                            </div>
+                            <div className="mt-2 text-xs leading-relaxed text-gray-400"><AttackText text={tech.use_description} /></div>
+                            {tech.references.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {tech.references.slice(0, 4).map((ref, idx) => (
+                                  <span key={`${tech.attack_id}-${idx}`} className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500">{ref.source_name}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {groupDetail.techniques.every(item => !item.use_description) && <p className="text-xs text-gray-500">No technique usage descriptions are present for this actor in the selected ATT&CK version.</p>}
+                      </div>
+                    </InfoPanel>
+                  </div>
+
+                  <div className="space-y-5">
+                    <InfoPanel title="Tactic Coverage">
+                      <StatList items={groupDetail.tactic_counts} />
+                    </InfoPanel>
+                    <InfoPanel title="Observed Platforms">
+                      <StatList items={groupDetail.platform_counts} />
+                    </InfoPanel>
+                    {groupDetail.contributors.length > 0 && (
+                      <InfoPanel title="ATT&CK Contributors">
+                        <div className="space-y-1">
+                          {groupDetail.contributors.map(item => <div key={item} className="text-xs text-gray-400">{item}</div>)}
+                        </div>
+                      </InfoPanel>
+                    )}
+                    <InfoPanel title="External References">
+                      <div className="space-y-2">
+                        {groupDetail.external_references.map((ref, idx) => (
+                          ref.url ? (
+                            <a key={`${ref.source_name}-${idx}`} href={ref.url} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 p-2 text-xs hover:border-gray-600">
+                              <span className="block text-gray-300">{ref.source_name || 'reference'}</span>
+                              {ref.description && <span className="block text-gray-500 mt-1 line-clamp-2"><AttackText text={ref.description} /></span>}
+                            </a>
+                          ) : (
+                            <div key={`${ref.source_name}-${idx}`} className="rounded border border-gray-800 p-2 text-xs text-gray-400">{ref.source_name}</div>
+                          )
+                        ))}
+                        {groupDetail.external_references.length === 0 && <p className="text-xs text-gray-500">No external references stored for this actor.</p>}
+                      </div>
+                    </InfoPanel>
+                    <InfoPanel title="Technique Source Names">
+                      <div className="flex flex-wrap gap-1.5">
+                        {groupDetail.source_names.slice(0, 30).map(item => <span key={item} className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500">{item}</span>)}
+                        {groupDetail.source_names.length === 0 && <span className="text-xs text-gray-500">No source names available.</span>}
+                      </div>
+                    </InfoPanel>
+                  </div>
+                </div>
+              )}
+
               {/* ── Techniques tab ─────────────────────────────────────────── */}
               {groupTab === 'techniques' && (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {groupDetail.techniques.map((tech) => (
                     <div
                       key={tech.attack_id}
-                      className="flex items-start gap-3 p-2 rounded hover:bg-gray-800 transition-colors"
+                      className="rounded border border-gray-800 p-3 hover:bg-gray-800/50 transition-colors"
                     >
-                      <button
-                        onClick={() => setTechModalId(tech.attack_id)}
-                        className="font-mono text-xs text-mitre-accent pt-0.5 shrink-0 w-20 text-left hover:underline hover:text-red-400 transition-colors"
-                        title="View technique details"
-                      >
-                        {tech.attack_id}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-white">{tech.name}</div>
-                        <div className="flex gap-1 mt-0.5 flex-wrap">
-                          {tech.tactics.map((t) => (
-                            <span key={t} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 rounded">
-                              {t}
-                            </span>
-                          ))}
+                      <div className="flex items-start gap-3">
+                        <button
+                          onClick={() => setTechModalId(tech.attack_id)}
+                          className="font-mono text-xs text-mitre-accent pt-0.5 shrink-0 w-20 text-left hover:underline hover:text-red-400 transition-colors"
+                          title="View technique details"
+                        >
+                          {tech.attack_id}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-white">{tech.name}</div>
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {tech.tactics.map((t) => (
+                              <span key={t} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 rounded">
+                                {t}
+                              </span>
+                            ))}
+                            {tech.platforms.slice(0, 4).map((p) => (
+                              <span key={p} className="text-[10px] bg-gray-900 text-gray-500 px-1.5 rounded">
+                                {p}
+                              </span>
+                            ))}
+                          </div>
                         </div>
+                        {tech.is_subtechnique && (
+                          <span className="text-[10px] text-gray-500 pt-0.5 shrink-0">sub</span>
+                        )}
                       </div>
-                      {tech.is_subtechnique && (
-                        <span className="text-[10px] text-gray-500 pt-0.5 shrink-0">sub</span>
+                      {tech.use_description && (
+                        <div className="mt-2 pl-[92px] text-xs leading-relaxed text-gray-500"><AttackText text={tech.use_description} /></div>
                       )}
                     </div>
                   ))}
@@ -266,6 +364,52 @@ export function APTLibrary() {
   );
 }
 
+function InfoPanel({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4"><h3 className="text-sm font-semibold text-white mb-3">{title}</h3>{children}</section>;
+}
+
+function Info({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div><div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div><div className={`mt-1 text-xs text-gray-300 break-words ${mono ? 'font-mono' : ''}`}>{value || '-'}</div></div>;
+}
+
+function StatList({ items }: { items: Array<{ name: string; count: number }> }) {
+  if (!items.length) return <p className="text-xs text-gray-500">No data available.</p>;
+  const max = Math.max(...items.map(item => item.count), 1);
+  return <div className="space-y-2">{items.slice(0, 12).map(item => <div key={item.name}><div className="flex justify-between gap-3 text-xs"><span className="text-gray-300">{item.name}</span><span className="font-mono text-gray-500">{item.count}</span></div><div className="mt-1 h-1.5 rounded bg-gray-800"><div className="h-1.5 rounded bg-mitre-accent" style={{ width: `${Math.max(8, (item.count / max) * 100)}%` }} /></div></div>)}</div>;
+}
+
+function fmtDate(value: string) {
+  if (!value) return '-';
+  return value.slice(0, 10);
+}
+
+function AttackText({ text }: { text: string }) {
+  const parts = parseAttackText(text);
+  return <>{parts.map((part, idx) => {
+    if (part.kind === 'link') {
+      return <a key={idx} href={part.url} target="_blank" rel="noreferrer" className="text-mitre-accent hover:underline">{part.text}</a>;
+    }
+    if (part.kind === 'citation') {
+      return <span key={idx} className="mx-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500">{part.text}</span>;
+    }
+    return <span key={idx}>{part.text}</span>;
+  })}</>;
+}
+
+function parseAttackText(text: string): Array<{ kind: 'text'; text: string } | { kind: 'link'; text: string; url: string } | { kind: 'citation'; text: string }> {
+  const parts: Array<{ kind: 'text'; text: string } | { kind: 'link'; text: string; url: string } | { kind: 'citation'; text: string }> = [];
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|\(Citation:\s*([^)]+)\)/g;
+  let last = 0;
+  for (const match of text.matchAll(re)) {
+    if (match.index > last) parts.push({ kind: 'text', text: text.slice(last, match.index) });
+    if (match[1] && match[2]) parts.push({ kind: 'link', text: match[1], url: match[2] });
+    else if (match[3]) parts.push({ kind: 'citation', text: match[3] });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push({ kind: 'text', text: text.slice(last) });
+  return parts;
+}
+
 // ── Campaign card (expandable) ────────────────────────────────────────────────
 
 function CampaignCard({
@@ -316,7 +460,7 @@ function CampaignCard({
             <>
               {detail.description && (
                 <p className="text-xs text-gray-400 mb-3 leading-relaxed line-clamp-3">
-                  {detail.description}
+                  <AttackText text={detail.description} />
                 </p>
               )}
               <div className="flex items-center justify-between mb-3">

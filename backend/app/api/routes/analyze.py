@@ -31,7 +31,7 @@ from app.services.file_parser import extract_text
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 logger = logging.getLogger(__name__)
 
-ALLOWED_PROVIDERS = {"claude", "openai", "gemini"}
+ALLOWED_PROVIDERS = {"claude", "openai", "gemini", "local"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 

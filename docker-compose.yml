@@ -41,11 +41,16 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-llama3.1:8b}
       ATTCK_DOMAINS: ${ATTCK_DOMAINS:-enterprise-attack,mobile-attack,ics-attack}
       ATTCK_DATA_DIR: /app/data/attck
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-admin}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,9 +75,14 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-llama3.1:8b}
       ATTCK_DATA_DIR: /app/data/attck
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-admin}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
       - postgres

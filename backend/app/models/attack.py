@@ -102,6 +102,11 @@ class AptGroup(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     aliases: Mapped[list] = mapped_column(JSONB, default=list)        # ["Cozy Bear", ...]
     url: Mapped[str] = mapped_column(String(500), default="")
+    created: Mapped[str] = mapped_column(String(50), default="")
+    modified: Mapped[str] = mapped_column(String(50), default="")
+    attack_version: Mapped[str] = mapped_column(String(50), default="")
+    contributors: Mapped[list] = mapped_column(JSONB, default=list)
+    external_references: Mapped[list] = mapped_column(JSONB, default=list)
     domain: Mapped[str] = mapped_column(String(50))
     version_id: Mapped[int] = mapped_column(ForeignKey("attack_versions.id"))
 

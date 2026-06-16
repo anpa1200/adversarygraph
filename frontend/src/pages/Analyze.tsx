@@ -7,12 +7,13 @@ import type { AnalysisResult } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
 
-type Provider = 'claude' | 'openai' | 'gemini';
+type Provider = 'claude' | 'openai' | 'gemini' | 'local';
 
 const PROVIDERS: { id: Provider; label: string; model: string; color: string }[] = [
   { id: 'claude',  label: 'Claude',  model: 'claude-opus-4-8',  color: 'border-orange-600 bg-orange-900/20 text-orange-300' },
   { id: 'openai',  label: 'OpenAI',  model: 'gpt-4.1',           color: 'border-green-700  bg-green-900/20  text-green-300'  },
   { id: 'gemini',  label: 'Gemini',  model: 'gemini-2.0-flash',  color: 'border-blue-600   bg-blue-900/20   text-blue-300'   },
+  { id: 'local',   label: 'Local',   model: 'llama3.1:8b',        color: 'border-cyan-600   bg-cyan-900/20   text-cyan-300'   },
 ];
 
 export function Analyze() {

@@ -47,7 +47,7 @@ In one sentence: **you give it a threat report, it returns ATT&CK mapping candid
 
 Concretely:
 
-- **AI Analysis** — upload a PDF, DOCX, or TXT file (or paste text), pick Claude, OpenAI, or Gemini, and get a streamed extraction of every ATT&CK technique the LLM identifies with evidence snippets and confidence scores
+- **AI Analysis** — upload a PDF, DOCX, or TXT file (or paste text), pick Claude, OpenAI, Gemini, or Local, and get a streamed extraction of every ATT&CK technique the LLM identifies with evidence snippets and confidence scores
 - **ATT&CK Navigator** — an interactive heatmap of the full ATT&CK matrix (Enterprise, Mobile, ICS) where you build, save, and reload named TTP layers
 - **Group & Campaign Similarity** — Jaccard TTP-overlap ranking against currently ingested ATT&CK group and campaign profiles
 - **Compare** — deep side-by-side comparison of your TTP set against groups, MITRE named campaigns, or your own stored report library; with visual matrix diff, tactic breakdown chart, and gap analysis
@@ -147,7 +147,7 @@ This is the killer feature and what most analysts will use day-to-day.
 
 Navigate to **Analyze** in the sidebar. You'll see:
 
-1. A provider dropdown (Claude / OpenAI / Gemini)
+1. A provider dropdown (Claude / OpenAI / Gemini / Local)
 2. An optional model override (defaults to `claude-opus-4-8`, `gpt-4.1`, `gemini-2.0-flash`)
 3. A domain selector (`enterprise-attack` for most corporate IR work)
 4. A text area or file upload

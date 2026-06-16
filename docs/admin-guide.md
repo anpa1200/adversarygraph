@@ -27,6 +27,9 @@ Important settings:
 | `OPENAI_API_KEY` | OpenAI provider |
 | `OPENAI_MODEL` | OpenAI model default |
 | `GEMINI_API_KEY` | Gemini provider |
+| `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM endpoint |
+| `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
+| `LOCAL_LLM_MODEL` | Local model default |
 | `ATTCK_DOMAINS` | ATT&CK domains to ingest |
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
@@ -74,6 +77,25 @@ docker compose up -d --build
 ```
 
 Review `CHANGELOG.md` before upgrading tagged releases.
+
+## Reference Synchronization
+
+ThreatMapper synchronizes MITRE ATT&CK STIX data for the configured
+`ATTCK_DOMAINS`. The sync includes matrices, tactics, techniques,
+sub-techniques, APT group profiles, campaigns, usage relationships, attribution
+links, and STIX references.
+
+Automatic sync runs daily at 03:00 UTC. Manual sync is available from the
+Reference Sync page or through the API:
+
+```bash
+curl -X POST http://localhost:8000/api/sync/trigger \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"mitre-attack","domains":["enterprise-attack"],"force":false}'
+```
+
+Set `force` to `true` to re-ingest the latest cached MITRE version even when the
+database already reports the current version.
 
 ## Internet-Facing Deployments
 

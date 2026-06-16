@@ -36,6 +36,8 @@ export interface GroupListItem {
   attack_id: string;     // G0001
   name: string;
   aliases: string[];
+  description: string;
+  modified: string;
   domain: string;
   technique_count: number;
 }
@@ -47,11 +49,20 @@ export interface TechniqueUsage {
   platforms: string[];
   is_subtechnique: boolean;
   use_description: string;
+  references: Array<{ source_name: string; url?: string; description?: string }>;
 }
 
 export interface GroupDetail extends GroupListItem {
-  description: string;
+  stix_id: string;
   url: string;
+  created: string;
+  attack_version: string;
+  contributors: string[];
+  external_references: Array<{ source_name: string; url: string; description: string }>;
+  campaign_count: number;
+  tactic_counts: Array<{ name: string; count: number }>;
+  platform_counts: Array<{ name: string; count: number }>;
+  source_names: string[];
   techniques: TechniqueUsage[];
 }
 

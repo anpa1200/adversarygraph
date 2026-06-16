@@ -183,6 +183,12 @@ Use screenshots from:
 - `docs/screenshots/13_1xFpAXPkiL1j3fiuOkL7tp8A.png`
 - `docs/screenshots/20_1xVAfpLRWhfkB0pwRR5C4Nlw.png`
 
+Use this short workflow video when an editor asks for a demo:
+
+- `docs/demo-videos/dfir-report-ai-analysis-compare.mp4`
+- `docs/demo-videos/dfir-report-ai-analysis-compare.gif`
+- `docs/demo-videos/dfir-report-ai-analysis-compare-poster.png`
+
 Public copied versions are also available on 1200km.com:
 
 - `https://1200km.com/assets/validation/threatmapper-dashboard.png`

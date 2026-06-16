@@ -1,7 +1,6 @@
 """Downloads ATT&CK STIX bundles from MITRE's GitHub repository."""
 
 import logging
-import os
 from pathlib import Path
 
 import requests
@@ -47,6 +46,22 @@ def get_latest_version(domain: str) -> str:
     return version_str
 
 
+def get_latest_cached_version(domain: str, data_dir: str) -> str | None:
+    """Return the highest cached ATT&CK bundle version for a domain."""
+    root = Path(data_dir)
+    versions: list[tuple[tuple[int, ...], str]] = []
+    for path in root.glob(f"{domain}-*.json"):
+        stem = path.name.replace(f"{domain}-", "").replace(".json", "")
+        try:
+            parts = tuple(int(x) for x in stem.split("."))
+        except ValueError:
+            continue
+        versions.append((parts, stem))
+    if not versions:
+        return None
+    return max(versions, key=lambda item: item[0])[1]
+
+
 def download_bundle(domain: str, version: str, data_dir: str) -> Path:
     """Download the STIX bundle for a domain/version, skipping if already cached."""
     dest = Path(data_dir) / f"{domain}-{version}.json"
@@ -78,6 +93,18 @@ def download_bundle(domain: str, version: str, data_dir: str) -> Path:
 
 def ensure_bundle(domain: str, data_dir: str) -> tuple[Path, str]:
     """Return (path, version) for the latest bundle, downloading if needed."""
-    version = get_latest_version(domain)
+    try:
+        version = get_latest_version(domain)
+    except Exception as exc:
+        cached = get_latest_cached_version(domain, data_dir)
+        if not cached:
+            raise
+        logger.warning(
+            "Could not check latest ATT&CK version for %s: %s. Using cached %s.",
+            domain,
+            exc,
+            cached,
+        )
+        version = cached
     path = download_bundle(domain, version, data_dir)
     return path, version

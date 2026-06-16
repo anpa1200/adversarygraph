@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,8 @@ class GroupListItem(BaseModel):
     attack_id: str
     name: str
     aliases: list[str]
+    description: str = ""
+    modified: str = ""
     domain: str
     technique_count: int
 
@@ -32,18 +34,40 @@ class TechniqueUsage(BaseModel):
     platforms: list[str]
     is_subtechnique: bool
     use_description: str
+    references: list[dict] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
 
+class ExternalReference(BaseModel):
+    source_name: str
+    url: str = ""
+    description: str = ""
+
+
+class CountItem(BaseModel):
+    name: str
+    count: int
+
+
 class GroupDetail(BaseModel):
     attack_id: str
+    stix_id: str
     name: str
     aliases: list[str]
     description: str
     url: str
+    created: str
+    modified: str
+    attack_version: str
+    contributors: list[str]
+    external_references: list[ExternalReference]
     domain: str
     technique_count: int
+    campaign_count: int
+    tactic_counts: list[CountItem]
+    platform_counts: list[CountItem]
+    source_names: list[str]
     techniques: list[TechniqueUsage]
 
     model_config = {"from_attributes": True}
@@ -82,7 +106,10 @@ async def list_groups(
     if search:
         term = f"%{search}%"
         stmt = stmt.where(
-            AptGroup.name.ilike(term) | AptGroup.attack_id.ilike(term)
+            AptGroup.name.ilike(term)
+            | AptGroup.attack_id.ilike(term)
+            | AptGroup.description.ilike(term)
+            | cast(AptGroup.aliases, String).ilike(term)
         )
 
     rows = await session.execute(stmt)
@@ -92,6 +119,8 @@ async def list_groups(
             attack_id=group.attack_id,
             name=group.name,
             aliases=group.aliases or [],
+            description=group.description or "",
+            modified=group.modified or "",
             domain=group.domain,
             technique_count=tech_count,
         ))
@@ -124,26 +153,65 @@ async def get_group(
         raise HTTPException(404, f"Group {attack_id} not found")
 
     usages = []
+    tactic_counts: dict[str, int] = {}
+    platform_counts: dict[str, int] = {}
+    source_names: set[str] = set()
     for agt in group.technique_usages:
         t = agt.technique
+        tactics = [tc.shortname for tc in t.tactics]
+        for tactic in tactics:
+            tactic_counts[tactic] = tactic_counts.get(tactic, 0) + 1
+        for platform in t.platforms or []:
+            platform_counts[platform] = platform_counts.get(platform, 0) + 1
+        for ref in agt.references or []:
+            if ref.get("source_name"):
+                source_names.add(str(ref["source_name"]))
         usages.append(TechniqueUsage(
             attack_id=t.attack_id,
             name=t.name,
-            tactics=[tc.shortname for tc in t.tactics],
+            tactics=tactics,
             platforms=t.platforms or [],
             is_subtechnique=t.is_subtechnique,
             use_description=agt.use_description or "",
+            references=agt.references or [],
         ))
     usages.sort(key=lambda u: u.attack_id)
 
+    campaign_count = await session.scalar(
+        select(func.count(AptGroupCampaign.id)).where(AptGroupCampaign.group_id == group.id)
+    )
+
     return GroupDetail(
         attack_id=group.attack_id,
+        stix_id=group.stix_id,
         name=group.name,
         aliases=group.aliases or [],
         description=group.description or "",
         url=group.url or "",
+        created=group.created or "",
+        modified=group.modified or "",
+        attack_version=group.attack_version or "",
+        contributors=group.contributors or [],
+        external_references=[
+            ExternalReference(
+                source_name=str(ref.get("source_name", "")),
+                url=str(ref.get("url", "")),
+                description=str(ref.get("description", "")),
+            )
+            for ref in (group.external_references or [])
+        ],
         domain=group.domain,
         technique_count=len(usages),
+        campaign_count=campaign_count or 0,
+        tactic_counts=[
+            CountItem(name=name, count=count)
+            for name, count in sorted(tactic_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        platform_counts=[
+            CountItem(name=name, count=count)
+            for name, count in sorted(platform_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        source_names=sorted(source_names),
         techniques=usages,
     )
 

@@ -10,6 +10,8 @@ import { Discover } from '@/pages/Discover';
 import { InvestigationReport } from '@/pages/InvestigationReport';
 import { Operations } from '@/pages/Operations';
 import { Pipeline } from '@/pages/Pipeline';
+import { Sync } from '@/pages/Sync';
+import { Examples } from '@/pages/Examples';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,6 +40,8 @@ export default function App() {
               <Route path="/report" element={<InvestigationReport />} />
               <Route path="/operations" element={<Operations />} />
               <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/sync" element={<Sync />} />
+              <Route path="/examples" element={<Examples />} />
             </Routes>
           </main>
         </div>

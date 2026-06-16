@@ -112,6 +112,19 @@ def test_ensure_bundle_returns_downloaded_path_and_version(monkeypatch, tmp_path
     assert downloader.ensure_bundle("mobile-attack", str(tmp_path)) == (expected_path, "16.0")
 
 
+def test_ensure_bundle_falls_back_to_cached_version(monkeypatch, tmp_path):
+    cached = tmp_path / "enterprise-attack-19.1.json"
+    cached.write_text("{}")
+    monkeypatch.setattr(downloader, "get_latest_version", lambda domain: (_ for _ in ()).throw(RuntimeError("rate limited")))
+    monkeypatch.setattr(
+        downloader,
+        "download_bundle",
+        lambda domain, version, data_dir: tmp_path / f"{domain}-{version}.json",
+    )
+
+    assert downloader.ensure_bundle("enterprise-attack", str(tmp_path)) == (cached, "19.1")
+
+
 def test_sync_outdated_domains_updates_only_domains_that_need_it(monkeypatch, tmp_path):
     actions_seen = []
     bundle_path = tmp_path / "enterprise-attack-15.1.json"
@@ -139,6 +152,34 @@ def test_sync_outdated_domains_updates_only_domains_that_need_it(monkeypatch, tm
         "mobile-attack": "up-to-date",
     }
     assert actions_seen == [("enterprise-attack", bundle_path, "15.1")]
+
+
+def test_sync_outdated_domains_can_force_selected_domain(monkeypatch, tmp_path):
+    actions_seen = []
+    bundle_path = tmp_path / "mobile-attack-16.0.json"
+
+    monkeypatch.setattr(
+        version_checker,
+        "get_status",
+        lambda: [
+            version_checker.DomainStatus("enterprise-attack", "15.1", "15.1", False, None),
+            version_checker.DomainStatus("mobile-attack", "16.0", "16.0", False, None),
+        ],
+    )
+    monkeypatch.setattr(version_checker.settings, "attck_data_dir", str(tmp_path))
+    monkeypatch.setattr(
+        "app.services.attck.downloader.download_bundle",
+        lambda domain, version, data_dir: bundle_path,
+    )
+    monkeypatch.setattr(
+        "app.services.attck.ingestor.ingest_domain",
+        lambda domain, path, version: actions_seen.append((domain, path, version)),
+    )
+
+    assert version_checker.sync_outdated_domains(domains=["mobile-attack"], force=True) == {
+        "mobile-attack": "refreshed 16.0",
+    }
+    assert actions_seen == [("mobile-attack", bundle_path, "16.0")]
 
 
 def test_get_status_reports_current_latest_and_failures(monkeypatch):
@@ -177,9 +218,10 @@ def test_get_status_reports_current_latest_and_failures(monkeypatch):
     monkeypatch.setattr(
         version_checker,
         "settings",
-        SimpleNamespace(attck_domain_list=["enterprise-attack", "mobile-attack"]),
+        SimpleNamespace(attck_domain_list=["enterprise-attack", "mobile-attack"], attck_data_dir="/tmp"),
     )
     monkeypatch.setattr(version_checker, "get_latest_version", fake_latest)
+    monkeypatch.setattr(version_checker, "get_latest_cached_version", lambda domain, data_dir: "16.0")
 
     statuses = version_checker.get_status()
 
@@ -191,5 +233,5 @@ def test_get_status_reports_current_latest_and_failures(monkeypatch):
             True,
             "2026-06-15T10:30:00",
         ),
-        version_checker.DomainStatus("mobile-attack", None, None, False, None),
+        version_checker.DomainStatus("mobile-attack", None, "16.0", True, None),
     ]

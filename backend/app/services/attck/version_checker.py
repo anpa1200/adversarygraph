@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.attack import AttackVersion
-from app.services.attck.downloader import get_latest_version
+from app.services.attck.downloader import get_latest_cached_version, get_latest_version
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,13 @@ def get_status() -> list[DomainStatus]:
             try:
                 latest = get_latest_version(domain)
             except Exception as exc:
-                logger.warning("Could not check GitHub for %s: %s", domain, exc)
-                latest = None
+                latest = get_latest_cached_version(domain, settings.attck_data_dir)
+                logger.warning(
+                    "Could not check GitHub for %s: %s. Cached latest: %s",
+                    domain,
+                    exc,
+                    latest,
+                )
 
             needs_update = bool(latest and current != latest)
 
@@ -78,7 +83,10 @@ def get_status() -> list[DomainStatus]:
     return results
 
 
-def sync_outdated_domains() -> dict[str, str]:
+def sync_outdated_domains(
+    domains: list[str] | None = None,
+    force: bool = False,
+) -> dict[str, str]:
     """
     Download and ingest any domains that have a newer GitHub version than
     what is stored in the database.  Returns {domain: action} pairs.
@@ -87,14 +95,23 @@ def sync_outdated_domains() -> dict[str, str]:
     from app.services.attck.downloader import download_bundle
 
     actions: dict[str, str] = {}
+    requested = set(domains or [])
 
     for status in get_status():
-        if not status.needs_update:
+        if requested and status.domain not in requested:
+            continue
+
+        if not status.latest_version:
+            actions[status.domain] = "error: latest version unavailable"
+            continue
+
+        if not force and not status.needs_update:
             actions[status.domain] = "up-to-date"
             continue
 
         logger.info(
-            "Updating %s: %s → %s",
+            "%s %s: %s → %s",
+            "Refreshing" if force else "Updating",
             status.domain,
             status.current_version,
             status.latest_version,
@@ -102,11 +119,15 @@ def sync_outdated_domains() -> dict[str, str]:
         try:
             path = download_bundle(
                 status.domain,
-                status.latest_version,       # type: ignore[arg-type]
+                status.latest_version,
                 settings.attck_data_dir,
             )
-            ingest_domain(status.domain, path, status.latest_version)  # type: ignore[arg-type]
-            actions[status.domain] = f"updated to {status.latest_version}"
+            ingest_domain(status.domain, path, status.latest_version)
+            actions[status.domain] = (
+                f"refreshed {status.latest_version}"
+                if force and not status.needs_update
+                else f"updated to {status.latest_version}"
+            )
         except Exception as exc:
             logger.error("Failed to update %s: %s", status.domain, exc, exc_info=True)
             actions[status.domain] = f"error: {exc}"

@@ -107,6 +107,13 @@ Each technique candidate includes:
 
 The evidence field is important. It keeps the mapping traceable to the source text, which helps analysts validate whether the model mapped an explicit behavior, inferred a behavior, or produced a weak candidate that should be rejected.
 
+Demo video for this workflow:
+[`DFIR report download to AI analysis and comparison`](../demo-videos/dfir-report-ai-analysis-compare.mp4).
+It shows the practical path from indexed DFIR examples, to a local PDF upload,
+to streamed ATT&CK extraction, and then selected TTP review in the workspace.
+A GIF version is available at
+[`../demo-videos/dfir-report-ai-analysis-compare.gif`](../demo-videos/dfir-report-ai-analysis-compare.gif).
+
 ![Analysis input](../screenshots/06_1x62_zstQMYPoqj4kSTn4nBg.png)
 
 ![Streaming analysis](../screenshots/07_1x69nMwI7Xj8eNIWHv_C_KVg.png)
@@ -296,3 +303,9 @@ All preserved images from the InfoSec Write-ups / Medium article are referenced 
 - [x] `docs/screenshots/34_1xz4L2KcZIixQjdkrcBt8OlA.png`
 - [x] `docs/screenshots/35_1xz711T5SOrORpjITlM2IY9A.png`
 - [x] `docs/screenshots/36_7xV1_7XP4snlmqrc_0Njontw.png`
+
+## Demo Video Checklist
+
+- [x] `docs/demo-videos/dfir-report-ai-analysis-compare.mp4`
+- [x] `docs/demo-videos/dfir-report-ai-analysis-compare.gif`
+- [x] `docs/demo-videos/dfir-report-ai-analysis-compare-poster.png`

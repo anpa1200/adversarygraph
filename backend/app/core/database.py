@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy import text
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
@@ -34,3 +35,8 @@ async def get_session() -> AsyncSession:
 async def create_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS created VARCHAR(50) DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS modified VARCHAR(50) DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS attack_version VARCHAR(50) DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS contributors JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS external_references JSONB DEFAULT '[]'::jsonb"))

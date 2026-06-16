@@ -142,6 +142,11 @@ def parse_bundle(bundle_path: Path) -> dict:
                     "description": obj.get("description", ""),
                     "aliases":     aliases,
                     "url":         _attack_url(obj),
+                    "created":     obj.get("created", "") or "",
+                    "modified":    obj.get("modified", "") or "",
+                    "attack_version": obj.get("x_mitre_version", "") or "",
+                    "contributors": obj.get("x_mitre_contributors", []) or [],
+                    "external_references": _ext_refs(obj),
                 })
 
         elif t == "campaign":
@@ -328,9 +333,28 @@ def ingest_domain(domain: str, bundle_path: Path, version: str) -> None:
                     attack_id=g["attack_id"], stix_id=g["stix_id"],
                     name=g["name"], description=g["description"],
                     aliases=g["aliases"], url=g["url"],
+                    created=g["created"], modified=g["modified"],
+                    attack_version=g["attack_version"],
+                    contributors=g["contributors"],
+                    external_references=g["external_references"],
                     domain=domain, version_id=version_id,
                 )
-                .on_conflict_do_nothing(constraint="uq_group_version")
+                .on_conflict_do_update(
+                    constraint="uq_group_version",
+                    set_={
+                        "stix_id": g["stix_id"],
+                        "name": g["name"],
+                        "description": g["description"],
+                        "aliases": g["aliases"],
+                        "url": g["url"],
+                        "created": g["created"],
+                        "modified": g["modified"],
+                        "attack_version": g["attack_version"],
+                        "contributors": g["contributors"],
+                        "external_references": g["external_references"],
+                        "domain": domain,
+                    },
+                )
                 .returning(AptGroup.id)
             )
             row = session.execute(stmt).fetchone()

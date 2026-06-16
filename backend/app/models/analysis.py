@@ -21,7 +21,7 @@ class AnalysisSession(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # user-supplied label
     input_type: Mapped[str] = mapped_column(String(10))   # text | file
     filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    llm_provider: Mapped[str] = mapped_column(String(20))  # claude | openai | gemini
+    llm_provider: Mapped[str] = mapped_column(String(20))  # claude | openai | gemini | local
     model: Mapped[str] = mapped_column(String(100), default="")
     domain: Mapped[str] = mapped_column(String(50), default="enterprise-attack")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

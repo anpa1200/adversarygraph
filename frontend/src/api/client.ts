@@ -176,19 +176,36 @@ export const healthApi = {
 // ── MITRE Sync ────────────────────────────────────────────────────────────────
 
 export interface DomainStatus {
+  source: string;
   domain: string;
   current_version: string | null;
   latest_version: string | null;
   needs_update: boolean;
   last_ingested: string | null;
+  content: string[];
+}
+
+export interface SyncSource {
+  id: string;
+  label: string;
+  status: string;
+  content: string[];
+  domains: string[];
+  schedule: string | null;
 }
 
 export const syncApi = {
-  status: (): Promise<{ domains: DomainStatus[]; any_updates_needed: boolean }> =>
+  status: (): Promise<{ sources: SyncSource[]; domains: DomainStatus[]; any_updates_needed: boolean }> =>
     http.get('/sync/status').then(r => r.data),
 
-  trigger: (): Promise<{ task_id: string; status: string }> =>
-    http.post('/sync/trigger').then(r => r.data),
+  trigger: (payload?: { source?: string; domains?: string[]; force?: boolean }): Promise<{
+    task_id: string;
+    status: string;
+    source: string;
+    domains: string[];
+    force: boolean;
+  }> =>
+    http.post('/sync/trigger', payload ?? {}).then(r => r.data),
 
   taskStatus: (taskId: string): Promise<{ status: string; result: unknown }> =>
     http.get(`/sync/task/${taskId}`).then(r => r.data),

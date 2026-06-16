@@ -104,8 +104,11 @@ async def test_sync_status_shape(client: AsyncClient):
     assert resp.status_code in (200, 500)
     if resp.status_code == 200:
         body = resp.json()
+        assert "sources" in body
         assert "domains" in body
         assert "any_updates_needed" in body
         for domain_info in body["domains"]:
+            assert domain_info["source"] == "mitre-attack"
             assert "domain" in domain_info
             assert "current_version" in domain_info
+            assert "content" in domain_info

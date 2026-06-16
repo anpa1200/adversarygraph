@@ -58,6 +58,12 @@ The set covers the public ATT&CK matrix workspace, group overlay workflows,
 analysis views, report/evidence review, and ecosystem navigation from the
 companion walkthrough.
 
+Demo workflow video:
+[`DFIR report download to AI analysis and comparison`](docs/demo-videos/dfir-report-ai-analysis-compare.mp4)
+shows the end-to-end flow from indexed public report examples to local PDF
+upload, streamed ATT&CK extraction, and selected TTP review. A GIF version is
+also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/demo-videos/dfir-report-ai-analysis-compare.gif).
+
 | Matrix and actor workflow | Analysis and review workflow |
 |---|---|
 | ![ThreatMapper ATT&CK matrix workspace](docs/screenshots/02_1x07j05Kn78RJY96S3Ga4IVQ.png) | ![ThreatMapper analysis workflow](docs/screenshots/10_1xCsGSK7APVQvnvTDCLxXKNA.png) |
@@ -145,7 +151,7 @@ User uploads report
   _read_input()          ← stream with 50 MB byte-cap, size-check before buffer
         │
         ▼
-  LLMAdapter.extract()   ← Claude / OpenAI / Gemini
+  LLMAdapter.extract()   ← Claude / OpenAI / Gemini / Local
         │
         ▼
   _parse_response()      ← JSON extraction with raw_decode fallback
@@ -174,7 +180,7 @@ User uploads report
 ### Prerequisites
 
 - Docker + Docker Compose (v2)
-- API key for at least one LLM provider (Claude, OpenAI, or Gemini)
+- API key for at least one cloud LLM provider, or a local OpenAI-compatible LLM endpoint
 
 ### 1 — Clone and configure
 
@@ -187,10 +193,16 @@ cp .env.example .env
 Edit `.env` and add your API keys:
 
 ```env
-# Required: at least one AI provider key
+# Optional cloud providers
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1
 GEMINI_API_KEY=AIza...
+
+# Optional local provider: Ollama / LM Studio / LocalAI / vLLM with OpenAI-compatible API
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_LLM_API_KEY=local
+LOCAL_LLM_MODEL=llama3.1:8b
 
 # Database (defaults are fine for local use)
 DB_NAME=threatmapper
@@ -203,9 +215,30 @@ ATTCK_DOMAINS=enterprise-attack,mobile-attack,ics-attack
 LOG_LEVEL=info
 ```
 
-> You only need one LLM key. The others can be left blank — the UI only shows providers that have a key configured.
+> You only need one working provider. Cloud API keys can be left blank if you use the local provider.
 >
-> **You must create `.env` before running `docker compose up`.** Without it the API keys are empty and AI Analysis will return 500.
+> **You must create `.env` before running `docker compose up`.** Without it, cloud API keys are empty and local-provider defaults are used.
+
+For Ollama on the same host:
+
+```bash
+ollama pull llama3.1:8b
+ollama serve
+```
+
+Keep:
+
+```env
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_LLM_MODEL=llama3.1:8b
+```
+
+For LM Studio, start its local OpenAI-compatible server and use:
+
+```env
+LOCAL_LLM_BASE_URL=http://host.docker.internal:1234/v1
+LOCAL_LLM_MODEL=<model-name-shown-by-LM-Studio>
+```
 
 ### 2 — Start
 
@@ -251,6 +284,7 @@ Finished ingesting enterprise-attack v19.1
 | **Reference book** | http://localhost:3001/anomaly-detection-atlas/ |
 | **API docs** | http://localhost:8000/docs |
 | **Health** | http://localhost:8000/api/health |
+| **Reference sync** | http://localhost:3000/sync |
 
 ---
 
@@ -562,7 +596,7 @@ POST /api/apt/campaigns/compare?domain=enterprise-attack[&top_n=20&version=19.1]
 
 ```
 POST /api/analyze
-     multipart: provider={claude|openai|gemini}, domain=enterprise-attack,
+     multipart: provider={claude|openai|gemini|local}, domain=enterprise-attack,
                 name="My Report", text=... | file=@report.pdf
 
 POST /api/analyze/stream          ← Server-Sent Events (same fields)
@@ -600,10 +634,19 @@ POST /api/export/layer
 ### Sync
 
 ```
-GET  /api/sync/status
-POST /api/sync/trigger
-GET  /api/sync/task/{task_id}
+GET  /api/sync/status          ← source metadata, configured domains, current/latest versions
+POST /api/sync/trigger         ← queue reference sync
+     body: {
+       "source": "mitre-attack",
+       "domains": ["enterprise-attack", "mobile-attack", "ics-attack"],
+       "force": false
+     }
+GET  /api/sync/task/{task_id}  ← poll queued sync
 ```
+
+MITRE sync covers matrices, tactics, techniques, sub-techniques, APT groups,
+campaigns, group-technique relationships, campaign-technique relationships,
+campaign-group attribution links, and STIX external references.
 
 ### Health
 
@@ -626,6 +669,9 @@ All configuration is via environment variables in `.env`.
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4.1` | OpenAI model used when no request-level model is provided |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
+| `LOCAL_LLM_BASE_URL` | `http://host.docker.internal:11434/v1` | OpenAI-compatible local LLM endpoint |
+| `LOCAL_LLM_API_KEY` | `local` | API key placeholder for local OpenAI-compatible servers |
+| `LOCAL_LLM_MODEL` | `llama3.1:8b` | Local model used when no request-level model is provided |
 | `ATTCK_DOMAINS` | `enterprise-attack,mobile-attack,ics-attack` | Comma-separated domains to ingest |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warning` / `error` |
 
@@ -810,6 +856,7 @@ copy, newsletter pitch text, and current external submission tracking.
 | AI — Claude | `anthropic` SDK | Cached async client in `__init__` |
 | AI — OpenAI | `openai` SDK | Cached client; JSON mode on non-streaming |
 | AI — Gemini | `google-generativeai` | `configure()` called once in `__init__` |
+| AI — Local | `openai` SDK | OpenAI-compatible local endpoint such as Ollama, LM Studio, LocalAI, or vLLM |
 | File parsing | PyMuPDF (PDF), python-docx (DOCX) | Streamed with 50 MB hard cap |
 | PDF reports | fpdf2 | Multi-page with tactic coverage chart |
 | Frontend framework | React 18 + TypeScript | |
