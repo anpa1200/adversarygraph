@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
-import { analyzeApi, exportApi } from '@/api/client';
+import { analyzeApi, exportApi, reportsApi } from '@/api/client';
 import type { AnalysisResult } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
+import type { ReportSession } from '@/types/attack';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'local';
 
@@ -19,14 +21,48 @@ const PROVIDERS: { id: Provider; label: string; model: string; color: string }[]
 export function Analyze() {
   const { domain, addTechniques } = useAppStore();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [provider, setProvider] = useState<Provider>('claude');
   const [text,     setText]     = useState('');
   const [file,     setFile]     = useState<File | null>(null);
+  const [loadedResult, setLoadedResult] = useState<AnalysisResult | null>(null);
 
   // result: populated by the server-side "result" SSE event (includes group-similarity leads)
   // tokens: raw LLM token stream shown live while waiting
   const { tokens, result, error, streaming, run, abort, reset } = useSseStream<AnalysisResult>();
+  const activeResult = result ?? loadedResult;
+
+  const { data: previousReports = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['report-sessions'],
+    queryFn: () => reportsApi.list(100, 0),
+    staleTime: 30_000,
+  });
+
+  const loadReportMutation = useMutation({
+    mutationFn: (sessionId: string) => analyzeApi.getResult(sessionId),
+    onSuccess: data => {
+      reset();
+      setLoadedResult(data);
+    },
+  });
+
+  const deleteReportMutation = useMutation({
+    mutationFn: (sessionId: string) => reportsApi.remove(sessionId),
+    onSuccess: (_data, sessionId) => {
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+      if (loadedResult?.session_id === sessionId || result?.session_id === sessionId) {
+        setLoadedResult(null);
+        reset();
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (result?.session_id) {
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    }
+  }, [queryClient, result?.session_id]);
 
   const handleRun = useCallback(async () => {
     const fd = new FormData();
@@ -37,6 +73,7 @@ export function Analyze() {
     else return;
 
     reset();
+    setLoadedResult(null);
     await run(analyzeApi.stream(fd));
   }, [provider, domain, file, text, run, reset]);
 
@@ -112,7 +149,7 @@ export function Analyze() {
           </div>
 
           {/* Submit */}
-          <div className="p-4">
+          <div className="p-4 border-b border-gray-800">
             {streaming ? (
               <button
                 onClick={abort}
@@ -135,6 +172,20 @@ export function Analyze() {
               </div>
             )}
           </div>
+
+          <PreviousAnalysisList
+            reports={previousReports}
+            loading={historyLoading}
+            activeSessionId={activeResult?.session_id ?? null}
+            loadingSessionId={loadReportMutation.variables ?? null}
+            deletingSessionId={deleteReportMutation.variables ?? null}
+            onOpen={sessionId => loadReportMutation.mutate(sessionId)}
+            onDelete={sessionId => {
+              if (window.confirm('Delete this stored analysis?')) {
+                deleteReportMutation.mutate(sessionId);
+              }
+            }}
+          />
         </div>
 
         {/* ── Right: results panel ──────────────────────────────────────────── */}
@@ -154,20 +205,20 @@ export function Analyze() {
           )}
 
           {/* Empty state */}
-          {!streaming && !tokens && !result && (
+          {!streaming && !tokens && !activeResult && (
             <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-600">
               <div className="text-5xl mb-4">⬢</div>
               <p className="text-gray-500">Submit a report to extract ATT&CK techniques.</p>
               <p className="text-xs mt-2 text-gray-600">
-                Results auto-populate your Navigator layer.
+                Previous analyses are remembered locally and can be reopened from the left panel.
               </p>
             </div>
           )}
 
           {/* Full parsed result from server (includes group-similarity leads) */}
-          {result && (
+          {activeResult && (
             <ResultsView
-              result={result}
+              result={activeResult}
               addTechniques={addTechniques}
               navigate={navigate}
             />
@@ -182,6 +233,96 @@ export function Analyze() {
             />
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviousAnalysisList({
+  reports,
+  loading,
+  activeSessionId,
+  loadingSessionId,
+  deletingSessionId,
+  onOpen,
+  onDelete,
+}: {
+  reports: ReportSession[];
+  loading: boolean;
+  activeSessionId: string | null;
+  loadingSessionId: string | null;
+  deletingSessionId: string | null;
+  onOpen: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+}) {
+  return (
+    <div className="min-h-[180px] max-h-[320px] flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+        <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Previous analysis</div>
+        <span className="text-[10px] text-gray-600">{reports.length}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading && <div className="px-4 py-3 text-xs text-gray-600">Loading saved analyses...</div>}
+        {!loading && reports.length === 0 && (
+          <div className="px-4 py-3 text-xs text-gray-600 leading-relaxed">
+            Completed analyses will appear here for reuse, export, comparison, or deletion.
+          </div>
+        )}
+        {reports.map(report => {
+          const title = report.name || report.filename || `Analysis ${report.session_id.slice(0, 8)}`;
+          const created = new Date(report.created_at).toLocaleString();
+          const isActive = activeSessionId === report.session_id;
+          const isLoading = loadingSessionId === report.session_id;
+          const isDeleting = deletingSessionId === report.session_id;
+
+          return (
+            <div
+              key={report.session_id}
+              className={`group border-b border-gray-800 px-4 py-3 ${isActive ? 'bg-mitre-accent/10' : 'hover:bg-gray-900/60'}`}
+            >
+              <button
+                type="button"
+                onClick={() => onOpen(report.session_id)}
+                className="w-full min-w-0 text-left"
+                disabled={isLoading || isDeleting}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm text-gray-200 font-medium">{title}</span>
+                  {isActive && <span className="text-[10px] text-mitre-accent">open</span>}
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-600">
+                  <span>{report.technique_count} TTPs</span>
+                  <span>{report.provider}</span>
+                  <span className="truncate">{created}</span>
+                </div>
+              </button>
+              <div className="mt-2 flex items-center gap-2">
+                <a
+                  href={exportApi.analysisUrl(report.session_id)}
+                  download={`analysis-${report.session_id.slice(0, 8)}.pdf`}
+                  className="text-[10px] text-gray-500 hover:text-gray-200"
+                >
+                  PDF
+                </a>
+                <a
+                  href={exportApi.analysisStixUrl(report.session_id)}
+                  download={`analysis-${report.session_id.slice(0, 8)}-opencti.stix.json`}
+                  className="text-[10px] text-gray-500 hover:text-gray-200"
+                >
+                  STIX
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onDelete(report.session_id)}
+                  className="ml-auto text-[10px] text-gray-600 hover:text-red-400"
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
