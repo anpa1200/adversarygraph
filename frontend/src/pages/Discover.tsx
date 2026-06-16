@@ -18,8 +18,8 @@ export function Discover() {
   const recent = [...uniqueReports].filter(item => item.date).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
   const trending = Object.entries(reports?.byTechnique ?? {}).map(([id, refs]) => ({ id, count: new Set(refs.map(item => item.url)).size, name: techniques.find(item => item.attack_id === id)?.name ?? id })).sort((a, b) => b.count - a.count).slice(0, 12);
 
-  return <div className="flex flex-col h-full"><Header title="Discover Intelligence" /><div className="flex-1 overflow-y-auto p-6">
-    <div className="max-w-7xl mx-auto">
+  return <div className="flex min-h-0 flex-1 flex-col"><Header title="Discover Intelligence" /><div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-8">
+    <div className="mx-auto max-w-7xl">
       <p className="text-sm text-gray-400 max-w-3xl mb-6">Start with an actor, behavior, report, AI analysis, or detection gap. ThreatMapper connects live ATT&amp;CK data, private analysis, and the shared 1200km research ecosystem.</p>
       <div className="grid md:grid-cols-4 gap-3 mb-7">
         <Start title="Investigate actor" text="Profiles, campaigns, reports, aliases, and behavior." onClick={() => navigate('/apt')} />
@@ -32,11 +32,11 @@ export function Discover() {
         <Metric label="Selected TTPs" value={selectedTechniques.size} /><Metric label="Covered TTPs" value={coverageTechniques.size} /><Metric label="Workspaces" value={workspaces.length} />
       </div>
       <div className="grid lg:grid-cols-2 gap-5">
-        <Panel title="Most-referenced techniques">{trending.map(item => <button key={item.id} onClick={() => navigate(`/navigator?technique=${item.id}`)} className="result flex-row items-center justify-between"><span><b>{item.id}</b><small>{item.name}</small></span><small>{item.count} reports</small></button>)}</Panel>
-        <Panel title="Recent public intelligence">{recent.map(item => <a key={item.url} href={item.url} target="_blank" rel="noreferrer" className="result"><b>{item.title}</b><small>{item.date} · {item.publisher}</small></a>)}</Panel>
+        <Panel title="Most-referenced techniques">{trending.map(item => <button key={item.id} onClick={() => navigate(`/navigator?technique=${item.id}`)} className="list-row"><span className="min-w-0"><b>{item.id}</b><small>{item.name}</small></span><small className="shrink-0 text-right">{item.count} reports</small></button>)}</Panel>
+        <Panel title="Recent public intelligence">{recent.map(item => <a key={item.url} href={item.url} target="_blank" rel="noreferrer" className="list-row"><span className="min-w-0"><b>{item.title}</b><small>{item.date} · {item.publisher}</small></span></a>)}</Panel>
         <Panel title="1200km ecosystem">{[
           ['CTI Analyst Field Manual','https://1200km.com/cti-analyst-field-manual/'],['Israel Threat Actors CTI','https://1200km.com/israel-government-threat-actors-cti/'],['Anomaly Detection Atlas','https://1200km.com/anomaly-detection-atlas/'],['Insider Threat Detection Guide','https://1200km.com/insider-threat-detection/'],['Medium Research','https://medium.com/@1200km']
-        ].map(([label,url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="result"><b>{label} ↗</b></a>)}</Panel>
+        ].map(([label,url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="list-row"><span><b>{label} ↗</b></span></a>)}</Panel>
         <Panel title="Private platform capabilities"><div className="grid grid-cols-2 gap-2 p-2">{['AI report extraction','Private report library','Campaign comparison','Saved server layers','LLM technique assistant','Automated ATT&CK sync','PDF exports','API workflows'].map(item => <span key={item} className="rounded border border-purple-900/50 bg-purple-950/20 p-2 text-xs text-purple-300">{item}</span>)}</div></Panel>
       </div>
     </div>

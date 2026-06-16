@@ -8,6 +8,15 @@
 .result small {
   @apply block text-[10px] text-gray-600;
 }
+.list-row {
+  @apply flex min-h-12 w-full items-center justify-between gap-3 rounded px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800;
+}
+.list-row b {
+  @apply block truncate text-sm text-gray-200;
+}
+.list-row small {
+  @apply block truncate text-[10px] text-gray-600;
+}
 .primary {
   @apply rounded bg-mitre-accent px-3 py-2 text-xs text-white hover:bg-red-600 disabled:opacity-40;
 }

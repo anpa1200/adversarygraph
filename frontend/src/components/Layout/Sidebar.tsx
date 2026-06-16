@@ -115,7 +115,7 @@ export function Sidebar() {
             <NavLink to="/sync" className="text-[10px] text-gray-500 hover:text-gray-300">ATT&CK up to date</NavLink>
           </div>
         )}
-        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v0.9.0</div>
+        <div className="text-[10px] text-gray-600 mt-0.5">ThreatMapper v2.0.0</div>
       </div>
     </aside>
   );
