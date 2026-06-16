@@ -577,10 +577,10 @@ function ReviewStatusSelect({
       }`}
       title="Analyst review status"
     >
-      <option value="suggested">suggested</option>
-      <option value="accepted">accepted</option>
-      <option value="rejected">rejected</option>
-      <option value="needs-evidence">needs-evidence</option>
+      <option value="suggested" className={reviewStatusOptionClass('suggested')}>suggested</option>
+      <option value="accepted" className={reviewStatusOptionClass('accepted')}>accepted</option>
+      <option value="rejected" className={reviewStatusOptionClass('rejected')}>rejected</option>
+      <option value="needs-evidence" className={reviewStatusOptionClass('needs-evidence')}>needs-evidence</option>
     </select>
   );
 }
@@ -588,13 +588,26 @@ function ReviewStatusSelect({
 function reviewStatusClass(status: AnalysisResult['techniques'][number]['review_status']) {
   switch (status) {
     case 'accepted':
-      return 'border-green-800 bg-green-950/40 text-green-300';
+      return 'border-emerald-500 bg-emerald-500/20 text-emerald-100';
     case 'rejected':
-      return 'border-red-800 bg-red-950/40 text-red-300';
+      return 'border-red-500 bg-red-500/20 text-red-100';
     case 'needs-evidence':
-      return 'border-amber-800 bg-amber-950/40 text-amber-300';
+      return 'border-amber-400 bg-amber-400/20 text-amber-100';
     default:
-      return 'border-blue-800 bg-blue-950/40 text-blue-300';
+      return 'border-sky-500 bg-sky-500/20 text-sky-100';
+  }
+}
+
+function reviewStatusOptionClass(status: NonNullable<AnalysisResult['techniques'][number]['review_status']>) {
+  switch (status) {
+    case 'accepted':
+      return 'bg-emerald-950 text-emerald-100';
+    case 'rejected':
+      return 'bg-red-950 text-red-100';
+    case 'needs-evidence':
+      return 'bg-amber-950 text-amber-100';
+    default:
+      return 'bg-sky-950 text-sky-100';
   }
 }
 
