@@ -31,6 +31,8 @@ Important settings:
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
 | `LOCAL_LLM_MODEL` | Local model default |
 | `ATTCK_DOMAINS` | ATT&CK/ATLAS domains to ingest, for example `enterprise-attack,mobile-attack,ics-attack,atlas` |
+| `THREATFOX_AUTH_KEY` | Optional abuse.ch ThreatFox key for IOC sync |
+| `OTX_API_KEY` | Optional AlienVault OTX key for actor pulse IOC enrichment |
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
 
@@ -78,6 +80,9 @@ docker compose up -d --build
 
 Review `CHANGELOG.md` before upgrading tagged releases.
 
+For the current feature scope, review
+[`docs/release-summary-v2.1.0.md`](release-summary-v2.1.0.md).
+
 ## Reference Synchronization
 
 ThreatMapper synchronizes MITRE ATT&CK STIX data for the configured
@@ -96,6 +101,30 @@ curl -X POST http://localhost:8000/api/sync/trigger \
 
 Set `force` to `true` to re-ingest the latest cached MITRE version even when the
 database already reports the current version.
+
+## IOC Source Synchronization
+
+IOC sync is separate from ATT&CK/ATLAS sync. ATT&CK gives stable TTP and actor
+relationships; IOC feeds provide time-sensitive observables.
+
+Supported operator-managed IOC sources:
+
+- ThreatFox: `POST /api/ioc/sync/threatfox?days=7`
+- OTX actor enrichment: `POST /api/ioc/sync/otx`
+- registered custom feeds: `POST /api/ioc/sync/{source_id}`
+- centralized action: `POST /api/sync/ioc?days=7`
+
+Custom feeds can be registered from the UI or API. Keep feed URLs and API keys
+inside `.env`, a secret manager, or another local operator-controlled channel.
+
+## Sector Intelligence Synchronization
+
+Sector Intelligence uses local evidence tables populated from MISP Galaxy threat
+actor metadata. Sync from the Sector Intel page or API before relying on sector,
+region, motivation, or technology filters.
+
+The score shown in the UI is a relevance rank. It is not attribution confidence,
+maliciousness, IOC confidence, or likelihood of compromise.
 
 ## Internet-Facing Deployments
 
@@ -147,5 +176,11 @@ The bundle is report/TTP-centric:
 - optional `intrusion-set` objects for group-similarity leads
 - `x_threatmapper_*` custom fields for confidence, review status, model, provider, domain, and similarity metadata
 
-It intentionally does not model IOCs. Similarity leads are investigation leads
-based on TTP overlap and must not be treated as attribution.
+This STIX export intentionally does not model IOCs. Similarity leads are
+investigation leads based on TTP overlap and must not be treated as attribution.
+
+For IOC handoff, use the actor IOC tab or:
+
+```bash
+GET /api/ioc/actors/{actor_id}/export.csv
+```

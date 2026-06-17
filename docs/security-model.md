@@ -11,6 +11,7 @@ ThreatMapper is a self-hosted analyst workbench, not a managed SaaS.
 | API to PostgreSQL | Database is private to the deployment |
 | API/worker to LLM provider | Operator controls provider choice and accepts provider data terms |
 | API to MITRE/GitHub | Public ATT&CK STIX bundles are downloaded for sync |
+| API to IOC feeds | Operator controls ThreatFox, OTX, and custom feed credentials/URLs |
 
 ## Sensitive Data
 
@@ -21,6 +22,8 @@ Potentially sensitive data includes:
 - LLM raw responses.
 - Analyst notes.
 - Campaign or customer names.
+- IOC feed contents and actor-linked indicators.
+- Custom feed URLs.
 - Exported PDF/JSON reports.
 - API keys.
 
@@ -56,3 +59,13 @@ LLM output is treated as untrusted:
 ## File Parsing
 
 ThreatMapper supports text, PDF, and DOCX extraction. Operators should treat uploaded documents as untrusted and run the platform in a controlled environment.
+
+## IOC Feeds
+
+IOC feeds are operational data, not stable reference data. Operators should:
+
+- keep ThreatFox/OTX keys out of commits and screenshots;
+- review custom feed provenance before import;
+- avoid importing customer-private feeds into public demos;
+- define retention and export rules for actor IOC CSVs;
+- treat extracted IOCs from uploaded reports as untrusted until reviewed.

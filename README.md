@@ -12,7 +12,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.1.0 · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/threatmapper-v2-self-hosted-ai-cti-platform.html) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-v2-0-i-built-a-self-hosted-ai-threat-intelligence-platform-941a80cc5a65)**
+**Current release: v2.1.0 · [Release Summary](docs/release-summary-v2.1.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/threatmapper-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/threatmapper-v2-self-hosted-ai-cti-platform.html) · [Medium Walkthrough](https://medium.com/@1200km/threatmapper-v2-0-i-built-a-self-hosted-ai-threat-intelligence-platform-941a80cc5a65)**
 
 ThreatMapper AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -44,6 +44,8 @@ ThreatMapper v2.1.0 publishes the operational evidence expected from a serious s
 | Production readiness | [Production readiness tracker](docs/production-readiness.md) |
 
 The current documentation is intended to make external review practical rather than promotional.
+
+For the current release scope, see the [v2.1.0 release summary](docs/release-summary-v2.1.0.md) and [release notes](docs/release-notes/v2.1.0.md).
 
 ## Public Demo Privacy Note
 

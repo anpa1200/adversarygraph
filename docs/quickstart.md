@@ -33,6 +33,16 @@ GEMINI_API_KEY=
 
 For private analysis, use an operator-controlled LLM gateway and review the provider's data-retention terms.
 
+Optional IOC enrichment providers:
+
+```env
+THREATFOX_AUTH_KEY=
+OTX_API_KEY=
+```
+
+Leave these blank if you only want ATT&CK/ATLAS mapping, sector relevance, and
+manual/private IOC imports.
+
 ## 3. Start
 
 ```bash
@@ -108,3 +118,13 @@ docker compose restart api worker beat frontend
 7. Export a Navigator layer, JSON report, or PDF report.
 
 Do not use confidential reports in public or third-party environments.
+
+## 7. v2.1 Sector And IOC Workflow
+
+1. Open Reference Sync and sync MISP Galaxy sector metadata.
+2. Open Sector Intel.
+3. Select one or more sectors, optional regions, and optional technologies.
+4. Review ranked actors and use Actor info, TTP info, IOCs, or Show on matrix.
+5. Open ATT&CK Group Library and select an actor.
+6. Use the IOCs tab to sync ThreatFox/OTX, add a custom feed, import IOCs, or
+   upload a private report for IOC extraction.

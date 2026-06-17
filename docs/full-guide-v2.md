@@ -1,4 +1,4 @@
-# ThreatMapper v2.0 Full Guide
+# ThreatMapper v2.x Full Guide
 
 ![ThreatMapper v2.0 cover](assets/threatmapper-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
 
@@ -397,7 +397,7 @@ and API.
 
 ## 14. Sector Intelligence
 
-Sector Intelligence is the first v3-oriented workflow in ThreatMapper. It answers:
+Sector Intelligence is a v2.1 workflow for client-facing relevance triage. It answers:
 
 - which actors are relevant to a client sector
 - which actors have sector or geography evidence
@@ -491,6 +491,8 @@ POST /api/ioc/sync/threatfox?days=7
 POST /api/ioc/sync/otx
 POST /api/ioc/sync/{source_id}
 POST /api/ioc/import
+POST /api/ioc/report
+GET  /api/ioc/actors/counts?actor_ids=G0049
 GET  /api/ioc/actors/G0049?days=180&active_only=true
 GET  /api/ioc/actors/G0049/summary?days=180
 GET  /api/ioc/actors/G0049/export.csv?days=180&active_only=true

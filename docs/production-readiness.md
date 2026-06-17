@@ -28,6 +28,8 @@ ThreatMapper is not yet a hardened public SaaS or a `v1.0` production platform.
 | Limitations | Implemented | `docs/limitations.md` |
 | Demo data and sample outputs | Implemented | `docs/demo-dataset/`, `docs/sample-outputs/` |
 | Release notes | Implemented | `docs/release-notes/` |
+| Sector relevance workflow | Implemented | Sector Intel page and `/api/sector/*` |
+| IOC enrichment workflow | Implemented | Actor IOC tabs and `/api/ioc/*` |
 
 ## Remaining Production Blockers
 
@@ -35,6 +37,8 @@ ThreatMapper is not yet a hardened public SaaS or a `v1.0` production platform.
 - Add report-level review summary counts.
 - Add full UI controls for accepting, rejecting, and filtering mappings.
 - Export review status and evidence spans in Markdown/PDF reports.
+- Add retention controls for imported IOC feeds and uploaded IOC extraction inputs.
+- Add per-source IOC sync scheduling policies and health history.
 - Add reverse-proxy hardening examples for production deployments.
 - Collect at least one external quickstart validation report.
 
@@ -55,3 +59,7 @@ internet-facing use, place ThreatMapper behind:
 Uploaded reports and extracted text may contain sensitive material. Public demos
 must not receive customer reports, incident data, classified material, private
 victim details, credentials, or internal telemetry.
+
+IOC feeds can also contain customer, investigation, or vendor-sensitive context.
+Operators should define feed provenance, retention, export, and sharing rules
+before importing private IOC data.

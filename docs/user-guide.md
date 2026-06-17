@@ -3,7 +3,7 @@
 ThreatMapper is built around a defensive CTI workflow:
 
 ```text
-report -> ATT&CK mapping candidates -> analyst review -> actor/campaign comparison -> detection gaps -> exports
+client context/report -> ATT&CK mapping candidates -> analyst review -> actor/campaign/sector relevance -> IOC enrichment -> detection gaps -> exports
 ```
 
 ## Core Concepts
@@ -14,6 +14,8 @@ report -> ATT&CK mapping candidates -> analyst review -> actor/campaign comparis
 | Evidence | The report text that supports a mapping |
 | Confidence | Extraction confidence from the model plus analyst judgment |
 | Similarity | Jaccard overlap between selected TTPs and a known group/campaign profile |
+| Sector relevance | Local score explaining why an actor matters to selected sectors, regions, technologies, and activity windows |
+| IOC | Source-backed observable linked to an actor only when the feed, import, or uploaded report provides actor evidence |
 | Detection gap | A mapped behavior without sufficient local telemetry, detection, or validation |
 
 ## Public Web Workspace
@@ -37,6 +39,8 @@ Use the Docker deployment for:
 - PostgreSQL-backed report history.
 - Configured LLM extraction.
 - Stored analyses and exports.
+- Sector Intelligence and local actor relevance scoring.
+- IOC Intelligence with source-backed actor observables.
 - API-driven workflows.
 
 ## Analyst Workflow
@@ -49,6 +53,8 @@ Examples:
 - Which known groups share TTP overlap with this report?
 - Which mapped behaviors lack detection coverage?
 - Which telemetry sources are required before writing detections?
+- Which actors matter for this client sector or environment?
+- Which current or historical IOCs are linked to this actor by source evidence?
 
 ### 2. Ingest or Paste a Report
 
@@ -91,7 +97,34 @@ For each accepted technique, record:
 - Validation environment.
 - Triage guidance.
 
-### 6. Export
+### 6. Use Sector Intelligence
+
+Use Sector Intelligence when the question starts with client context rather than
+a single report.
+
+1. Sync MISP Galaxy metadata from Reference Sync or the Sector Intel page.
+2. Select one or more sectors.
+3. Add optional regions and technologies/environments.
+4. Choose quarter, year, or two-year activity window.
+5. Review ranked actors and the evidence that caused each rank.
+6. Jump to actor profile, TTP profile, IOC tab, or Navigator overlay.
+
+The score is a relevance rank, not an attribution score and not IOC confidence.
+
+### 7. Use IOC Intelligence
+
+Use IOC Intelligence for actor-linked observables.
+
+- ThreatFox and OTX provide public enrichment when configured.
+- Custom feeds can import private JSON, CSV, or TXT indicators.
+- Uploaded reports can be parsed locally for IOCs.
+- Actor links require explicit actor IDs, actor names, aliases, or source
+  evidence; many actors will legitimately show `0 IOCs`.
+
+Treat IOCs as time-sensitive operational context, not as durable ATT&CK
+behavior.
+
+### 8. Export
 
 Use exports for:
 
@@ -99,6 +132,7 @@ Use exports for:
 - Analyst handoff.
 - Detection backlog planning.
 - Report appendix material.
+- Actor IOC CSV handoff when a source-backed IOC set is available.
 
 Generated detections or summaries must be reviewed before use.
 
@@ -109,3 +143,5 @@ Generated detections or summaries must be reviewed before use.
 - LLM output is untrusted until reviewed.
 - Similarity scores should be explained in prose.
 - Low-confidence mappings should remain in a backlog, not in final findings.
+- IOC links should cite source and freshness; stale or weakly attributed IOCs
+  should not be presented as current threat activity.
