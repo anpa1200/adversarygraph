@@ -57,13 +57,41 @@ first startup. The mismatch only appears after an existing `pg_data` volume was
 created with one password and `.env` is later changed to another password.
 
 After changing `DB_PASS` for an existing volume, rotate the database role
-password in place:
+password in place with the Compose helper:
+
+```bash
+docker compose --profile tools run --rm db-apply-env-creds
+docker compose up -d --force-recreate api worker beat frontend
+```
+
+Or use the wrapper script:
+
+```bash
+./scripts/apply-db-env-creds.sh
+```
+
+The helper connects through a local PostgreSQL socket shared only between the
+PostgreSQL container and the one-shot helper container. It applies the current
+`.env` `DB_PASS` to the current `.env` `DB_USER` role without deleting data.
+After changing `.env`, recreate the application containers so they receive the
+new environment values:
+
+```bash
+docker compose up -d --force-recreate api worker beat frontend
+```
+
+ThreatMapper passes `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASS` as
+separate container variables and builds the SQLAlchemy URL inside Python. This
+allows normal strong passwords with URL-special characters such as `@`, `#`,
+`:`, and `/`.
+
+Manual equivalent:
 
 ```bash
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v pass="$POSTGRES_PASSWORD" <<'"'"'SQL'"'"'
 ALTER USER tm_user WITH PASSWORD :'"'"'pass'"'"';
 SQL'
-docker compose restart api worker beat frontend
+docker compose up -d --force-recreate api worker beat frontend
 ```
 
 If the data is disposable, `docker compose down -v` followed by

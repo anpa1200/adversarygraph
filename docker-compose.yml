@@ -2,12 +2,16 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    entrypoint: ["/usr/local/bin/threatmapper-postgres-entrypoint.sh"]
+    command: ["postgres", "-c", "unix_socket_directories=/var/run/postgresql,/var/run/postgresql-shared"]
     environment:
       POSTGRES_DB: ${DB_NAME:-threatmapper}
       POSTGRES_USER: ${DB_USER:-tm_user}
       POSTGRES_PASSWORD: ${DB_PASS:-changeme}
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - pg_socket:/var/run/postgresql-shared
+      - ./scripts/postgres-entrypoint.sh:/usr/local/bin/threatmapper-postgres-entrypoint.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tm_user} -d ${DB_NAME:-threatmapper}"]
       interval: 5s
@@ -15,6 +19,29 @@ services:
       retries: 15
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+  db-apply-env-creds:
+    image: postgres:16-alpine
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-threatmapper}
+      POSTGRES_USER: ${DB_USER:-tm_user}
+      POSTGRES_PASSWORD: ${DB_PASS:-changeme}
+    volumes:
+      - pg_socket:/var/run/postgresql-shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        psql -h /var/run/postgresql-shared -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
+          -v user="$$POSTGRES_USER" -v pass="$$POSTGRES_PASSWORD" <<'SQL'
+        ALTER USER :"user" WITH PASSWORD :'pass';
+        SQL
+        echo "Applied .env PostgreSQL password for role $$POSTGRES_USER"
 
   redis:
     image: redis:7-alpine
@@ -35,7 +62,11 @@ services:
       - ./backend:/app
       - attck_data:/app/data/attck
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-tm_user}:${DB_PASS:-changeme}@postgres:5432/${DB_NAME:-threatmapper}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-threatmapper}
+      DB_USER: ${DB_USER:-tm_user}
+      DB_PASS: ${DB_PASS:-changeme}
       REDIS_URL: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -71,7 +102,11 @@ services:
       - ./backend:/app
       - attck_data:/app/data/attck
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-tm_user}:${DB_PASS:-changeme}@postgres:5432/${DB_NAME:-threatmapper}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-threatmapper}
+      DB_USER: ${DB_USER:-tm_user}
+      DB_PASS: ${DB_PASS:-changeme}
       REDIS_URL: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -101,7 +136,11 @@ services:
       - ./backend:/app
       - attck_data:/app/data/attck
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-tm_user}:${DB_PASS:-changeme}@postgres:5432/${DB_NAME:-threatmapper}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-threatmapper}
+      DB_USER: ${DB_USER:-tm_user}
+      DB_PASS: ${DB_PASS:-changeme}
       REDIS_URL: redis://redis:6379/0
       ATTCK_DATA_DIR: /app/data/attck
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
@@ -150,5 +189,6 @@ services:
 
 volumes:
   pg_data:
+  pg_socket:
   attck_data:
   atlas_site:

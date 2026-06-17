@@ -29,7 +29,7 @@ from app.services.attck.downloader import ensure_bundle
 
 logger = logging.getLogger(__name__)
 
-_sync_url = settings.database_url.replace("+asyncpg", "+psycopg2")
+_sync_url = settings.sync_database_url
 _sync_engine = create_engine(_sync_url, echo=False, pool_pre_ping=True)
 
 

@@ -225,6 +225,15 @@ LOG_LEVEL=info
 > You only need one working provider. Cloud API keys can be left blank if you use the local provider.
 >
 > **You must create `.env` before running `docker compose up`.** Without it, cloud API keys are empty and local-provider defaults are used.
+>
+> PostgreSQL uses `.env` credentials when the database volume is first created.
+> If `DB_PASS` changes after a volume already exists, apply the new password
+> without deleting data:
+>
+> ```bash
+> docker compose --profile tools run --rm db-apply-env-creds
+> docker compose up -d --force-recreate api worker beat frontend
+> ```
 
 For Ollama on the same host:
 

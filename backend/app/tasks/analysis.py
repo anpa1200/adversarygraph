@@ -26,7 +26,7 @@ from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-_sync_url = settings.database_url.replace("+asyncpg", "+psycopg2")
+_sync_url = settings.sync_database_url
 
 
 # ── Public task ───────────────────────────────────────────────────────────────

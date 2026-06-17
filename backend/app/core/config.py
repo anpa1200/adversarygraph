@@ -1,10 +1,16 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql+asyncpg://tm_user:changeme@localhost:5432/threatmapper"
+    database_url: str = ""
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "threatmapper"
+    db_user: str = "tm_user"
+    db_pass: str = "changeme"
 
     # Redis / Celery
     redis_url: str = "redis://localhost:6379/0"
@@ -35,6 +41,23 @@ class Settings(BaseSettings):
     @property
     def attck_domain_list(self) -> list[str]:
         return [d.strip() for d in self.attck_domains.split(",") if d.strip()]
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.db_user,
+            password=self.db_pass,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        ).render_as_string(hide_password=False)
+
+    @property
+    def sync_database_url(self) -> str:
+        return self.sqlalchemy_database_url.replace("+asyncpg", "+psycopg2")
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

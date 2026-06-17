@@ -97,14 +97,27 @@ docker compose down -v
 docker compose up --build
 ```
 
-To keep the existing database, update the stored PostgreSQL role password to
-match the current `.env`:
+To keep the existing database, apply the current `.env` credentials to the
+existing PostgreSQL role:
+
+```bash
+docker compose --profile tools run --rm db-apply-env-creds
+docker compose up -d --force-recreate api worker beat frontend
+```
+
+Or use the wrapper script:
+
+```bash
+./scripts/apply-db-env-creds.sh
+```
+
+Manual equivalent:
 
 ```bash
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v pass="$POSTGRES_PASSWORD" <<'"'"'SQL'"'"'
 ALTER USER tm_user WITH PASSWORD :'"'"'pass'"'"';
 SQL'
-docker compose restart api worker beat frontend
+docker compose up -d --force-recreate api worker beat frontend
 ```
 
 ## 6. Demo Workflow

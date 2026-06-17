@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _get_engine():
     """Lazy engine creation so psycopg2 is only required when actually called."""
-    sync_url = settings.database_url.replace("+asyncpg", "+psycopg2")
+    sync_url = settings.sync_database_url
     return create_engine(sync_url, pool_pre_ping=True)
 
 
