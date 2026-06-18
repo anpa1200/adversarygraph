@@ -62,6 +62,11 @@ export function SystemSelfTestPopup() {
 
   const error = query.error instanceof Error ? query.error : null;
   const summary = summarize(query.data, error);
+  const troubleshootingUrl = `/troubleshooting?${new URLSearchParams({
+    error: summary.body,
+    url: '/system/selftest',
+    ...(error ? {} : { status: query.data?.status === 'ok' ? '200' : 'selftest-failed' }),
+  }).toString()}`;
   const color =
     summary.tone === 'ok'
       ? 'border-emerald-500/50 bg-emerald-950/90 text-emerald-50'
@@ -123,6 +128,9 @@ export function SystemSelfTestPopup() {
           </button>
           <a className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10" href="/sync">
             Open Sync
+          </a>
+          <a className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10" href={troubleshootingUrl}>
+            Troubleshooting
           </a>
         </div>
       )}

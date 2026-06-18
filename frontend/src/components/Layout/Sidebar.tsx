@@ -20,6 +20,7 @@ const nav = [
   { to: '/pipeline',      label: 'Pipeline', icon: '⇄' },
   { to: '/sync',          label: 'Reference Sync', icon: '↻' },
   { to: '/examples',      label: 'DFIR Examples', icon: '▦' },
+  { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
 ];
 
 export function Sidebar() {

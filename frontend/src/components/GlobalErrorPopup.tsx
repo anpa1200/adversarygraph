@@ -21,6 +21,12 @@ export function GlobalErrorPopup() {
 
   if (!error) return null;
 
+  const troubleshootingUrl = `/troubleshooting?${new URLSearchParams({
+    ...(error.message && { error: error.message }),
+    ...(error.status && { status: String(error.status) }),
+    ...(error.url && { url: error.url }),
+  }).toString()}`;
+
   return (
     <div className="fixed top-4 right-4 z-[60] w-[min(460px,calc(100vw-2rem))] rounded-lg border border-red-500/60 bg-red-950/95 p-4 text-red-50 shadow-2xl">
       <div className="flex items-start justify-between gap-3">
@@ -33,6 +39,13 @@ export function GlobalErrorPopup() {
               {error.url ? ` · ${error.url}` : ''}
             </p>
           )}
+          <a
+            className="mt-3 inline-flex rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"
+            href={troubleshootingUrl}
+            onClick={() => setError(null)}
+          >
+            Open troubleshooting
+          </a>
         </div>
         <button
           type="button"

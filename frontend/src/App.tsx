@@ -13,6 +13,7 @@ import { Pipeline } from '@/pages/Pipeline';
 import { Sync } from '@/pages/Sync';
 import { Examples } from '@/pages/Examples';
 import { SectorIntel } from '@/pages/SectorIntel';
+import { Troubleshooting } from '@/pages/Troubleshooting';
 import { SystemSelfTestPopup } from '@/components/SystemSelfTestPopup';
 import { GlobalErrorPopup } from '@/components/GlobalErrorPopup';
 
@@ -46,6 +47,7 @@ export default function App() {
               <Route path="/sync" element={<Sync />} />
               <Route path="/examples" element={<Examples />} />
               <Route path="/sector-intel" element={<SectorIntel />} />
+              <Route path="/troubleshooting" element={<Troubleshooting />} />
             </Routes>
           </main>
           <GlobalErrorPopup />
