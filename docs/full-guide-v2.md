@@ -94,7 +94,7 @@ Open:
 Health should return:
 
 ```json
-{"status":"ok","version":"2.1.0"}
+{"status":"ok","version":"2.1.1"}
 ```
 
 ## 3. Core Concepts

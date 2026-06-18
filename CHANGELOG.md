@@ -2,9 +2,22 @@
 
 ## Unreleased
 
-- Renamed user-facing product branding from AdversaryGraph to AdversaryGraph while
-  retaining legacy repository URLs, database defaults, and STIX custom fields for
-  compatibility.
+No unreleased changes.
+
+## v2.1.1 - 2026-06-18
+
+- Published the project under the canonical AdversaryGraph name after the
+  product rename.
+- Renamed repository, docs, Docker defaults, generated assets, docs, release
+  material, and ecosystem links to AdversaryGraph.
+- Preserved old public site URLs through compatibility redirects and retained
+  legacy asset paths where external links may exist.
+- Updated connected 1200km ecosystem repositories to point to the new
+  AdversaryGraph project hub, docs, article, and repository.
+- Fixed the embedded ATLAS docs nginx fallback to avoid pre-build redirect-loop
+  errors during fresh Docker startup.
+- Verified a clean clone deployment with `docker compose up -d --build` and
+  HTTP 200 probes for API, frontend, and embedded ATLAS docs.
 
 ## v2.1.0 - 2026-06-17
 

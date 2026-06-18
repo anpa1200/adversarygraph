@@ -109,7 +109,7 @@ docker compose up -d --build
 Review `CHANGELOG.md` before upgrading tagged releases.
 
 For the current feature scope, review
-[`docs/release-summary-v2.1.0.md`](release-summary-v2.1.0.md).
+[`docs/release-summary-v2.1.1.md`](release-summary-v2.1.1.md).
 
 ## Reference Synchronization
 

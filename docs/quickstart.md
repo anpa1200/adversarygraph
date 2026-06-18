@@ -70,7 +70,7 @@ curl "http://localhost:8000/api/attack/versions"
 Expected health response:
 
 ```json
-{"status":"ok","version":"2.1.0"}
+{"status":"ok","version":"2.1.1"}
 ```
 
 ## Troubleshooting: PostgreSQL Password Mismatch
