@@ -37,12 +37,18 @@ Optional IOC enrichment providers:
 
 ```env
 THREATFOX_AUTH_KEY=
+AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_THREATFOX_SYNC_DAYS=7
 OTX_API_KEY=
 VIRUSTOTAL_API_KEY=
 ```
 
 Leave these blank if you only want ATT&CK/ATLAS mapping, sector relevance, and
 manual/private IOC imports.
+
+When `THREATFOX_AUTH_KEY` is set, the API automatically starts a background
+ThreatFox sync after Docker startup. Leave `AUTO_THREATFOX_SYNC_ON_STARTUP=true`
+for that behavior, or set it to `false` for manual-only IOC syncing.
 
 ## 3. Start
 

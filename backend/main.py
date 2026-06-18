@@ -7,13 +7,32 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, operations, pipeline, sector, system
 from app.core.config import settings
-from app.core.database import create_tables
+from app.core.database import async_session_factory, create_tables
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+async def _startup_threatfox_sync() -> None:
+    if not settings.auto_threatfox_sync_on_startup:
+        logger.info("Startup ThreatFox IOC sync disabled")
+        return
+    if not settings.threatfox_auth_key:
+        logger.info("Startup ThreatFox IOC sync skipped: THREATFOX_AUTH_KEY is not configured")
+        return
+
+    days = max(1, min(7, settings.auto_threatfox_sync_days))
+    try:
+        from app.services.ioc_intel import sync_threatfox
+
+        async with async_session_factory() as session:
+            result = await sync_threatfox(session, days=days, domain="enterprise-attack")
+            logger.info("Startup ThreatFox IOC sync complete: %s", result)
+    except Exception as exc:
+        logger.warning("Startup ThreatFox IOC sync failed: %s", exc, exc_info=True)
 
 
 @asynccontextmanager
@@ -29,6 +48,8 @@ async def lifespan(app: FastAPI):
         logger.info("ATT&CK ingestion complete")
     except Exception as exc:
         logger.error("Ingestion failed (non-fatal): %s", exc, exc_info=True)
+
+    asyncio.create_task(_startup_threatfox_sync())
 
     yield
 

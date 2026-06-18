@@ -635,6 +635,8 @@ Supported initial sources:
 - **abuse.ch ThreatFox** — current malware-related IOCs. Set
   `THREATFOX_AUTH_KEY` in `.env` before syncing. The recent IOC API supports
   1-7 day windows; use ThreatFox exports or custom feeds for larger windows.
+  When `AUTO_THREATFOX_SYNC_ON_STARTUP=true`, AdversaryGraph runs a background
+  ThreatFox sync after API startup if `THREATFOX_AUTH_KEY` is configured.
 - **AlienVault OTX** — actor-attributed pulse search. Set `OTX_API_KEY` in
   `.env`; AdversaryGraph searches ATT&CK actor names/aliases, imports pulse
   indicators, and links them when pulse adversary/title/tags match the actor.

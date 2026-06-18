@@ -475,7 +475,13 @@ Before syncing ThreatFox, set:
 
 ```bash
 THREATFOX_AUTH_KEY=your_abusech_auth_key
+AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_THREATFOX_SYNC_DAYS=7
 ```
+
+When enabled, AdversaryGraph runs a non-blocking ThreatFox sync after API
+startup. If `THREATFOX_AUTH_KEY` is not configured, startup continues and the
+automatic sync is skipped.
 
 Actor mapping is conservative:
 

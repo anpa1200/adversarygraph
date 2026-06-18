@@ -32,6 +32,8 @@ Important settings:
 | `LOCAL_LLM_MODEL` | Local model default |
 | `ATTCK_DOMAINS` | ATT&CK/ATLAS domains to ingest, for example `enterprise-attack,mobile-attack,ics-attack,atlas` |
 | `THREATFOX_AUTH_KEY` | Optional abuse.ch ThreatFox key for IOC sync |
+| `AUTO_THREATFOX_SYNC_ON_STARTUP` | Run background ThreatFox IOC sync after API startup when a ThreatFox key is configured |
+| `AUTO_THREATFOX_SYNC_DAYS` | ThreatFox startup sync window, clamped to 1-7 days |
 | `OTX_API_KEY` | Optional AlienVault OTX key for actor pulse IOC enrichment |
 | `VIRUSTOTAL_API_KEY` | Optional VirusTotal key for on-demand IOC reputation and ATT&CK context lookup |
 | `LOG_LEVEL` | API/worker log verbosity |
@@ -145,6 +147,10 @@ Supported operator-managed IOC sources:
 
 Custom feeds can be registered from the UI or API. Keep feed URLs and API keys
 inside `.env`, a secret manager, or another local operator-controlled channel.
+
+If `THREATFOX_AUTH_KEY` is configured and `AUTO_THREATFOX_SYNC_ON_STARTUP=true`,
+the API starts a non-blocking ThreatFox sync after ATT&CK ingestion completes.
+If the key is missing, startup continues and the sync is skipped.
 
 ## Sector Intelligence Synchronization
 

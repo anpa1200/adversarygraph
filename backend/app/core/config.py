@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     # IOC intelligence feeds
     threatfox_auth_key: str = ""
+    auto_threatfox_sync_on_startup: bool = True
+    auto_threatfox_sync_days: int = 7
     otx_api_key: str = ""
     virustotal_api_key: str = ""
 
