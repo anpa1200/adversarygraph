@@ -6,7 +6,7 @@ const REPORTS_URL = 'https://thedfirreport.com/reports/';
 const POST_SITEMAP_URL = 'https://thedfirreport.com/post-sitemap.xml';
 const OUT = new URL('../frontend/public/dfir-report-reference-index.json', import.meta.url);
 const USER_AGENT = 'AdversaryGraph external-link indexer (https://1200km.com/)';
-const LOCAL_API = process.env.THREATMAPPER_API || 'http://localhost:8000/api';
+const LOCAL_API = process.env.ADVERSARYGRAPH_API || 'http://localhost:8000/api';
 const DOMAINS = ['enterprise-attack', 'mobile-attack', 'ics-attack'];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
