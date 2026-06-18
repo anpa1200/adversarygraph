@@ -77,6 +77,19 @@ export function Sync() {
       qc.invalidateQueries({ queryKey: ['ioc-sources'] });
     },
   });
+  const dynamicDbSync = useMutation({
+    mutationFn: () => syncApi.dynamicDb({ days: 7, force_attack: force }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sync-status'] });
+      qc.invalidateQueries({ queryKey: ['attack-versions'] });
+      qc.invalidateQueries({ queryKey: ['sector-sources'] });
+      qc.invalidateQueries({ queryKey: ['sector-options'] });
+      qc.invalidateQueries({ queryKey: ['actor-ioc-counts'] });
+      qc.invalidateQueries({ queryKey: ['actor-ioc-summary'] });
+      qc.invalidateQueries({ queryKey: ['actor-iocs'] });
+      qc.invalidateQueries({ queryKey: ['ioc-sources'] });
+    },
+  });
 
   const toggle = (domain: string) => {
     setSelected(current =>
@@ -141,6 +154,13 @@ export function Sync() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
+                    onClick={() => dynamicDbSync.mutate()}
+                    disabled={dynamicDbSync.isPending}
+                    className="primary"
+                  >
+                    {dynamicDbSync.isPending ? 'Syncing dynamic DB...' : 'Sync dynamic DB'}
+                  </button>
+                  <button
                     onClick={() => iocSync.mutate()}
                     disabled={iocSync.isPending}
                     className="primary"
@@ -154,9 +174,15 @@ export function Sync() {
                   >
                     {malpediaSync.isPending ? 'Syncing Malpedia...' : 'Sync Malpedia'}
                   </button>
+                  {dynamicDbSync.error && <span className="text-xs text-red-400">{errorMessage(dynamicDbSync.error)}</span>}
                   {iocSync.error && <span className="text-xs text-red-400">{errorMessage(iocSync.error)}</span>}
                   {malpediaSync.error && <span className="text-xs text-red-400">{errorMessage(malpediaSync.error)}</span>}
                 </div>
+                {dynamicDbSync.data && (
+                  <div className="rounded border border-green-900 bg-green-950/30 p-3 text-xs text-green-300">
+                    Dynamic DB sync complete. Public ATT&CK/ATLAS, MISP Galaxy, and IOC enrichment sources were refreshed; private/custom DB records are preserved.
+                  </div>
+                )}
                 {malpediaSync.data && (
                   <div className="rounded border border-blue-900 bg-blue-950/30 p-3 text-xs text-blue-200">
                     Malpedia: {malpediaSync.data.families} families, {malpediaSync.data.attributed_families} attributed families, {malpediaSync.data.actor_links} actor links.

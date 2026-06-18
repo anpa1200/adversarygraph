@@ -218,6 +218,7 @@ LOCAL_LLM_MODEL=llama3.1:8b
 DB_NAME=adversarygraph
 DB_USER=ag_user
 DB_PASS=changeme_strong_password
+ADVERSARYGRAPH_DB_DIR=./data/postgres
 
 # ATT&CK / ATLAS domains to ingest (comma-separated)
 ATTCK_DOMAINS=enterprise-attack,mobile-attack,ics-attack,atlas
@@ -229,7 +230,21 @@ LOG_LEVEL=info
 >
 > **You must create `.env` before running `docker compose up`.** Without it, cloud API keys are empty and local-provider defaults are used.
 >
-> PostgreSQL uses `.env` credentials when the database volume is first created.
+> PostgreSQL stores data in `ADVERSARYGRAPH_DB_DIR` (`./data/postgres` by
+> default). This folder is created on first deployment and is outside the
+> container lifecycle. Keep it when rebuilding containers; it contains private
+> report sessions, private/custom IOCs, custom feeds, and the current synced
+> public reference database.
+>
+> Existing deployments that still use the older Docker-managed `pg_data` volume
+> can migrate once:
+>
+> ```bash
+> ./scripts/migrate-postgres-volume-to-external-dir.sh
+> docker compose up -d
+> ```
+>
+> PostgreSQL uses `.env` credentials when the database directory is first created.
 > If `DB_PASS` changes after a volume already exists, apply the new password
 > without deleting data:
 >
@@ -810,12 +825,21 @@ POST /api/sync/trigger         ← queue reference sync
        "domains": ["enterprise-attack", "mobile-attack", "ics-attack"],
        "force": false
      }
+POST /api/sync/dynamic-db?days=7&force_attack=false
+     → refresh public dynamic DB: ATT&CK/ATLAS, MISP Galaxy, ThreatFox, Malpedia,
+       OTX/custom IOC sources
 GET  /api/sync/task/{task_id}  ← poll queued sync
 ```
 
 MITRE sync covers matrices, tactics, techniques, sub-techniques, APT groups,
 campaigns, group-technique relationships, campaign-technique relationships,
 campaign-group attribution links, and STIX external references.
+
+The daily dynamic DB sync runs through Celery Beat at
+`DYNAMIC_DB_SYNC_HOUR:DYNAMIC_DB_SYNC_MINUTE` UTC. It refreshes public/reference
+data and feed-backed IOC enrichment while preserving private report sessions,
+manual imports, and custom/private feed records in the external Postgres data
+directory.
 
 ### Health
 
@@ -834,6 +858,7 @@ All configuration is via environment variables in `.env`.
 | `DB_NAME` | `adversarygraph` | PostgreSQL database name. The legacy default is kept so existing deployments continue to start after upgrade. |
 | `DB_USER` | `ag_user` | Database user |
 | `DB_PASS` | `changeme` | Database password — **change this** |
+| `ADVERSARYGRAPH_DB_DIR` | `./data/postgres` | External persistent Postgres data directory created on first deployment. Keep this folder across rebuilds. |
 | `ANTHROPIC_API_KEY` | — | Anthropic / Claude API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4.1` | OpenAI model used when no request-level model is provided |
@@ -842,6 +867,9 @@ All configuration is via environment variables in `.env`.
 | `LOCAL_LLM_API_KEY` | `local` | API key placeholder for local OpenAI-compatible servers |
 | `LOCAL_LLM_MODEL` | `llama3.1:8b` | Local model used when no request-level model is provided |
 | `ATTCK_DOMAINS` | `enterprise-attack,mobile-attack,ics-attack,atlas` | Comma-separated ATT&CK/ATLAS domains to ingest |
+| `DYNAMIC_DB_SYNC_HOUR` | `3` | Daily public dynamic DB sync hour in UTC |
+| `DYNAMIC_DB_SYNC_MINUTE` | `30` | Daily public dynamic DB sync minute in UTC |
+| `DYNAMIC_DB_IOC_SYNC_DAYS` | `7` | ThreatFox/public IOC sync window for daily dynamic DB refresh |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warning` / `error` |
 
 To ingest only Enterprise (faster first start):

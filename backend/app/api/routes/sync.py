@@ -62,6 +62,12 @@ class IOCSyncOut(BaseModel):
     sources: list[dict]
 
 
+class DynamicSyncOut(BaseModel):
+    attack: list | dict
+    sector: dict | None = None
+    ioc: dict | None = None
+
+
 MITRE_CONTENT = [
     "matrices",
     "tactics",
@@ -212,6 +218,19 @@ async def trigger_ioc_sync(
         return await sync_all_ioc_sources(session, days=days, domain=domain)
     except Exception as exc:
         raise HTTPException(500, f"IOC sync failed: {exc}") from exc
+
+
+@router.post("/dynamic-db", response_model=DynamicSyncOut)
+async def trigger_dynamic_db_sync(
+    days: int = Query(7, ge=1, le=7),
+    force_attack: bool = Query(False),
+):
+    """Synchronize the dynamic public reference DB immediately."""
+    try:
+        from app.tasks.sync import dynamic_reference_db
+        return dynamic_reference_db(days=days, force_attack=force_attack)
+    except Exception as exc:
+        raise HTTPException(500, f"Dynamic DB sync failed: {exc}") from exc
 
 
 @router.get("/task/{task_id}")

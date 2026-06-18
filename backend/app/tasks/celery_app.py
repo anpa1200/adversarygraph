@@ -34,6 +34,15 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),
         "options":  {"queue": "celery"},
     },
+    "sync-dynamic-reference-db-daily": {
+        "task": "sync.dynamic_reference_db",
+        "schedule": crontab(
+            hour=max(0, min(23, settings.dynamic_db_sync_hour)),
+            minute=max(0, min(59, settings.dynamic_db_sync_minute)),
+        ),
+        "args": (max(1, min(7, settings.dynamic_db_ioc_sync_days)), False),
+        "options": {"queue": "celery"},
+    },
     "discover-enabled-collection-sources": {
         "task": "pipeline.collect_enabled_sources",
         "schedule": crontab(minute="*/15"),

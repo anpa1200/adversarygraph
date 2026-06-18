@@ -8,7 +8,7 @@ This guide covers local and controlled self-hosted operation.
 |---|---|
 | Frontend | React analyst workspace |
 | API | FastAPI backend and OpenAPI docs |
-| PostgreSQL | ATT&CK data and report analysis storage |
+| PostgreSQL | External persistent database for synced references and private/custom data |
 | Redis | Celery broker/result backend |
 | Worker | Background report analysis and collection jobs |
 | Beat | Scheduled ATT&CK sync and collection jobs |
@@ -23,6 +23,7 @@ Important settings:
 | Variable | Purpose |
 |---|---|
 | `DB_NAME`, `DB_USER`, `DB_PASS` | PostgreSQL credentials |
+| `ADVERSARYGRAPH_DB_DIR` | External persistent PostgreSQL data directory, default `./data/postgres` |
 | `ANTHROPIC_API_KEY` | Claude provider |
 | `OPENAI_API_KEY` | OpenAI provider |
 | `OPENAI_MODEL` | OpenAI model default |
@@ -36,12 +37,15 @@ Important settings:
 | `AUTO_THREATFOX_SYNC_DAYS` | ThreatFox startup sync window, clamped to 1-7 days |
 | `OTX_API_KEY` | Optional AlienVault OTX key for actor pulse IOC enrichment |
 | `VIRUSTOTAL_API_KEY` | Optional VirusTotal key for on-demand IOC reputation and ATT&CK context lookup |
+| `DYNAMIC_DB_SYNC_HOUR`, `DYNAMIC_DB_SYNC_MINUTE` | Daily dynamic DB refresh time in UTC |
+| `DYNAMIC_DB_IOC_SYNC_DAYS` | Daily IOC sync window, clamped to 1-7 days |
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
 
 ## Backups
 
-Back up PostgreSQL regularly:
+Back up PostgreSQL regularly. The default data directory is external to the
+containers at `./data/postgres`, but logical backups are still recommended:
 
 ```bash
 docker compose exec postgres pg_dump -U "$DB_USER" "$DB_NAME" > adversarygraph-backup.sql
@@ -51,13 +55,14 @@ Test restore procedures before relying on backups.
 
 ## PostgreSQL Credential Rotation
 
-`DB_PASS` is used when the PostgreSQL volume is first initialized. If a database
-volume already exists, changing `.env` updates container environment variables
+`DB_PASS` is used when the PostgreSQL data directory is first initialized. If a database
+directory already exists, changing `.env` updates container environment variables
 but does not change the password stored inside PostgreSQL.
 
 Fresh clones on new machines are not affected if `.env` is created before the
-first startup. The mismatch only appears after an existing `pg_data` volume was
-created with one password and `.env` is later changed to another password.
+first startup. The mismatch only appears after an existing `data/postgres`
+directory was created with one password and `.env` is later changed to another
+password.
 
 After changing `DB_PASS` for an existing volume, rotate the database role
 password in place with the Compose helper:
@@ -101,6 +106,22 @@ If the data is disposable, `docker compose down -v` followed by
 `docker compose up --build` recreates the database with the current `.env`
 credentials.
 
+## External DB Directory Migration
+
+Current deployments store PostgreSQL data in `ADVERSARYGRAPH_DB_DIR`, default
+`./data/postgres`. Existing deployments created before this layout may still
+have a Docker-managed `pg_data` volume. Migrate it once before starting the new
+Compose layout:
+
+```bash
+./scripts/migrate-postgres-volume-to-external-dir.sh
+docker compose up -d
+```
+
+The script refuses to overwrite a non-empty target directory. Keep
+`./data/postgres` during rebuilds and upgrades; delete it only when you
+intentionally want a fresh database.
+
 ## Updates
 
 ```bash
@@ -132,6 +153,14 @@ curl -X POST http://localhost:8000/api/sync/trigger \
 
 Set `force` to `true` to re-ingest the latest cached MITRE version even when the
 database already reports the current version.
+
+Dynamic DB sync runs daily at `DYNAMIC_DB_SYNC_HOUR:DYNAMIC_DB_SYNC_MINUTE` UTC.
+It refreshes ATT&CK/ATLAS, MISP Galaxy actor metadata, and IOC enrichment sources
+while preserving private/custom records in the external DB directory:
+
+```bash
+curl -X POST 'http://localhost:8000/api/sync/dynamic-db?days=7&force_attack=false'
+```
 
 ## IOC Source Synchronization
 

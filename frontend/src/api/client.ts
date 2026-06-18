@@ -387,6 +387,13 @@ export const syncApi = {
     sources: Array<Record<string, unknown>>;
   }> =>
     http.post('/sync/ioc', null, { params: { days } }).then(r => r.data),
+
+  dynamicDb: (params?: { days?: number; force_attack?: boolean }): Promise<{
+    attack: unknown;
+    sector: Record<string, unknown> | null;
+    ioc: Record<string, unknown> | null;
+  }> =>
+    http.post('/sync/dynamic-db', null, { params: { days: params?.days ?? 7, force_attack: params?.force_attack ?? false } }).then(r => r.data),
 };
 
 // ── Export ────────────────────────────────────────────────────────────────────

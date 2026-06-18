@@ -41,6 +41,9 @@ AUTO_THREATFOX_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 OTX_API_KEY=
 VIRUSTOTAL_API_KEY=
+DYNAMIC_DB_SYNC_HOUR=3
+DYNAMIC_DB_SYNC_MINUTE=30
+DYNAMIC_DB_IOC_SYNC_DAYS=7
 ```
 
 Leave these blank if you only want ATT&CK/ATLAS mapping, sector relevance, and
@@ -50,13 +53,19 @@ When `THREATFOX_AUTH_KEY` is set, the API automatically starts a background
 ThreatFox sync after Docker startup. Leave `AUTO_THREATFOX_SYNC_ON_STARTUP=true`
 for that behavior, or set it to `false` for manual-only IOC syncing.
 
+PostgreSQL data is stored outside the containers in `ADVERSARYGRAPH_DB_DIR`
+(`./data/postgres` by default). This folder is created on first deployment and
+must be kept when rebuilding containers. It stores private reports, custom IOCs,
+custom feeds, and synced public reference data.
+
 ## 3. Start
 
 ```bash
 docker compose up --build
 ```
 
-First startup ingests MITRE ATT&CK STIX data into PostgreSQL. This can take several minutes.
+First startup creates the external DB directory and ingests MITRE ATT&CK STIX
+data into PostgreSQL. This can take several minutes.
 
 ## 4. Open
 

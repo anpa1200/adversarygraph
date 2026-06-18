@@ -700,6 +700,7 @@ GET  /api/export/analysis/{session_id}/stix
 POST /api/export/layer
 GET  /api/sync/status
 POST /api/sync/trigger
+POST /api/sync/dynamic-db
 GET  /api/sector/sources
 GET  /api/sector/relevance
 GET  /api/ioc/sources

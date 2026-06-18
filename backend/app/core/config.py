@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     threatfox_auth_key: str = ""
     auto_threatfox_sync_on_startup: bool = True
     auto_threatfox_sync_days: int = 7
+    dynamic_db_sync_hour: int = 3
+    dynamic_db_sync_minute: int = 30
+    dynamic_db_ioc_sync_days: int = 7
     otx_api_key: str = ""
     virustotal_api_key: str = ""
 

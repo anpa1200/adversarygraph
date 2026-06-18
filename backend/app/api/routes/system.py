@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
@@ -70,7 +71,19 @@ async def selftest() -> SelfTestResult:
     try:
         async with async_session_factory() as session:
             await session.execute(text("select 1"))
-            checks.append(_check("database", True, "Database connection succeeded."))
+            checks.append(
+                _check(
+                    "database",
+                    True,
+                    "Database connection succeeded.",
+                    {
+                        "db_name": settings.db_name,
+                        "db_host": settings.db_host,
+                        "external_data_dir": os.environ.get("ADVERSARYGRAPH_DB_DIR", "./data/postgres"),
+                        "layout": "persistent external Postgres data directory; public references and private/custom data are source-separated",
+                    },
+                )
+            )
 
             versions = (await session.execute(select(AttackVersion))).scalars().all()
             version_map = {version.domain: version.version for version in versions if version.is_latest}
