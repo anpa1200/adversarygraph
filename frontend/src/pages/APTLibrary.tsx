@@ -553,6 +553,9 @@ function ActorIOCs({
   const [feedKind, setFeedKind] = useState<'custom-json' | 'custom-csv' | 'custom-txt'>('custom-json');
   const customSources = sources.filter(source => source.kind.startsWith('custom-'));
   const iocTechniqueIds = Array.from(new Set(items.flatMap(item => item.technique_ids ?? []))).sort();
+  const openEnrichment = (indicator: string) => {
+    window.open(`/virustotal?indicator=${encodeURIComponent(indicator)}`, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="space-y-4">
@@ -739,19 +742,20 @@ function ActorIOCs({
       </div>
 
       <div className="overflow-hidden rounded border border-gray-800">
-        <div className="grid grid-cols-[140px_1fr_110px_110px_120px] gap-3 border-b border-gray-800 bg-gray-950 px-3 py-2 text-[10px] uppercase text-gray-500">
+        <div className="grid grid-cols-[140px_1fr_110px_110px_120px_120px] gap-3 border-b border-gray-800 bg-gray-950 px-3 py-2 text-[10px] uppercase text-gray-500">
           <span>Type</span>
           <span>Indicator</span>
           <span>Malware</span>
           <span>Last Seen</span>
           <span>Source</span>
+          <span>Actions</span>
         </div>
         {loading ? (
           <div className="p-4 text-sm text-gray-500">Loading actor IOCs...</div>
         ) : items.length ? (
           <div className="divide-y divide-gray-800">
             {items.map(item => (
-              <div key={`${item.type}-${item.value}-${item.source}`} className="grid grid-cols-[140px_1fr_110px_110px_120px] gap-3 px-3 py-3 text-xs">
+              <div key={`${item.type}-${item.value}-${item.source}`} className="grid grid-cols-[140px_1fr_110px_110px_120px_120px] gap-3 px-3 py-3 text-xs">
                 <div>
                   <span className="rounded bg-gray-800 px-2 py-1 font-mono text-[10px] text-gray-300">{item.type}</span>
                   <div className="mt-2 text-[10px] text-gray-600">conf {item.confidence}</div>
@@ -807,6 +811,11 @@ function ActorIOCs({
                     <span className="text-gray-500">{item.source}</span>
                   )}
                   <div className="mt-1 text-[10px] uppercase text-gray-600">{item.tlp}</div>
+                </div>
+                <div>
+                  <button type="button" onClick={() => openEnrichment(item.value)} className="primary-action">
+                    Enrichment
+                  </button>
                 </div>
               </div>
             ))}

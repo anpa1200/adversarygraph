@@ -14,15 +14,17 @@ from app.models.pipeline import AuditEvent, CollectionRun, CollectionSource, Det
 from app.services.atlas import normalize_atlas
 from app.services.auth import TeamUser, analyst, audit, current_user
 from app.services.collection import extract_observables, fetch_rss, misp_reports, stix_reports
+from app.services.detection_feeds import ensure_default_detection_feeds, sync_detection_rule_feed
 from app.services.detections import generate_detection, validate_detection
 from app.services.enrichment import enrich_observable
+from app.services.sandbox_feeds import list_sandbox_behaviors, sync_sandbox_feed
 
 router = APIRouter(prefix="/pipeline", tags=["Collection and Detection Pipeline"])
 
 
 class SourceBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    kind: str = Field(..., pattern="^(rss|taxii|misp|atlas)$")
+    kind: str = Field(..., pattern="^(rss|taxii|misp|atlas|sigma|yara|sandbox)$")
     url: str = ""
     enabled: bool = True
     interval_minutes: int = Field(default=60, ge=5, le=10080)
@@ -133,6 +135,16 @@ async def update_source(source_id: str, body: SourceBody, db: AsyncSession = Dep
 @router.post("/sources/{source_id}/run")
 async def run_source(source_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     source = await source_or_404(db, source_id)
+    if source.kind in {"sigma", "yara"}:
+        run = await sync_detection_rule_feed(db, source)
+        await audit(db, user, "rule_feed.sync", "collection_source", source_id, {"status": run.status, "kind": source.kind})
+        await db.commit()
+        return out(run)
+    if source.kind == "sandbox":
+        run = await sync_sandbox_feed(db, source)
+        await audit(db, user, "sandbox_feed.sync", "collection_source", source_id, {"status": run.status})
+        await db.commit()
+        return out(run)
     run = CollectionRun(source_id=source.id)
     db.add(run); await db.flush()
     try:
@@ -149,6 +161,14 @@ async def run_source(source_id: str, db: AsyncSession = Depends(get_session), us
     await audit(db, user, "source.run", "collection_source", source_id, {"status": run.status})
     await db.commit(); await db.refresh(run)
     return out(run)
+
+
+@router.post("/rule-feeds/defaults")
+async def create_default_rule_feeds(db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+    rows = await ensure_default_detection_feeds(db)
+    await audit(db, user, "rule_feed.defaults", "collection_source", details={"count": len(rows)})
+    await db.commit()
+    return [out(row) for row in rows]
 
 
 @router.get("/runs")
@@ -187,6 +207,11 @@ async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), u
 async def observables(db: AsyncSession = Depends(get_session)):
     rows = await db.execute(select(Observable).order_by(Observable.last_seen_at.desc()).limit(500))
     return [out(row) for row in rows.scalars().all()]
+
+
+@router.get("/sandbox/behaviors")
+async def sandbox_behaviors(limit: int = 100, db: AsyncSession = Depends(get_session)):
+    return await list_sandbox_behaviors(db, limit=limit)
 
 
 @router.post("/observables", status_code=201)

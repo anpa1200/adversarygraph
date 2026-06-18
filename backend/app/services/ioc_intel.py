@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import requests
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -76,6 +76,117 @@ async def list_ioc_sources(session: AsyncSession) -> list[IOCSource]:
     await ensure_ioc_sources(session)
     rows = await session.execute(select(IOCSource).order_by(IOCSource.label))
     return list(rows.scalars().all())
+
+
+async def list_ioc_library(
+    session: AsyncSession,
+    *,
+    search: str = "",
+    indicator_type: str = "",
+    source_id: str = "",
+    actor: str | list[str] = "",
+    sort: str = "last_seen_desc",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List global IOC records with actor-link summaries for the IOC Library."""
+    await ensure_ioc_sources(session)
+    limit = max(1, min(limit, 5000))
+    offset = max(0, offset)
+    base = select(IOCIndicator).options(selectinload(IOCIndicator.actor_links))
+    count_stmt = select(func.count(func.distinct(IOCIndicator.id))).select_from(IOCIndicator)
+
+    filters = []
+    term = search.strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(
+            or_(
+                IOCIndicator.value.ilike(pattern),
+                IOCIndicator.indicator_type.ilike(pattern),
+                IOCIndicator.source_id.ilike(pattern),
+                IOCIndicator.malware_family.ilike(pattern),
+                IOCIndicator.campaign.ilike(pattern),
+                IOCIndicator.description.ilike(pattern),
+            )
+        )
+    if indicator_type:
+        filters.append(IOCIndicator.indicator_type == indicator_type)
+    if source_id:
+        filters.append(IOCIndicator.source_id == source_id)
+
+    actor_terms = _normalize_actor_filter(actor)
+    if actor_terms:
+        base = base.join(IOCActorLink, IOCActorLink.indicator_id == IOCIndicator.id)
+        count_stmt = count_stmt.join(IOCActorLink, IOCActorLink.indicator_id == IOCIndicator.id)
+        filters.append(
+            or_(
+                *[
+                    condition
+                    for actor_term in actor_terms
+                    for actor_pattern in [f"%{actor_term}%"]
+                    for condition in (
+                        IOCActorLink.actor_attack_id.ilike(actor_pattern),
+                        IOCActorLink.actor_name.ilike(actor_pattern),
+                    )
+                ]
+            )
+        )
+
+    if filters:
+        base = base.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+
+    sort_map = {
+        "last_seen_asc": IOCIndicator.last_seen.asc().nulls_last(),
+        "first_seen_desc": IOCIndicator.first_seen.desc().nulls_last(),
+        "first_seen_asc": IOCIndicator.first_seen.asc().nulls_last(),
+        "type_asc": IOCIndicator.indicator_type.asc(),
+        "type_desc": IOCIndicator.indicator_type.desc(),
+        "value_asc": IOCIndicator.value.asc(),
+        "value_desc": IOCIndicator.value.desc(),
+        "source_asc": IOCIndicator.source_id.asc(),
+        "source_desc": IOCIndicator.source_id.desc(),
+        "confidence_desc": IOCIndicator.confidence.desc(),
+        "confidence_asc": IOCIndicator.confidence.asc(),
+    }
+    order = sort_map.get(sort, IOCIndicator.last_seen.desc().nulls_last())
+    if sort == "actor_asc":
+        base = base.outerjoin(IOCActorLink, IOCActorLink.indicator_id == IOCIndicator.id) if not actor_terms else base
+        order = IOCActorLink.actor_name.asc().nulls_last()
+    elif sort == "actor_desc":
+        base = base.outerjoin(IOCActorLink, IOCActorLink.indicator_id == IOCIndicator.id) if not actor_terms else base
+        order = IOCActorLink.actor_name.desc().nulls_last()
+
+    total = int((await session.execute(count_stmt)).scalar_one_or_none() or 0)
+    rows = await session.execute(base.order_by(order, IOCIndicator.id.desc()).offset(offset).limit(limit))
+    indicators = []
+    seen_ids: set[int] = set()
+    for indicator in rows.scalars().all():
+        if indicator.id in seen_ids:
+            continue
+        seen_ids.add(indicator.id)
+        indicators.append(indicator)
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [_ioc_library_row(indicator) for indicator in indicators],
+    }
+
+
+def _normalize_actor_filter(actor: str | list[str]) -> list[str]:
+    raw_values = actor if isinstance(actor, list) else [actor]
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        for value in str(raw or "").split(","):
+            clean = value.strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                seen.add(key)
+                terms.append(clean)
+    return terms[:50]
 
 
 async def create_ioc_source(
@@ -662,6 +773,44 @@ async def actor_ioc_counts(
     rows = await session.execute(stmt)
     counts = {actor_id: count for actor_id, count in rows}
     return {actor_id: counts.get(actor_id, 0) for actor_id in ids}
+
+
+def _ioc_library_row(indicator: IOCIndicator) -> dict[str, Any]:
+    actors: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for link in sorted(indicator.actor_links or [], key=lambda item: (item.actor_name or item.actor_attack_id, item.id)):
+        key = (link.actor_attack_id, link.actor_name)
+        if key in seen:
+            continue
+        seen.add(key)
+        actors.append(
+            {
+                "actor_attack_id": link.actor_attack_id,
+                "actor_name": link.actor_name,
+                "relationship": link.relationship_type,
+                "confidence": link.confidence,
+                "evidence": link.evidence,
+                "source": link.source_id,
+            }
+        )
+    return {
+        "id": indicator.id,
+        "value": indicator.value,
+        "type": indicator.indicator_type,
+        "source": indicator.source_id,
+        "source_url": indicator.source_url,
+        "first_seen": indicator.first_seen,
+        "last_seen": indicator.last_seen,
+        "confidence": indicator.confidence,
+        "tlp": indicator.tlp,
+        "malware_family": indicator.malware_family,
+        "campaign": indicator.campaign,
+        "technique_ids": indicator.technique_ids or _indicator_technique_ids(indicator),
+        "tags": indicator.tags or [],
+        "description": indicator.description,
+        "actors": actors,
+        "actor_count": len(actors),
+    }
 
 
 async def _latest_groups(session: AsyncSession, domain: str) -> list[AptGroup]:

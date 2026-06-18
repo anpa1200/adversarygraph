@@ -13,7 +13,7 @@ export function Examples() {
     queryFn: loadDfirReportIndex,
   });
 
-  const reports = data?.reports ?? [];
+  const reports = useMemo(() => data?.reports ?? [], [data?.reports]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return reports.filter(report => {

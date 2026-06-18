@@ -1,4 +1,4 @@
-# AdversaryGraph v2.0: I Built a Self-Hosted AI Threat Intelligence Platform — Now With Local LLMs, DFIR Examples, and OpenCTI Export
+# AdversaryGraph v2.5: I Built a Self-Hosted AI Threat Intelligence Platform — Now With Local LLMs, DFIR Examples, and OpenCTI Export
 
 Threat intelligence is useful only when it becomes operational.
 
@@ -13,12 +13,16 @@ A report is not enough. A PDF from a vendor, an incident response write-up, a ma
 
 That is the problem AdversaryGraph was built to solve.
 
-AdversaryGraph is an open-source, self-hosted CTI-to-detection workbench. It helps analysts map threat reports to MITRE ATT&CK, review evidence, compare TTP overlap against groups and campaigns, export reports, and hand off structured outputs to detection engineering or CTI platforms.
+AdversaryGraph is a source-available, self-hosted CTI-to-detection workbench. It helps analysts map threat reports to MITRE ATT&CK, review evidence, compare TTP overlap against groups and campaigns, export reports, and hand off structured outputs to detection engineering or CTI platforms.
 
-Version 2.0 adds the features that make it much more useful in real analyst workflows:
+Version 2.5 includes the features that make it much more useful in real analyst workflows:
 
 - Local LLM support through OpenAI-compatible endpoints
 - STIX 2.1 export for OpenCTI
+- IOC Library search, sorting, and multi-group filtering
+- VirusTotal IOC enrichment with ATT&CK and actor pivots
+- MISP JSON, TAXII/STIX, OTX, Malpedia, and custom IOC feed workflows
+- Sigma/YARA rule-feed sync and sandbox behavior enrichment
 - DFIR Report example indexing
 - enriched ATT&CK group and actor pages
 - MITRE ATT&CK reference sync
@@ -29,9 +33,9 @@ GitHub:
 
 https://github.com/anpa1200/adversarygraph
 
-Release v2.0.0:
+Release v2.5.0:
 
-https://github.com/anpa1200/adversarygraph/releases/tag/v2.0.0
+https://github.com/anpa1200/adversarygraph/releases/tag/v2.5.0
 
 Full guide:
 
@@ -151,14 +155,14 @@ curl http://localhost:8000/api/health
 Expected result:
 
 ```json
-{"status":"ok","version":"2.0.0"}
+{"status":"ok","version":"2.5.0"}
 ```
 
 On first startup, AdversaryGraph ingests MITRE ATT&CK STIX data into PostgreSQL. This can take a few minutes.
 
 ## Local LLM Support
 
-AdversaryGraph v2.0 supports local LLMs through OpenAI-compatible APIs.
+AdversaryGraph v2.5 supports local LLMs through OpenAI-compatible APIs.
 
 This is important if you want to analyze sensitive reports without sending them to a public cloud provider.
 
@@ -286,7 +290,7 @@ This is important because ATT&CK analysis is rarely finished after one model res
 
 ## ATT&CK Group Library
 
-AdversaryGraph v2.0 improves the ATT&CK Group Library.
+AdversaryGraph v2.5 improves the ATT&CK Group Library.
 
 Actor pages now include:
 
@@ -384,7 +388,7 @@ This is useful when you want to understand which behaviors are shared across act
 
 ## DFIR Examples
 
-AdversaryGraph v2.0 adds DFIR Examples.
+AdversaryGraph v2.5 adds DFIR Examples.
 
 The page indexes public DFIR Report metadata:
 
@@ -434,7 +438,7 @@ This matters because a report analyzed today may need to be compared again after
 
 ## STIX 2.1 Export For OpenCTI
 
-This is one of the most important v2.0 additions.
+This is one of the most important v2.5 additions.
 
 AdversaryGraph can export a completed analysis as a STIX 2.1 bundle:
 
@@ -590,7 +594,7 @@ Use similarity as a lead. Use evidence for conclusions.
 
 ## Release Evidence
 
-AdversaryGraph v2.0.0 includes:
+AdversaryGraph v2.5.0 includes:
 
 - Docker Compose deployment
 - FastAPI backend
@@ -599,6 +603,8 @@ AdversaryGraph v2.0.0 includes:
 - Redis/Celery background workers
 - Claude, OpenAI, Gemini, and Local LLM support
 - MITRE ATT&CK Enterprise, Mobile, ICS, and MITRE ATLAS support
+- IOC Library, STIX/TAXII exchange, MISP JSON import, and custom IOC feeds
+- VirusTotal, OTX, Malpedia, Sigma/YARA, and sandbox enrichment workflows
 - enriched ATT&CK actor pages
 - DFIR example metadata
 - STIX/OpenCTI export
@@ -609,10 +615,10 @@ AdversaryGraph v2.0.0 includes:
 - demo video and GIF
 - full guide and release notes
 
-Verification for v2.0.0:
+Verification for v2.5.0:
 
 ```text
-Backend tests: 76 passed
+Backend tests: Docker API tests passed
 Frontend build: passed
 ```
 
@@ -624,7 +630,7 @@ https://github.com/anpa1200/adversarygraph
 
 Release:
 
-https://github.com/anpa1200/adversarygraph/releases/tag/v2.0.0
+https://github.com/anpa1200/adversarygraph/releases/tag/v2.5.0
 
 Full guide:
 

@@ -50,28 +50,35 @@ def dynamic_reference_db(days: int = 7, force_attack: bool = False) -> dict:
     report sessions and manually imported/custom records remain in the persistent
     external Postgres data directory.
     """
+    return asyncio.run(run_dynamic_reference_db_async(days=days, force_attack=force_attack))
+
+
+async def run_dynamic_reference_db_async(days: int = 7, force_attack: bool = False) -> dict:
+    """
+    Refresh the dynamic public CTI database from an existing async context.
+
+    FastAPI routes already run inside an event loop, so they must await this
+    helper directly. The Celery task above wraps it with asyncio.run() because
+    Celery workers execute synchronous task functions.
+    """
+    from app.core.database import async_session_factory
     from app.services.attck.version_checker import sync_outdated_domains
+    from app.services.ioc_intel import sync_all_ioc_sources
+    from app.services.sector_intel import sync_misp_galaxy
 
     logger.info("Dynamic reference DB sync started")
-    actions = sync_outdated_domains(force=force_attack)
+    actions = await asyncio.to_thread(sync_outdated_domains, force=force_attack)
 
-    async def _run_feed_sync() -> dict:
-        from app.core.database import async_session_factory
-        from app.services.ioc_intel import sync_all_ioc_sources
-        from app.services.sector_intel import sync_misp_galaxy
+    results: dict = {"sector": None, "ioc": None}
+    async with async_session_factory() as session:
+        try:
+            results["sector"] = await sync_misp_galaxy(session)
+        except Exception as exc:
+            results["sector"] = {"status": "error", "error": str(exc)}
+        try:
+            results["ioc"] = await sync_all_ioc_sources(session, days=days, domain="enterprise-attack")
+        except Exception as exc:
+            results["ioc"] = {"status": "error", "error": str(exc)}
 
-        results: dict = {"sector": None, "ioc": None}
-        async with async_session_factory() as session:
-            try:
-                results["sector"] = await sync_misp_galaxy(session)
-            except Exception as exc:
-                results["sector"] = {"status": "error", "error": str(exc)}
-            try:
-                results["ioc"] = await sync_all_ioc_sources(session, days=days, domain="enterprise-attack")
-            except Exception as exc:
-                results["ioc"] = {"status": "error", "error": str(exc)}
-        return results
-
-    feeds = asyncio.run(_run_feed_sync())
-    logger.info("Dynamic reference DB sync done: attack=%s feeds=%s", actions, feeds)
-    return {"attack": actions, **feeds}
+    logger.info("Dynamic reference DB sync done: attack=%s feeds=%s", actions, results)
+    return {"attack": actions, **results}

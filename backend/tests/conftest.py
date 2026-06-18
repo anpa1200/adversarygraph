@@ -41,6 +41,9 @@ class _MockScalarResult:
         m.all.return_value = self._rows
         return m
 
+    def all(self):
+        return self._rows
+
     def __iter__(self):
         return iter(self._rows)
 
@@ -64,6 +67,7 @@ class _MockSession:
     async def flush(self):  pass
     async def commit(self): pass
     async def rollback(self): pass
+    async def refresh(self, obj): pass
 
     async def __aenter__(self):
         return self

@@ -5,6 +5,7 @@ interface ApiErrorDetail {
   message: string;
   status?: number;
   url?: string;
+  retry?: () => Promise<unknown>;
 }
 
 type PopupState = 'error' | 'checking' | 'ok';
@@ -47,6 +48,12 @@ export function GlobalErrorPopup() {
     const originalError = error;
     setPopupState('checking');
     try {
+      if (originalError.retry) {
+        await originalError.retry();
+        setPopupState('ok');
+        setError({ message: 'All correct.', status: 200, url: originalError.url });
+        return;
+      }
       const result = await systemApi.selftest();
       if (result.status === 'ok') {
         const stillMissing = missingRequiredProvider(originalError, result);

@@ -3,8 +3,8 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v2.4.0-blue)](VERSION)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v2.5.0-blue)](VERSION)
+[![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![External submissions](https://img.shields.io/badge/External%20submissions-submitted-yellow)](DISCOVERY.md)
@@ -12,7 +12,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.4.0 · [Release Summary](docs/release-summary-v2.4.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Medium Archive](https://medium.com/@1200km)**
+**Current release: v2.5.0 · [Release Summary](docs/release-summary-v2.5.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Medium Archive](https://medium.com/@1200km)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -32,7 +32,7 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 
 ## Project Maturity Evidence
 
-AdversaryGraph v2.4.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
+AdversaryGraph v2.5.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
@@ -47,7 +47,7 @@ AdversaryGraph v2.4.0 publishes the operational evidence expected from a serious
 
 The current documentation is intended to make external review practical rather than promotional.
 
-For the current release scope, see the [v2.4.0 release summary](docs/release-summary-v2.4.0.md) and [release notes](docs/release-notes/v2.4.0.md).
+For the current release scope, see the [v2.5.0 release summary](docs/release-summary-v2.5.0.md) and [release notes](docs/release-notes/v2.5.0.md).
 
 ## Public Demo Privacy Note
 
@@ -111,7 +111,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Compare — Campaigns** | Jaccard similarity ranking of your TTPs vs every named MITRE campaign (e.g. SolarWinds C0024, Operation Ghost C0023) |
 | **Compare — Reports** | Browse stored AI analyses (DB 2); re-run group-similarity comparison without re-calling the LLM |
 | **Sector Intelligence** | Local actor relevance scoring by client sector, geography, environment keywords, activity window, ATT&CK campaign recency, and MISP Galaxy evidence |
-| **IOC Intelligence** | Local source-backed IOC storage with ThreatFox sync, manual report import, actor IOC tabs, IOC-to-TTP mapping, freshness filtering, confidence, source links, and CSV export |
+| **IOC Intelligence** | Local source-backed IOC storage with ThreatFox/OTX/Malpedia sync, global IOC Library search, MISP/custom feed connection, actor IOC tabs, IOC-to-TTP mapping, freshness filtering, confidence, source links, VT check, and CSV export |
 | **VirusTotal Lookup** | On-demand IOC reputation lookup for IPs, domains, URLs, and hashes with clean verdicts, extracted ATT&CK TTPs, local actor matches, and matrix/My TTP actions |
 | **DFIR Examples** | Indexed public DFIR Report examples with TTP/actor metadata and a local PDF workflow for private AI analysis |
 | **Export** | ATT&CK Navigator JSON layers, PDF reports, plain JSON, and STIX 2.1 bundles for OpenCTI import |
@@ -660,7 +660,14 @@ Supported initial sources:
   attribution evidence, and actor links when Malpedia names match ATT&CK actor
   names or aliases. No API key is required for the public family metadata sync.
 - **Custom / personal IOC feeds** — private JSON, CSV, or TXT feeds registered
-  from the actor IOC tab or API.
+  from the IOC Library, actor IOC tab, or API.
+- **MISP JSON exports** — connect a MISP event/attribute export URL as a custom
+  JSON IOC feed. Full MISP server authentication is intentionally not embedded;
+  use a local gateway or export URL that returns JSON to the AdversaryGraph
+  container.
+- **STIX 2.1 / TAXII** — export filtered IOC Library records as STIX 2.1,
+  import STIX bundles, or pull a TAXII 2.1 collection objects URL into the
+  local IOC database.
 - **Manual report import** — JSON import for report, MISP, OpenCTI, or vendor CTI
   extracts where the actor mapping is already known.
 
@@ -673,10 +680,77 @@ Actor IOC tabs show:
 - actions to add IOC-linked TTPs to `My TTPs` or show them on the matrix
 - CSV export for client handoff or downstream tooling
 
+The global **IOC Library** page at `/ioc-library` provides:
+
+- full IOC search across indicator value, source, malware family, campaign, and
+  description
+- filters for IOC type, source, and group/attacker
+- sorting by last seen, first seen, type, indicator, source, confidence, or
+  group/attacker
+- custom JSON/CSV/TXT feed connection and per-source sync
+- MISP JSON export connection as a custom IOC source
+- filtered STIX 2.1 export for IOC handoff to OpenCTI or other CTI platforms
+- STIX bundle import and TAXII collection pull for source-backed IOC ingestion
+- per-IOC VirusTotal check button with found ATT&CK TTPs, actor matches, and
+  matrix / `My TTPs` actions
+
+### Sigma / YARA Rule Feeds
+
+Detection Studio can connect external Sigma and YARA rule feeds from the
+Pipeline page. Supported feed URLs are:
+
+- a raw `.yml`, `.yaml`, `.yar`, or `.yara` rule file
+- a text or JSON URL that contains rule URLs
+- a GitHub tree URL such as `https://github.com/SigmaHQ/sigma/tree/master/rules`
+
+Use **Pipeline -> Detections -> Connect Sigma / YARA Rule Feeds** to add the
+default SigmaHQ feed or a private rule repository. Sync imports matching rules
+into Detection Studio as `DetectionVersion` records. Imported rules keep their
+source URL in validation metadata and are mapped to ATT&CK when the rule text or
+Sigma tags contain technique IDs.
+
+API:
+
+```text
+POST /api/pipeline/rule-feeds/defaults
+POST /api/pipeline/sources
+POST /api/pipeline/sources/{source_id}/run
+GET  /api/pipeline/detections/versions
+```
+
+### Sandbox Behavior Enrichment
+
+The Pipeline **Sandbox** tab connects sandbox behavior feeds and stores report
+output as observable enrichment. This is intended for private CAPE/Cuckoo
+exports, ANY.RUN-style gateway exports, internal detonation systems, or a JSON
+feed generated by your own malware lab.
+
+Supported feed shape:
+
+- a JSON array of sandbox reports
+- a JSON object with `reports`, `data`, `results`, `analyses`, `items`, or
+  `tasks`
+- a single sandbox report object
+
+The parser extracts sample hashes, verdict, score, malware family, tags,
+behavior signatures, process names/command lines, network artifacts, and ATT&CK
+technique IDs found anywhere in the report. Each report creates or updates a
+hash observable and attaches a `sandbox:<feed name>` enrichment record.
+
+API:
+
+```text
+POST /api/pipeline/sources        # kind=sandbox
+POST /api/pipeline/sources/{source_id}/run
+GET  /api/pipeline/sandbox/behaviors
+```
+
 API:
 
 ```text
 GET  /api/ioc/sources
+GET  /api/ioc/library?search=apt&type=sha256&actor=G0006&sort=last_seen_desc
+GET  /api/ioc/library/export/stix?search=apt&type=sha256&limit=5000
 POST /api/ioc/sources
 POST /api/sync/ioc?days=7
 POST /api/ioc/sync/threatfox?days=7
@@ -684,6 +758,8 @@ POST /api/ioc/sync/malpedia
 POST /api/ioc/sync/otx
 POST /api/ioc/sync/{source_id}
 POST /api/ioc/import
+POST /api/ioc/import/stix
+POST /api/ioc/import/taxii
 GET  /api/ioc/actors/G0049?days=180&active_only=true
 GET  /api/ioc/actors/G0049/summary?days=180
 GET  /api/ioc/actors/G0049/export.csv?days=180&active_only=true
@@ -1069,6 +1145,17 @@ copy, newsletter pitch text, and current external submission tracking.
 
 ## Changelog
 
+### v2.5.0 (2026-06-18)
+
+**IOC Library, enrichment, and connector hardening release:**
+- Added the IOC Library page with search, type/source filters, searchable multi-select group filters, sorting, enrichment actions, and pagination
+- Added STIX 2.1 IOC export/import, TAXII collection pull support, MISP JSON export connection, and custom JSON/CSV/TXT feed registration
+- Added VirusTotal IOC enrichment with structured verdicts, extracted ATT&CK TTP evidence, local actor matches, rule/sandbox context, and matrix/My TTP actions
+- Added YARA/Sigma rule-feed sync and sandbox behavior feed sync for detection and malware behavior context
+- Added IOC-to-TTP mapping from imported reports and enrichment/source metadata
+- Fixed manual dynamic DB sync event-loop handling in the FastAPI route
+- Updated the license to personal/private use free; business/commercial/organizational use requires approval
+
 ### v2.4.0 (2026-06-18)
 
 **Dynamic reference DB and IOC consistency release:**
@@ -1218,6 +1305,8 @@ Native MITRE ATLAS matrix ingestion is now integrated with the Docker sync pipel
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Free for personal/private use only. Business, commercial, organizational,
+client-delivery, production, or government use requires prior written approval
+from Andrey Pautov. See [LICENSE](LICENSE).
 
 ATT&CK® is a registered trademark of The MITRE Corporation. This project is not affiliated with or endorsed by MITRE.

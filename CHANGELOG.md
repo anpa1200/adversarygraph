@@ -4,6 +4,29 @@
 
 No unreleased changes.
 
+## v2.5.0 - 2026-06-18
+
+- Added a full IOC Library page with search, type/source filtering, group/actor
+  filtering, sorting, enrichment actions, STIX export/import, TAXII pull, MISP
+  JSON export connection, and custom feed registration.
+- Added searchable multi-select ATT&CK group filtering for IOC Library records
+  and STIX exports.
+- Added VirusTotal IOC enrichment with structured verdicts, detection context,
+  sandbox/rule details, extracted ATT&CK TTP evidence, actor matches, and
+  Navigator/My TTP actions.
+- Added YARA/Sigma rule-feed synchronization and sandbox behavior feed
+  enrichment for malware behavior and detection context.
+- Added IOC-to-TTP mapping from imported reports, source metadata, VirusTotal,
+  OTX, Malpedia, and custom feeds.
+- Added STIX 2.1 and TAXII workflows for IOC exchange with CTI platforms.
+- Fixed dynamic reference DB manual sync so FastAPI no longer calls
+  `asyncio.run()` from an active event loop.
+- Improved IOC Library group dropdown behavior and visibility.
+- Changed project licensing from MIT to the AdversaryGraph Personal Use License:
+  personal/private use is free; business, commercial, organizational,
+  client-delivery, production, or government use requires prior written
+  approval from Andrey Pautov.
+
 ## v2.4.0 - 2026-06-18
 
 - Added daily dynamic reference database synchronization for MITRE ATT&CK,

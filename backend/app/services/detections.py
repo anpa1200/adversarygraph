@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 
-FORMATS = {"sigma", "kql", "spl", "eql"}
+FORMATS = {"sigma", "yara", "kql", "spl", "eql"}
 
 
 def generate_detection(title: str, technique_id: str, format: str, telemetry: list[str]) -> str:
@@ -19,6 +19,23 @@ def generate_detection(title: str, technique_id: str, format: str, telemetry: li
             f"tags:\n  - attack.{needle}", f"logsource:\n  category: {telemetry[0]}",
             "detection:\n  selection:\n    CommandLine|contains: REPLACE_WITH_BEHAVIOR\n  condition: selection",
             "falsepositives:\n  - Validate in the target environment", "level: medium",
+        ])
+    if fmt == "yara":
+        rule_name = re.sub(r"[^A-Za-z0-9_]", "_", title).strip("_") or f"adversarygraph_{needle}"
+        if not rule_name[0].isalpha() and rule_name[0] != "_":
+            rule_name = f"rule_{rule_name}"
+        return "\n".join([
+            f"rule {rule_name}",
+            "{",
+            "  meta:",
+            f'    description = "Analyst-review skeleton for {technique_id}"',
+            '    author = "AdversaryGraph"',
+            f'    attack = "{technique_id}"',
+            "  strings:",
+            '    $placeholder = "REPLACE_WITH_BEHAVIOR" ascii wide nocase',
+            "  condition:",
+            "    $placeholder",
+            "}",
         ])
     field = "CommandLine"
     query = f'{field} contains "REPLACE_WITH_BEHAVIOR"'
@@ -43,6 +60,11 @@ def validate_detection(format: str, content: str) -> dict:
         for required in ("title:", "logsource:", "detection:", "condition:"):
             if required not in content:
                 errors.append(f"Missing Sigma field: {required}")
+    if fmt == "yara":
+        if not re.search(r"(?m)^\s*(?:private\s+|global\s+)*rule\s+[A-Za-z0-9_:-]+", content):
+            errors.append("Missing YARA rule declaration")
+        if "condition:" not in content:
+            errors.append("Missing YARA condition block")
     if fmt in {"kql", "eql"} and not re.search(r"\b(contains|where|has|:)\b", content, re.I):
         warnings.append("Query has no recognizable filter expression")
     return {"valid": not errors, "errors": errors, "warnings": warnings, "format": fmt}

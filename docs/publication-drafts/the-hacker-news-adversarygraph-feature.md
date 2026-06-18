@@ -1,11 +1,11 @@
-# Open-Source AdversaryGraph Bridges CTI Reports and Detection Engineering with AI-Assisted ATT&CK Mapping
+# Source-Available AdversaryGraph Bridges CTI Reports and Detection Engineering with AI-Assisted ATT&CK Mapping
 
 **Target outlet:** The Hacker News
 **Draft type:** Feature / tool release / expert insight
 **Source article:** https://infosecwriteups.com/adversarygraph-i-built-a-self-hosted-ai-threat-intelligence-platform-heres-how-to-use-it-0aa7673e6bd8
 **Canonical project:** https://github.com/anpa1200/adversarygraph
 **Project hub:** https://1200km.com/adversarygraph/
-**Release:** https://github.com/anpa1200/adversarygraph/releases/tag/v2.0.0
+**Release:** https://github.com/anpa1200/adversarygraph/releases/tag/v2.5.0
 **External validation:** https://1200km.com/external-validation.html
 
 ## Editorial Positioning Notes
@@ -36,7 +36,7 @@ Cyber threat intelligence often arrives as prose: a vendor report, an incident-r
 
 That handoff is still more manual than many teams would like.
 
-AdversaryGraph is an open-source, self-hosted CTI-to-detection workbench designed to reduce that gap. It takes threat-report text, PDFs, DOCX files, or analyst-provided notes and converts them into ATT&CK mapping candidates, supporting evidence, group and campaign similarity leads, Navigator-style layers, and report outputs.
+AdversaryGraph is a source-available, self-hosted CTI-to-detection workbench designed to reduce that gap. It takes threat-report text, PDFs, DOCX files, or analyst-provided notes and converts them into ATT&CK mapping candidates, supporting evidence, group and campaign similarity leads, Navigator-style layers, and report outputs.
 
 The project is not positioned as an attribution engine. Its core design assumption is that ATT&CK mappings and TTP overlap are analyst-review material, not final truth. Similarity scores can help prioritize investigation, but they do not prove actor identity without malware, infrastructure, victimology, timing, procedure detail, and external intelligence.
 
@@ -238,7 +238,7 @@ Its role is narrower:
 - before SOC handoff, it helps organize extracted techniques into reviewable outputs;
 - before knowledge-graph promotion, it helps analysts validate whether the source evidence supports the mapping.
 
-The project is open source and designed for self-hosted operation. The v2.0.0 release focuses on maturity evidence: release notes, CI, documentation, screenshots, demo data, sample outputs, validation material, and a public project hub.
+The project is source-available and designed for self-hosted operation. The v2.5.0 release focuses on operational CTI workflows: IOC Library search, group-filtered observable review, VirusTotal enrichment, STIX/TAXII exchange, MISP JSON export ingestion, custom IOC feeds, Sigma/YARA rule-feed sync, sandbox behavior enrichment, release notes, CI, documentation, screenshots, demo data, sample outputs, validation material, and a public project hub.
 
 ![Project hub](../screenshots/32_1xoyHjzN-tAx7Lx19Xg0IPyA.png)
 
@@ -252,17 +252,17 @@ The project is open source and designed for self-hosted operation. The v2.0.0 re
 
 ## Availability
 
-AdversaryGraph is available on GitHub under the MIT license.
+AdversaryGraph is available on GitHub under the AdversaryGraph Personal Use License. Personal/private use is free; business, commercial, organizational, client-delivery, production, or government use requires prior written approval from Andrey Pautov.
 
 - GitHub: https://github.com/anpa1200/adversarygraph
-- Release v2.0.0: https://github.com/anpa1200/adversarygraph/releases/tag/v2.0.0
+- Release v2.5.0: https://github.com/anpa1200/adversarygraph/releases/tag/v2.5.0
 - Project hub: https://1200km.com/adversarygraph/
 - Public ATT&CK workspace: https://1200km.com/threat-matrix/
 - External validation and publications: https://1200km.com/external-validation.html
 
 ## Suggested Editor Summary
 
-AdversaryGraph is an open-source, self-hosted CTI-to-detection workbench that maps threat reports to MITRE ATT&CK, compares TTP overlap against group and campaign profiles, and exports analyst-ready outputs. The tool is designed around analyst validation rather than automated attribution, and the v2.0.0 release includes Docker deployment, CI, documentation, demo data, screenshots, and validation material.
+AdversaryGraph is a source-available, self-hosted CTI-to-detection workbench that maps threat reports to MITRE ATT&CK, compares TTP overlap against group and campaign profiles, enriches IOC context, and exports analyst-ready outputs. The tool is designed around analyst validation rather than automated attribution, and the v2.5.0 release includes Docker deployment, IOC Library workflows, STIX/TAXII exchange, enrichment connectors, CI, documentation, demo data, screenshots, and validation material.
 
 ## Image Checklist From Source Article
 

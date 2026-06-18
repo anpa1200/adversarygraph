@@ -112,3 +112,22 @@ async def test_sync_status_shape(client: AsyncClient):
             assert "domain" in domain_info
             assert "current_version" in domain_info
             assert "content" in domain_info
+
+
+@pytest.mark.asyncio
+async def test_dynamic_db_sync_runs_from_async_route(client: AsyncClient, monkeypatch):
+    async def fake_dynamic_reference_db(days: int = 7, force_attack: bool = False):
+        return {
+            "attack": [{"domain": "enterprise-attack", "action": "skipped"}],
+            "sector": {"status": "ok"},
+            "ioc": {"days": days, "totals": {"new": 0}, "sources": []},
+        }
+
+    monkeypatch.setattr("app.tasks.sync.run_dynamic_reference_db_async", fake_dynamic_reference_db)
+
+    resp = await client.post("/api/sync/dynamic-db?days=1&force_attack=false")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["attack"][0]["domain"] == "enterprise-attack"
+    assert body["ioc"]["days"] == 1

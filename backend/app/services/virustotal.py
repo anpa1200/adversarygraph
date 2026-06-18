@@ -46,6 +46,7 @@ def classify_indicator(value: str) -> IndicatorTarget:
     cleaned = value.strip()
     if not cleaned:
         raise ValueError("Indicator is empty")
+    normalized_ip = _strip_ip_port(cleaned)
 
     if HASH_RE.match(cleaned):
         return IndicatorTarget(
@@ -56,12 +57,12 @@ def classify_indicator(value: str) -> IndicatorTarget:
         )
 
     try:
-        ipaddress.ip_address(cleaned)
+        ipaddress.ip_address(normalized_ip)
         return IndicatorTarget(
-            value=cleaned,
+            value=normalized_ip,
             type="ip",
-            endpoint=f"/ip_addresses/{cleaned}",
-            vt_url=f"https://www.virustotal.com/gui/ip-address/{cleaned}",
+            endpoint=f"/ip_addresses/{normalized_ip}",
+            vt_url=f"https://www.virustotal.com/gui/ip-address/{normalized_ip}",
         )
     except ValueError:
         pass
@@ -76,8 +77,15 @@ def classify_indicator(value: str) -> IndicatorTarget:
             vt_url=f"https://www.virustotal.com/gui/url/{url_id}",
         )
 
-    domain = cleaned.lower().strip("/")
+    domain = _strip_domain_port(cleaned).lower().strip("/")
     if "." in domain and "/" not in domain and " " not in domain:
+        if not _valid_domain(domain):
+            return IndicatorTarget(
+                value=cleaned,
+                type="search",
+                endpoint="/search",
+                vt_url=f"https://www.virustotal.com/gui/search/{cleaned}",
+            )
         return IndicatorTarget(
             value=domain,
             type="domain",
@@ -85,7 +93,51 @@ def classify_indicator(value: str) -> IndicatorTarget:
             vt_url=f"https://www.virustotal.com/gui/domain/{domain}",
         )
 
-    raise ValueError("Unsupported IOC type. Use an IP, domain, URL, MD5, SHA1, or SHA256.")
+    return IndicatorTarget(
+        value=cleaned,
+        type="search",
+        endpoint="/search",
+        vt_url=f"https://www.virustotal.com/gui/search/{cleaned}",
+    )
+
+
+def _valid_domain(value: str) -> bool:
+    if len(value) > 253:
+        return False
+    labels = value.rstrip(".").split(".")
+    if len(labels) < 2:
+        return False
+    label_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.IGNORECASE)
+    return all(label_re.fullmatch(label) for label in labels)
+
+
+def _strip_ip_port(value: str) -> str:
+    """Normalize host:port IOCs before choosing the VirusTotal endpoint."""
+    if value.startswith("[") and "]" in value:
+        host, _, suffix = value[1:].partition("]")
+        if suffix.startswith(":"):
+            try:
+                ipaddress.ip_address(host)
+                return host
+            except ValueError:
+                return value
+    if value.count(":") == 1:
+        host, port = value.rsplit(":", 1)
+        if port.isdigit():
+            try:
+                ipaddress.ip_address(host)
+                return host
+            except ValueError:
+                return value
+    return value
+
+
+def _strip_domain_port(value: str) -> str:
+    if value.count(":") == 1:
+        host, port = value.rsplit(":", 1)
+        if port.isdigit() and "." in host and "/" not in host and " " not in host:
+            return host
+    return value
 
 
 async def lookup_virustotal_ioc(
@@ -100,7 +152,22 @@ async def lookup_virustotal_ioc(
     headers = {"x-apikey": settings.virustotal_api_key}
 
     async with httpx.AsyncClient(base_url=VT_BASE_URL, headers=headers, timeout=25) as client:
-        object_response = await _vt_get(client, target.endpoint)
+        if target.type == "search":
+            search_response = await _vt_search(client, target.value)
+            return await _search_lookup_result(session, target, search_response, domain)
+        try:
+            object_response = await _vt_get(client, target.endpoint)
+        except httpx.HTTPStatusError as exc:
+            if target.type == "domain" and exc.response.status_code == 400:
+                search_target = IndicatorTarget(
+                    value=indicator.strip(),
+                    type="search",
+                    endpoint="/search",
+                    vt_url=f"https://www.virustotal.com/gui/search/{indicator.strip()}",
+                )
+                search_response = await _vt_search(client, search_target.value)
+                return await _search_lookup_result(session, search_target, search_response, domain)
+            raise
         mitre_response: dict[str, Any] | None = None
         if target.type == "hash":
             try:
@@ -157,6 +224,128 @@ async def _vt_get(client: httpx.AsyncClient, endpoint: str) -> dict[str, Any]:
         raise RuntimeError("VirusTotal API rate limit exceeded.")
     response.raise_for_status()
     return response.json()
+
+
+async def _vt_search(client: httpx.AsyncClient, query: str) -> dict[str, Any]:
+    response = await client.get("/search", params={"query": query})
+    if response.status_code == 401:
+        raise RuntimeError("VirusTotal API key was rejected.")
+    if response.status_code == 429:
+        raise RuntimeError("VirusTotal API rate limit exceeded.")
+    if response.status_code in {400, 403}:
+        raise ValueError(
+            "This value is not a direct IOC and VirusTotal search rejected it. "
+            "Use an IP, domain, URL, MD5, SHA1, SHA256, or a VT account that supports search."
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def _search_lookup_result(
+    session: AsyncSession,
+    target: IndicatorTarget,
+    search_response: dict[str, Any],
+    domain: str,
+) -> dict[str, Any]:
+    rows = search_response.get("data") or []
+    flattened = _flatten_text(rows)
+    pseudo_attributes = {
+        "meaningful_name": target.value,
+        "names": _search_names(rows),
+        "tags": _search_tags(rows),
+        "popular_threat_classification": {"suggested_threat_label": target.value},
+        "last_analysis_stats": _aggregate_search_stats(rows),
+        "last_analysis_results": {},
+    }
+    ttp_evidence = _extract_ttp_evidence(rows, "VirusTotal search results")
+    technique_ids = sorted({item["attack_id"] for item in ttp_evidence})
+    techniques = await _resolve_techniques(session, technique_ids, domain)
+    actors = await _match_local_actors(session, pseudo_attributes, search_response, domain)
+    return {
+        "indicator": target.value,
+        "type": "search",
+        "virustotal_url": target.vt_url,
+        "permalink": target.vt_url,
+        "summary": f"VirusTotal search returned {len(rows)} related object(s). Use this view for malware names, family names, and non-IOC labels.",
+        "reputation": 0,
+        "total_votes": {},
+        "last_analysis_stats": pseudo_attributes["last_analysis_stats"],
+        "last_analysis_date": None,
+        "first_submission_date": None,
+        "last_submission_date": None,
+        "last_modification_date": None,
+        "names": pseudo_attributes["names"],
+        "tags": pseudo_attributes["tags"],
+        "threat_names": _dedupe_str_list([target.value, *_search_threat_names(rows)]),
+        "detections": [],
+        "ttps": techniques,
+        "ttp_evidence": ttp_evidence[:80],
+        "actors": actors,
+        "rules": _search_rules(rows),
+        "sandbox_verdicts": [],
+        "dns_records": [],
+        "resolutions": [],
+        "whois": "",
+        "network": {},
+        "context": {
+            "search_result_count": len(rows),
+            "has_mitre_behavior": False,
+            "crowdsourced_yara_count": len([rule for rule in _search_rules(rows) if rule["type"] == "YARA"]),
+            "crowdsourced_ids_count": len([rule for rule in _search_rules(rows) if rule["type"] == "IDS"]),
+            "sigma_result_count": len([rule for rule in _search_rules(rows) if rule["type"] == "Sigma"]),
+            "sandbox_verdict_count": 0,
+            "has_network_metadata": False,
+            "context_terms": _dedupe_str_list(flattened.split())[:40],
+        },
+    }
+
+
+def _search_attributes(rows: list[Any]) -> list[dict[str, Any]]:
+    attrs: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        data = row.get("attributes") if isinstance(row.get("attributes"), dict) else row
+        if isinstance(data, dict):
+            attrs.append(data)
+    return attrs
+
+
+def _search_names(rows: list[Any]) -> list[str]:
+    names: list[Any] = []
+    for attributes in _search_attributes(rows):
+        names.extend(_names(attributes))
+    return _dedupe_str_list(names)[:40]
+
+
+def _search_tags(rows: list[Any]) -> list[str]:
+    tags: list[Any] = []
+    for attributes in _search_attributes(rows):
+        tags.extend(attributes.get("tags") or [])
+    return _dedupe_str_list(tags)[:60]
+
+
+def _search_threat_names(rows: list[Any]) -> list[str]:
+    names: list[str] = []
+    for attributes in _search_attributes(rows):
+        names.extend(_threat_names(attributes))
+    return _dedupe_str_list(names)[:40]
+
+
+def _aggregate_search_stats(rows: list[Any]) -> dict[str, int]:
+    totals = {"malicious": 0, "suspicious": 0, "harmless": 0, "undetected": 0}
+    for attributes in _search_attributes(rows):
+        stats = attributes.get("last_analysis_stats") or {}
+        for key in totals:
+            totals[key] += int(stats.get(key) or 0)
+    return totals
+
+
+def _search_rules(rows: list[Any]) -> list[dict[str, str]]:
+    rules: list[dict[str, str]] = []
+    for attributes in _search_attributes(rows):
+        rules.extend(_crowdsourced_rules(attributes))
+    return rules[:30]
 
 
 def _summary(attributes: dict[str, Any]) -> str:

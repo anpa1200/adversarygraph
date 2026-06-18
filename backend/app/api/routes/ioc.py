@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from app.services.ioc_intel import (
     create_ioc_source,
     enrich_actor_from_otx,
     import_iocs,
+    list_ioc_library,
     list_ioc_sources,
     sync_custom_source,
     sync_malpedia_families,
@@ -30,6 +31,7 @@ from app.services.ioc_intel import (
     sync_threatfox,
 )
 from app.services.virustotal import lookup_virustotal_ioc
+from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
 
 router = APIRouter(prefix="/ioc", tags=["IOC Intelligence"])
 
@@ -85,6 +87,14 @@ class IOCSourceCreateIn(BaseModel):
     source_id: str | None = None
 
 
+class TAXIIImportIn(BaseModel):
+    objects_url: str = Field(..., min_length=8)
+    token: str = ""
+    username: str = ""
+    password: str = ""
+    source_label: str = "TAXII IOC Import"
+
+
 class IOCOut(BaseModel):
     value: str
     type: str
@@ -101,6 +111,41 @@ class IOCOut(BaseModel):
     description: str
     relationship: str
     evidence: str
+
+
+class IOCActorRefOut(BaseModel):
+    actor_attack_id: str
+    actor_name: str
+    relationship: str
+    confidence: int
+    evidence: str
+    source: str
+
+
+class IOCLibraryItemOut(BaseModel):
+    id: int
+    value: str
+    type: str
+    source: str
+    source_url: str
+    first_seen: str | None
+    last_seen: str | None
+    confidence: int
+    tlp: str
+    malware_family: str
+    campaign: str
+    technique_ids: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    description: str
+    actors: list[IOCActorRefOut] = Field(default_factory=list)
+    actor_count: int
+
+
+class IOCLibraryOut(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[IOCLibraryItemOut]
 
 
 class ReportIOCImportOut(BaseModel):
@@ -237,6 +282,98 @@ async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depe
         )
     except Exception as exc:
         raise HTTPException(400, f"Custom IOC source creation failed: {exc}") from exc
+
+
+@router.get("/library", response_model=IOCLibraryOut)
+async def ioc_library_route(
+    search: str = Query("", max_length=500),
+    type: str = Query("", max_length=80),
+    source: str = Query("", max_length=120),
+    actor: list[str] = Query(default_factory=list),
+    sort: str = Query(
+        "last_seen_desc",
+        pattern="^(last_seen|first_seen|type|value|source|confidence|actor)_(asc|desc)$",
+    ),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    return await list_ioc_library(
+        session,
+        search=search,
+        indicator_type=type,
+        source_id=source,
+        actor=actor,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/library/export/stix")
+async def export_ioc_library_stix_route(
+    search: str = Query("", max_length=500),
+    type: str = Query("", max_length=80),
+    source: str = Query("", max_length=120),
+    actor: list[str] = Query(default_factory=list),
+    sort: str = Query(
+        "last_seen_desc",
+        pattern="^(last_seen|first_seen|type|value|source|confidence|actor)_(asc|desc)$",
+    ),
+    limit: int = Query(5000, ge=1, le=5000),
+    session: AsyncSession = Depends(get_session),
+):
+    import json
+
+    bundle = await export_ioc_stix_bundle(
+        session,
+        search=search,
+        indicator_type=type,
+        source_id=source,
+        actor=actor,
+        sort=sort,
+        limit=limit,
+    )
+    payload = json.dumps(bundle, indent=2).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/stix+json",
+        headers={
+            "Content-Disposition": 'attachment; filename="adversarygraph-ioc-library.stix.json"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/import/stix")
+async def import_ioc_stix_route(
+    bundle: dict[str, Any],
+    source_label: str = Query("STIX IOC Import", max_length=255),
+    source_url: str = Query("", max_length=1000),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        return await import_ioc_stix_bundle(session, bundle, source_label=source_label, source_url=source_url)
+    except Exception as exc:
+        raise HTTPException(400, f"STIX IOC import failed: {exc}") from exc
+
+
+@router.post("/import/taxii")
+async def import_ioc_taxii_route(
+    payload: TAXIIImportIn,
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        return await import_taxii_collection(
+            session,
+            objects_url=payload.objects_url,
+            token=payload.token,
+            username=payload.username,
+            password=payload.password,
+            source_label=payload.source_label,
+        )
+    except Exception as exc:
+        raise HTTPException(400, f"TAXII IOC import failed: {exc}") from exc
 
 
 @router.post("/sync/threatfox", response_model=SyncOut)

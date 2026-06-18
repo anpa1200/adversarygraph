@@ -1,21 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { iocApi, type VirusTotalLookupResult } from '@/api/client';
 import { useAppStore } from '@/store';
 
 export function VirusTotalLookup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { domain, addTechniques, replaceTechniques, setOverlayGroup } = useAppStore();
-  const [indicator, setIndicator] = useState('');
+  const initialIndicator = searchParams.get('indicator') ?? '';
+  const [indicator, setIndicator] = useState(initialIndicator);
+  const [autoLookupDone, setAutoLookupDone] = useState(false);
   const lookup = useMutation({
-    mutationFn: () => iocApi.virusTotalLookup({ indicator, domain }),
+    mutationFn: (value: string) => iocApi.virusTotalLookup({ indicator: value, domain }),
   });
 
   const result = lookup.data ?? null;
   const ttpIds = result?.ttps.map(item => item.attack_id) ?? [];
+
+  useEffect(() => {
+    const value = searchParams.get('indicator')?.trim() ?? '';
+    if (!value) return;
+    setIndicator(value);
+    if (!autoLookupDone) {
+      setAutoLookupDone(true);
+      lookup.mutate(value);
+    }
+  }, [autoLookupDone, lookup, searchParams]);
 
   const showOnMatrix = (ids: string[]) => {
     replaceTechniques(ids);
@@ -50,7 +63,7 @@ export function VirusTotalLookup() {
                 value={indicator}
                 onChange={event => setIndicator(event.target.value)}
                 onKeyDown={event => {
-                  if (event.key === 'Enter' && indicator.trim()) lookup.mutate();
+                  if (event.key === 'Enter' && indicator.trim()) lookup.mutate(indicator.trim());
                 }}
                 placeholder="IP, domain, URL, MD5, SHA1, or SHA256..."
                 className="min-w-[320px] flex-1 rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 outline-none focus:border-mitre-accent"
@@ -58,7 +71,7 @@ export function VirusTotalLookup() {
               <button
                 type="button"
                 disabled={!indicator.trim() || lookup.isPending}
-                onClick={() => lookup.mutate()}
+                onClick={() => lookup.mutate(indicator.trim())}
                 className="rounded bg-mitre-accent px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {lookup.isPending ? 'Checking...' : 'Check IOC'}

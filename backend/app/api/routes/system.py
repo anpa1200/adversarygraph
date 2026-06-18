@@ -159,7 +159,7 @@ async def selftest() -> SelfTestResult:
     status = "ok" if not failed else "error"
     return SelfTestResult(
         status=status,
-        version="2.4.0",
+        version="2.5.0",
         checked_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((perf_counter() - started) * 1000),
         checks=checks,

@@ -133,7 +133,7 @@ docker compose up -d --build
 Review `CHANGELOG.md` before upgrading tagged releases.
 
 For the current feature scope, review
-[`docs/release-summary-v2.4.0.md`](release-summary-v2.4.0.md).
+[`docs/release-summary-v2.5.0.md`](release-summary-v2.5.0.md).
 
 ## Reference Synchronization
 
@@ -185,6 +185,55 @@ inside `.env`, a secret manager, or another local operator-controlled channel.
 If `THREATFOX_AUTH_KEY` is configured and `AUTO_THREATFOX_SYNC_ON_STARTUP=true`,
 the API starts a non-blocking ThreatFox sync after ATT&CK ingestion completes.
 If the key is missing, startup continues and the sync is skipped.
+
+## Sigma / YARA Rule Feed Synchronization
+
+Detection Studio supports operator-managed Sigma and YARA rule feeds. Use the
+Pipeline page to add the SigmaHQ default feed, a private raw rule file, a URL
+list, or a GitHub tree URL.
+
+Useful endpoints:
+
+- `POST /api/pipeline/rule-feeds/defaults`
+- `POST /api/pipeline/sources` with `kind` set to `sigma` or `yara`
+- `POST /api/pipeline/sources/{source_id}/run`
+- `GET /api/pipeline/detections/versions`
+
+The sync imports rules into `detection_versions`, preserves the source URL in
+validation metadata, and maps a rule to the first ATT&CK technique ID found in
+the rule text or Sigma tags. Large feeds should use `config.limit` to keep first
+syncs bounded.
+
+## Sandbox Behavior Synchronization
+
+Sandbox behavior sync imports malware detonation context into the pipeline
+enrichment store. Add a pipeline source with `kind: sandbox` from the Pipeline
+Sandbox tab or API:
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/sources \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Private CAPE Export",
+    "kind": "sandbox",
+    "url": "https://sandbox.local/reports.json",
+    "enabled": true,
+    "interval_minutes": 1440,
+    "config": {"limit": 100}
+  }'
+```
+
+Run the feed:
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/sources/{source_id}/run
+```
+
+The feed URL should return JSON containing a report object, an array of reports,
+or an object with `reports`, `data`, `results`, `analyses`, `items`, or `tasks`.
+The parser extracts hashes, verdict, score, malware family, behavior signatures,
+processes, network artifacts, and ATT&CK IDs. Reports are stored as
+`sandbox:<feed name>` enrichment records linked to hash observables.
 
 ## Sector Intelligence Synchronization
 

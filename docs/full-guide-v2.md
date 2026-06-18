@@ -94,7 +94,7 @@ Open:
 Health should return:
 
 ```json
-{"status":"ok","version":"2.4.0"}
+{"status":"ok","version":"2.5.0"}
 ```
 
 Run the built-in deployment self-test after Docker startup:
@@ -473,6 +473,8 @@ Initial sources:
   actor names/aliases, imports pulse indicators, and links indicators when pulse
   adversary/title/tags match the actor.
 - custom or personal JSON, CSV, and TXT IOC feeds
+- MISP event or attribute JSON exports connected as custom JSON IOC feeds
+- STIX 2.1 bundles and TAXII 2.1 collection object URLs
 - manual JSON import for report, MISP, OpenCTI, or vendor CTI extracts
 
 Before syncing ThreatFox, set:
@@ -501,12 +503,19 @@ Actor mapping is conservative:
 
 Workflow:
 
-1. Open ATT&CK Group Library.
-2. Select an actor.
-3. Open the IOCs tab.
-4. Click Sync ThreatFox, Sync Malpedia, add a custom feed, or import
-   report-backed IOCs through the API.
-5. Review current IOCs, add IOC-linked TTPs to `My TTPs`, show IOC-linked TTPs
+1. Open IOC Library for global IOC search, sorting, feed connection, MISP JSON
+   export connection, STIX/TAXII exchange, and per-IOC VirusTotal checks.
+2. Filter by IOC type, source, group/attacker, or free text.
+3. Sort by freshness, type, indicator value, source, confidence, or
+   group/attacker.
+4. Use Check in VT on a row to enrich one IOC with VirusTotal context, found
+   ATT&CK TTPs, and local actor matches.
+5. Use Export STIX to hand off the filtered IOC set to OpenCTI or another CTI
+   platform, Import STIX to load a bundle, or Pull TAXII STIX to ingest a TAXII
+   collection objects URL.
+6. Open ATT&CK Group Library, select an actor, and use the IOCs tab when the
+   investigation is actor-centric.
+7. Review current IOCs, add IOC-linked TTPs to `My TTPs`, show IOC-linked TTPs
    on the matrix, and export CSV when needed.
 
 Custom JSON/CSV feeds can include:
@@ -523,6 +532,8 @@ API:
 
 ```text
 GET  /api/ioc/sources
+GET  /api/ioc/library?search=apt&type=sha256&actor=G0006&sort=last_seen_desc
+GET  /api/ioc/library/export/stix?search=apt&type=sha256&limit=5000
 POST /api/ioc/sources
 POST /api/sync/ioc?days=7
 POST /api/ioc/sync/threatfox?days=7
@@ -530,6 +541,8 @@ POST /api/ioc/sync/malpedia
 POST /api/ioc/sync/otx
 POST /api/ioc/sync/{source_id}
 POST /api/ioc/import
+POST /api/ioc/import/stix
+POST /api/ioc/import/taxii
 POST /api/ioc/report
 GET  /api/ioc/actors/counts?actor_ids=G0049
 GET  /api/ioc/actors/G0049?days=180&active_only=true

@@ -32,6 +32,7 @@ http.interceptors.response.use(
           message,
           status: error.response?.status,
           url,
+          retry: () => http.request(error.config),
         },
       }));
     }
@@ -137,6 +138,41 @@ export interface IOCItem {
   evidence: string;
 }
 
+export interface IOCActorRef {
+  actor_attack_id: string;
+  actor_name: string;
+  relationship: string;
+  confidence: number;
+  evidence: string;
+  source: string;
+}
+
+export interface IOCLibraryItem {
+  id: number;
+  value: string;
+  type: string;
+  source: string;
+  source_url: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  confidence: number;
+  tlp: string;
+  malware_family: string;
+  campaign: string;
+  technique_ids: string[];
+  tags: string[];
+  description: string;
+  actors: IOCActorRef[];
+  actor_count: number;
+}
+
+export interface IOCLibraryResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: IOCLibraryItem[];
+}
+
 export interface IOCSummary {
   actor_attack_id: string;
   count: number;
@@ -182,8 +218,33 @@ export interface VirusTotalLookupResult {
   context: Record<string, unknown>;
 }
 
+type IOCLibraryParams = {
+  search?: string;
+  type?: string;
+  source?: string;
+  actor?: string | string[];
+  sort?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function iocLibraryQuery(params: IOCLibraryParams) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    if (Array.isArray(value)) {
+      value.filter(Boolean).forEach(item => query.append(key, item));
+    } else {
+      query.set(key, String(value));
+    }
+  });
+  return query;
+}
+
 export const iocApi = {
   sources: (): Promise<IOCSourceStatus[]> => http.get('/ioc/sources').then(r => r.data),
+  library: (params: IOCLibraryParams): Promise<IOCLibraryResult> =>
+    http.get(`/ioc/library?${iocLibraryQuery(params).toString()}`).then(r => r.data),
   createSource: (payload: {label: string; url: string; kind: 'custom-json' | 'custom-csv' | 'custom-txt'; source_id?: string}): Promise<IOCSourceStatus> =>
     http.post('/ioc/sources', payload).then(r => r.data),
   syncThreatFox: (days = 7): Promise<{source: string; days: number; inserted: number; updated: number; actor_links: number}> =>
@@ -200,6 +261,36 @@ export const iocApi = {
     http.post('/ioc/sync/malpedia').then(r => r.data),
   syncSource: (sourceId: string): Promise<{source: string; days: null; inserted: number; updated: number; actor_links: number}> =>
     http.post(`/ioc/sync/${sourceId}`).then(r => r.data),
+  syncOtx: (mode: 'subscribed' | 'actor-search' = 'subscribed'): Promise<{
+    source: string;
+    inserted: number;
+    updated: number;
+    actor_links: number;
+  }> =>
+    http.post('/ioc/sync/otx', null, { params: { mode } }).then(r => r.data),
+  importStix: (bundle: Record<string, unknown>, params?: { source_label?: string; source_url?: string }): Promise<{
+    source: string;
+    inserted: number;
+    updated: number;
+    actor_links: number;
+    items_seen: number;
+  }> =>
+    http.post('/ioc/import/stix', bundle, { params }).then(r => r.data),
+  importTaxii: (payload: {
+    objects_url: string;
+    token?: string;
+    username?: string;
+    password?: string;
+    source_label?: string;
+  }): Promise<{
+    source: string;
+    inserted: number;
+    updated: number;
+    actor_links: number;
+    items_seen: number;
+  }> =>
+    http.post('/ioc/import/taxii', payload).then(r => r.data),
+  stixExportUrl: (params: IOCLibraryParams) => `/api/ioc/library/export/stix?${iocLibraryQuery(params).toString()}`,
   actor: (actorId: string, params?: {days?: number; active_only?: boolean; limit?: number}): Promise<IOCItem[]> =>
     http.get(`/ioc/actors/${actorId}`, { params: { days: params?.days ?? 180, active_only: params?.active_only ?? true, limit: params?.limit ?? 250 } }).then(r => r.data),
   actorSummary: (actorId: string, days = 180): Promise<IOCSummary> =>
@@ -454,7 +545,7 @@ export const operationsApi = {
 // ── Collection, Enrichment, and Detection Pipeline ───────────────────────────
 
 export interface CollectionSource {
-  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas'; url: string; enabled: boolean;
+  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas' | 'sigma' | 'yara' | 'sandbox'; url: string; enabled: boolean;
   interval_minutes: number; config: Record<string, unknown>; last_run_at: string | null; created_at: string; updated_at: string;
 }
 export interface CollectionRun {
@@ -467,20 +558,42 @@ export interface Observable {
 }
 export interface DetectionVersion {
   id: string; title: string; technique_id: string; format: string; content: string;
-  validation: { valid: boolean; errors: string[]; warnings: string[] }; created_by: string; created_at: string;
+  validation: { valid: boolean; errors: string[]; warnings: string[]; source_url?: string; rule_id?: string }; created_by: string; created_at: string;
 }
 export interface AuditEvent {
   id: string; actor: string; action: string; object_type: string; object_id: string;
   details: Record<string, unknown>; created_at: string;
+}
+export interface SandboxBehavior {
+  id: string;
+  observable_id: string;
+  observable_type: string;
+  observable: string;
+  provider: string;
+  verdict: string;
+  confidence: number;
+  created_at: string;
+  report_id: string;
+  source_url: string;
+  sandbox: string;
+  malware_family: string;
+  score: number | string | null;
+  ttps: string[];
+  signatures: Array<{ name: string; severity: string; source: string }>;
+  processes: string[];
+  network: { ips?: string[]; domains?: string[]; urls?: string[] };
+  tags: string[];
 }
 const pipeline = '/pipeline';
 export const pipelineApi = {
   me: (): Promise<{name: string; roles: string[]}> => http.get(`${pipeline}/me`).then(r => r.data),
   sources: (): Promise<CollectionSource[]> => http.get(`${pipeline}/sources`).then(r => r.data),
   createSource: (body: Omit<CollectionSource, 'id'|'last_run_at'|'created_at'|'updated_at'>): Promise<CollectionSource> => http.post(`${pipeline}/sources`, body).then(r => r.data),
+  createDefaultRuleFeeds: (): Promise<CollectionSource[]> => http.post(`${pipeline}/rule-feeds/defaults`).then(r => r.data),
   runSource: (id: string): Promise<CollectionRun> => http.post(`${pipeline}/sources/${id}/run`).then(r => r.data),
   runs: (): Promise<CollectionRun[]> => http.get(`${pipeline}/runs`).then(r => r.data),
   observables: (): Promise<Observable[]> => http.get(`${pipeline}/observables`).then(r => r.data),
+  sandboxBehaviors: (): Promise<SandboxBehavior[]> => http.get(`${pipeline}/sandbox/behaviors`).then(r => r.data),
   createObservable: (body: {type:string;value:string;status:string;confidence:number;tags:string[];source_refs:string[]}): Promise<Observable> => http.post(`${pipeline}/observables`, body).then(r => r.data),
   enrich: (id: string): Promise<Record<string, unknown>> => http.post(`${pipeline}/observables/${id}/enrich`).then(r => r.data),
   generate: (body: {title:string;technique_id:string;format:string;telemetry:string[]}): Promise<DetectionVersion> => http.post(`${pipeline}/detections/generate`, body).then(r => r.data),

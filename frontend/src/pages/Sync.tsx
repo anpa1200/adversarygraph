@@ -40,8 +40,8 @@ export function Sync() {
     }
   }, [task.data?.status, qc]);
 
-  const domains = status.data?.domains ?? [];
-  const sources = status.data?.sources ?? [];
+  const domains = useMemo(() => status.data?.domains ?? [], [status.data?.domains]);
+  const sources = useMemo(() => status.data?.sources ?? [], [status.data?.sources]);
   const activeDomains = selected.length ? selected : domains.map(item => item.domain);
   const taskRunning = !!taskId && ['PENDING', 'STARTED', 'RETRY'].includes(task.data?.status ?? 'PENDING');
 

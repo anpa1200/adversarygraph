@@ -227,8 +227,8 @@ async def trigger_dynamic_db_sync(
 ):
     """Synchronize the dynamic public reference DB immediately."""
     try:
-        from app.tasks.sync import dynamic_reference_db
-        return dynamic_reference_db(days=days, force_attack=force_attack)
+        from app.tasks.sync import run_dynamic_reference_db_async
+        return await run_dynamic_reference_db_async(days=days, force_attack=force_attack)
     except Exception as exc:
         raise HTTPException(500, f"Dynamic DB sync failed: {exc}") from exc
 

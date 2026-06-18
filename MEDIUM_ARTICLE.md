@@ -4,6 +4,8 @@
 
 > **Editor's note:** AdversaryGraph now uses “Group & Campaign Similarity” terminology instead of “APT attribution.” TTP overlap and Jaccard similarity are analytical leads for hypothesis generation and prioritization, not attribution proof. In Docker mode, report content is sent only to the LLM provider configured by the operator unless a local/private LLM gateway is used. The public Web workspace does not perform LLM report extraction or backend private report storage.
 
+> **v2.5 update:** The current release adds the IOC Library, searchable multi-select group filtering, VirusTotal IOC enrichment, STIX/TAXII import/export, MISP JSON export ingestion, custom IOC feeds, Sigma/YARA rule-feed sync, sandbox behavior enrichment, and a personal/private-use license model.
+
 ---
 
 ## Table of Contents
@@ -642,7 +644,7 @@ The analyst's judgement is still essential: deciding which mappings to trust, wh
 
 AdversaryGraph tries to handle that translation layer so you can spend your time on the interesting parts.
 
-The project is open source under the MIT licence. If you find it useful, have feature requests, or find bugs, open an issue on GitHub.
+The project is source-available under the AdversaryGraph Personal Use License. Personal/private use is free; business, commercial, organizational, client-delivery, production, or government use requires prior written approval from Andrey Pautov. If you find it useful, have feature requests, or find bugs, open an issue on GitHub.
 
 ---
 
