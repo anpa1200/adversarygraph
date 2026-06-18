@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { systemApi, type SelfTestResult } from '@/api/client';
 
 type PopupState = 'visible' | 'collapsed' | 'dismissed';
@@ -36,6 +36,7 @@ function summarize(result?: SelfTestResult, error?: Error | null) {
 
 export function SystemSelfTestPopup() {
   const [popupState, setPopupState] = useState<PopupState>('visible');
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['system-selftest'],
     queryFn: systemApi.selftest,
@@ -46,11 +47,16 @@ export function SystemSelfTestPopup() {
 
   useEffect(() => {
     if (query.data?.status === 'ok') {
+      queryClient.invalidateQueries({ queryKey: ['tactics'] });
+      queryClient.invalidateQueries({ queryKey: ['all-techniques'] });
+      queryClient.invalidateQueries({ queryKey: ['discover-groups'] });
+      queryClient.invalidateQueries({ queryKey: ['discover-techniques'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
       const timer = window.setTimeout(() => setPopupState('collapsed'), 7000);
       return () => window.clearTimeout(timer);
     }
     return undefined;
-  }, [query.data?.status]);
+  }, [query.data?.status, queryClient]);
 
   if (popupState === 'dismissed') return null;
 

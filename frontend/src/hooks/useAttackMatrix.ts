@@ -20,6 +20,8 @@ export function useAttackMatrix(domain: string, version: string | null): MatrixD
     queryKey: ['tactics', domain, version],
     queryFn: () => attackApi.tactics(domain, version ?? undefined),
     staleTime: 10 * 60 * 1000,
+    retry: 10,
+    retryDelay: attempt => Math.min(1500 + attempt * 1000, 8000),
   });
 
   // Fetch ALL techniques including sub-techniques in one request
@@ -30,9 +32,11 @@ export function useAttackMatrix(domain: string, version: string | null): MatrixD
         domain,
         version: version ?? undefined,
         subtechniques: true,
-      }),
+    }),
     staleTime: 10 * 60 * 1000,
     enabled: tactics.length > 0,
+    retry: 10,
+    retryDelay: attempt => Math.min(1500 + attempt * 1000, 8000),
   });
 
   const techniquesByTactic = useMemo(() => {
