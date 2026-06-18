@@ -23,6 +23,7 @@ from app.services.ioc_intel import (
     import_iocs,
     list_ioc_sources,
     sync_custom_source,
+    sync_malpedia_families,
     sync_otx_actor_pulses,
     sync_otx_subscribed_pulses,
     sync_threatfox,
@@ -271,6 +272,17 @@ async def sync_otx_route(
     except Exception as exc:
         status_code = 400 if "OTX_API_KEY" in str(exc) else 502
         raise HTTPException(status_code, f"OTX sync failed: {exc}") from exc
+
+
+@router.post("/sync/malpedia")
+async def sync_malpedia_route(
+    domain: str = Query("enterprise-attack"),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        return await sync_malpedia_families(session, domain=domain)
+    except Exception as exc:
+        raise HTTPException(502, f"Malpedia sync failed: {exc}") from exc
 
 
 @router.post("/sync/{source_id}", response_model=SyncOut)

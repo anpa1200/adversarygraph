@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { syncApi } from '@/api/client';
+import { iocApi, syncApi } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 
 const domainLabels: Record<string, string> = {
@@ -67,6 +67,16 @@ export function Sync() {
       qc.invalidateQueries({ queryKey: ['ioc-sources'] });
     },
   });
+  const malpediaSync = useMutation({
+    mutationFn: iocApi.syncMalpedia,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sync-status'] });
+      qc.invalidateQueries({ queryKey: ['actor-ioc-counts'] });
+      qc.invalidateQueries({ queryKey: ['actor-ioc-summary'] });
+      qc.invalidateQueries({ queryKey: ['actor-iocs'] });
+      qc.invalidateQueries({ queryKey: ['ioc-sources'] });
+    },
+  });
 
   const toggle = (domain: string) => {
     setSelected(current =>
@@ -124,10 +134,10 @@ export function Sync() {
             <Panel title="IOC Intelligence Synchronization">
               <div className="p-4 space-y-4">
                 <p className="text-sm text-gray-400">
-                  Centrally refresh all IOC sources: ThreatFox recent IOCs, AlienVault OTX actor pulses, and every enabled custom JSON, CSV, or TXT IOC feed. Actor IOC counts update after the sync completes.
+                  Centrally refresh all IOC and malware-context sources: ThreatFox recent IOCs, Malpedia malware-family actor attributions, AlienVault OTX actor pulses, and every enabled custom JSON, CSV, or TXT IOC feed. Actor IOC counts update after the sync completes.
                 </p>
                 <div className="rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-500">
-                  ThreatFox recent API supports 1-7 days. Larger windows should be handled with ThreatFox exports or custom feeds.
+                  Malpedia adds malware-family records and actor attribution evidence. ThreatFox recent API supports 1-7 days. Larger windows should be handled with ThreatFox exports or custom feeds.
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
@@ -137,8 +147,21 @@ export function Sync() {
                   >
                     {iocSync.isPending ? 'Syncing IOCs...' : 'Sync all IOC sources'}
                   </button>
+                  <button
+                    onClick={() => malpediaSync.mutate()}
+                    disabled={malpediaSync.isPending}
+                    className="secondary-action"
+                  >
+                    {malpediaSync.isPending ? 'Syncing Malpedia...' : 'Sync Malpedia'}
+                  </button>
                   {iocSync.error && <span className="text-xs text-red-400">{errorMessage(iocSync.error)}</span>}
+                  {malpediaSync.error && <span className="text-xs text-red-400">{errorMessage(malpediaSync.error)}</span>}
                 </div>
+                {malpediaSync.data && (
+                  <div className="rounded border border-blue-900 bg-blue-950/30 p-3 text-xs text-blue-200">
+                    Malpedia: {malpediaSync.data.families} families, {malpediaSync.data.attributed_families} attributed families, {malpediaSync.data.actor_links} actor links.
+                  </div>
+                )}
                 {iocSync.data && (
                   <div className="rounded border border-green-900 bg-green-950/30 p-3 text-xs text-green-300">
                     Synced IOCs: {iocSync.data.totals.inserted} new, {iocSync.data.totals.updated} updated, {iocSync.data.totals.actor_links} actor links.

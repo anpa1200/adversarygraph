@@ -21,8 +21,10 @@ from app.services.sector_intel import normalize_label
 
 THREATFOX_API_URL = "https://threatfox-api.abuse.ch/api/v1/"
 OTX_API_URL = "https://otx.alienvault.com/api/v1"
+MALPEDIA_API_URL = "https://malpedia.caad.fkie.fraunhofer.de/api"
 THREATFOX_SOURCE_ID = "abusech-threatfox"
 OTX_SOURCE_ID = "alienvault-otx"
+MALPEDIA_SOURCE_ID = "malpedia"
 MANUAL_SOURCE_ID = "manual-report-import"
 CUSTOM_FEED_KINDS = {"custom-json", "custom-csv", "custom-txt"}
 
@@ -50,6 +52,7 @@ async def ensure_ioc_sources(session: AsyncSession) -> None:
     for source_id, label, kind, url in [
         (THREATFOX_SOURCE_ID, "abuse.ch ThreatFox", "api", THREATFOX_API_URL),
         (OTX_SOURCE_ID, "AlienVault OTX Pulses", "api", OTX_API_URL),
+        (MALPEDIA_SOURCE_ID, "Malpedia Malware Families", "api", MALPEDIA_API_URL),
         (MANUAL_SOURCE_ID, "Manual Report Import", "manual", ""),
     ]:
         stmt = insert(IOCSource).values(
@@ -177,6 +180,15 @@ async def sync_all_ioc_sources(session: AsyncSession, days: int = 7, domain: str
         results.append({"source": THREATFOX_SOURCE_ID, "status": "error", "error": str(exc)})
 
     try:
+        result = await sync_malpedia_families(session, domain=domain)
+        results.append({**result, "status": "ok"})
+        totals["inserted"] += int(result.get("inserted", 0))
+        totals["updated"] += int(result.get("updated", 0))
+        totals["actor_links"] += int(result.get("actor_links", 0))
+    except Exception as exc:
+        results.append({"source": MALPEDIA_SOURCE_ID, "status": "error", "error": str(exc)})
+
+    try:
         result = await sync_otx_subscribed_pulses(session, domain=domain)
         results.append({**result, "status": "ok"})
         totals["inserted"] += int(result.get("inserted", 0))
@@ -198,6 +210,70 @@ async def sync_all_ioc_sources(session: AsyncSession, days: int = 7, domain: str
             results.append({"source": source.source_id, "status": "error", "error": str(exc)})
 
     return {"days": max(1, min(days, 7)), "totals": totals, "sources": results}
+
+
+async def sync_malpedia_families(
+    session: AsyncSession,
+    domain: str = "enterprise-attack",
+) -> dict[str, int | str | None]:
+    """Sync public Malpedia malware family metadata and actor attributions."""
+    await ensure_ioc_sources(session)
+    try:
+        payload = _malpedia_get_families()
+    except Exception as exc:
+        await _mark_ioc_source(session, MALPEDIA_SOURCE_ID, "error", str(exc))
+        await session.commit()
+        raise
+
+    if not isinstance(payload, dict):
+        error = "Unexpected Malpedia response: expected a family metadata object."
+        await _mark_ioc_source(session, MALPEDIA_SOURCE_ID, "error", error)
+        await session.commit()
+        raise RuntimeError(error)
+
+    groups = await _latest_groups(session, domain)
+    inserted = 0
+    updated = 0
+    linked = 0
+    families = 0
+    attributed = 0
+
+    for family_id, family in payload.items():
+        if not isinstance(family, dict):
+            continue
+        item = _malpedia_family_to_import_item(str(family_id), family)
+        if not item.value:
+            continue
+        families += 1
+        indicator_id, was_inserted = await _upsert_indicator(session, item)
+        inserted += int(was_inserted)
+        updated += int(not was_inserted)
+        targets = _actor_link_targets(item, groups)
+        if targets:
+            attributed += 1
+        for group, evidence in targets:
+            if await _upsert_actor_link(
+                session=session,
+                indicator_id=indicator_id,
+                actor_attack_id=group.attack_id,
+                actor_name=group.name,
+                source_id=MALPEDIA_SOURCE_ID,
+                confidence=82,
+                evidence=evidence.replace("Feed record", "Malpedia family metadata"),
+            ):
+                linked += 1
+
+    await _mark_ioc_source(session, MALPEDIA_SOURCE_ID, "ok", "")
+    await session.commit()
+    return {
+        "source": MALPEDIA_SOURCE_ID,
+        "days": None,
+        "inserted": inserted,
+        "updated": updated,
+        "actor_links": linked,
+        "families": families,
+        "attributed_families": attributed,
+    }
 
 
 async def sync_otx_actor_pulses(
@@ -609,6 +685,7 @@ async def _mark_ioc_source(session: AsyncSession, source_id: str, status: str, e
     labels = {
         THREATFOX_SOURCE_ID: ("abuse.ch ThreatFox", "api", THREATFOX_API_URL),
         OTX_SOURCE_ID: ("AlienVault OTX Pulses", "api", OTX_API_URL),
+        MALPEDIA_SOURCE_ID: ("Malpedia Malware Families", "api", MALPEDIA_API_URL),
     }
     label, kind, url = labels.get(source_id, (source_id, "api", ""))
     stmt = insert(IOCSource).values(
@@ -666,6 +743,59 @@ def _threatfox_item_to_import(item: dict[str, Any]) -> IOCImportItem:
         tags=[str(tag) for tag in (item.get("tags") or []) if str(tag).strip()],
         description=str(item.get("threat_type_desc") or item.get("threat_type") or "").strip(),
         raw=item,
+    )
+
+
+def _malpedia_get_families() -> dict[str, Any]:
+    response = requests.get(f"{MALPEDIA_API_URL}/get/families", timeout=120)
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+def _malpedia_family_to_import_item(family_id: str, family: dict[str, Any]) -> IOCImportItem:
+    common_name = _optional_str(family.get("common_name")) or family_id
+    alt_names = _as_tags(family.get("alt_names"))
+    attribution = _as_tags(family.get("attribution"))
+    urls = _as_tags(family.get("urls"))
+    sources = _as_tags(family.get("sources"))
+    notes = _as_tags(family.get("notes"))
+    description = _optional_str(family.get("description"))
+    detail_url = f"https://malpedia.caad.fkie.fraunhofer.de/details/{family_id}"
+    source_url = urls[0] if urls else detail_url
+    evidence_bits = [
+        f"Malpedia family {family_id} ({common_name})",
+        f"attribution: {', '.join(attribution)}" if attribution else "",
+        f"aliases: {', '.join(alt_names[:8])}" if alt_names else "",
+        description[:300] if description else "",
+    ]
+    return IOCImportItem(
+        value=family_id,
+        indicator_type="malware-family",
+        actor_name=", ".join(attribution),
+        malware_family=common_name,
+        campaign="",
+        source=MALPEDIA_SOURCE_ID,
+        source_url=source_url,
+        first_seen=None,
+        last_seen=_optional_str(family.get("updated")) or None,
+        confidence=82 if attribution else 65,
+        tlp="clear",
+        tags=_dedupe_tags([*alt_names, *attribution, *sources, "malpedia", "malware-family"]),
+        description="; ".join(bit for bit in evidence_bits if bit),
+        raw={
+            "family_id": family_id,
+            "common_name": common_name,
+            "alt_names": alt_names,
+            "attribution": attribution,
+            "urls": urls[:12],
+            "sources": sources[:12],
+            "notes": notes[:8],
+            "updated": family.get("updated"),
+            "uuid": family.get("uuid"),
+            "library_entries": family.get("library_entries") or [],
+            "malpedia_url": detail_url,
+        },
     )
 
 
@@ -875,6 +1005,18 @@ def _as_tags(value: Any) -> list[str]:
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+def _dedupe_tags(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result = []
+    for value in values:
+        clean = str(value).strip()
+        key = normalize_label(clean)
+        if clean and key not in seen:
+            seen.add(key)
+            result.append(clean)
+    return result[:80]
+
+
 async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple[int, bool]:
     stmt = (
         insert(IOCIndicator)
@@ -965,7 +1107,7 @@ def _match_actors(item: IOCImportItem, groups: list[AptGroup]) -> list[tuple[Apt
             if len(alias) < 4:
                 continue
             if alias in haystack:
-                matches.append((group, f"ThreatFox IOC metadata matched actor alias '{alias}'."))
+                matches.append((group, f"Source metadata matched actor alias '{alias}'."))
                 break
     return matches
 

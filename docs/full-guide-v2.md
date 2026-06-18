@@ -465,6 +465,10 @@ Initial sources:
 
 - abuse.ch ThreatFox for recent malware-related IOCs. The recent IOC API supports
   1-7 day windows; use ThreatFox exports or custom feeds for larger windows.
+- Malpedia public malware-family metadata. This sync creates `malware-family`
+  enrichment records with aliases, references, and actor attribution evidence.
+  These are contextual malware records, not network IOCs, and do not require an
+  API key.
 - AlienVault OTX actor-attributed pulses. Set `OTX_API_KEY`; AdversaryGraph searches
   actor names/aliases, imports pulse indicators, and links indicators when pulse
   adversary/title/tags match the actor.
@@ -487,6 +491,8 @@ Actor mapping is conservative:
 
 - direct manual imports can set `actor_attack_id` or `actor_name`
 - ThreatFox IOCs are linked only when IOC metadata contains an actor name or alias
+- Malpedia malware families are linked only when family attribution, aliases, or
+  references match a local ATT&CK actor name or alias
 - each IOC keeps source URL, first/last seen, confidence, TLP, malware family, tags,
   and the relationship evidence
 
@@ -495,8 +501,8 @@ Workflow:
 1. Open ATT&CK Group Library.
 2. Select an actor.
 3. Open the IOCs tab.
-4. Click Sync ThreatFox, add a custom feed, or import report-backed IOCs through
-   the API.
+4. Click Sync ThreatFox, Sync Malpedia, add a custom feed, or import
+   report-backed IOCs through the API.
 5. Review current IOCs and export CSV when needed.
 
 Custom JSON/CSV feeds can include:
@@ -516,6 +522,7 @@ GET  /api/ioc/sources
 POST /api/ioc/sources
 POST /api/sync/ioc?days=7
 POST /api/ioc/sync/threatfox?days=7
+POST /api/ioc/sync/malpedia
 POST /api/ioc/sync/otx
 POST /api/ioc/sync/{source_id}
 POST /api/ioc/import

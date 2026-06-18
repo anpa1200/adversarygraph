@@ -83,6 +83,7 @@ ATLAS_CONTENT = [
 ]
 IOC_CONTENT = [
     "ThreatFox recent IOC sync",
+    "Malpedia malware-family and actor-attribution sync",
     "AlienVault OTX actor pulse sync",
     "custom JSON/CSV/TXT IOC feeds",
     "actor IOC links",

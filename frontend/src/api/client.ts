@@ -186,6 +186,16 @@ export const iocApi = {
     http.post('/ioc/sources', payload).then(r => r.data),
   syncThreatFox: (days = 7): Promise<{source: string; days: number; inserted: number; updated: number; actor_links: number}> =>
     http.post('/ioc/sync/threatfox', null, { params: { days } }).then(r => r.data),
+  syncMalpedia: (): Promise<{
+    source: string;
+    days: null;
+    inserted: number;
+    updated: number;
+    actor_links: number;
+    families: number;
+    attributed_families: number;
+  }> =>
+    http.post('/ioc/sync/malpedia').then(r => r.data),
   syncSource: (sourceId: string): Promise<{source: string; days: null; inserted: number; updated: number; actor_links: number}> =>
     http.post(`/ioc/sync/${sourceId}`).then(r => r.data),
   actor: (actorId: string, params?: {days?: number; active_only?: boolean; limit?: number}): Promise<IOCItem[]> =>

@@ -161,8 +161,11 @@ Do not use confidential reports in public or third-party environments.
 3. Select one or more sectors, optional regions, and optional technologies.
 4. Review ranked actors and use Actor info, TTP info, IOCs, or Show on matrix.
 5. Open ATT&CK Group Library and select an actor.
-6. Use the IOCs tab to sync ThreatFox/OTX, add a custom feed, import IOCs, or
-   upload a private report for IOC extraction.
+6. Use Reference Sync or the IOCs tab to sync ThreatFox, Malpedia, and OTX.
+7. Add a custom feed, import IOCs, or upload a private report for IOC extraction.
+
+Malpedia adds malware-family enrichment records with aliases, references, and
+actor attribution evidence. These records are context, not network IOCs.
 
 ## 8. VirusTotal IOC Lookup
 

@@ -141,9 +141,14 @@ relationships; IOC feeds provide time-sensitive observables.
 Supported operator-managed IOC sources:
 
 - ThreatFox: `POST /api/ioc/sync/threatfox?days=7`
+- Malpedia malware-family enrichment: `POST /api/ioc/sync/malpedia`
 - OTX actor enrichment: `POST /api/ioc/sync/otx`
 - registered custom feeds: `POST /api/ioc/sync/{source_id}`
 - centralized action: `POST /api/sync/ioc?days=7`
+
+Malpedia public family sync does not require an API key and creates
+`malware-family` records with aliases, references, attribution evidence, and
+actor links where family attribution matches local ATT&CK actor names or aliases.
 
 Custom feeds can be registered from the UI or API. Keep feed URLs and API keys
 inside `.env`, a secret manager, or another local operator-controlled channel.

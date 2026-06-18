@@ -640,6 +640,10 @@ Supported initial sources:
 - **AlienVault OTX** — actor-attributed pulse search. Set `OTX_API_KEY` in
   `.env`; AdversaryGraph searches ATT&CK actor names/aliases, imports pulse
   indicators, and links them when pulse adversary/title/tags match the actor.
+- **Malpedia** — public malware-family metadata and actor attribution. This
+  adds `malware-family` enrichment records with family aliases, references,
+  attribution evidence, and actor links when Malpedia names match ATT&CK actor
+  names or aliases. No API key is required for the public family metadata sync.
 - **Custom / personal IOC feeds** — private JSON, CSV, or TXT feeds registered
   from the actor IOC tab or API.
 - **Manual report import** — JSON import for report, MISP, OpenCTI, or vendor CTI
@@ -659,6 +663,7 @@ GET  /api/ioc/sources
 POST /api/ioc/sources
 POST /api/sync/ioc?days=7
 POST /api/ioc/sync/threatfox?days=7
+POST /api/ioc/sync/malpedia
 POST /api/ioc/sync/otx
 POST /api/ioc/sync/{source_id}
 POST /api/ioc/import
