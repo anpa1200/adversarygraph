@@ -1,4 +1,8 @@
-# Use A Local LLM For Private Reports: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "20"
+
+### Use A Local LLM For Private Reports: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Analyze sensitive content without public LLM routing.

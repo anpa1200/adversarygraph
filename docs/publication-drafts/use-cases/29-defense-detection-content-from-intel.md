@@ -1,4 +1,8 @@
-# Defense: Create Detection Content From CTI: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "29"
+
+### Defense: Create Detection Content From CTI: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Turn CTI findings into detection content candidates.

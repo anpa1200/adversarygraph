@@ -1,4 +1,8 @@
-# Defense: Build MITRE Coverage Baseline: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "26"
+
+### Defense: Build MITRE Coverage Baseline: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Create a baseline of current coverage across MITRE ATT&CK.

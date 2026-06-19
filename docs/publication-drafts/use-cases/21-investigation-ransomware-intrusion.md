@@ -1,4 +1,8 @@
-# Investigation: Ransomware Intrusion Triage: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "21"
+
+### Investigation: Ransomware Intrusion Triage: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Investigate a ransomware report from intake to actor hypothesis and detection handoff.

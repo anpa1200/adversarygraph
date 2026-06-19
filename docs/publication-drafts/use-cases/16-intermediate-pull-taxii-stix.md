@@ -1,4 +1,8 @@
-# Pull TAXII Or Import STIX: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "16"
+
+### Pull TAXII Or Import STIX: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Exchange structured intelligence with CTI platforms.

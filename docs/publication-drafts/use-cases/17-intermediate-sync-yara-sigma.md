@@ -1,4 +1,8 @@
-# Sync YARA And Sigma Feeds: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "17"
+
+### Sync YARA And Sigma Feeds: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Connect detection-rule context to IOCs and malware.

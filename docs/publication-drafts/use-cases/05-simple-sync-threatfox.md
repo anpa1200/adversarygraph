@@ -1,4 +1,8 @@
-# Sync ThreatFox IOCs: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "5"
+
+### Sync ThreatFox IOCs: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Refresh open-source IOC data for actor and malware context.

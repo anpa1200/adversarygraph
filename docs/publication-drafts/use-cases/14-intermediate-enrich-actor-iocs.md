@@ -1,4 +1,8 @@
-# Enrich Actor IOCs: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "14"
+
+### Enrich Actor IOCs: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Add current observable context to one actor profile.

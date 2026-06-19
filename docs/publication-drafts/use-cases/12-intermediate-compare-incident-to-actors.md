@@ -1,4 +1,8 @@
-# Compare Incident TTPs To Actors: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "12"
+
+### Compare Incident TTPs To Actors: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Use TTP overlap to generate actor hypotheses.

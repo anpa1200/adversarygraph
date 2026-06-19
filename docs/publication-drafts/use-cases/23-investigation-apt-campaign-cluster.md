@@ -1,4 +1,8 @@
-# Investigation: Cluster Multiple APT Reports: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "23"
+
+### Investigation: Cluster Multiple APT Reports: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Assess whether several reports belong to one campaign cluster.

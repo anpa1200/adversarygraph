@@ -1,4 +1,8 @@
-# Defense: Create Sector-Based Detection Roadmap: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "27"
+
+### Defense: Create Sector-Based Detection Roadmap: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Create a detection roadmap for a sector/customer environment.

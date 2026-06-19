@@ -1,4 +1,8 @@
-# Investigation: Cloud And Kubernetes Incident: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "22"
+
+### Investigation: Cloud And Kubernetes Incident: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Investigate a cloud/Kubernetes incident using sector, TTP, IOC, and detection context.

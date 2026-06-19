@@ -1,4 +1,8 @@
-# Check One IOC: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "1"
+
+### Check One IOC: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Check whether one IP, domain, URL, or hash has useful enrichment context.

@@ -1,4 +1,8 @@
-# Open One Actor Profile: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "2"
+
+### Open One Actor Profile: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Review the core context for one ATT&CK group or actor.

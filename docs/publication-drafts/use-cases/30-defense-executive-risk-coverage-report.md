@@ -1,4 +1,8 @@
-# Defense: Executive Risk And Coverage Report: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "30"
+
+### Defense: Executive Risk And Coverage Report: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Produce an executive report showing threat relevance and coverage posture.

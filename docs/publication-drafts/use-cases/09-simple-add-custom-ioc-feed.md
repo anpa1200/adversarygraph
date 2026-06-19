@@ -1,4 +1,8 @@
-# Add A Custom IOC Feed: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "9"
+
+### Add A Custom IOC Feed: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Connect a private or custom IOC feed.

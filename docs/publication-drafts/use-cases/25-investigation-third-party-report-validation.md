@@ -1,4 +1,8 @@
-# Investigation: Validate A Third-Party CTI Report: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "25"
+
+### Investigation: Validate A Third-Party CTI Report: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Validate a vendor or public CTI report before using it operationally.

@@ -1,4 +1,8 @@
-# Open Troubleshooting For An Error: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "10"
+
+### Open Troubleshooting For An Error: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Move from a popup error to practical remediation.

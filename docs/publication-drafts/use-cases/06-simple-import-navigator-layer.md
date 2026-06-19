@@ -1,4 +1,8 @@
-# Import A Navigator Layer: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "6"
+
+### Import A Navigator Layer: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Load an existing ATT&CK layer for review or comparison.

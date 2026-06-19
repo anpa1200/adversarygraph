@@ -1,4 +1,8 @@
-# Compare Two Reports: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "18"
+
+### Compare Two Reports: AdversaryGraph Use Case
 
 **Level:** Intermediate  
 **Goal:** Assess whether two reports describe related activity.

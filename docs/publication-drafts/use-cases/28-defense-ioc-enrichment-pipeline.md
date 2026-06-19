@@ -1,4 +1,8 @@
-# Defense: Build IOC Enrichment Pipeline: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "28"
+
+### Defense: Build IOC Enrichment Pipeline: AdversaryGraph Use Case
 
 **Level:** Complex Platform Workflows  
 **Goal:** Create a repeatable SOC enrichment pipeline for incoming IOCs.

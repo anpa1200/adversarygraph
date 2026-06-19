@@ -1,4 +1,8 @@
-# Export A PDF Report: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "7"
+
+### Export A PDF Report: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Create a shareable analyst report from reviewed findings.

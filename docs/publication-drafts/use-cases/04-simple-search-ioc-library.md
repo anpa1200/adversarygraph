@@ -1,4 +1,8 @@
-# Search The IOC Library: AdversaryGraph Use Case
+# AdvarsaryGraph Usecases.
+
+## Usecase number "4"
+
+### Search The IOC Library: AdversaryGraph Use Case
 
 **Level:** Simple  
 **Goal:** Find whether an observable already exists in local or synced intelligence.
