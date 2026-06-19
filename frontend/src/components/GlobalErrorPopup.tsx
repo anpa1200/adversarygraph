@@ -17,6 +17,7 @@ const providerRequirements = [
   { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', match: ['provider=claude', 'ANTHROPIC_API_KEY'] },
   { provider: 'openai', envVar: 'OPENAI_API_KEY', match: ['provider=openai', 'OPENAI_API_KEY'] },
   { provider: 'gemini', envVar: 'GEMINI_API_KEY', match: ['provider=gemini', 'GEMINI_API_KEY'] },
+  { provider: 'minimax', envVar: 'MINIMAX_API_KEY', match: ['provider=minimax', 'MINIMAX_API_KEY'] },
 ];
 
 export function GlobalErrorPopup() {

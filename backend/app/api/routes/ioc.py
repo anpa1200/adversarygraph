@@ -392,7 +392,7 @@ async def sync_threatfox_route(
     days: int = Query(7, ge=1, le=7),
     domain: str = Query("enterprise-attack"),
     ai_enrich: bool = Query(False),
-    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini)$"),
+    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
 ):
     try:
@@ -407,7 +407,7 @@ async def sync_otx_route(
     domain: str = Query("enterprise-attack"),
     mode: str = Query("subscribed", pattern="^(subscribed|actor-search)$"),
     ai_enrich: bool = Query(False),
-    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini)$"),
+    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     limit: int = Query(100, ge=1, le=500),
     max_groups: int = Query(220, ge=1, le=500),
     aliases_per_group: int = Query(4, ge=1, le=8),
@@ -445,7 +445,7 @@ async def sync_source_route(
     source_id: str,
     domain: str = Query("enterprise-attack"),
     ai_enrich: bool = Query(False),
-    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini)$"),
+    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
 ):
     try:
@@ -458,7 +458,7 @@ async def sync_source_route(
 async def enrich_ioc_ttps_route(
     source_id: list[str] = Query(default_factory=list),
     ai_enrich: bool = Query(False),
-    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini)$"),
+    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     domain: str = Query("enterprise-attack"),
     limit: int = Query(500, ge=1, le=20000),
     session: AsyncSession = Depends(get_session),

@@ -9,13 +9,14 @@ _DEFAULTS: dict[str, str] = {
     "claude": "claude-opus-4-8",
     "openai": settings.openai_model,
     "gemini": "gemini-2.0-flash",
+    "minimax": settings.minimax_model,
     "local": settings.local_llm_model,
 }
 
 
 def get_adapter(provider: str, model: str | None = None) -> LLMAdapter:
     """
-    provider: "claude" | "openai" | "gemini" | "local"
+    provider: "claude" | "openai" | "gemini" | "minimax" | "local"
     model:    optional override; falls back to the provider default.
 
     Adapter classes are imported lazily so missing SDK packages don't
@@ -32,6 +33,9 @@ def get_adapter(provider: str, model: str | None = None) -> LLMAdapter:
     if provider == "gemini":
         from app.services.ai.gemini import GeminiAdapter
         return GeminiAdapter(model=model or _DEFAULTS["gemini"])
+    if provider == "minimax":
+        from app.services.ai.minimax import MiniMaxAdapter
+        return MiniMaxAdapter(model=model or _DEFAULTS["minimax"])
     if provider == "local":
         from app.services.ai.local import LocalLLMAdapter
         return LocalLLMAdapter(model=model or _DEFAULTS["local"])

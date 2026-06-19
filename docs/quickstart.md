@@ -2,6 +2,12 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
+For the current v2.5 capability walkthrough with screenshots and infographics,
+use the 1200km mirror or Medium publication:
+
+- <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>
+- <https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e>
+
 ## Prerequisites
 
 - Docker Engine and Docker Compose v2.
@@ -29,6 +35,9 @@ Edit `.env` and set at least one provider key:
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
+MINIMAX_API_KEY=
+MINIMAX_MODEL=MiniMax-M3
+MINIMAX_BASE_URL=https://api.minimax.io/v1
 ```
 
 For private analysis, use an operator-controlled LLM gateway and review the provider's data-retention terms.

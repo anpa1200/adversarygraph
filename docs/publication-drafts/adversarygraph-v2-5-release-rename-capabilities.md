@@ -2,6 +2,9 @@
 
 ## From ThreatMapper To AdversaryGraph
 
+![AdversaryGraph AI banner](../assets/adversarygraph-ai-banner.png)
+
+
 This release marks an important transition for the project: the tool now has a new canonical name.
 
 The project is now **AdversaryGraph**.
@@ -56,6 +59,9 @@ https://1200km.com/adversarygraph/use-cases.html
 
 ## What AdversaryGraph Is
 
+![AdversaryGraph capability overview](../assets/adversarygraph-v2/03-7jquz_YKO0Odni3r3InzYw.webp)
+
+
 AdversaryGraph is a self-hosted AI-assisted CTI-to-detection workbench.
 
 It helps analysts:
@@ -79,6 +85,11 @@ AdversaryGraph does not perform definitive attribution. Actor similarity, TTP ov
 
 ## Installation Guide
 
+![Docker architecture in brief](../assets/adversarygraph-v2/10-a6c9YTdIktlPk1w0FRQHaA.webp)
+
+![Docker startup logs](../assets/adversarygraph-v2/11-z4L2KcZIixQjdkrcBt8OlA.webp)
+
+
 For a fresh local deployment, use Docker Compose.
 
 ```bash
@@ -93,6 +104,7 @@ For a cloud provider:
 
 ```env
 ANTHROPIC_API_KEY=your_key_here
+MINIMAX_API_KEY=your_key_here
 ```
 
 For a local OpenAI-compatible endpoint such as Ollama, LM Studio, LocalAI, or vLLM:
@@ -173,6 +185,9 @@ https://1200km.com/adversarygraph-docs/getting-started/
 
 ## What Is New In v2.5
 
+![AdversaryGraph problem and capability map](../assets/adversarygraph-v2/02-69nMwI7Xj8eNIWHv_C_KVg.webp)
+
+
 Version 2.5 is the IOC Library, enrichment, and connector-hardening release.
 
 The earlier versions focused heavily on ATT&CK mapping, actor comparison, AI report analysis, local LLM support, MITRE sync, ATLAS support, DFIR examples, sector intelligence, and actor IOC tabs.
@@ -195,6 +210,9 @@ The major additions are:
 - updated personal/private-use license model.
 
 ## IOC Library
+
+![Feeds and IOC source management](../assets/adversarygraph-v2/25-lKoiwInK4AuBHDFSINWekA.webp)
+
 
 The new IOC Library is the central observable workspace.
 
@@ -227,6 +245,9 @@ They may come from:
 AdversaryGraph keeps these observables searchable in one place while preserving source labels.
 
 ## VirusTotal Enrichment
+
+![API and enrichment workflow](../assets/adversarygraph-v2/13-CsGSK7APVQvnvTDCLxXKNA.webp)
+
 
 Version 2.5 adds a cleaner VirusTotal lookup workflow.
 
@@ -268,6 +289,9 @@ The useful workflow is:
 
 ## STIX, TAXII, MISP, And Custom Feeds
 
+![STIX and OpenCTI export flow](../assets/adversarygraph-v2/23-XfbZTKCAGTSArnhi3tiMOA.webp)
+
+
 AdversaryGraph v2.5 adds more ways to exchange and ingest structured intelligence.
 
 Supported workflows include:
@@ -292,6 +316,9 @@ AdversaryGraph does not force all data into one external platform first. It lets
 
 ## YARA, Sigma, And Sandbox Behavior
 
+![Detection and behavior context workflow](../assets/adversarygraph-v2/31-JDE0azpONj0OVW95p9yZkg.webp)
+
+
 The release also adds rule-feed and sandbox-behavior context.
 
 YARA and Sigma feeds help answer:
@@ -310,6 +337,11 @@ Sandbox behavior feeds help answer:
 This moves the platform further away from simple IOC lookup and closer to CTI-to-detection engineering.
 
 ## AI Report Analysis
+
+![AI analysis provider and upload panel](../assets/adversarygraph-v2/05-Up-LNxuga22bScwyZiFuHA.webp)
+
+![AI extracted mappings](../assets/adversarygraph-v2/15-89fT-TuOac6OMSNdZ61vag.webp)
+
 
 AdversaryGraph still includes the AI-assisted report analysis workflow.
 
@@ -332,6 +364,7 @@ Supported provider directions include:
 - Claude;
 - OpenAI-compatible APIs;
 - Gemini;
+- MiniMax;
 - local LLM endpoints such as Ollama, LM Studio, LocalAI, or vLLM when configured.
 
 The purpose is not to blindly trust the model.
@@ -339,6 +372,11 @@ The purpose is not to blindly trust the model.
 The purpose is to reduce repetitive extraction work while keeping analyst review central.
 
 ## ATT&CK And ATLAS Navigator
+
+![ATT&CK Navigator matrix](../assets/adversarygraph-v2/06-4zLLN71CBFHIMCEPOrTxmw.webp)
+
+![Navigator selected layer](../assets/adversarygraph-v2/20-q9LHKlOmbS1119qTlPKjIA.webp)
+
 
 AdversaryGraph includes matrix support for:
 
@@ -362,6 +400,9 @@ This makes the matrix a working tool instead of a static image.
 
 ## Actor And Campaign Comparison
 
+![Group comparison graph](../assets/adversarygraph-v2/27-_Dlqijzjnt_Ehr1ULHPmrg.webp)
+
+
 AdversaryGraph can compare selected TTPs against known actor and campaign profiles.
 
 It uses TTP overlap and Jaccard similarity to rank possible matches.
@@ -382,6 +423,9 @@ But the limitation is explicit:
 Many actors share common techniques. The analyst still needs corroborating evidence such as targeting, malware, infrastructure, tooling, timing, victimology, language, procedure details, or external reporting.
 
 ## Sector Intelligence
+
+![Actor tactic and platform coverage](../assets/adversarygraph-v2/28-lLkb-oRUX5Tns2S85SS16g.webp)
+
 
 AdversaryGraph includes sector-focused actor relevance workflows.
 
@@ -409,6 +453,9 @@ Instead of giving a generic threat landscape, the analyst can create a more focu
 This is especially useful for customer-facing CTI, vCISO-style reporting, SOC planning, and detection roadmap creation.
 
 ## IOC-To-TTP Mapping
+
+![Practical attribution and IOC-to-TTP workflow](../assets/adversarygraph-v2/31-JDE0azpONj0OVW95p9yZkg.webp)
+
 
 Version 2.5 improves the ability to connect observables back to behavior.
 
@@ -446,6 +493,11 @@ to:
 
 ## DFIR Examples
 
+![DFIR examples list](../assets/adversarygraph-v2/17-aSqu_irokLlGQa1Njwa0fQ.webp)
+
+![DFIR report workflow](../assets/adversarygraph-v2/18-RL5VY8-RMrIQv_SIZpwPQQ.webp)
+
+
 The platform also includes DFIR report examples.
 
 These are useful for:
@@ -459,6 +511,9 @@ These are useful for:
 The DFIR Examples workflow is useful because teams often need safe public material for demos and training instead of using private customer reports.
 
 ## Operations And Pipeline
+
+![Stored report comparison and operations](../assets/adversarygraph-v2/30-ecTDnydMYwWX8-Ncuk8GfQ.webp)
+
 
 AdversaryGraph is not only a single analysis screen.
 
@@ -488,6 +543,9 @@ This is important for Docker deployments.
 The application can be rebuilt while private/custom data remains in the external persistent data location when configured correctly.
 
 ## Selftest And Troubleshooting
+
+![Health and terminal checks](../assets/adversarygraph-v2/09-z711T5SOrORpjITlM2IY9A.webp)
+
 
 The recent releases added clearer operational checks.
 
@@ -583,6 +641,9 @@ The platform is most useful when the analyst needs to connect:
 
 ## Who Should Use It
 
+![AdversaryGraph full cover visual](../assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
+
+
 AdversaryGraph is useful for:
 
 - CTI analysts;
@@ -596,6 +657,79 @@ AdversaryGraph is useful for:
 - teams building MITRE coverage and detection roadmaps.
 
 It is especially useful when the analyst wants a private, self-hosted environment instead of sending reports and IOCs into a SaaS tool.
+
+
+## Published Article Visual Asset Gallery
+
+All screenshots and infographics mirrored from the published Medium article are stored locally so the documentation and 1200km mirror do not depend on Medium CDN availability.
+
+![Published Medium visual 01-31Nq2VMJ9Mm9lgryHGJRQQ](../assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
+
+![Published Medium visual 02-69nMwI7Xj8eNIWHv_C_KVg](../assets/adversarygraph-v2/02-69nMwI7Xj8eNIWHv_C_KVg.webp)
+
+![Published Medium visual 03-7jquz_YKO0Odni3r3InzYw](../assets/adversarygraph-v2/03-7jquz_YKO0Odni3r3InzYw.webp)
+
+![Published Medium visual 04-VAfpLRWhfkB0pwRR5C4Nlw](../assets/adversarygraph-v2/04-VAfpLRWhfkB0pwRR5C4Nlw.webp)
+
+![Published Medium visual 05-Up-LNxuga22bScwyZiFuHA](../assets/adversarygraph-v2/05-Up-LNxuga22bScwyZiFuHA.webp)
+
+![Published Medium visual 06-4zLLN71CBFHIMCEPOrTxmw](../assets/adversarygraph-v2/06-4zLLN71CBFHIMCEPOrTxmw.webp)
+
+![Published Medium visual 07-Dw7KTqHRijCEkYvUrdBMbQ](../assets/adversarygraph-v2/07-Dw7KTqHRijCEkYvUrdBMbQ.webp)
+
+![Published Medium visual 08-07j05Kn78RJY96S3Ga4IVQ](../assets/adversarygraph-v2/08-07j05Kn78RJY96S3Ga4IVQ.webp)
+
+![Published Medium visual 09-z711T5SOrORpjITlM2IY9A](../assets/adversarygraph-v2/09-z711T5SOrORpjITlM2IY9A.webp)
+
+![Published Medium visual 10-a6c9YTdIktlPk1w0FRQHaA](../assets/adversarygraph-v2/10-a6c9YTdIktlPk1w0FRQHaA.webp)
+
+![Published Medium visual 11-z4L2KcZIixQjdkrcBt8OlA](../assets/adversarygraph-v2/11-z4L2KcZIixQjdkrcBt8OlA.webp)
+
+![Published Medium visual 12-l_EPylZmZEnAaDF6JjQE4w](../assets/adversarygraph-v2/12-l_EPylZmZEnAaDF6JjQE4w.webp)
+
+![Published Medium visual 13-CsGSK7APVQvnvTDCLxXKNA](../assets/adversarygraph-v2/13-CsGSK7APVQvnvTDCLxXKNA.webp)
+
+![Published Medium visual 14-EsC2UAT23n0xRDPv29oEWg](../assets/adversarygraph-v2/14-EsC2UAT23n0xRDPv29oEWg.webp)
+
+![Published Medium visual 15-89fT-TuOac6OMSNdZ61vag](../assets/adversarygraph-v2/15-89fT-TuOac6OMSNdZ61vag.webp)
+
+![Published Medium visual 16-FpAXPkiL1j3fiuOkL7tp8A](../assets/adversarygraph-v2/16-FpAXPkiL1j3fiuOkL7tp8A.webp)
+
+![Published Medium visual 17-aSqu_irokLlGQa1Njwa0fQ](../assets/adversarygraph-v2/17-aSqu_irokLlGQa1Njwa0fQ.webp)
+
+![Published Medium visual 18-RL5VY8-RMrIQv_SIZpwPQQ](../assets/adversarygraph-v2/18-RL5VY8-RMrIQv_SIZpwPQQ.webp)
+
+![Published Medium visual 19-T8D25vI8Mt2T7iWmqEJkfA](../assets/adversarygraph-v2/19-T8D25vI8Mt2T7iWmqEJkfA.webp)
+
+![Published Medium visual 20-q9LHKlOmbS1119qTlPKjIA](../assets/adversarygraph-v2/20-q9LHKlOmbS1119qTlPKjIA.webp)
+
+![Published Medium visual 21-QkMDTHSy82_j4PA96Q3j6A](../assets/adversarygraph-v2/21-QkMDTHSy82_j4PA96Q3j6A.webp)
+
+![Published Medium visual 22-62_zstQMYPoqj4kSTn4nBg](../assets/adversarygraph-v2/22-62_zstQMYPoqj4kSTn4nBg.webp)
+
+![Published Medium visual 23-XfbZTKCAGTSArnhi3tiMOA](../assets/adversarygraph-v2/23-XfbZTKCAGTSArnhi3tiMOA.webp)
+
+![Published Medium visual 24-m1Zh30Hm7e6wmzZq1Mjdog](../assets/adversarygraph-v2/24-m1Zh30Hm7e6wmzZq1Mjdog.webp)
+
+![Published Medium visual 25-lKoiwInK4AuBHDFSINWekA](../assets/adversarygraph-v2/25-lKoiwInK4AuBHDFSINWekA.webp)
+
+![Published Medium visual 26-aJW4II93D-bLqFMexDlW1g](../assets/adversarygraph-v2/26-aJW4II93D-bLqFMexDlW1g.webp)
+
+![Published Medium visual 27-_Dlqijzjnt_Ehr1ULHPmrg](../assets/adversarygraph-v2/27-_Dlqijzjnt_Ehr1ULHPmrg.webp)
+
+![Published Medium visual 28-lLkb-oRUX5Tns2S85SS16g](../assets/adversarygraph-v2/28-lLkb-oRUX5Tns2S85SS16g.webp)
+
+![Published Medium visual 29-0dTCvSgZ4dMeQDXkbutXPA](../assets/adversarygraph-v2/29-0dTCvSgZ4dMeQDXkbutXPA.webp)
+
+![Published Medium visual 30-ecTDnydMYwWX8-Ncuk8GfQ](../assets/adversarygraph-v2/30-ecTDnydMYwWX8-Ncuk8GfQ.webp)
+
+![Published Medium visual 31-JDE0azpONj0OVW95p9yZkg](../assets/adversarygraph-v2/31-JDE0azpONj0OVW95p9yZkg.webp)
+
+![Published Medium visual 32-oyHjzN-tAx7Lx19Xg0IPyA](../assets/adversarygraph-v2/32-oyHjzN-tAx7Lx19Xg0IPyA.webp)
+
+![Published Medium visual 33-Rai3eOrk1Upsd4zeHxtroA](../assets/adversarygraph-v2/33-Rai3eOrk1Upsd4zeHxtroA.webp)
+
+![Published Medium visual 34-lp9MmZunILgId0X7JHQVbw](../assets/adversarygraph-v2/34-lp9MmZunILgId0X7JHQVbw.webp)
 
 ## Final Thought
 

@@ -126,6 +126,9 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1
 GEMINI_API_KEY=
+MINIMAX_API_KEY=
+MINIMAX_MODEL=MiniMax-M3
+MINIMAX_BASE_URL=https://api.minimax.io/v1
 ```
 
 Start the stack:
@@ -228,7 +231,7 @@ The AI Analysis page accepts:
 The workflow:
 
 1. Select ATT&CK domain: Enterprise, Mobile, or ICS.
-2. Select provider: Claude, OpenAI, Gemini, or Local.
+2. Select provider: Claude, OpenAI, Gemini, MiniMax, or Local.
 3. Paste text or upload a report.
 4. Run analysis.
 5. Watch the streamed response.
@@ -601,7 +604,7 @@ AdversaryGraph v2.5.0 includes:
 - React frontend
 - PostgreSQL report and ATT&CK storage
 - Redis/Celery background workers
-- Claude, OpenAI, Gemini, and Local LLM support
+- Claude, OpenAI, Gemini, MiniMax, and Local LLM support
 - MITRE ATT&CK Enterprise, Mobile, ICS, and MITRE ATLAS support
 - IOC Library, STIX/TAXII exchange, MISP JSON import, and custom IOC feeds
 - VirusTotal, OTX, Malpedia, Sigma/YARA, and sandbox enrichment workflows

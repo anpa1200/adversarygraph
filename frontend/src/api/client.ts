@@ -183,7 +183,7 @@ export interface IOCSummary {
 
 type IOCSyncOptions = {
   ai_enrich?: boolean;
-  ai_provider?: 'local' | 'claude' | 'openai' | 'gemini';
+  ai_provider?: 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
 };
 
 export interface VirusTotalLookupResult {

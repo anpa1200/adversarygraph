@@ -86,7 +86,7 @@ AdversaryGraph runs as a self-hosted Docker Compose stack:
 - PostgreSQL for ATT&CK data and analysis records;
 - Redis and Celery for background tasks and scheduled ATT&CK synchronization.
 
-The backend ingests MITRE ATT&CK STIX bundles and stores tactics, techniques, groups, campaigns, and relationships in PostgreSQL. In Docker mode, report content is sent only to the LLM provider configured by the operator, such as Anthropic, OpenAI, Google Gemini, or a private/local gateway where available.
+The backend ingests MITRE ATT&CK STIX bundles and stores tactics, techniques, groups, campaigns, and relationships in PostgreSQL. In Docker mode, report content is sent only to the LLM provider configured by the operator, such as Anthropic, OpenAI, Google Gemini, MiniMax, or a private/local gateway where available.
 
 The public browser workspace does not process private reports through backend LLM extraction or store private report analyses.
 

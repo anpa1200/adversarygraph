@@ -14,7 +14,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.5.4 · [Release Summary](docs/release-summary-v2.5.4.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Medium Archive](https://medium.com/@1200km)**
+**Current release: v2.5.4 · [Release Summary](docs/release-summary-v2.5.4.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -27,6 +27,8 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 **Documentation:** https://1200km.com/adversarygraph-docs/
 
 **1200km Article:** https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html
+
+**Published Medium Article:** https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e
 
 **Medium Archive:** https://medium.com/@1200km
 
@@ -68,6 +70,7 @@ Edit `.env` and set at least one LLM provider:
 ```env
 # Cloud provider example
 ANTHROPIC_API_KEY=your_key_here
+MINIMAX_API_KEY=your_key_here
 
 # Or local OpenAI-compatible endpoint
 LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
@@ -151,6 +154,12 @@ The set covers the public ATT&CK matrix workspace, group overlay workflows,
 analysis views, report/evidence review, and ecosystem navigation from the
 companion walkthrough.
 
+The published v2.5 Medium walkthrough is mirrored into the local documentation
+and 1200km article page. Its screenshots and infographics are stored in
+[`docs/assets/adversarygraph-v2/`](docs/assets/adversarygraph-v2/) and listed in
+[`docs/assets/adversarygraph-v2/manifest.md`](docs/assets/adversarygraph-v2/manifest.md).
+The full visual appendix is included in [`docs/full-guide-v2.md`](docs/full-guide-v2.md).
+
 Demo workflow video:
 [`DFIR report download to AI analysis and comparison`](docs/demo-videos/dfir-report-ai-analysis-compare.mp4)
 shows the end-to-end flow from indexed public report examples to local PDF
@@ -168,7 +177,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 |---|---|
 | **Navigator** | Full ATT&CK/ATLAS matrix support (Enterprise, Mobile, ICS, ATLAS) with D3.js zoom/pan, sub-technique expansion, dual-layer colouring |
 | **Threat Actor Library** | Currently ingested MITRE ATT&CK group profiles, aliases, techniques, and named campaign relationships |
-| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK or ATLAS mapping candidates via Claude, OpenAI, Gemini, or a local OpenAI-compatible LLM; results saved to Reports Library (DB 2) |
+| **AI Analysis** | Upload PDF/DOCX/TXT or paste text → streamed LLM extraction of ATT&CK or ATLAS mapping candidates via Claude, OpenAI, Gemini, MiniMax, or a local OpenAI-compatible LLM; results saved to Reports Library (DB 2) |
 | **Compare — Groups** | Jaccard similarity ranking of your TTPs vs currently ingested group profiles; visual matrix diff, tactic breakdown, gap analysis |
 | **Compare — Campaigns** | Jaccard similarity ranking of your TTPs vs every named MITRE campaign (e.g. SolarWinds C0024, Operation Ghost C0023) |
 | **Compare — Reports** | Browse stored AI analyses (DB 2); re-run group-similarity comparison without re-calling the LLM |
@@ -223,7 +232,7 @@ User uploads report
   _read_input()          ← stream with 50 MB byte-cap, size-check before buffer
         │
         ▼
-  LLMAdapter.extract()   ← Claude / OpenAI / Gemini / Local
+  LLMAdapter.extract()   ← Claude / OpenAI / Gemini / MiniMax / Local
         │
         ▼
   _parse_response()      ← JSON extraction with raw_decode fallback
@@ -270,6 +279,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4.1
 GEMINI_API_KEY=AIza...
+MINIMAX_API_KEY=sk-...
+MINIMAX_MODEL=MiniMax-M3
+MINIMAX_BASE_URL=https://api.minimax.io/v1
 
 # Optional local provider: Ollama / LM Studio / LocalAI / vLLM with OpenAI-compatible API
 LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
@@ -783,7 +795,7 @@ IOC-to-TTP mapping uses this priority order:
 
 Use **Enrich IOC TTPs** in IOC Library or Feeds Management to reprocess the
 local IOC database. To allow AI fallback during a sync, enable the AI checkbox in
-the UI or pass `ai_enrich=true&ai_provider=local|claude|openai|gemini` to
+the UI or pass `ai_enrich=true&ai_provider=local|claude|openai|gemini|minimax` to
 `/api/sync/ioc`, `/api/ioc/sync/threatfox`, `/api/ioc/sync/otx`, or
 `/api/ioc/sync/{source_id}`.
 
@@ -1032,6 +1044,9 @@ All configuration is via environment variables in `.env`.
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4.1` | OpenAI model used when no request-level model is provided |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
+| `MINIMAX_API_KEY` | — | MiniMax API key |
+| `MINIMAX_MODEL` | `MiniMax-M3` | MiniMax model used when no request-level model is provided |
+| `MINIMAX_BASE_URL` | `https://api.minimax.io/v1` | MiniMax OpenAI-compatible API base URL |
 | `LOCAL_LLM_BASE_URL` | `http://host.docker.internal:11434/v1` | OpenAI-compatible local LLM endpoint |
 | `LOCAL_LLM_API_KEY` | `local` | API key placeholder for local OpenAI-compatible servers |
 | `LOCAL_LLM_MODEL` | `llama3.1:8b` | Local model used when no request-level model is provided |
@@ -1223,6 +1238,7 @@ copy, newsletter pitch text, and current external submission tracking.
 | AI — Claude | `anthropic` SDK | Cached async client in `__init__` |
 | AI — OpenAI | `openai` SDK | Cached client; JSON mode on non-streaming |
 | AI — Gemini | `google-generativeai` | `configure()` called once in `__init__` |
+| AI — MiniMax | `openai` SDK | OpenAI-compatible MiniMax Chat Completions endpoint |
 | AI — Local | `openai` SDK | OpenAI-compatible local endpoint such as Ollama, LM Studio, LocalAI, or vLLM |
 | File parsing | PyMuPDF (PDF), python-docx (DOCX) | Streamed with 50 MB hard cap |
 | PDF reports | fpdf2 | Multi-page with tactic coverage chart |
@@ -1395,7 +1411,7 @@ Native MITRE ATLAS matrix ingestion is now integrated with the Docker sync pipel
 - Layer PDF technique count derived from DB results, not raw client-supplied IDs
 
 **Performance:**
-- Anthropic, OpenAI, and Gemini SDK clients cached in `__init__`; connection pools reused across requests
+- Anthropic, OpenAI-compatible, and Gemini SDK clients cached in `__init__`; connection pools reused across requests
 
 ### v0.2.0 (2026-06-06)
 

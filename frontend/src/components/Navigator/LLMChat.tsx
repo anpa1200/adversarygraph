@@ -8,12 +8,13 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { analyzeApi } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 
-type Provider = 'claude' | 'openai' | 'gemini' | 'local';
+type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 
 const PROVIDERS: { id: Provider; short: string }[] = [
   { id: 'claude',  short: 'Claude' },
   { id: 'openai',  short: 'OpenAI' },
   { id: 'gemini',  short: 'Gemini' },
+  { id: 'minimax', short: 'MiniMax' },
   { id: 'local',   short: 'Local' },
 ];
 

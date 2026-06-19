@@ -211,7 +211,7 @@ async def trigger_ioc_sync(
     days: int = Query(7, ge=1, le=7),
     domain: str = Query("enterprise-attack"),
     ai_enrich: bool = Query(False),
-    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini)$"),
+    ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
 ):
     """Synchronize all configured IOC sources centrally."""

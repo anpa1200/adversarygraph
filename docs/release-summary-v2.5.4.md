@@ -42,5 +42,7 @@ first.
 - Repository: https://github.com/anpa1200/adversarygraph
 - Documentation: https://1200km.com/adversarygraph-docs/
 - Project hub: https://1200km.com/adversarygraph/
+- Published v2.5 article: https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e
+- 1200km article mirror: https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html
 - Full guide: `docs/full-guide-v2.md`
 - Detailed notes: `docs/release-notes/v2.5.4.md`

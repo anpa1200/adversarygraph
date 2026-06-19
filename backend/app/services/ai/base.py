@@ -95,7 +95,7 @@ USER_TEMPLATE = """Analyse the following text and extract technique mappings for
 # ── Base adapter ──────────────────────────────────────────────────────────────
 
 class LLMAdapter(ABC):
-    """Common interface for Claude, OpenAI, and Gemini adapters."""
+    """Common interface for cloud and local LLM adapters."""
 
     @property
     @abstractmethod

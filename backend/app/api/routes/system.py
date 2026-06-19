@@ -43,6 +43,7 @@ def _api_key_check() -> SelfTestCheck:
         "anthropic": {"configured": bool(settings.anthropic_api_key), "env_var": "ANTHROPIC_API_KEY", "required_for": ["Claude AI analysis"]},
         "openai": {"configured": bool(settings.openai_api_key), "env_var": "OPENAI_API_KEY", "required_for": ["OpenAI AI analysis"]},
         "gemini": {"configured": bool(settings.gemini_api_key), "env_var": "GEMINI_API_KEY", "required_for": ["Gemini AI analysis"]},
+        "minimax": {"configured": bool(settings.minimax_api_key), "env_var": "MINIMAX_API_KEY", "required_for": ["MiniMax AI analysis"]},
         "local_llm_base_url": {"configured": bool(settings.local_llm_base_url), "env_var": "LOCAL_LLM_BASE_URL", "required_for": ["local LLM analysis"]},
         "threatfox": {"configured": bool(settings.threatfox_auth_key), "env_var": "THREATFOX_AUTH_KEY", "required_for": ["ThreatFox IOC sync"]},
         "otx": {"configured": bool(settings.otx_api_key), "env_var": "OTX_API_KEY", "required_for": ["OTX IOC sync"]},

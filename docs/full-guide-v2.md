@@ -1,6 +1,6 @@
 # AdversaryGraph v2.x Full Guide
 
-![AdversaryGraph v2.0 cover](assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
+![AdversaryGraph v2.5 cover](assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
 
 AdversaryGraph is a self-hosted CTI-to-detection workbench for turning threat
 reports into MITRE ATT&CK mapping candidates, reviewing the supporting evidence,
@@ -14,7 +14,8 @@ handoffs require human review.
 Public article and visual walkthrough:
 
 - 1200km article: https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html
-- Medium archive: https://medium.com/@1200km
+- Published Medium article: https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e
+- Local visual manifest: `docs/assets/adversarygraph-v2/manifest.md`
 
 ## 1. Operating Modes
 
@@ -66,6 +67,9 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1
 GEMINI_API_KEY=
+MINIMAX_API_KEY=
+MINIMAX_MODEL=MiniMax-M3
+MINIMAX_BASE_URL=https://api.minimax.io/v1
 ```
 
 For a local LLM:
@@ -196,6 +200,7 @@ Providers:
 - Claude
 - OpenAI
 - Gemini
+- MiniMax
 - Local OpenAI-compatible endpoint
 
 Workflow:
@@ -810,10 +815,10 @@ For private analysis:
 ## 24. Visual Appendix
 
 The following images are the screenshots, diagrams, and infographics used in
-the published AdversaryGraph v2.0 article and retained here as local project
-assets.
+the published AdversaryGraph v2.5 Medium article and retained here as local
+project assets so the docs do not depend on Medium CDN availability.
 
-![AdversaryGraph v2.0 cover](assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
+![AdversaryGraph v2.5 cover](assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
 
 ![Problem overview](assets/adversarygraph-v2/02-69nMwI7Xj8eNIWHv_C_KVg.webp)
 

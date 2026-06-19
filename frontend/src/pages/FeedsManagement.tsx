@@ -393,6 +393,7 @@ export function FeedsManagement() {
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
                     <option value="gemini">Gemini</option>
+                    <option value="minimax">MiniMax</option>
                   </select>
                 </div>
                 <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_140px_auto]">

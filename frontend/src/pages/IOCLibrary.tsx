@@ -252,6 +252,7 @@ export function IOCLibrary() {
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
                     <option value="gemini">Gemini</option>
+                    <option value="minimax">MiniMax</option>
                   </select>
                 </div>
                 <SourceStatus mutation={syncAll} label="All IOC sources" />

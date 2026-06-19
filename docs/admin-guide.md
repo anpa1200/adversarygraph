@@ -2,6 +2,12 @@
 
 This guide covers local and controlled self-hosted operation.
 
+Current public documentation bundle:
+
+- Published article mirror: <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>
+- Medium publication: <https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e>
+- Local visual appendix: [`full-guide-v2.md#24-visual-appendix`](full-guide-v2.md#24-visual-appendix)
+
 ## Services
 
 | Service | Purpose |
@@ -28,6 +34,9 @@ Important settings:
 | `OPENAI_API_KEY` | OpenAI provider |
 | `OPENAI_MODEL` | OpenAI model default |
 | `GEMINI_API_KEY` | Gemini provider |
+| `MINIMAX_API_KEY` | MiniMax provider |
+| `MINIMAX_MODEL` | MiniMax model default |
+| `MINIMAX_BASE_URL` | MiniMax OpenAI-compatible API base URL |
 | `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM endpoint |
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
 | `LOCAL_LLM_MODEL` | Local model default |
@@ -202,7 +211,7 @@ IOC-to-TTP mapping is evidence-prioritized:
 
 The UI exposes this as an explicit checkbox in IOC Library and Feeds
 Management. The API accepts
-`ai_enrich=true&ai_provider=local|claude|openai|gemini` on `/api/sync/ioc`,
+`ai_enrich=true&ai_provider=local|claude|openai|gemini|minimax` on `/api/sync/ioc`,
 `/api/ioc/sync/threatfox`, `/api/ioc/sync/otx`, `/api/ioc/sync/{source_id}`,
 and `/api/ioc/enrich/ttps`.
 
