@@ -1,5 +1,7 @@
 # AdversaryGraph
 
+![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
+
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)

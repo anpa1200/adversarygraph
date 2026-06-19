@@ -41,7 +41,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-5 border-b border-gray-700">
         <div className="flex items-center gap-2">
-          <span className="text-mitre-accent text-2xl font-bold">⬡</span>
+          <img src="/adversarygraph-ai-icon-192.png" alt="" className="h-8 w-8 rounded-lg object-cover" />
           <div>
             <div className="text-sm font-bold text-white tracking-wide">AdversaryGraph</div>
             <div className="text-xs text-gray-400">ATT&CK Intelligence</div>
