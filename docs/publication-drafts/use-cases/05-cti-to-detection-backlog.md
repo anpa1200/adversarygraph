@@ -1,56 +1,134 @@
 # Turn CTI Into A Detection Backlog: A Practical AdversaryGraph Workflow
 
-**Subtitle:** Which ATT&CK techniques should detection engineering prioritize?
+**Subtitle:** Which intelligence findings should become detection engineering work?
 
 ## Introduction
 
-Many CTI and detection engineering tasks fail because the work stops at reading a report. The useful output is not the report itself. The useful output is a reviewed set of behaviors, observables, actor hypotheses, detection priorities, and evidence that another analyst can verify.
+Security teams do not need more disconnected notes. They need workflows that preserve evidence, explain reasoning, and turn raw intelligence into output that a SOC analyst, detection engineer, incident responder, or customer can actually use.
 
-This article shows one practical AdversaryGraph workflow: **Turn CTI Into A Detection Backlog**.
+This article walks through one AdversaryGraph workflow: **Turn CTI Into A Detection Backlog**.
 
-AdversaryGraph is a self-hosted AI-assisted CTI platform that connects threat reports, MITRE ATT&CK techniques, actor context, IOC enrichment, and detection engineering handoff. The goal is not to replace analyst judgment. The goal is to remove repetitive mechanical work and make the review process clearer.
+AdversaryGraph is a self-hosted AI-assisted CTI platform for report analysis, MITRE ATT&CK mapping, actor comparison, IOC enrichment, detection engineering handoff, and structured export. It is not an attribution oracle and it is not a replacement for analyst judgment. It is a workbench for making the analyst process faster, clearer, and more repeatable.
 
 ## The Analyst Problem
 
-Which ATT&CK techniques should detection engineering prioritize?
+A report contains many behaviors, but only some are useful and feasible for detection. The team needs to turn CTI into prioritized backlog items.
 
-Without a structured workflow, this usually becomes manual copy-paste work: reading the source, searching ATT&CK, comparing actors, collecting observables, and writing the same summary again for a customer, SOC team, or detection engineer.
+The operational question is: **Which intelligence findings should become detection engineering work?**
 
-## The AdversaryGraph Workflow
+In many teams, this work is split across browser tabs, spreadsheets, SIEM notes, report PDFs, and manual ATT&CK searches. That creates two problems. First, the work is slow. Second, the reasoning is hard to audit later. AdversaryGraph is designed to keep the source, mapping, enrichment, review status, and final output connected.
 
-1. **Accept validated TTPs from report analysis.**
-2. **Review tactic coverage and missing areas.**
-3. **Open TTP detail panels for detection context.**
-4. **Export structured results for backlog tickets.**
-5. **Track review status as detections are planned or built.**
+## Who This Workflow Is For
 
+Primary users: Detection engineer, CTI analyst, SOC lead, or purple team operator.
+
+This workflow is useful when the team needs reviewed output rather than raw extraction. It can support internal investigation, customer reporting, SOC triage, threat hunting, detection engineering, or platform validation.
+
+## Inputs You Need
+
+- Reviewed TTP list
+- Evidence snippets
+- Customer or organization telemetry inventory
+- Existing detection coverage if known
+
+## Before You Start
+
+- TTPs have review status
+- Detection engineers know available log sources
+- Navigator layer is prepared
+- False-positive constraints are understood
+
+## Step-By-Step Workflow
+
+### Step 1: Start with accepted TTPs and exclude rejected mappings.
+
+This step should produce or protect one concrete part of the analysis: detection backlog. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Is the technique observable in available telemetry?
+
+### Step 2: Group techniques by tactic and operational phase.
+
+This step should produce or protect one concrete part of the analysis: prioritized ttp list. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Is detection better as a rule, hunt, dashboard, or enrichment?
+
+### Step 3: Open TTP detail panels and review detection guidance.
+
+This step should produce or protect one concrete part of the analysis: telemetry requirements. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Does the report provide enough procedure detail?
+
+### Step 4: Mark which techniques have available telemetry.
+
+This step should produce or protect one concrete part of the analysis: evidence-backed ticket content. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: What is the expected false-positive rate?
+
+### Step 5: Prioritize high-impact, high-confidence, low-coverage techniques.
+
+This step should produce or protect one concrete part of the analysis: detection backlog. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Is the technique observable in available telemetry?
+
+### Step 6: Export a detection backlog with evidence and source report references.
+
+This step should produce or protect one concrete part of the analysis: prioritized ttp list. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Is detection better as a rule, hunt, dashboard, or enrichment?
+
+### Step 7: Create tickets or tasks for Sigma, SIEM, EDR, or hunting content.
+
+This step should produce or protect one concrete part of the analysis: telemetry requirements. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Does the report provide enough procedure detail?
+
+## Key Analyst Decisions
+
+- Is the technique observable in available telemetry?
+- Is detection better as a rule, hunt, dashboard, or enrichment?
+- Does the report provide enough procedure detail?
+- What is the expected false-positive rate?
 
 ## What The Analyst Gets
 
-Prioritized detection backlog candidates with ATT&CK IDs, evidence, and detection notes.
+- Detection backlog
+- Prioritized TTP list
+- Telemetry requirements
+- Evidence-backed ticket content
 
-## Why This Matters
+## Common Mistakes To Avoid
 
-This workflow creates a clean handoff between CTI and operations. The analyst can show what was extracted, why it was mapped, which evidence supports it, and what should happen next.
+- Creating detections for techniques without telemetry
+- Prioritizing noisy generic techniques over distinctive behavior
+- Losing source evidence during handoff
+- Treating all TTPs as equal priority
+
+
+## Handoff Guidance
+
+Give engineering a concise backlog item per technique: behavior, evidence, log source, proposed logic, expected signal, and validation plan.
+
+A good handoff should make the reasoning visible. It should separate observed behavior, model-assisted extraction, enrichment from external sources, and analyst hypotheses. This is especially important when the output will be used by a SOC team, a customer, or a detection engineering backlog.
 
 ## Review Discipline
 
-AdversaryGraph should be used as an analyst accelerator, not an attribution oracle. TTP overlap, enrichment hits, and actor links are signals. They become useful only after evidence review, confidence calibration, and human judgment.
+AdversaryGraph should accelerate analysis, not bypass it. TTP overlap, actor matches, IOC enrichment, rule matches, and sandbox behavior are signals. They become useful only after source review, confidence calibration, and analyst judgment.
 
 Before publishing or handing off the result:
 
-- Confirm that every accepted TTP has evidence.
-- Separate strong findings from weak hypotheses.
-- Keep rejected or uncertain mappings visible for auditability.
+- Confirm that every accepted finding has evidence.
+- Keep weak or partial findings as `needs-evidence`.
+- Do not turn similarity into attribution without corroboration.
+- Keep source labels attached to IOCs and enrichment.
 - Export reviewed results, not raw model output.
 
 ## Practical Output
 
-A finished workflow can produce a Navigator layer, structured JSON, IOC records, actor notes, detection backlog items, and a PDF report. That makes the result reusable by CTI analysts, SOC analysts, detection engineers, and incident responders.
+A finished workflow can produce Navigator layers, PDF reports, JSON exports, CSV IOC lists, STIX bundles, actor notes, detection backlog items, and investigation evidence. The exact output depends on the use case, but the principle stays the same: every result should be traceable to evidence.
 
 ## Closing
 
-The main value of AdversaryGraph is repeatability. Instead of treating every report as a blank page, the analyst gets a structured path from raw intelligence to ATT&CK mapping, enrichment, comparison, and operational handoff.
+The value of this workflow is repeatability. Instead of treating every report, alert, actor, or IOC as a one-off task, AdversaryGraph gives the analyst a consistent path from raw input to reviewed operational intelligence.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

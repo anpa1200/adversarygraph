@@ -1,56 +1,134 @@
 # Compare Two Or More Threat Reports: A Practical AdversaryGraph Workflow
 
-**Subtitle:** Are these reports operationally related or just sharing common tradecraft?
+**Subtitle:** Are multiple reports describing related activity, or do they only share common tradecraft?
 
 ## Introduction
 
-Many CTI and detection engineering tasks fail because the work stops at reading a report. The useful output is not the report itself. The useful output is a reviewed set of behaviors, observables, actor hypotheses, detection priorities, and evidence that another analyst can verify.
+Security teams do not need more disconnected notes. They need workflows that preserve evidence, explain reasoning, and turn raw intelligence into output that a SOC analyst, detection engineer, incident responder, or customer can actually use.
 
-This article shows one practical AdversaryGraph workflow: **Compare Two Or More Threat Reports**.
+This article walks through one AdversaryGraph workflow: **Compare Two Or More Threat Reports**.
 
-AdversaryGraph is a self-hosted AI-assisted CTI platform that connects threat reports, MITRE ATT&CK techniques, actor context, IOC enrichment, and detection engineering handoff. The goal is not to replace analyst judgment. The goal is to remove repetitive mechanical work and make the review process clearer.
+AdversaryGraph is a self-hosted AI-assisted CTI platform for report analysis, MITRE ATT&CK mapping, actor comparison, IOC enrichment, detection engineering handoff, and structured export. It is not an attribution oracle and it is not a replacement for analyst judgment. It is a workbench for making the analyst process faster, clearer, and more repeatable.
 
 ## The Analyst Problem
 
-Are these reports operationally related or just sharing common tradecraft?
+Several reports mention similar malware, infrastructure, or behaviors. The analyst needs to determine whether they should be grouped together as a campaign or handled separately.
 
-Without a structured workflow, this usually becomes manual copy-paste work: reading the source, searching ATT&CK, comparing actors, collecting observables, and writing the same summary again for a customer, SOC team, or detection engineer.
+The operational question is: **Are multiple reports describing related activity, or do they only share common tradecraft?**
 
-## The AdversaryGraph Workflow
+In many teams, this work is split across browser tabs, spreadsheets, SIEM notes, report PDFs, and manual ATT&CK searches. That creates two problems. First, the work is slow. Second, the reasoning is hard to audit later. AdversaryGraph is designed to keep the source, mapping, enrichment, review status, and final output connected.
 
-1. **Analyze each report and store the results.**
-2. **Open stored report comparison.**
-3. **Compare shared TTPs, tactics, IOCs, and actor links.**
-4. **Separate high-signal overlap from generic techniques.**
-5. **Export the comparison for review.**
+## Who This Workflow Is For
 
+Primary users: CTI analyst, campaign tracker, IR lead, or research analyst.
+
+This workflow is useful when the team needs reviewed output rather than raw extraction. It can support internal investigation, customer reporting, SOC triage, threat hunting, detection engineering, or platform validation.
+
+## Inputs You Need
+
+- Two or more analyzed reports
+- Reviewed TTP mappings
+- Report-derived IOCs
+- Actor or malware names if available
+
+## Before You Start
+
+- Previous analyses are stored
+- Report metadata is clear
+- Each report has reviewed mappings
+- The analyst can distinguish generic overlap from campaign-specific evidence
+
+## Step-By-Step Workflow
+
+### Step 1: Analyze each report separately and store results.
+
+This step should produce or protect one concrete part of the analysis: report overlap summary. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Are shared techniques distinctive enough?
+
+### Step 2: Open stored report comparison.
+
+This step should produce or protect one concrete part of the analysis: shared/unique ttp lists. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Do reports share infrastructure, malware, target sector, or timing?
+
+### Step 3: Compare shared TTPs, unique TTPs, tactics, IOCs, and actor references.
+
+This step should produce or protect one concrete part of the analysis: ioc comparison. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Are differences caused by incomplete reporting or truly different behavior?
+
+### Step 4: Review whether overlap occurs at early, middle, or late intrusion phases.
+
+This step should produce or protect one concrete part of the analysis: campaign relationship assessment. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Should reports be merged into one campaign workspace?
+
+### Step 5: Check if shared observables are current, reused, or generic.
+
+This step should produce or protect one concrete part of the analysis: report overlap summary. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Are shared techniques distinctive enough?
+
+### Step 6: Write a conclusion: related, possibly related, or unrelated/common tradecraft.
+
+This step should produce or protect one concrete part of the analysis: shared/unique ttp lists. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Do reports share infrastructure, malware, target sector, or timing?
+
+### Step 7: Export the comparison for case notes or briefing.
+
+This step should produce or protect one concrete part of the analysis: ioc comparison. The analyst should avoid treating the tool output as final until the source context is checked.
+
+The key review question here is: Are differences caused by incomplete reporting or truly different behavior?
+
+## Key Analyst Decisions
+
+- Are shared techniques distinctive enough?
+- Do reports share infrastructure, malware, target sector, or timing?
+- Are differences caused by incomplete reporting or truly different behavior?
+- Should reports be merged into one campaign workspace?
 
 ## What The Analyst Gets
 
-Shared behavior profile, differences, and evidence-backed report comparison.
+- Report overlap summary
+- Shared/unique TTP lists
+- IOC comparison
+- Campaign relationship assessment
 
-## Why This Matters
+## Common Mistakes To Avoid
 
-This workflow creates a clean handoff between CTI and operations. The analyst can show what was extracted, why it was mapped, which evidence supports it, and what should happen next.
+- Merging unrelated reports based on common techniques
+- Ignoring reporting bias
+- Comparing raw unreviewed mappings
+- Overlooking time-window differences
+
+
+## Handoff Guidance
+
+Use the comparison to decide campaign grouping, detection reuse, and whether one report should update findings from another.
+
+A good handoff should make the reasoning visible. It should separate observed behavior, model-assisted extraction, enrichment from external sources, and analyst hypotheses. This is especially important when the output will be used by a SOC team, a customer, or a detection engineering backlog.
 
 ## Review Discipline
 
-AdversaryGraph should be used as an analyst accelerator, not an attribution oracle. TTP overlap, enrichment hits, and actor links are signals. They become useful only after evidence review, confidence calibration, and human judgment.
+AdversaryGraph should accelerate analysis, not bypass it. TTP overlap, actor matches, IOC enrichment, rule matches, and sandbox behavior are signals. They become useful only after source review, confidence calibration, and analyst judgment.
 
 Before publishing or handing off the result:
 
-- Confirm that every accepted TTP has evidence.
-- Separate strong findings from weak hypotheses.
-- Keep rejected or uncertain mappings visible for auditability.
+- Confirm that every accepted finding has evidence.
+- Keep weak or partial findings as `needs-evidence`.
+- Do not turn similarity into attribution without corroboration.
+- Keep source labels attached to IOCs and enrichment.
 - Export reviewed results, not raw model output.
 
 ## Practical Output
 
-A finished workflow can produce a Navigator layer, structured JSON, IOC records, actor notes, detection backlog items, and a PDF report. That makes the result reusable by CTI analysts, SOC analysts, detection engineers, and incident responders.
+A finished workflow can produce Navigator layers, PDF reports, JSON exports, CSV IOC lists, STIX bundles, actor notes, detection backlog items, and investigation evidence. The exact output depends on the use case, but the principle stays the same: every result should be traceable to evidence.
 
 ## Closing
 
-The main value of AdversaryGraph is repeatability. Instead of treating every report as a blank page, the analyst gets a structured path from raw intelligence to ATT&CK mapping, enrichment, comparison, and operational handoff.
+The value of this workflow is repeatability. Instead of treating every report, alert, actor, or IOC as a one-off task, AdversaryGraph gives the analyst a consistent path from raw input to reviewed operational intelligence.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  
