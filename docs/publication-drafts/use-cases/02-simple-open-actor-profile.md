@@ -9,7 +9,13 @@ Review the core context for one ATT&CK group or actor. In real CTI and SOC work,
 
 ## Real-Life Scenario
 
-A CTI analyst is asked during a standup what APT29 is known for and needs a fast actor summary with aliases, techniques, reports, and observable context.
+**Situation:** During a threat briefing, someone asks for immediate context about a named actor mentioned in a customer report. The team needs more than a search-engine summary: aliases, ATT&CK techniques, related reports, IOCs, and operational themes.
+
+**Trigger:** The request happens live in a meeting or shift handoff, where speed and accuracy both matter.
+
+**Analyst objective:** The analyst needs to answer what the actor is known for, which techniques matter, and whether the actor is relevant to the current environment.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

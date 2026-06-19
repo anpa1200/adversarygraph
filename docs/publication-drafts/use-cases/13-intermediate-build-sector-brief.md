@@ -9,7 +9,13 @@ Create a practical threat brief for one sector/customer. In real CTI and SOC wor
 
 ## Real-Life Scenario
 
-A telecom customer asks which actors and techniques are most relevant to their environment this quarter.
+**Situation:** A telecom, finance, or cloud customer asks which actors matter most to them this quarter. A generic threat landscape report is too broad.
+
+**Trigger:** The customer needs a sector-specific briefing connected to technologies they actually use.
+
+**Analyst objective:** The analyst needs to filter actors by sector, region, technology, and recency, then convert the result into a focused threat brief.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

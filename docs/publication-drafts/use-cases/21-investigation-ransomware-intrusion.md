@@ -9,7 +9,13 @@ Investigate a ransomware report from intake to actor hypothesis and detection ha
 
 ## Real-Life Scenario
 
-A company reports encrypted servers, suspicious PowerShell, and possible data theft, and the IR/CTI team needs a full path from report intake to actor hypotheses and detection backlog.
+**Situation:** A company discovers encrypted servers, suspicious PowerShell, lateral movement indicators, and possible data theft. The incident response team needs CTI support immediately.
+
+**Trigger:** The first report contains scattered details: commands, hashes, domains, affected systems, and a ransom note. The team needs structure fast.
+
+**Analyst objective:** The analyst needs to create a full investigation package: reviewed TTPs, enriched IOCs, actor hypotheses, matrix layer, and detection backlog.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

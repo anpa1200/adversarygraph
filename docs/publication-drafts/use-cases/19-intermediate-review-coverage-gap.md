@@ -9,7 +9,13 @@ Compare a threat layer to existing coverage. In real CTI and SOC work, the value
 
 ## Real-Life Scenario
 
-A SOC lead imports current detection coverage and wants to know which high-priority actor TTPs are still not covered.
+**Situation:** A SOC lead has a current coverage layer and a new threat layer. The question is not whether coverage exists, but where the important gaps are.
+
+**Trigger:** Detection engineering capacity is limited, so prioritization matters.
+
+**Analyst objective:** The analyst needs to compare relevant TTPs to coverage and decide which missing techniques deserve backlog work.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

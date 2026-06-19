@@ -9,7 +9,13 @@ Visualize one actor's known ATT&CK behavior. In real CTI and SOC work, the value
 
 ## Real-Life Scenario
 
-A detection lead wants to show management what techniques are commonly associated with a specific actor before starting a coverage review.
+**Situation:** A detection lead wants to explain actor behavior visually before assigning engineering work. A text list of techniques is hard for management and SOC analysts to understand.
+
+**Trigger:** The team is about to start a coverage review or tabletop exercise for a specific actor.
+
+**Analyst objective:** The analyst needs to show the actor behavior across tactics and decide which areas deserve deeper review.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

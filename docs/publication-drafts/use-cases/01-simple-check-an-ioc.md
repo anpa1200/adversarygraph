@@ -9,7 +9,13 @@ Check whether one IP, domain, URL, or hash has useful enrichment context. In rea
 
 ## Real-Life Scenario
 
-A SOC analyst receives a suspicious domain from an EDR alert during morning triage and needs to know in under two minutes whether it is known malicious, related to malware, or only a weak signal.
+**Situation:** Morning SOC triage starts with an EDR alert that contains a suspicious domain contacted by one endpoint. The analyst does not yet know if it is active malware infrastructure, a parked domain, an internal false positive, or an old indicator copied from another alert.
+
+**Trigger:** The queue is growing and the analyst has only a few minutes before deciding whether to escalate, enrich, hunt, or close the alert.
+
+**Analyst objective:** The analyst needs to decide whether the IOC is malicious enough to pivot on, whether it has actor or malware context, and whether it should become a hunting seed rather than an immediate block.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

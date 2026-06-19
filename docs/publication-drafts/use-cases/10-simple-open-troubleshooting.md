@@ -9,7 +9,13 @@ Move from a popup error to practical remediation. In real CTI and SOC work, the 
 
 ## Real-Life Scenario
 
-An enrichment action fails because an API key is missing, and the analyst needs a direct path from popup error to the relevant fix instructions.
+**Situation:** An analyst clicks an enrichment action and receives an API error. Instead of searching logs manually, they need an immediate explanation and a path to verify the fix.
+
+**Trigger:** The error appears during active investigation work and blocks the next step.
+
+**Analyst objective:** The analyst needs to identify whether the issue is missing configuration, network access, unavailable data, or an external provider problem.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

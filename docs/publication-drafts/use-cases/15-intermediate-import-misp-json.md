@@ -9,7 +9,13 @@ Bring MISP event or attribute exports into IOC Library. In real CTI and SOC work
 
 ## Real-Life Scenario
 
-The CTI team already stores curated events in MISP and wants those observables searchable in AdversaryGraph without manual copy-paste.
+**Situation:** The organization already curates events in MISP, but analysts still copy indicators manually into separate tools for enrichment.
+
+**Trigger:** A MISP event is relevant to an active investigation and needs to be searchable in AdversaryGraph.
+
+**Analyst objective:** The analyst needs to import the MISP JSON, preserve source labels, and enrich only approved indicators.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

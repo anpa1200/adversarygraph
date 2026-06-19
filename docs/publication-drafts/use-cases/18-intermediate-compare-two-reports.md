@@ -9,7 +9,13 @@ Assess whether two reports describe related activity. In real CTI and SOC work, 
 
 ## Real-Life Scenario
 
-Two public reports mention similar tooling and infrastructure, and the analyst needs to decide whether they describe the same campaign or only common tradecraft.
+**Situation:** Two reports from different vendors describe similar tools and infrastructure. The CTI team needs to know whether they represent one campaign or unrelated activity.
+
+**Trigger:** The overlap is not obvious because the reports use different names and levels of detail.
+
+**Analyst objective:** The analyst needs to compare TTPs, IOCs, actor hints, and timing before clustering the reports.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

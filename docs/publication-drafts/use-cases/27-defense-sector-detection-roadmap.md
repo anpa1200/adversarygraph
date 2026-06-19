@@ -9,7 +9,13 @@ Create a detection roadmap for a sector/customer environment. In real CTI and SO
 
 ## Real-Life Scenario
 
-A financial services customer wants a 90-day detection roadmap based on actors, techniques, and technologies relevant to their sector.
+**Situation:** A financial services customer wants a 90-day detection roadmap based on actors and techniques that actually matter to their sector and technology stack.
+
+**Trigger:** The customer cannot implement every possible detection, so the roadmap must be selective and evidence-based.
+
+**Analyst objective:** The analyst needs to combine sector intelligence, actor TTPs, current coverage, and telemetry feasibility into a practical plan.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

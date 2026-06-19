@@ -9,7 +9,13 @@ Assess whether several reports belong to one campaign cluster. In real CTI and S
 
 ## Real-Life Scenario
 
-Three reports from different sources describe similar targeting and malware, and the CTI team needs to determine whether they form a campaign cluster.
+**Situation:** Three public reports describe similar targeting, malware names, and infrastructure but use different campaign labels. The CTI team needs to decide whether to cluster them.
+
+**Trigger:** A customer asks whether the reports indicate one sustained campaign against their sector.
+
+**Analyst objective:** The analyst needs to analyze each report, compare TTPs and IOCs, review actor fit, and write a defensible relationship assessment.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

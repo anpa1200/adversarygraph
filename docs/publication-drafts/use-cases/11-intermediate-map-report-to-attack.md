@@ -9,7 +9,13 @@ Turn one report into reviewed ATT&CK techniques. In real CTI and SOC work, the v
 
 ## Real-Life Scenario
 
-A vendor publishes a report about a new intrusion chain, and the CTI team needs reviewed ATT&CK mappings before creating detections or briefing the SOC.
+**Situation:** A vendor publishes a detailed intrusion report with long narrative text, screenshots, and behavior descriptions. The SOC wants detections, but the report is not yet mapped into reviewed ATT&CK techniques.
+
+**Trigger:** The report is relevant to the organization sector and cannot wait for a long manual mapping cycle.
+
+**Analyst objective:** The analyst needs to extract candidate TTPs, validate evidence, reject weak mappings, and create a matrix layer for detection review.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

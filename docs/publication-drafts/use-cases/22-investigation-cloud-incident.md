@@ -9,7 +9,13 @@ Investigate a cloud/Kubernetes incident using sector, TTP, IOC, and detection co
 
 ## Real-Life Scenario
 
-A Kubernetes workload starts beaconing externally after suspicious service account activity, and the team needs to combine cloud context, TTPs, IOCs, and telemetry requirements.
+**Situation:** A Kubernetes workload starts beaconing externally after unusual service account behavior. Cloud logs show API calls, container execution, and suspicious network egress.
+
+**Trigger:** Traditional endpoint-centric triage does not explain the full cloud control-plane activity.
+
+**Analyst objective:** The analyst needs to combine cloud/Kubernetes context, ATT&CK behavior, IOC enrichment, and telemetry requirements into one investigation flow.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

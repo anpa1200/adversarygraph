@@ -9,7 +9,13 @@ Check whether the deployment is healthy before analysis. In real CTI and SOC wor
 
 ## Real-Life Scenario
 
-After a Docker update, the platform owner wants to confirm the API, database, ATT&CK data, and enrichment keys are working before analysts start using the system.
+**Situation:** After a Docker pull or configuration change, analysts report that the matrix or enrichment looks empty. The platform owner needs to know whether the problem is API, DB, ATT&CK sync, or missing keys.
+
+**Trigger:** The team is about to start analysis work, so silent failures are unacceptable.
+
+**Analyst objective:** The operator needs a clear health result and a fix path before users trust the platform output.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

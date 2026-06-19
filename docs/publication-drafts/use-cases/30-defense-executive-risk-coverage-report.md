@@ -9,7 +9,13 @@ Produce an executive report showing threat relevance and coverage posture. In re
 
 ## Real-Life Scenario
 
-A CISO asks for a non-technical view of which relevant threats are covered, which MITRE areas are weak, and what investments should come next.
+**Situation:** A CISO asks which relevant threats are covered, which MITRE areas are weak, and what investments should come next.
+
+**Trigger:** The answer must be understandable to leadership but still grounded in actor relevance, TTPs, and detection coverage.
+
+**Analyst objective:** The analyst needs to translate technical matrix coverage into risk, priorities, assumptions, and next actions.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

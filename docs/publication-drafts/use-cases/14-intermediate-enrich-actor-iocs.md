@@ -9,7 +9,13 @@ Add current observable context to one actor profile. In real CTI and SOC work, t
 
 ## Real-Life Scenario
 
-A threat hunter is preparing an APT28 hunt and needs current source-labeled IOCs connected to actor context, not a generic stale blocklist.
+**Situation:** A hunter prepares an actor-focused hunt but finds that many public IOC lists are stale or disconnected from context.
+
+**Trigger:** The hunt requires source-labeled observables, malware context, and last-seen dates.
+
+**Analyst objective:** The analyst needs to enrich the actor profile with current IOCs and decide which should be block, hunt, monitor, or context-only.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

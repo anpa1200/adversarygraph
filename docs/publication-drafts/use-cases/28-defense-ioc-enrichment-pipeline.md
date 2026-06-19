@@ -9,7 +9,13 @@ Create a repeatable SOC enrichment pipeline for incoming IOCs. In real CTI and S
 
 ## Real-Life Scenario
 
-A SOC receives IOCs from many sources every day and needs a repeatable enrichment pipeline with source labels, recency, actor links, and export options.
+**Situation:** A SOC receives IOCs from feeds, partners, MISP, incident reports, and internal cases every day. Analysts waste time checking them manually.
+
+**Trigger:** The organization needs a repeatable enrichment pipeline with source labels, recency, and exportable reviewed results.
+
+**Analyst objective:** The platform owner needs to connect feeds, normalize records, enrich selected IOCs, and define how each IOC should be used.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

@@ -9,7 +9,13 @@ Find whether an observable already exists in local or synced intelligence. In re
 
 ## Real-Life Scenario
 
-An incident responder finds an IP address in proxy logs and needs to know whether it already exists in synced ThreatFox, MISP, OTX, or private customer feeds.
+**Situation:** An incident responder sees an IP in proxy logs and does not know whether it came from a public feed, a previous customer case, a MISP event, or a recent report import.
+
+**Trigger:** The responder needs fast source context before creating a ticket or asking CTI for help.
+
+**Analyst objective:** The analyst needs to decide if the IOC is known, current, source-backed, and worth enrichment or hunting.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

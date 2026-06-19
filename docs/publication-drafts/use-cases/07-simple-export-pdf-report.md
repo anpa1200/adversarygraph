@@ -9,7 +9,13 @@ Create a shareable analyst report from reviewed findings. In real CTI and SOC wo
 
 ## Real-Life Scenario
 
-A CTI analyst has finished reviewing report mappings and needs a quick PDF for an internal handoff meeting.
+**Situation:** An analyst has reviewed a set of extracted TTPs and needs to brief a SOC lead before the end of the day. Screenshots and raw JSON are not enough.
+
+**Trigger:** The team needs a portable artifact that includes reviewed findings and can be shared internally.
+
+**Analyst objective:** The analyst needs to export only reviewed content and make sure the PDF reflects evidence, not raw model output.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

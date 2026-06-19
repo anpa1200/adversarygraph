@@ -9,7 +9,13 @@ Connect a private or custom IOC feed. In real CTI and SOC work, the value is not
 
 ## Real-Life Scenario
 
-A customer sends a short CSV of indicators from their incident response team, and the analyst needs to import it without mixing it with public feed data.
+**Situation:** A customer sends a private CSV of indicators collected during an incident. The CTI analyst wants to load it into AdversaryGraph but keep it clearly separated from public feeds.
+
+**Trigger:** The data is useful for hunting, but it may be sensitive and should not be mixed with open-source reference data.
+
+**Analyst objective:** The analyst needs to preserve source labels, import the feed, and decide whether external enrichment is allowed.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

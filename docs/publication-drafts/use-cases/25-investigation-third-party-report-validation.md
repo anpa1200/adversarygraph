@@ -9,7 +9,13 @@ Validate a vendor or public CTI report before using it operationally. In real CT
 
 ## Real-Life Scenario
 
-A vendor report makes strong actor and technique claims, and the internal CTI team must validate which findings are evidence-backed before sending them to SOC operations.
+**Situation:** A vendor report claims a specific actor, several techniques, and a list of IOCs. Before operationalizing it, the internal CTI team must validate the claims.
+
+**Trigger:** The SOC is ready to import IOCs and build detections, but unsupported claims could create noise or wrong priorities.
+
+**Analyst objective:** The analyst needs to separate evidence-backed findings from unsupported assumptions and export only reviewed operational content.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

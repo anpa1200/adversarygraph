@@ -9,7 +9,13 @@ Create a baseline of current coverage across MITRE ATT&CK. In real CTI and SOC w
 
 ## Real-Life Scenario
 
-A security program review requires a current MITRE ATT&CK coverage baseline showing which tactics are covered, weak, or missing.
+**Situation:** A security program review asks for a current MITRE ATT&CK coverage baseline. Leadership wants to know which tactics are covered, weak, or missing.
+
+**Trigger:** The organization has many detections, but no clean view of how they map to ATT&CK or actor relevance.
+
+**Analyst objective:** The analyst needs to import coverage, compare it to relevant threats, identify gaps, and create a prioritized roadmap.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

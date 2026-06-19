@@ -9,7 +9,13 @@ Refresh open-source IOC data for actor and malware context. In real CTI and SOC 
 
 ## Real-Life Scenario
 
-A SOC team starts a shift and wants fresh open-source IOC context before investigating overnight alerts.
+**Situation:** A SOC shift begins after a night of malware alerts. Analysts want fresh open-source malware IOC context before reviewing suspicious domains and hashes.
+
+**Trigger:** ThreatFox data may have changed since the last sync, and stale IOC context can waste investigation time.
+
+**Analyst objective:** The analyst needs to update the local IOC library and confirm whether new observables link to malware or actor context.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

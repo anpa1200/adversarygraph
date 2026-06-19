@@ -9,7 +9,13 @@ Connect detection-rule context to IOCs and malware. In real CTI and SOC work, th
 
 ## Real-Life Scenario
 
-A malware analyst finds a suspicious hash and wants to know whether public or internal YARA/Sigma rules already describe related behavior.
+**Situation:** A suspicious malware family appears in an incident. Detection engineers ask whether any existing YARA or Sigma content can help.
+
+**Trigger:** The team wants to avoid writing detection content from scratch if reusable rules already exist.
+
+**Analyst objective:** The analyst needs to connect malware, IOC, and rule-feed context, then pass useful rule references to engineering.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

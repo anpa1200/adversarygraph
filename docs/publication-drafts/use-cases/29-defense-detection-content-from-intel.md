@@ -9,7 +9,13 @@ Turn CTI findings into detection content candidates. In real CTI and SOC work, t
 
 ## Real-Life Scenario
 
-A CTI report describes new intrusion behavior, and detection engineers need to convert it into practical Sigma, SIEM, EDR, or hunting tasks.
+**Situation:** A CTI report describes a new intrusion chain. Detection engineers need to convert it into practical Sigma, SIEM, EDR, or hunting content.
+
+**Trigger:** The report contains useful behavior but not ready-made detection logic for the local environment.
+
+**Analyst objective:** The analyst needs to map TTPs, review evidence, find rule references, define telemetry requirements, and create engineering tasks.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

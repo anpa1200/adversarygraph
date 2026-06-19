@@ -9,7 +9,13 @@ Analyze sensitive content without public LLM routing. In real CTI and SOC work, 
 
 ## Real-Life Scenario
 
-A customer report contains sensitive incident details, so the analyst must run extraction through a private local LLM gateway instead of a public API.
+**Situation:** A customer incident report contains internal hostnames, usernames, and operational details. The analyst cannot send it to a public LLM provider.
+
+**Trigger:** The team still wants AI-assisted extraction but must keep processing inside controlled infrastructure.
+
+**Analyst objective:** The analyst needs to route analysis through a local/private model and validate output the same way as any other extraction.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

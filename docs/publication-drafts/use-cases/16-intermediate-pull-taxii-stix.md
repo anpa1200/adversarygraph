@@ -9,7 +9,13 @@ Exchange structured intelligence with CTI platforms. In real CTI and SOC work, t
 
 ## Real-Life Scenario
 
-A partner shares a TAXII collection, and the platform owner wants to import the indicators into the local IOC Library for review and enrichment.
+**Situation:** A partner or CTI provider shares a TAXII collection. The local team wants the intelligence inside its own enrichment and search workflow.
+
+**Trigger:** The data arrives in structured STIX/TAXII format rather than a simple CSV.
+
+**Analyst objective:** The analyst needs to import indicators, review object context, and decide what can be used operationally.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

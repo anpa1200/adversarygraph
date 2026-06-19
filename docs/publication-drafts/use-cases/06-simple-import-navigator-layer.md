@@ -9,7 +9,13 @@ Load an existing ATT&CK layer for review or comparison. In real CTI and SOC work
 
 ## Real-Life Scenario
 
-A detection engineer receives a Navigator layer from another team and wants to compare it with local My TTPs coverage inside AdversaryGraph.
+**Situation:** A partner team sends an ATT&CK Navigator layer from a previous assessment. The local team wants to compare it against current actor behavior and internal coverage.
+
+**Trigger:** The layer arrives as JSON and needs to become part of the local workspace without manual recreation.
+
+**Analyst objective:** The analyst needs to import the layer, verify the selected TTPs, and decide whether to merge it into My TTPs or keep it separate.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 

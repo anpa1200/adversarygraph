@@ -9,7 +9,13 @@ Use TTP overlap to generate actor hypotheses. In real CTI and SOC work, the valu
 
 ## Real-Life Scenario
 
-An IR team observes credential theft, remote execution, and exfiltration behaviors and wants to know which known actors have similar TTP patterns.
+**Situation:** An IR team observes credential theft, remote execution, discovery, and exfiltration behavior. Leadership asks whether this resembles a known actor.
+
+**Trigger:** The team has incident TTPs but not enough evidence for attribution.
+
+**Analyst objective:** The analyst needs to generate actor hypotheses from TTP overlap while clearly separating similarity from attribution.
+
+**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
 
 ## Workflow
 
