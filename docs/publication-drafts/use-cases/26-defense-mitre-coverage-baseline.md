@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "26"
 
 ### Defense: Build MITRE Coverage Baseline: AdversaryGraph Use Case

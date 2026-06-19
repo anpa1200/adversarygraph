@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "28"
 
 ### Defense: Build IOC Enrichment Pipeline: AdversaryGraph Use Case

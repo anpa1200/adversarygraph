@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "6"
 
 ### Import A Navigator Layer: AdversaryGraph Use Case

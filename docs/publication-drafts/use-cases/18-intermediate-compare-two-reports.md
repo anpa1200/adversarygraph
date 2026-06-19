@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "18"
 
 ### Compare Two Reports: AdversaryGraph Use Case

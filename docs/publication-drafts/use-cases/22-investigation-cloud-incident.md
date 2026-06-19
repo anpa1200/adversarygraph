@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "22"
 
 ### Investigation: Cloud And Kubernetes Incident: AdversaryGraph Use Case

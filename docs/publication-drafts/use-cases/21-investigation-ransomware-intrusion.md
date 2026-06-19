@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "21"
 
 ### Investigation: Ransomware Intrusion Triage: AdversaryGraph Use Case

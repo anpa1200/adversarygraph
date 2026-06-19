@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "17"
 
 ### Sync YARA And Sigma Feeds: AdversaryGraph Use Case

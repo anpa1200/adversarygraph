@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "25"
 
 ### Investigation: Validate A Third-Party CTI Report: AdversaryGraph Use Case

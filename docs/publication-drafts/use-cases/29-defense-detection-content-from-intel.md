@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "29"
 
 ### Defense: Create Detection Content From CTI: AdversaryGraph Use Case

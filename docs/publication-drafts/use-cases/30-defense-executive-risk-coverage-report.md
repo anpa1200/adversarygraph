@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "30"
 
 ### Defense: Executive Risk And Coverage Report: AdversaryGraph Use Case

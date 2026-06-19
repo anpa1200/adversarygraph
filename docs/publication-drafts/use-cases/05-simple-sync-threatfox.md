@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "5"
 
 ### Sync ThreatFox IOCs: AdversaryGraph Use Case

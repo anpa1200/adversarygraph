@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "1"
 
 ### Check One IOC: AdversaryGraph Use Case

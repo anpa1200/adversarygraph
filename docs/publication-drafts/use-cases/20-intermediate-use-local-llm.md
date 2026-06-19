@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "20"
 
 ### Use A Local LLM For Private Reports: AdversaryGraph Use Case

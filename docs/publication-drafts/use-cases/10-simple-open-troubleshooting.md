@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "10"
 
 ### Open Troubleshooting For An Error: AdversaryGraph Use Case

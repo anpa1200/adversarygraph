@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "7"
 
 ### Export A PDF Report: AdversaryGraph Use Case

@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "27"
 
 ### Defense: Create Sector-Based Detection Roadmap: AdversaryGraph Use Case

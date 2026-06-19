@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "11"
 
 ### Map A Report To ATT&CK: AdversaryGraph Use Case

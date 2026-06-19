@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "15"
 
 ### Import MISP JSON: AdversaryGraph Use Case

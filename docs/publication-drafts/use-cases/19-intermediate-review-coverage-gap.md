@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "19"
 
 ### Review One Coverage Gap: AdversaryGraph Use Case

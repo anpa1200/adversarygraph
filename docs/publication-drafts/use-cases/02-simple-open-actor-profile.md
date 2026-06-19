@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "2"
 
 ### Open One Actor Profile: AdversaryGraph Use Case

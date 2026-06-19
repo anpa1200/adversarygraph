@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "14"
 
 ### Enrich Actor IOCs: AdversaryGraph Use Case

@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "12"
 
 ### Compare Incident TTPs To Actors: AdversaryGraph Use Case

@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "23"
 
 ### Investigation: Cluster Multiple APT Reports: AdversaryGraph Use Case

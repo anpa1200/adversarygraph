@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "13"
 
 ### Build A Sector Threat Brief: AdversaryGraph Use Case

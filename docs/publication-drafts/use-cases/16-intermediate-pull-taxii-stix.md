@@ -1,5 +1,7 @@
 # AdvarsaryGraph Usecases.
 
+## Draft
+
 ## Usecase number "16"
 
 ### Pull TAXII Or Import STIX: AdversaryGraph Use Case
