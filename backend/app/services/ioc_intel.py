@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.models.attack import AptGroup, AttackVersion
+from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator, IOCSource
 from app.services.ai.factory import get_adapter
 from app.services.sector_intel import normalize_label
@@ -200,6 +200,57 @@ async def list_ioc_library(
         "limit": limit,
         "offset": offset,
         "items": [_ioc_library_row(indicator) for indicator in indicators],
+    }
+
+
+async def get_ioc_detail(session: AsyncSession, indicator_id: int, domain: str = "enterprise-attack") -> dict[str, Any] | None:
+    """Return one IOC with expanded actors, techniques, source metadata, and raw enrichment values."""
+    await ensure_ioc_sources(session)
+    row = await session.execute(
+        select(IOCIndicator)
+        .options(selectinload(IOCIndicator.actor_links))
+        .where(IOCIndicator.id == indicator_id)
+    )
+    indicator = row.scalar_one_or_none()
+    if indicator is None:
+        return None
+
+    source_row = await session.execute(select(IOCSource).where(IOCSource.source_id == indicator.source_id))
+    source = source_row.scalar_one_or_none()
+    technique_ids = _dedupe_attack_ids([
+        *(indicator.technique_ids or []),
+        *_indicator_technique_ids(indicator),
+        *[row["attack_id"] for row in _mapping_evidence_from_indicator(indicator)],
+    ])
+    techniques = await _ioc_detail_techniques(session, technique_ids, domain)
+    evidence_by_id: dict[str, list[dict[str, str]]] = {}
+    for evidence in _mapping_evidence_from_indicator(indicator):
+        evidence_by_id.setdefault(evidence["attack_id"], []).append(evidence)
+
+    base = _ioc_library_row(indicator)
+    return {
+        **base,
+        "created_at": indicator.created_at.isoformat() if indicator.created_at else "",
+        "updated_at": indicator.updated_at.isoformat() if indicator.updated_at else "",
+        "source_details": {
+            "source_id": source.source_id if source else indicator.source_id,
+            "label": source.label if source else indicator.source_id,
+            "kind": source.kind if source else "",
+            "url": source.url if source else "",
+            "enabled": bool(source.enabled) if source else True,
+            "last_synced_at": source.last_synced_at.isoformat() if source and source.last_synced_at else None,
+            "sync_status": source.sync_status if source else "",
+            "sync_error": source.sync_error if source else "",
+        },
+        "techniques": [
+            {
+                **technique,
+                "evidence": evidence_by_id.get(technique["attack_id"], []),
+            }
+            for technique in techniques
+        ],
+        "enrichments": _ioc_enrichment_sections(indicator, source),
+        "raw": indicator.raw or {},
     }
 
 
@@ -897,6 +948,7 @@ async def actor_iocs(
         technique_ids = indicator.technique_ids or _indicator_technique_ids(indicator)
         result.append(
             {
+                "id": indicator.id,
                 "value": indicator.value,
                 "type": indicator.indicator_type,
                 "source": indicator.source_id,
@@ -1024,6 +1076,167 @@ async def _group_by_attack_id(session: AsyncSession, actor_id: str, domain: str)
         select(AptGroup).where(AptGroup.version_id == version_id, AptGroup.attack_id == actor_id)
     )
     return row.scalar_one_or_none()
+
+
+async def _ioc_detail_techniques(session: AsyncSession, attack_ids: list[str], domain: str) -> list[dict[str, Any]]:
+    if not attack_ids:
+        return []
+    version_row = await session.execute(
+        select(AttackVersion.id).where(AttackVersion.domain == domain, AttackVersion.is_latest.is_(True))
+    )
+    version_id = version_row.scalar_one_or_none()
+    if not version_id:
+        return [{"attack_id": attack_id, "name": "", "tactics": [], "url": ""} for attack_id in attack_ids]
+    rows = await session.execute(
+        select(Technique)
+        .options(selectinload(Technique.tactics))
+        .where(Technique.version_id == version_id, Technique.attack_id.in_(attack_ids))
+    )
+    by_id = {
+        technique.attack_id: {
+            "attack_id": technique.attack_id,
+            "name": technique.name,
+            "tactics": [tactic.shortname for tactic in technique.tactics],
+            "url": technique.url,
+        }
+        for technique in rows.scalars().all()
+    }
+    return [
+        by_id.get(attack_id, {"attack_id": attack_id, "name": "", "tactics": [], "url": ""})
+        for attack_id in attack_ids
+    ]
+
+
+def _ioc_enrichment_sections(indicator: IOCIndicator, source: IOCSource | None) -> list[dict[str, Any]]:
+    raw = indicator.raw or {}
+    sections: list[dict[str, Any]] = [
+        {
+            "source": indicator.source_id,
+            "label": source.label if source else indicator.source_id,
+            "kind": source.kind if source else "ioc-source",
+            "url": indicator.source_url or (source.url if source else ""),
+            "status": source.sync_status if source else "",
+            "values": _section_values(
+                {
+                    "value": indicator.value,
+                    "type": indicator.indicator_type,
+                    "confidence": indicator.confidence,
+                    "tlp": indicator.tlp,
+                    "first_seen": indicator.first_seen,
+                    "last_seen": indicator.last_seen,
+                    "malware_family": indicator.malware_family,
+                    "campaign": indicator.campaign,
+                    "description": indicator.description,
+                    "tags": indicator.tags or [],
+                    "source_url": indicator.source_url,
+                }
+            ),
+        }
+    ]
+
+    evidence = raw.get("ioc_ttp_evidence")
+    if isinstance(evidence, list) and evidence:
+        sections.append(
+            {
+                "source": "ioc-ttp-mapping",
+                "label": "IOC-to-TTP mapping evidence",
+                "kind": raw.get("ioc_ttp_mapping_priority", "mapping-evidence"),
+                "url": "",
+                "status": "",
+                "values": _section_values({"evidence": evidence}),
+            }
+        )
+
+    if isinstance(raw.get("pulse"), dict):
+        pulse = raw["pulse"]
+        pulse_id = str(pulse.get("id") or "")
+        sections.append(
+            {
+                "source": "alienvault-otx",
+                "label": f"OTX pulse: {pulse.get('name') or pulse_id or 'pulse'}",
+                "kind": "otx-pulse",
+                "url": f"https://otx.alienvault.com/pulse/{pulse_id}" if pulse_id else indicator.source_url,
+                "status": "",
+                "values": _section_values(pulse),
+            }
+        )
+    if isinstance(raw.get("indicator"), dict):
+        sections.append(
+            {
+                "source": "alienvault-otx",
+                "label": "OTX indicator metadata",
+                "kind": "otx-indicator",
+                "url": indicator.source_url,
+                "status": "",
+                "values": _section_values(raw["indicator"]),
+            }
+        )
+
+    if indicator.source_id == THREATFOX_SOURCE_ID:
+        sections.append(
+            {
+                "source": THREATFOX_SOURCE_ID,
+                "label": "abuse.ch ThreatFox raw record",
+                "kind": "threatfox-record",
+                "url": str(raw.get("link") or raw.get("reference") or indicator.source_url or ""),
+                "status": "",
+                "values": _section_values(raw),
+            }
+        )
+    elif indicator.source_id == MALPEDIA_SOURCE_ID:
+        sections.append(
+            {
+                "source": MALPEDIA_SOURCE_ID,
+                "label": "Malpedia malware-family context",
+                "kind": "malpedia-record",
+                "url": str(raw.get("malpedia_url") or indicator.source_url or ""),
+                "status": "",
+                "values": _section_values(raw),
+            }
+        )
+    elif raw:
+        sections.append(
+            {
+                "source": indicator.source_id,
+                "label": "Raw enrichment/source metadata",
+                "kind": "raw-metadata",
+                "url": indicator.source_url,
+                "status": "",
+                "values": _section_values(raw),
+            }
+        )
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for section in sections:
+        key = (str(section["source"]), str(section["label"]), str(section["kind"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(section)
+    return deduped
+
+
+def _section_values(payload: Any, prefix: str = "") -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+
+    def add(key: str, value: Any) -> None:
+        if value is None or value == "":
+            return
+        if isinstance(value, (str, int, float, bool)):
+            rows.append({"key": key, "value": str(value)})
+        elif isinstance(value, list):
+            if all(not isinstance(item, (dict, list)) for item in value):
+                rows.append({"key": key, "value": ", ".join(str(item) for item in value if str(item).strip())})
+            else:
+                for index, item in enumerate(value[:20]):
+                    add(f"{key}[{index}]", item)
+        elif isinstance(value, dict):
+            for nested_key, nested_value in value.items():
+                add(f"{key}.{nested_key}" if key else str(nested_key), nested_value)
+
+    add(prefix, payload)
+    return [row for row in rows if row["value"]][:120]
 
 
 async def _mark_ioc_source(session: AsyncSession, source_id: str, status: str, error: str) -> None:

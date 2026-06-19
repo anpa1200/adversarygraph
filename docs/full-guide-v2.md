@@ -126,7 +126,7 @@ Open:
 Health should return:
 
 ```json
-{"status":"ok","version":"2.5.7"}
+{"status":"ok","version":"2.5.8"}
 ```
 
 Run the built-in deployment self-test after Docker startup:
@@ -550,14 +550,17 @@ Workflow:
 2. Filter by IOC type, source, group/attacker, or free text.
 3. Sort by freshness, type, indicator value, source, confidence, or
    group/attacker.
-4. Use Check in VT on a row to enrich one IOC with VirusTotal context, found
+4. Open an IOC detail page to review all stored enrichment/source values,
+   actor links, mapped TTPs, source URLs, and raw metadata with clickable pivots
+   into Navigator, ATT&CK Group Library, source reports, and IOC search.
+5. Use Check in VT on a row to enrich one IOC with VirusTotal context, found
    ATT&CK TTPs, and local actor matches.
-5. Use Export STIX to hand off the filtered IOC set to OpenCTI or another CTI
+6. Use Export STIX to hand off the filtered IOC set to OpenCTI or another CTI
    platform, Import STIX to load a bundle, or Pull TAXII STIX to ingest a TAXII
    collection objects URL.
-6. Open ATT&CK Group Library, select an actor, and use the IOCs tab when the
+7. Open ATT&CK Group Library, select an actor, and use the IOCs tab when the
    investigation is actor-centric.
-7. Review current IOCs, add IOC-linked TTPs to `My TTPs`, show IOC-linked TTPs
+8. Review current IOCs, add IOC-linked TTPs to `My TTPs`, show IOC-linked TTPs
    on the matrix, and export CSV when needed.
 
 Custom JSON/CSV feeds can include:

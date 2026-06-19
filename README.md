@@ -5,7 +5,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v2.5.7-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v2.5.8-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -14,7 +14,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.5.7 · [Release Summary](docs/release-summary-v2.5.7.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
+**Current release: v2.5.8 · [Release Summary](docs/release-summary-v2.5.8.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -122,7 +122,7 @@ On first startup, AdversaryGraph downloads and ingests MITRE ATT&CK / ATLAS refe
 
 ## Project Maturity Evidence
 
-AdversaryGraph v2.5.7 publishes the operational evidence expected from a serious self-hosted CTI tool:
+AdversaryGraph v2.5.8 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
@@ -137,7 +137,7 @@ AdversaryGraph v2.5.7 publishes the operational evidence expected from a serious
 
 The current documentation is intended to make external review practical rather than promotional.
 
-For the current release scope, see the [v2.5.7 release summary](docs/release-summary-v2.5.7.md) and [release notes](docs/release-notes/v2.5.7.md).
+For the current release scope, see the [v2.5.8 release summary](docs/release-summary-v2.5.8.md) and [release notes](docs/release-notes/v2.5.8.md).
 
 ## Public Demo Privacy Note
 
@@ -777,6 +777,9 @@ The global **IOC Library** page at `/ioc-library` provides:
 - MISP JSON export connection as a custom IOC source
 - filtered STIX 2.1 export for IOC handoff to OpenCTI or other CTI platforms
 - STIX bundle import and TAXII collection pull for source-backed IOC ingestion
+- per-IOC detail pages with source metadata, raw enrichment values, mapped TTPs,
+  actor links, and clickable pivots back into the matrix, actor library,
+  source reports, and IOC search
 - per-IOC VirusTotal check button with found ATT&CK TTPs, actor matches, and
   matrix / `My TTPs` actions
 
@@ -1253,6 +1256,14 @@ copy, newsletter pitch text, and current external submission tracking.
 ---
 
 ## Changelog
+
+### v2.5.8 (2026-06-19)
+
+**IOC detail workflow release:**
+- Added per-IOC enrichment detail pages with source metadata, raw enrichment values, mapped TTPs, actor links, and raw JSON
+- Made IOC values clickable from the IOC Library and actor/group IOC tabs
+- Added clickable pivots into Navigator, ATT&CK Group Library, source reports, and IOC search
+- Updated release docs, quickstart, admin guide, full guide, and public documentation
 
 ### v2.5.7 (2026-06-19)
 

@@ -459,6 +459,7 @@ export function APTLibrary() {
                     replaceTechniques(ids);
                     navigate('/navigator');
                   }}
+                  onOpenDetail={(id) => navigate(`/ioc-library/${id}`)}
                 />
               )}
             </div>
@@ -505,6 +506,7 @@ function ActorIOCs({
   onSyncSource,
   onAddTechniques,
   onShowTechniques,
+  onOpenDetail,
 }: {
   actorId: string;
   actorName: string;
@@ -547,6 +549,7 @@ function ActorIOCs({
   onSyncSource: (sourceId: string) => void;
   onAddTechniques: (ids: string[]) => void;
   onShowTechniques: (ids: string[]) => void;
+  onOpenDetail: (id: number) => void;
 }) {
   const [feedLabel, setFeedLabel] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
@@ -742,7 +745,7 @@ function ActorIOCs({
       </div>
 
       <div className="overflow-hidden rounded border border-gray-800">
-        <div className="grid grid-cols-[140px_1fr_110px_110px_120px_120px] gap-3 border-b border-gray-800 bg-gray-950 px-3 py-2 text-[10px] uppercase text-gray-500">
+        <div className="grid grid-cols-[140px_1fr_110px_110px_120px_160px] gap-3 border-b border-gray-800 bg-gray-950 px-3 py-2 text-[10px] uppercase text-gray-500">
           <span>Type</span>
           <span>Indicator</span>
           <span>Malware</span>
@@ -755,13 +758,20 @@ function ActorIOCs({
         ) : items.length ? (
           <div className="divide-y divide-gray-800">
             {items.map(item => (
-              <div key={`${item.type}-${item.value}-${item.source}`} className="grid grid-cols-[140px_1fr_110px_110px_120px_120px] gap-3 px-3 py-3 text-xs">
+              <div key={`${item.id}-${item.type}-${item.value}-${item.source}`} className="grid grid-cols-[140px_1fr_110px_110px_120px_160px] gap-3 px-3 py-3 text-xs">
                 <div>
                   <span className="rounded bg-gray-800 px-2 py-1 font-mono text-[10px] text-gray-300">{item.type}</span>
                   <div className="mt-2 text-[10px] text-gray-600">conf {item.confidence}</div>
                 </div>
                 <div className="min-w-0">
-                  <div className="break-all font-mono text-gray-200">{item.value}</div>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetail(item.id)}
+                    className="break-all text-left font-mono text-gray-200 hover:text-mitre-accent hover:underline"
+                    title="Open IOC enrichment detail"
+                  >
+                    {item.value}
+                  </button>
                   {item.evidence && <div className="mt-1 text-[10px] text-gray-600">{item.evidence}</div>}
                   {item.tags.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -812,9 +822,12 @@ function ActorIOCs({
                   )}
                   <div className="mt-1 text-[10px] uppercase text-gray-600">{item.tlp}</div>
                 </div>
-                <div>
+                <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => openEnrichment(item.value)} className="primary-action">
                     Enrichment
+                  </button>
+                  <button type="button" onClick={() => onOpenDetail(item.id)} className="secondary-action">
+                    Open detail
                   </button>
                 </div>
               </div>

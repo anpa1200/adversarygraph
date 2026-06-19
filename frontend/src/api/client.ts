@@ -121,6 +121,7 @@ export interface IOCSourceStatus {
 }
 
 export interface IOCItem {
+  id: number;
   value: string;
   type: string;
   source: string;
@@ -171,6 +172,37 @@ export interface IOCLibraryResult {
   limit: number;
   offset: number;
   items: IOCLibraryItem[];
+}
+
+export interface IOCDetail extends IOCLibraryItem {
+  created_at: string;
+  updated_at: string;
+  source_details: {
+    source_id: string;
+    label: string;
+    kind: string;
+    url: string;
+    enabled: boolean;
+    last_synced_at: string | null;
+    sync_status: string;
+    sync_error: string;
+  };
+  techniques: Array<{
+    attack_id: string;
+    name: string;
+    tactics: string[];
+    url: string;
+    evidence: Array<{ attack_id?: string; priority?: string; source?: string; evidence?: string }>;
+  }>;
+  enrichments: Array<{
+    source: string;
+    label: string;
+    kind: string;
+    url: string;
+    status: string;
+    values: Array<{ key: string; value: string }>;
+  }>;
+  raw: Record<string, unknown>;
 }
 
 export interface IOCSummary {
@@ -250,6 +282,8 @@ export const iocApi = {
   sources: (): Promise<IOCSourceStatus[]> => http.get('/ioc/sources').then(r => r.data),
   library: (params: IOCLibraryParams): Promise<IOCLibraryResult> =>
     http.get(`/ioc/library?${iocLibraryQuery(params).toString()}`).then(r => r.data),
+  detail: (id: number | string, domain: string): Promise<IOCDetail> =>
+    http.get(`/ioc/library/${id}/detail`, { params: { domain } }).then(r => r.data),
   createSource: (payload: {label: string; url: string; kind: 'custom-json' | 'custom-csv' | 'custom-txt'; source_id?: string}): Promise<IOCSourceStatus> =>
     http.post('/ioc/sources', payload).then(r => r.data),
   syncThreatFox: (days = 7, options?: IOCSyncOptions): Promise<{source: string; days: number; inserted: number; updated: number; actor_links: number; ttp_enriched: number}> =>

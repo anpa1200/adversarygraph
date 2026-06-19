@@ -22,6 +22,7 @@ from app.services.ioc_intel import (
     create_ioc_source,
     enrich_actor_from_otx,
     enrich_ioc_ttp_mappings,
+    get_ioc_detail,
     import_iocs,
     list_ioc_library,
     list_ioc_sources,
@@ -107,6 +108,7 @@ class TAXIIImportIn(BaseModel):
 
 
 class IOCOut(BaseModel):
+    id: int
     value: str
     type: str
     source: str
@@ -157,6 +159,48 @@ class IOCLibraryOut(BaseModel):
     limit: int
     offset: int
     items: list[IOCLibraryItemOut]
+
+
+class IOCSourceDetailOut(BaseModel):
+    source_id: str
+    label: str
+    kind: str
+    url: str
+    enabled: bool
+    last_synced_at: str | None = None
+    sync_status: str = ""
+    sync_error: str = ""
+
+
+class IOCTechniqueDetailOut(BaseModel):
+    attack_id: str
+    name: str = ""
+    tactics: list[str] = Field(default_factory=list)
+    url: str = ""
+    evidence: list[dict[str, str]] = Field(default_factory=list)
+
+
+class IOCEnrichmentValueOut(BaseModel):
+    key: str
+    value: str
+
+
+class IOCEnrichmentSectionOut(BaseModel):
+    source: str
+    label: str
+    kind: str
+    url: str = ""
+    status: str = ""
+    values: list[IOCEnrichmentValueOut] = Field(default_factory=list)
+
+
+class IOCDetailOut(IOCLibraryItemOut):
+    created_at: str = ""
+    updated_at: str = ""
+    source_details: IOCSourceDetailOut
+    techniques: list[IOCTechniqueDetailOut] = Field(default_factory=list)
+    enrichments: list[IOCEnrichmentSectionOut] = Field(default_factory=list)
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReportIOCImportOut(BaseModel):
@@ -319,6 +363,18 @@ async def ioc_library_route(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/library/{indicator_id}/detail", response_model=IOCDetailOut)
+async def ioc_library_detail_route(
+    indicator_id: int,
+    domain: str = Query("enterprise-attack"),
+    session: AsyncSession = Depends(get_session),
+):
+    detail = await get_ioc_detail(session, indicator_id, domain=domain)
+    if detail is None:
+        raise HTTPException(404, "IOC not found")
+    return detail
 
 
 @router.get("/library/export/stix")

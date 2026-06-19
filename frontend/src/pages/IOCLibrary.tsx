@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { aptApi, iocApi, syncApi, type IOCLibraryItem } from '@/api/client';
 import { useAppStore } from '@/store';
@@ -22,8 +22,10 @@ const sortOptions = [
 
 export function IOCLibrary() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { domain, version } = useAppStore();
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [type, setType] = useState('');
   const [source, setSource] = useState('');
   const [actorIds, setActorIds] = useState<string[]>([]);
@@ -39,8 +41,14 @@ export function IOCLibrary() {
   const [taxiiUsername, setTaxiiUsername] = useState('');
   const [taxiiPassword, setTaxiiPassword] = useState('');
   const [aiEnrichIocs, setAiEnrichIocs] = useState(false);
-  const [aiProvider, setAiProvider] = useState<'local' | 'claude' | 'openai' | 'gemini'>('local');
+  const [aiProvider, setAiProvider] = useState<'local' | 'claude' | 'openai' | 'gemini' | 'minimax'>('local');
   const limit = 100;
+
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') ?? '';
+    setSearch(urlSearch);
+    setOffset(0);
+  }, [searchParams]);
 
   const sources = useQuery({ queryKey: ['ioc-sources'], queryFn: iocApi.sources });
   const groups = useQuery({
@@ -376,6 +384,7 @@ export function IOCLibrary() {
                       key={item.id}
                       item={item}
                       onEnrichment={() => openEnrichment(item.value)}
+                      onOpenDetail={() => navigate(`/ioc-library/${item.id}`)}
                     />
                   )) : (
                     <tr><td colSpan={7} className="p-6 text-center text-gray-500">No IOC records match the current filters.</td></tr>
@@ -398,9 +407,10 @@ export function IOCLibrary() {
   );
 }
 
-function IOCRow({ item, onEnrichment }: {
+function IOCRow({ item, onEnrichment, onOpenDetail }: {
   item: IOCLibraryItem;
   onEnrichment: () => void;
+  onOpenDetail: () => void;
 }) {
   const navigate = useNavigate();
   return (
@@ -410,7 +420,7 @@ function IOCRow({ item, onEnrichment }: {
         <div className="mt-2 text-[10px] text-gray-600">conf {item.confidence}</div>
       </td>
       <td className="max-w-md p-3">
-        <div className="break-all font-mono text-gray-200">{item.value}</div>
+        <button onClick={onOpenDetail} className="break-all text-left font-mono text-gray-200 hover:text-mitre-accent hover:underline">{item.value}</button>
         {item.description && <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-gray-500">{item.description}</p>}
         {item.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{item.tags.slice(0, 8).map(tag => <Chip key={tag}>{tag}</Chip>)}</div>}
       </td>
@@ -455,7 +465,10 @@ function IOCRow({ item, onEnrichment }: {
       <td className="p-3">
         <div className="flex flex-col gap-2">
           <button onClick={onEnrichment} className="primary-action">
-            Enrichment
+            Live lookup
+          </button>
+          <button onClick={onOpenDetail} className="secondary-action">
+            Open detail
           </button>
         </div>
       </td>

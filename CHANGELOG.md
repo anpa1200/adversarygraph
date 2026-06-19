@@ -4,6 +4,15 @@
 
 No unreleased changes.
 
+## v2.5.8 - 2026-06-19
+
+- Added per-IOC enrichment detail pages with source metadata, raw enrichment
+  values, mapped TTPs, actor links, source metadata, and raw JSON.
+- Made IOC values clickable from the IOC Library and actor/group IOC tabs.
+- Added clickable pivots into Navigator, ATT&CK Group Library, source reports,
+  and IOC Library search.
+- Updated operator documentation for the IOC detail workflow.
+
 ## v2.5.7 - 2026-06-19
 
 - Added MiniMax as a first-class external LLM provider through its

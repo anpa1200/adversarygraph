@@ -16,7 +16,6 @@ AI-enrichment fallback.
   containers, so `.env` deployment behaves like the other cloud providers.
 - Self-test reports whether `MINIMAX_API_KEY` is configured without exposing
   the secret.
-
 ## Configuration
 
 ```env

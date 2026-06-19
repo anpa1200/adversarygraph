@@ -124,6 +124,8 @@ Use IOC Intelligence for actor-linked observables.
 - ThreatFox and OTX provide public enrichment when configured.
 - Custom feeds can import private JSON, CSV, or TXT indicators.
 - Uploaded reports can be parsed locally for IOCs.
+- Open any IOC detail page to inspect stored enrichment/source values, mapped
+  TTPs, actor links, source reports, and raw metadata with clickable pivots.
 - Actor links require explicit actor IDs, actor names, aliases, or source
   evidence; many actors will legitimately show `0 IOCs`.
 
