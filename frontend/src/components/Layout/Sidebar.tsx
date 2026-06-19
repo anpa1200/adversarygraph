@@ -17,6 +17,7 @@ const nav = [
   { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
   { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
+  { to: '/feeds',         label: 'Feeds Management', icon: '≋' },
   { to: '/virustotal',    label: 'VirusTotal Lookup', icon: '◇' },
   { to: '/report',        label: 'Investigation Report', icon: '▤' },
   { to: '/operations',    label: 'Operations', icon: '◆' },
