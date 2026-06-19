@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,47 +6,53 @@
 
 ### Compare Two Reports: AdversaryGraph Use Case
 
-**Level:** Intermediate  
-**Goal:** Assess whether two reports describe related activity.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Intermediate, 3-5 steps  
+**Workflow group:** Intermediate Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Assess whether two reports describe related activity. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** Two reports from different vendors describe similar tools and infrastructure. The CTI team needs to know whether they represent one campaign or unrelated activity.
+**Situation:** Two reports may describe related campaigns but use different names, IOCs, and writing styles.
 
-**Trigger:** The overlap is not obvious because the reports use different names and levels of detail.
+**Analyst objective:** Compare extracted TTPs, actors, IOCs, malware families, and evidence overlap.
 
-**Analyst objective:** The analyst needs to compare TTPs, IOCs, actor hints, and timing before clustering the reports.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Analyze and store both reports.**
-2. **Open report comparison.**
-3. **Compare shared and unique TTPs, IOCs, and actor hints.**
-4. **Separate generic overlap from distinctive behavior.**
-5. **Export the comparison summary.**
-
+1. **Analyze both reports.**
+2. **Accept or reject extracted TTPs.**
+3. **Open Compare.**
+4. **Review shared and unique techniques, IOCs, and actor hints.**
 
 ## Expected Output
 
-Relationship assessment between reports.
+A comparison record showing overlap, divergence, and next investigation pivots.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

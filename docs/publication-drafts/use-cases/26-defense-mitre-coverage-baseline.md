@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,52 +6,55 @@
 
 ### Defense: Build MITRE Coverage Baseline: AdversaryGraph Use Case
 
-**Level:** Complex Platform Workflows  
-**Goal:** Create a baseline of current coverage across MITRE ATT&CK.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Complex defense workflow  
+**Workflow group:** Complex Defense Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Create a baseline of current coverage across MITRE ATT&CK. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** A security program review asks for a current MITRE ATT&CK coverage baseline. Leadership wants to know which tactics are covered, weak, or missing.
+**Situation:** A detection team needs to know which ATT&CK techniques are covered before planning new engineering work.
 
-**Trigger:** The organization has many detections, but no clean view of how they map to ATT&CK or actor relevance.
+**Analyst objective:** Create a baseline that shows current coverage, missing techniques, and priority actor-driven gaps.
 
-**Analyst objective:** The analyst needs to import coverage, compare it to relevant threats, identify gaps, and create a prioritized roadmap.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Import current detection coverage as Navigator layer or manual TTP set.**
-2. **Normalize coverage by domain and tactic.**
-3. **Mark detections by maturity where available.**
-4. **Compare coverage against top sector actors.**
-5. **Identify uncovered high-risk techniques.**
-6. **Open TTP detail panels for detection guidance.**
-7. **Map gaps to telemetry availability.**
-8. **Prioritize backlog by risk, feasibility, and actor relevance.**
-9. **Export coverage layer and gap report.**
-10. **Schedule periodic review after ATT&CK sync.**
-
+1. **Sync ATT&CK Enterprise, Mobile, ICS, and ATLAS where relevant.**
+2. **Import current detection coverage layer.**
+3. **Select relevant sectors, actors, and technologies.**
+4. **Overlay actor TTPs on Navigator.**
+5. **Identify uncovered high-priority techniques.**
+6. **Generate a coverage report and backlog.**
 
 ## Expected Output
 
-MITRE coverage baseline with prioritized gaps and detection roadmap.
+A baseline coverage map with prioritized missing techniques and supporting actor evidence.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

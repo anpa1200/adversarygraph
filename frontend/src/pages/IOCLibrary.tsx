@@ -24,7 +24,8 @@ export function IOCLibrary() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { domain, version } = useAppStore();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchDraft, setSearchDraft] = useState(searchParams.get('search') ?? '');
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [type, setType] = useState('');
   const [source, setSource] = useState('');
@@ -46,6 +47,7 @@ export function IOCLibrary() {
 
   useEffect(() => {
     const urlSearch = searchParams.get('search') ?? '';
+    setSearchDraft(urlSearch);
     setSearch(urlSearch);
     setOffset(0);
   }, [searchParams]);
@@ -151,6 +153,7 @@ export function IOCLibrary() {
   );
 
   const resetFilters = () => {
+    setSearchDraft('');
     setSearch('');
     setType('');
     setSource('');
@@ -158,11 +161,19 @@ export function IOCLibrary() {
     setActorSearch('');
     setSort('last_seen_desc');
     setOffset(0);
+    setSearchParams({});
   };
 
   const setFilter = (fn: () => void) => {
     fn();
     setOffset(0);
+  };
+
+  const runSearch = () => {
+    const nextSearch = searchDraft.trim();
+    setSearch(nextSearch);
+    setOffset(0);
+    setSearchParams(nextSearch ? { search: nextSearch } : {});
   };
 
   const openEnrichment = (indicator: string) => {
@@ -175,36 +186,100 @@ export function IOCLibrary() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-7xl space-y-5">
           <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <Panel title="Search and filter IOCs">
-              <div className="flex flex-wrap gap-3 p-4">
-                <input
-                  value={search}
-                  onChange={event => setFilter(() => setSearch(event.target.value))}
-                  placeholder="Search IOC, description, malware, campaign..."
-                  className="field min-w-[280px] flex-1"
-                />
-                <select value={type} onChange={event => setFilter(() => setType(event.target.value))} className="field w-40">
-                  <option value="">All types</option>
-                  {typeOptions.map(item => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <select value={source} onChange={event => setFilter(() => setSource(event.target.value))} className="field w-44">
-                  <option value="">All sources</option>
-                  {(sources.data ?? []).map(item => <option key={item.source_id} value={item.source_id}>{item.label}</option>)}
-                </select>
-                <GroupMultiSelect
-                  groups={groups.data ?? []}
-                  selectedIds={actorIds}
-                  search={actorSearch}
-                  loading={groups.isLoading}
-                  onSearchChange={setActorSearch}
-                  onChange={ids => setFilter(() => setActorIds(ids))}
-                />
-                <select value={sort} onChange={event => setFilter(() => setSort(event.target.value))} className="field w-48">
-                  {sortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-                <button onClick={resetFilters} className="secondary-action min-h-10">Reset</button>
-              </div>
-            </Panel>
+            <div className="space-y-4">
+              <Panel title="Search and filter IOCs">
+                <div className="flex flex-wrap gap-3 p-4">
+                  <input
+                    value={searchDraft}
+                    onChange={event => setSearchDraft(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') runSearch();
+                    }}
+                    placeholder="Search IOC, description, malware, campaign..."
+                    className="field min-w-[280px] flex-1"
+                  />
+                  <button type="button" onClick={runSearch} className="primary-action min-h-10">
+                    Search
+                  </button>
+                  <select value={type} onChange={event => setFilter(() => setType(event.target.value))} className="field w-40">
+                    <option value="">All types</option>
+                    {typeOptions.map(item => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select value={source} onChange={event => setFilter(() => setSource(event.target.value))} className="field w-44">
+                    <option value="">All sources</option>
+                    {(sources.data ?? []).map(item => <option key={item.source_id} value={item.source_id}>{item.label}</option>)}
+                  </select>
+                  <GroupMultiSelect
+                    groups={groups.data ?? []}
+                    selectedIds={actorIds}
+                    search={actorSearch}
+                    loading={groups.isLoading}
+                    onSearchChange={setActorSearch}
+                    onChange={ids => setFilter(() => setActorIds(ids))}
+                  />
+                  <select value={sort} onChange={event => setFilter(() => setSort(event.target.value))} className="field w-48">
+                    {sortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                  <button onClick={resetFilters} className="secondary-action min-h-10">Reset</button>
+                </div>
+              </Panel>
+
+              {selectedGroups.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedGroups.map(group => (
+                    <button
+                      key={group.attack_id}
+                      onClick={() => setFilter(() => setActorIds(actorIds.filter(id => id !== group.attack_id)))}
+                      className="rounded border border-mitre-accent/50 bg-mitre-accent/10 px-2 py-1 text-xs text-mitre-accent hover:bg-mitre-accent/20"
+                      title="Remove group filter"
+                    >
+                      {group.name} <span className="font-mono text-[10px]">{group.attack_id}</span> x
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <Panel title={`IOC records (${total})`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1180px] text-left text-xs">
+                    <thead className="bg-gray-950 text-[10px] uppercase text-gray-500">
+                      <tr>
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Indicator</th>
+                        <th className="p-3">Group / attacker</th>
+                        <th className="p-3">Context</th>
+                        <th className="p-3">Freshness</th>
+                        <th className="p-3">Source</th>
+                        <th className="p-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {library.isLoading ? (
+                        <tr><td colSpan={7} className="p-6 text-center text-gray-500">Loading IOC library...</td></tr>
+                      ) : library.error ? (
+                        <tr><td colSpan={7} className="p-6"><ErrorText error={library.error} /></td></tr>
+                      ) : rows.length ? rows.map(item => (
+                        <IOCRow
+                          key={item.id}
+                          item={item}
+                          onEnrichment={() => openEnrichment(item.value)}
+                          onOpenDetail={() => navigate(`/ioc-library/${item.id}`)}
+                        />
+                      )) : (
+                        <tr><td colSpan={7} className="p-6 text-center text-gray-500">No IOC records match the current filters.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between border-t border-gray-800 px-4 py-3 text-xs text-gray-500">
+                  <span>Showing {rows.length ? offset + 1 : 0}-{Math.min(offset + rows.length, total)} of {total}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset <= 0} className="secondary-action disabled:opacity-40">Previous</button>
+                    <button onClick={() => setOffset(Math.min(maxPage, offset + limit))} disabled={offset + limit >= total} className="secondary-action disabled:opacity-40">Next</button>
+                  </div>
+                </div>
+              </Panel>
+            </div>
 
             <Panel title="Sync and connect sources">
               <div className="space-y-3 p-4">
@@ -346,60 +421,6 @@ export function IOCLibrary() {
               </div>
             </Panel>
           </section>
-
-          {selectedGroups.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {selectedGroups.map(group => (
-                <button
-                  key={group.attack_id}
-                  onClick={() => setFilter(() => setActorIds(actorIds.filter(id => id !== group.attack_id)))}
-                  className="rounded border border-mitre-accent/50 bg-mitre-accent/10 px-2 py-1 text-xs text-mitre-accent hover:bg-mitre-accent/20"
-                  title="Remove group filter"
-                >
-                  {group.name} <span className="font-mono text-[10px]">{group.attack_id}</span> x
-                </button>
-              ))}
-            </div>
-          )}
-
-          <Panel title={`IOC records (${total})`}>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] text-left text-xs">
-                <thead className="bg-gray-950 text-[10px] uppercase text-gray-500">
-                  <tr>
-                    <th className="p-3">Type</th>
-                    <th className="p-3">Indicator</th>
-                    <th className="p-3">Group / attacker</th>
-                    <th className="p-3">Context</th>
-                    <th className="p-3">Freshness</th>
-                    <th className="p-3">Source</th>
-                    <th className="p-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {library.isLoading ? (
-                    <tr><td colSpan={7} className="p-6 text-center text-gray-500">Loading IOC library...</td></tr>
-                  ) : rows.length ? rows.map(item => (
-                    <IOCRow
-                      key={item.id}
-                      item={item}
-                      onEnrichment={() => openEnrichment(item.value)}
-                      onOpenDetail={() => navigate(`/ioc-library/${item.id}`)}
-                    />
-                  )) : (
-                    <tr><td colSpan={7} className="p-6 text-center text-gray-500">No IOC records match the current filters.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-between border-t border-gray-800 px-4 py-3 text-xs text-gray-500">
-              <span>Showing {rows.length ? offset + 1 : 0}-{Math.min(offset + rows.length, total)} of {total}</span>
-              <div className="flex gap-2">
-                <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset <= 0} className="secondary-action disabled:opacity-40">Previous</button>
-                <button onClick={() => setOffset(Math.min(maxPage, offset + limit))} disabled={offset + limit >= total} className="secondary-action disabled:opacity-40">Next</button>
-              </div>
-            </div>
-          </Panel>
 
         </div>
       </div>

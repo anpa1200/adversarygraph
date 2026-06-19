@@ -1,15 +1,21 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
+
+## Draft
 
 ## Central Usecase Page
 
-This page is the navigation hub for all AdversaryGraph use-case article drafts.
+This page is the navigation hub for AdversaryGraph v2.5.9 use-case article drafts.
+
+For a single article version, use: [30 Practical AdversaryGraph Use Cases](../adversarygraph-30-use-cases.md).
 
 The collection is organized into:
 
 - 10 simple use cases: fast analyst actions, usually 1-2 steps.
 - 10 intermediate use cases: structured CTI, SOC, enrichment, and detection workflows, usually 3-5 steps.
-- 5 complex investigation workflows: end-to-end investigation scenarios.
-- 5 complex defense workflows: MITRE coverage, detection roadmap, IOC pipeline, and executive reporting.
+- 5 complex investigation workflows: full platform usage from intake to reviewed findings.
+- 5 complex defense workflows: MITRE coverage, detection roadmap, IOC enrichment pipeline, rule generation, and executive reporting.
+
+Every article intentionally keeps the `Draft` header. Remove it only after the article is expanded with final screenshots and reviewed publication text.
 
 ## Simple Usecases
 
@@ -32,7 +38,7 @@ The collection is organized into:
 14. [Usecase number "14" - Enrich Actor IOCs](./14-intermediate-enrich-actor-iocs.md)
 15. [Usecase number "15" - Import MISP JSON](./15-intermediate-import-misp-json.md)
 16. [Usecase number "16" - Pull TAXII Or Import STIX](./16-intermediate-pull-taxii-stix.md)
-17. [Usecase number "17" - Sync YARA And Sigma Feeds](./17-intermediate-sync-yara-sigma.md)
+17. [Usecase number "17" - Sync YARA, YARA-L, And Sigma Feeds](./17-intermediate-sync-yara-sigma.md)
 18. [Usecase number "18" - Compare Two Reports](./18-intermediate-compare-two-reports.md)
 19. [Usecase number "19" - Review One Coverage Gap](./19-intermediate-review-coverage-gap.md)
 20. [Usecase number "20" - Use A Local LLM For Private Reports](./20-intermediate-use-local-llm.md)
@@ -52,6 +58,10 @@ The collection is organized into:
 28. [Usecase number "28" - Defense: Build IOC Enrichment Pipeline](./28-defense-ioc-enrichment-pipeline.md)
 29. [Usecase number "29" - Defense: Create Detection Content From CTI](./29-defense-detection-content-from-intel.md)
 30. [Usecase number "30" - Defense: Executive Risk And Coverage Report](./30-defense-executive-risk-coverage-report.md)
+
+## Capability Coverage
+
+These use cases cover IOC Library, VirusTotal/OTX/ThreatFox enrichment, MISP import, TAXII/STIX pull, custom feeds, local external DB usage, sandbox behavior context, YARA/Sigma/YARA-L feed sync, AI-assisted detection generation, ATT&CK Navigator overlays, actor profiles, sector intelligence, selftest, troubleshooting, and PDF reporting.
 
 ## Public Links
 

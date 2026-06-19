@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,53 +6,57 @@
 
 ### Investigation: Cluster Multiple APT Reports: AdversaryGraph Use Case
 
-**Level:** Complex Platform Workflows  
-**Goal:** Assess whether several reports belong to one campaign cluster.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Complex investigation workflow  
+**Workflow group:** Complex Investigation Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Assess whether several reports belong to one campaign cluster. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** Three public reports describe similar targeting, malware names, and infrastructure but use different campaign labels. The CTI team needs to decide whether to cluster them.
+**Situation:** Several vendor reports mention similar actors, aliases, malware, and infrastructure but use inconsistent names.
 
-**Trigger:** A customer asks whether the reports indicate one sustained campaign against their sector.
+**Analyst objective:** Normalize the reporting and decide whether the cluster is one campaign, overlapping tradecraft, or separate activity.
 
-**Analyst objective:** The analyst needs to analyze each report, compare TTPs and IOCs, review actor fit, and write a defensible relationship assessment.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Create a campaign workspace.**
-2. **Analyze each report separately and store results.**
-3. **Normalize report metadata, dates, sectors, and source labels.**
-4. **Compare reports for shared and unique TTPs.**
-5. **Compare IOCs across reports and enrich shared observables.**
-6. **Compare combined TTPs against known actors and campaigns.**
-7. **Separate generic TTP overlap from distinctive procedures.**
-8. **Open actor profiles for likely matches and review timeline/sector fit.**
-9. **Create one combined Navigator layer and one layer per report.**
-10. **Write a cluster assessment: related, possibly related, or unrelated.**
-11. **Export campaign evidence and matrix layers.**
-
+1. **Import all reports.**
+2. **Extract TTPs and IOCs per report.**
+3. **Normalize actor aliases through Group Library.**
+4. **Compare reports pairwise and by campaign.**
+5. **Review shared techniques and unique evidence.**
+6. **Open related actor pages and IOC tabs.**
+7. **Build a cluster summary with confidence levels.**
+8. **Export the final matrix layer and evidence table.**
 
 ## Expected Output
 
-Campaign clustering assessment with report-to-report and actor comparison evidence.
+A campaign-clustering package that separates strong evidence from weak similarity.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

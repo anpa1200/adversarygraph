@@ -124,7 +124,7 @@ These keys are not required for the basic ATT&CK matrix, actor library, or local
 # Used for recent malware and botnet observables.
 # If this is set, AdversaryGraph can sync ThreatFox on startup and during dynamic DB refresh.
 THREATFOX_AUTH_KEY=your_abuse_ch_auth_key
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 
 # AlienVault OTX pulse enrichment.

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # IOC intelligence feeds
     threatfox_auth_key: str = ""
-    auto_threatfox_sync_on_startup: bool = True
+    auto_ioc_full_sync_on_startup: bool = True
     auto_threatfox_sync_days: int = 7
     dynamic_db_sync_hour: int = 3
     dynamic_db_sync_minute: int = 30

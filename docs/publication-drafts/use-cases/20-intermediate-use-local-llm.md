@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,47 +6,53 @@
 
 ### Use A Local LLM For Private Reports: AdversaryGraph Use Case
 
-**Level:** Intermediate  
-**Goal:** Analyze sensitive content without public LLM routing.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Intermediate, 3-5 steps  
+**Workflow group:** Intermediate Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Analyze sensitive content without public LLM routing. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** A customer incident report contains internal hostnames, usernames, and operational details. The analyst cannot send it to a public LLM provider.
+**Situation:** A sensitive incident report cannot be sent to external AI providers.
 
-**Trigger:** The team still wants AI-assisted extraction but must keep processing inside controlled infrastructure.
+**Analyst objective:** Run report analysis through a local model while keeping the report inside the deployment.
 
-**Analyst objective:** The analyst needs to route analysis through a local/private model and validate output the same way as any other extraction.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Configure local/private LLM gateway in deployment env.**
-2. **Run selftest and confirm provider is reachable.**
-3. **Choose local provider in AI Analysis.**
-4. **Analyze the report and review mappings.**
-5. **Export only reviewed findings.**
-
+1. **Configure local LLM provider in .env.**
+2. **Open AI Analysis.**
+3. **Select local provider and model.**
+4. **Analyze the report and review extracted TTPs.**
 
 ## Expected Output
 
-Private report extraction with controlled model routing.
+Private report analysis output generated through the local LLM path.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

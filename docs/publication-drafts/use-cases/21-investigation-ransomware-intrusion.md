@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,53 +6,59 @@
 
 ### Investigation: Ransomware Intrusion Triage: AdversaryGraph Use Case
 
-**Level:** Complex Platform Workflows  
-**Goal:** Investigate a ransomware report from intake to actor hypothesis and detection handoff.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Complex investigation workflow  
+**Workflow group:** Complex Investigation Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Investigate a ransomware report from intake to actor hypothesis and detection handoff. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** A company discovers encrypted servers, suspicious PowerShell, lateral movement indicators, and possible data theft. The incident response team needs CTI support immediately.
+**Situation:** A company discovers encrypted servers, PowerShell activity, lateral movement, suspicious domains, and possible data theft.
 
-**Trigger:** The first report contains scattered details: commands, hashes, domains, affected systems, and a ransom note. The team needs structure fast.
+**Analyst objective:** Create an investigation package from raw incident material to actor hypotheses and detection handoff.
 
-**Analyst objective:** The analyst needs to create a full investigation package: reviewed TTPs, enriched IOCs, actor hypotheses, matrix layer, and detection backlog.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Run selftest and confirm enrichment keys are available.**
-2. **Create an investigation workspace in Operations/Pipeline.**
-3. **Upload the ransom incident report and extract TTPs.**
-4. **Review every TTP and mark weak mappings as needs-evidence.**
-5. **Extract IOCs from the report and store them in IOC Library.**
-6. **Enrich hashes/domains/IPs with VT, OTX, ThreatFox, and sandbox feeds.**
+1. **Run selftest and confirm enrichment keys.**
+2. **Create an investigation workspace.**
+3. **Upload or paste the incident report.**
+4. **Extract TTPs and IOCs.**
+5. **Review TTP status values.**
+6. **Enrich IOCs with VT, OTX, ThreatFox, MalwareBazaar, sandbox, and custom feeds.**
 7. **Compare accepted TTPs against actors and campaigns.**
-8. **Open top actor profiles and review IOCs, reports, aliases, and sector relevance.**
-9. **Show accepted TTPs on Navigator and export a layer.**
-10. **Create detection backlog items for initial access, execution, lateral movement, and impact.**
-11. **Export a PDF investigation summary with evidence, hypotheses, and next actions.**
-
+8. **Show accepted TTPs on Navigator.**
+9. **Generate Sigma/YARA/YARA-L/KQL/SPL/EQL drafts for priority gaps.**
+10. **Export a PDF report and Navigator layer.**
 
 ## Expected Output
 
-Investigation package with TTPs, IOCs, actor hypotheses, Navigator layer, and detection backlog.
+A full ransomware triage package with evidence-backed TTPs, enriched IOCs, actor hypotheses, matrix layer, and detection backlog.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

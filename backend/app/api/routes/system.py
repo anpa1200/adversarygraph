@@ -10,6 +10,7 @@ from sqlalchemy import func, select, text
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.attack import AptGroup, AttackVersion, Tactic, Technique
+from app.models.ioc import IOCIndicator, IOCSource
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -134,6 +135,44 @@ async def selftest() -> SelfTestResult:
                     if not empty_domains
                     else f"No tactics or techniques loaded for: {', '.join(empty_domains)}.",
                     {"domain_counts": domain_counts},
+                )
+            )
+
+            source_rows = (await session.execute(select(IOCSource))).scalars().all()
+            source_counts_raw = await session.execute(
+                select(IOCIndicator.source_id, func.count(IOCIndicator.id)).group_by(IOCIndicator.source_id)
+            )
+            source_counts = {str(source_id): int(count or 0) for source_id, count in source_counts_raw.all()}
+            sources = [
+                {
+                    "source_id": source.source_id,
+                    "label": source.label,
+                    "kind": source.kind,
+                    "enabled": source.enabled,
+                    "sync_status": source.sync_status,
+                    "sync_error": source.sync_error,
+                    "last_synced_at": source.last_synced_at.isoformat() if source.last_synced_at else None,
+                    "indicator_count": source_counts.get(source.source_id, 0),
+                }
+                for source in sorted(source_rows, key=lambda item: item.label.lower())
+            ]
+            enabled_sources = [source for source in sources if source["enabled"]]
+            degraded_sources = [
+                source for source in enabled_sources
+                if source["sync_status"] and source["sync_status"] not in {"ok", "active", "configured"}
+            ]
+            checks.append(
+                _check(
+                    "ioc_sync",
+                    True,
+                    f"IOC sources checked: {len(enabled_sources)} enabled, {sum(item['indicator_count'] for item in sources)} indicators stored.",
+                    {
+                        "auto_full_sync_on_startup": settings.auto_ioc_full_sync_on_startup,
+                        "startup_sync_days": max(1, min(7, settings.auto_threatfox_sync_days)),
+                        "enabled_sources": len(enabled_sources),
+                        "degraded_sources": len(degraded_sources),
+                        "sources": sources,
+                    },
                 )
             )
     except Exception as exc:

@@ -16,23 +16,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def _startup_threatfox_sync() -> None:
-    if not settings.auto_threatfox_sync_on_startup:
-        logger.info("Startup ThreatFox IOC sync disabled")
-        return
-    if not settings.threatfox_auth_key:
-        logger.info("Startup ThreatFox IOC sync skipped: THREATFOX_AUTH_KEY is not configured")
+async def _startup_ioc_sync() -> None:
+    if not settings.auto_ioc_full_sync_on_startup:
+        logger.info("Startup IOC full sync disabled")
         return
 
     days = max(1, min(7, settings.auto_threatfox_sync_days))
     try:
-        from app.services.ioc_intel import sync_threatfox
+        from app.services.ioc_intel import sync_all_ioc_sources
 
         async with async_session_factory() as session:
-            result = await sync_threatfox(session, days=days, domain="enterprise-attack")
-            logger.info("Startup ThreatFox IOC sync complete: %s", result)
+            result = await sync_all_ioc_sources(session, days=days, domain="enterprise-attack")
+            logger.info("Startup IOC full sync complete: %s", result)
     except Exception as exc:
-        logger.warning("Startup ThreatFox IOC sync failed: %s", exc, exc_info=True)
+        logger.warning("Startup IOC full sync failed: %s", exc, exc_info=True)
 
 
 @asynccontextmanager
@@ -49,7 +46,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Ingestion failed (non-fatal): %s", exc, exc_info=True)
 
-    asyncio.create_task(_startup_threatfox_sync())
+    asyncio.create_task(_startup_ioc_sync())
 
     yield
 

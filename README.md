@@ -83,7 +83,7 @@ Optional enrichment keys and feed sync:
 ```env
 # abuse.ch ThreatFox IOC sync
 THREATFOX_AUTH_KEY=your_abuse_ch_auth_key
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 
 # AlienVault OTX actor-attributed pulse enrichment
@@ -299,7 +299,7 @@ ATTCK_DOMAINS=enterprise-attack,mobile-attack,ics-attack,atlas
 
 # IOC enrichment and feed sync (optional)
 THREATFOX_AUTH_KEY=your_abuse_ch_auth_key
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 OTX_API_KEY=your_otx_key
 VIRUSTOTAL_API_KEY=your_virustotal_key
@@ -312,7 +312,7 @@ LOG_LEVEL=info
 
 > You only need one working provider. Cloud API keys can be left blank if you use the local provider.
 >
-> Enrichment keys are optional. `THREATFOX_AUTH_KEY` enables abuse.ch ThreatFox IOC sync, `OTX_API_KEY` enables AlienVault OTX pulse enrichment, and `VIRUSTOTAL_API_KEY` enables on-demand IOC reputation and relationship lookup. MITRE ATT&CK/ATLAS and public MISP Galaxy sync do not require API keys. MISP JSON exports, STIX/TAXII URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are configured later from the UI/API as source URLs or tokens.
+> Enrichment keys are optional. `AUTO_IOC_FULL_SYNC_ON_STARTUP=true` starts a non-blocking IOC source sync after API startup for ThreatFox, Malpedia, OTX, and enabled custom feeds. `THREATFOX_AUTH_KEY` enables abuse.ch ThreatFox IOC sync, `OTX_API_KEY` enables AlienVault OTX pulse enrichment, and `VIRUSTOTAL_API_KEY` enables on-demand IOC reputation and relationship lookup. MITRE ATT&CK/ATLAS and public MISP Galaxy sync do not require API keys. MISP JSON exports, STIX/TAXII URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are configured later from the UI/API as source URLs or tokens.
 >
 > **You must create `.env` before running `docker compose up`.** Without it, cloud API keys are empty and local-provider defaults are used.
 >
@@ -733,11 +733,13 @@ when there is explicit evidence. ATT&CK itself does not provide live IOCs.
 
 Supported initial sources:
 
+- **Startup IOC sync** — when `AUTO_IOC_FULL_SYNC_ON_STARTUP=true`, AdversaryGraph
+  starts a non-blocking full IOC source sync after API startup for ThreatFox,
+  Malpedia, OTX, and enabled custom feeds. Missing optional API keys are reported
+  per source and do not block the application.
 - **abuse.ch ThreatFox** — current malware-related IOCs. Set
   `THREATFOX_AUTH_KEY` in `.env` before syncing. The recent IOC API supports
   1-7 day windows; use ThreatFox exports or custom feeds for larger windows.
-  When `AUTO_THREATFOX_SYNC_ON_STARTUP=true`, AdversaryGraph runs a background
-  ThreatFox sync after API startup if `THREATFOX_AUTH_KEY` is configured.
 - **AlienVault OTX** — actor-attributed pulse search. Set `OTX_API_KEY` in
   `.env`; AdversaryGraph searches ATT&CK actor names/aliases, imports pulse
   indicators, and links them when pulse adversary/title/tags match the actor.

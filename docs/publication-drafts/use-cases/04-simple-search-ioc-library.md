@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,44 +6,51 @@
 
 ### Search The IOC Library: AdversaryGraph Use Case
 
-**Level:** Simple  
-**Goal:** Find whether an observable already exists in local or synced intelligence.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Simple, 1-2 steps  
+**Workflow group:** Simple Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Find whether an observable already exists in local or synced intelligence. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** An incident responder sees an IP in proxy logs and does not know whether it came from a public feed, a previous customer case, a MISP event, or a recent report import.
+**Situation:** A SOC analyst wants to know whether an indicator has already appeared in local or synchronized intelligence.
 
-**Trigger:** The responder needs fast source context before creating a ticket or asking CTI for help.
+**Analyst objective:** Search the local IOC database and see whether the value is mapped to actors, malware, reports, feeds, or TTPs.
 
-**Analyst objective:** The analyst needs to decide if the IOC is known, current, source-backed, and worth enrichment or hunting.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Open IOC Library and search the indicator, malware name, campaign, actor, or source.**
-2. **Filter by type/source/group and open enrichment for the most relevant result.**
-
+1. **Open IOC Library.**
+2. **Search by indicator value, malware family, campaign, source, type, or actor.**
 
 ## Expected Output
 
-Fast lookup across stored public and private observables.
+A filtered IOC result with source, first seen, last seen, type, mapped actor, mapped TTPs, and enrichment button.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

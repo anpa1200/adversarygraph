@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,44 +6,51 @@
 
 ### Open One Actor Profile: AdversaryGraph Use Case
 
-**Level:** Simple  
-**Goal:** Review the core context for one ATT&CK group or actor.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Simple, 1-2 steps  
+**Workflow group:** Simple Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Review the core context for one ATT&CK group or actor. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** During a threat briefing, someone asks for immediate context about a named actor mentioned in a customer report. The team needs more than a search-engine summary: aliases, ATT&CK techniques, related reports, IOCs, and operational themes.
+**Situation:** A customer asks whether a named actor in a report is relevant to their environment or sector.
 
-**Trigger:** The request happens live in a meeting or shift handoff, where speed and accuracy both matter.
+**Analyst objective:** Open the actor profile, confirm aliases, review description, last activity, sectors, TTPs, reports, and IOC availability.
 
-**Analyst objective:** The analyst needs to answer what the actor is known for, which techniques matter, and whether the actor is relevant to the current environment.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Open ATT&CK Group Library and search the actor name, ID, or alias.**
-2. **Review description, aliases, techniques, reports, IOCs, and tactic coverage.**
-
+1. **Open ATT&CK Group Library.**
+2. **Search by actor name, ATT&CK ID, or alias and open the actor profile.**
 
 ## Expected Output
 
-Actor context ready for a note, briefing, or investigation pivot.
+A reviewed actor context note with aliases, known techniques, evidence links, and relevance comments.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

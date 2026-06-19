@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,47 +6,53 @@
 
 ### Import MISP JSON: AdversaryGraph Use Case
 
-**Level:** Intermediate  
-**Goal:** Bring MISP event or attribute exports into IOC Library.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Intermediate, 3-5 steps  
+**Workflow group:** Intermediate Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Bring MISP event or attribute exports into IOC Library. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** The organization already curates events in MISP, but analysts still copy indicators manually into separate tools for enrichment.
+**Situation:** A partner shares a MISP event or attribute export that needs to be used inside the local investigation workflow.
 
-**Trigger:** A MISP event is relevant to an active investigation and needs to be searchable in AdversaryGraph.
+**Analyst objective:** Import MISP data as a source without manually retyping indicators.
 
-**Analyst objective:** The analyst needs to import the MISP JSON, preserve source labels, and enrich only approved indicators.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Create or expose a MISP JSON export URL.**
-2. **Open IOC Library source panel and connect the MISP source.**
-3. **Sync and filter by the MISP source label.**
-4. **Review imported observables and tags.**
-5. **Enrich or export only approved data.**
-
+1. **Open Feeds Management or IOC Library.**
+2. **Paste the MISP JSON export URL or load a local gateway URL.**
+3. **Import and review parsed IOCs.**
+4. **Filter imported values by source and actor.**
 
 ## Expected Output
 
-MISP-backed IOC records searchable in AdversaryGraph.
+MISP-backed indicators stored in the IOC Library with source and context preserved.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

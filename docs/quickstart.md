@@ -47,7 +47,7 @@ Optional IOC enrichment providers:
 ```env
 # abuse.ch ThreatFox recent IOC sync
 THREATFOX_AUTH_KEY=
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 
 # AlienVault OTX actor-attributed pulse enrichment
@@ -69,15 +69,17 @@ Feed and key behavior:
 
 - MITRE ATT&CK / ATLAS sync uses public STIX bundles and does not require an API key.
 - Built-in MISP Galaxy metadata sync is public and does not require a MISP key.
-- `THREATFOX_AUTH_KEY` enables abuse.ch ThreatFox recent IOC sync and optional startup sync.
+- `AUTO_IOC_FULL_SYNC_ON_STARTUP=true` starts a non-blocking IOC source sync after API startup.
+- `THREATFOX_AUTH_KEY` enables abuse.ch ThreatFox recent IOC sync.
 - `OTX_API_KEY` enables AlienVault OTX actor-attributed pulse enrichment.
 - `VIRUSTOTAL_API_KEY` enables on-demand IOC checks from IOC Library and VirusTotal Lookup.
 - MISP event/attribute JSON exports, STIX bundles, TAXII collection URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are connected from the UI or API as source URLs/tokens.
 - Never commit a filled `.env` file.
 
-When `THREATFOX_AUTH_KEY` is set, the API automatically starts a background
-ThreatFox sync after Docker startup. Leave `AUTO_THREATFOX_SYNC_ON_STARTUP=true`
-for that behavior, or set it to `false` for manual-only IOC syncing.
+When `AUTO_IOC_FULL_SYNC_ON_STARTUP=true`, the API automatically starts a background
+full IOC source sync after Docker startup. It refreshes ThreatFox, Malpedia, OTX,
+and enabled custom feeds. Missing optional API keys are reported per source and
+do not block startup.
 
 PostgreSQL data is stored outside the containers in `ADVERSARYGRAPH_DB_DIR`
 (`./data/postgres` by default). This folder is created on first deployment and

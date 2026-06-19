@@ -85,7 +85,7 @@ Optional enrichment keys and feed sync:
 ```env
 # abuse.ch ThreatFox recent IOC sync
 THREATFOX_AUTH_KEY=your_abuse_ch_auth_key
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 
 # AlienVault OTX actor-attributed pulse enrichment
@@ -515,13 +515,13 @@ Before syncing ThreatFox, set:
 
 ```bash
 THREATFOX_AUTH_KEY=your_abusech_auth_key
-AUTO_THREATFOX_SYNC_ON_STARTUP=true
+AUTO_IOC_FULL_SYNC_ON_STARTUP=true
 AUTO_THREATFOX_SYNC_DAYS=7
 ```
 
-When enabled, AdversaryGraph runs a non-blocking ThreatFox sync after API
-startup. If `THREATFOX_AUTH_KEY` is not configured, startup continues and the
-automatic sync is skipped.
+When enabled, AdversaryGraph runs a non-blocking full IOC source sync after API
+startup. It refreshes ThreatFox, Malpedia, OTX, and enabled custom feeds. Missing
+optional API keys are reported per source and startup continues.
 
 Actor mapping is conservative:
 

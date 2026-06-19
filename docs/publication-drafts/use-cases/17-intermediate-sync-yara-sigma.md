@@ -1,52 +1,58 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
 ## Usecase number "17"
 
-### Sync YARA And Sigma Feeds: AdversaryGraph Use Case
+### Sync YARA, YARA-L, And Sigma Feeds: AdversaryGraph Use Case
 
-**Level:** Intermediate  
-**Goal:** Connect detection-rule context to IOCs and malware.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Intermediate, 3-5 steps  
+**Workflow group:** Intermediate Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Connect detection-rule context to IOCs and malware. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** A suspicious malware family appears in an incident. Detection engineers ask whether any existing YARA or Sigma content can help.
+**Situation:** Detection engineers need current public and private rule sources available while building detections.
 
-**Trigger:** The team wants to avoid writing detection content from scratch if reusable rules already exist.
+**Analyst objective:** Synchronize detection-rule feeds and make them usable during investigation and detection generation.
 
-**Analyst objective:** The analyst needs to connect malware, IOC, and rule-feed context, then pass useful rule references to engineering.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Add YARA/Sigma feed sources.**
-2. **Run rule-feed sync.**
-3. **Open IOC or malware enrichment.**
-4. **Review matching rule names, tags, and references.**
-5. **Use rule context as detection research input.**
-
+1. **Open Feeds Management.**
+2. **Connect Sigma, YARA, YARA-L, and custom rule sources.**
+3. **Run rule sync.**
+4. **Open Pipeline detection generation and select matching rule format.**
 
 ## Expected Output
 
-Detection content leads tied to IOC/malware context.
+Rule feeds available as references for detection review and AI-assisted generation.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  

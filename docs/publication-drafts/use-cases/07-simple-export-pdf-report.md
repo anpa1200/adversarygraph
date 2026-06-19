@@ -1,4 +1,4 @@
-# AdvarsaryGraph Usecases.
+# AdversaryGraph Usecases.
 
 ## Draft
 
@@ -6,44 +6,51 @@
 
 ### Export A PDF Report: AdversaryGraph Use Case
 
-**Level:** Simple  
-**Goal:** Create a shareable analyst report from reviewed findings.
+**Version focus:** AdversaryGraph v2.5.9  
+**Level:** Simple, 1-2 steps  
+**Workflow group:** Simple Usecases
+
+## Table Of Contents
+
+- [Why This Use Case Matters](#why-this-use-case-matters)
+- [Real-Life Scenario](#real-life-scenario)
+- [Workflow](#workflow)
+- [Expected Output](#expected-output)
+- [Analyst Review Standard](#analyst-review-standard)
+- [Where This Fits](#where-this-fits)
 
 ## Why This Use Case Matters
 
-Create a shareable analyst report from reviewed findings. In real CTI and SOC work, the value is not only the result. The value is the repeatable path from input to reviewed output. AdversaryGraph keeps report analysis, ATT&CK mapping, actor context, IOC enrichment, and exportable evidence in one workflow.
+AdversaryGraph is useful when an analyst needs to move from raw intelligence to reviewed action: ATT&CK mapping, IOC enrichment, actor context, feed synchronization, matrix visualization, detection generation, and exportable evidence. This use case shows one practical way to use the platform without separating the work across spreadsheets, browser tabs, and disconnected notes.
 
 ## Real-Life Scenario
 
-**Situation:** An analyst has reviewed a set of extracted TTPs and needs to brief a SOC lead before the end of the day. Screenshots and raw JSON are not enough.
+**Situation:** A customer or manager needs a clean summary of reviewed investigation output.
 
-**Trigger:** The team needs a portable artifact that includes reviewed findings and can be shared internally.
+**Analyst objective:** Export reviewed findings without manually rebuilding the report in another document editor.
 
-**Analyst objective:** The analyst needs to export only reviewed content and make sure the PDF reflects evidence, not raw model output.
-
-**How AdversaryGraph helps:** The platform keeps the workflow connected: source context, ATT&CK mapping, IOC enrichment, actor or sector context, matrix view, and exportable evidence stay in one place instead of being split across notes, browser tabs, and spreadsheets.
+**Operational pressure:** The analyst needs an answer that is fast enough for daily work but still traceable enough for customer reporting, detection engineering, or later peer review.
 
 ## Workflow
 
-1. **Open a reviewed analysis or report view.**
-2. **Click PDF export and verify the included TTPs, evidence, and notes.**
-
+1. **Open the investigation or report view.**
+2. **Export the reviewed output as PDF.**
 
 ## Expected Output
 
-PDF report for handoff or briefing.
+A shareable PDF containing reviewed TTPs, IOCs, actor context, evidence, and analyst notes.
 
 ## Analyst Review Standard
 
-- Keep source evidence and source labels attached.
-- Mark uncertain findings as `needs-evidence` instead of forcing a conclusion.
-- Do not treat TTP similarity as attribution by itself.
-- Use enrichment as context, not as an automatic decision.
-- Export only reviewed findings.
+- Preserve source labels and timestamps for every finding.
+- Mark weak or incomplete evidence as `needs-evidence` instead of forcing a conclusion.
+- Treat actor similarity as a hypothesis, not attribution.
+- Prefer source-backed report evidence first, enrichment-platform evidence second, and AI enrichment only as reviewed support.
+- Export only findings that have been reviewed by an analyst.
 
 ## Where This Fits
 
-This use case can support CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
+This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
 **Project:** https://github.com/anpa1200/adversarygraph  
 **Docs:** https://1200km.com/adversarygraph-docs/  
