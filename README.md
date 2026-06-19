@@ -32,6 +32,69 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 
 > **Validation and attribution limitation:** AdversaryGraph assists analysts but does not replace analyst validation. LLM-generated mappings may contain false positives, false negatives, or ambiguous technique assignments. Group/campaign similarity is based on TTP overlap and is an investigation lead, not attribution proof.
 
+## Table of Contents
+
+- [Short Installation Guide](#short-installation-guide)
+- [Project Maturity Evidence](#project-maturity-evidence)
+- [Public Demo Privacy Note](#public-demo-privacy-note)
+- [Validation and Limitations](#validation-and-limitations)
+- [Screenshots And Visual Evidence](#screenshots-and-visual-evidence)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Usage Guide](#usage-guide)
+- [Two-Database Architecture](#two-database-architecture)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Publishing And Discovery](#publishing-and-discovery)
+- [Tech Stack](#tech-stack)
+- [Changelog](#changelog)
+- [License](#license)
+
+## Short Installation Guide
+
+Use this path for a fresh local Docker deployment.
+
+```bash
+git clone https://github.com/anpa1200/adversarygraph.git
+cd adversarygraph
+cp .env.example .env
+```
+
+Edit `.env` and set at least one LLM provider:
+
+```env
+# Cloud provider example
+ANTHROPIC_API_KEY=your_key_here
+
+# Or local OpenAI-compatible endpoint
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_LLM_API_KEY=local
+LOCAL_LLM_MODEL=llama3.1:8b
+```
+
+Start the stack:
+
+```bash
+docker compose up -d --build
+```
+
+Open:
+
+- Frontend: `http://localhost:3000`
+- API health: `http://localhost:8000/api/health`
+- API docs: `http://localhost:8000/docs`
+
+Run the built-in health checks:
+
+```bash
+./scripts/selftest.sh
+```
+
+On first startup, AdversaryGraph downloads and ingests MITRE ATT&CK / ATLAS reference data. The first sync can take a few minutes.
+
 ## Project Maturity Evidence
 
 AdversaryGraph v2.5.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
@@ -76,31 +139,6 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 |---|---|
 | ![AdversaryGraph ATT&CK matrix workspace](docs/screenshots/02_1x07j05Kn78RJY96S3Ga4IVQ.png) | ![AdversaryGraph analysis workflow](docs/screenshots/10_1xCsGSK7APVQvnvTDCLxXKNA.png) |
 | ![AdversaryGraph actor overlay](docs/screenshots/13_1xFpAXPkiL1j3fiuOkL7tp8A.png) | ![AdversaryGraph evidence review](docs/screenshots/20_1xVAfpLRWhfkB0pwRR5C4Nlw.png) |
-
----
-
-## Contents
-
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Usage Guide](#usage-guide)
-  - [Navigator](#navigator)
-  - [AI Analysis](#ai-analysis)
-  - [ATT&CK Group Library](#attck-group-library)
-  - [Compare](#compare)
-  - [Export](#export)
-  - [MITRE Sync](#mitre-sync)
-  - [Reference Book and Exact TTP Crosslinks](#reference-book-and-exact-ttp-crosslinks)
-- [Two-Database Architecture](#two-database-architecture)
-- [API Reference](#api-reference)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Deployment](#deployment)
-- [Tech Stack](#tech-stack)
-- [Changelog](#changelog)
-
----
 
 ## Features
 
