@@ -29,30 +29,30 @@ https://1200km.com/adversarygraph/
 Use cases:
 https://1200km.com/adversarygraph/use-cases.html
 
-## Table Of Contents
+## Table of Contents
 
-- From ThreatMapper To AdversaryGraph
-- What AdversaryGraph Is
-- Short Installation Guide
-- What Is New In v2.5
-- IOC Library
-- VirusTotal Enrichment
-- STIX, TAXII, MISP, And Custom Feeds
-- YARA, Sigma, And Sandbox Behavior
-- AI Report Analysis
-- ATT&CK And ATLAS Navigator
-- Actor And Campaign Comparison
-- Sector Intelligence
-- IOC-To-TTP Mapping
-- DFIR Examples
-- Operations And Pipeline
-- Two-Database Architecture
-- Selftest And Troubleshooting
-- Use Cases
-- Licensing Change
-- What This Release Means
-- Who Should Use It
-- Final Thought
+- [From ThreatMapper To AdversaryGraph](#from-threatmapper-to-adversarygraph)
+- [What AdversaryGraph Is](#what-adversarygraph-is)
+- [Installation Guide](#installation-guide)
+- [What Is New In v2.5](#what-is-new-in-v25)
+- [IOC Library](#ioc-library)
+- [VirusTotal Enrichment](#virustotal-enrichment)
+- [STIX, TAXII, MISP, And Custom Feeds](#stix-taxii-misp-and-custom-feeds)
+- [YARA, Sigma, And Sandbox Behavior](#yara-sigma-and-sandbox-behavior)
+- [AI Report Analysis](#ai-report-analysis)
+- [ATT&CK And ATLAS Navigator](#attck-and-atlas-navigator)
+- [Actor And Campaign Comparison](#actor-and-campaign-comparison)
+- [Sector Intelligence](#sector-intelligence)
+- [IOC-To-TTP Mapping](#ioc-to-ttp-mapping)
+- [DFIR Examples](#dfir-examples)
+- [Operations And Pipeline](#operations-and-pipeline)
+- [Two-Database Architecture](#two-database-architecture)
+- [Selftest And Troubleshooting](#selftest-and-troubleshooting)
+- [Use Cases](#use-cases)
+- [Licensing Change](#licensing-change)
+- [What This Release Means](#what-this-release-means)
+- [Who Should Use It](#who-should-use-it)
+- [Final Thought](#final-thought)
 
 ## What AdversaryGraph Is
 
@@ -77,7 +77,7 @@ It is built around one idea:
 
 AdversaryGraph does not perform definitive attribution. Actor similarity, TTP overlap, IOC enrichment, and external feed matches are analytical signals. They help generate hypotheses and prioritize work, but the analyst still validates the evidence.
 
-## Short Installation Guide
+## Installation Guide
 
 For a fresh local deployment, use Docker Compose.
 
