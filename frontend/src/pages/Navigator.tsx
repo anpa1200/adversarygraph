@@ -18,18 +18,22 @@ export function Navigator() {
   const {
     domain, version,
     selectedTechniques, overlayTechniques,
+    comparisonLayers,
     overlayGroupId, overlayGroupName,
     expandedTechniques,
     toggleTechnique, toggleExpanded,
     addTechniques, replaceTechniques, clearTechniques, clearOverlay,
     setOverlayTechniques, expandAll, collapseAll, coverageTechniques, setCoverageTechniques, clearCoverage,
+    addComparisonLayer, removeComparisonLayer, clearComparisonLayers,
   } = useAppStore();
 
   // ── Panel state ────────────────────────────────────────────────────────────
   const [selectedAttackId, setSelectedAttackId] = useState<string | null>(null);
   const [importOpen, setImportOpen]             = useState(false);
+  const [importTarget, setImportTarget]         = useState<'selected' | 'overlay'>('selected');
   const [saveOpen,   setSaveOpen]               = useState(false);
   const [loadOpen,   setLoadOpen]               = useState(false);
+  const [loadTarget, setLoadTarget]             = useState<'selected' | 'overlay'>('selected');
   const [coverageImportOpen, setCoverageImportOpen] = useState(false);
   const [params] = useSearchParams();
   useEffect(() => { const id = params.get('technique'); if (id) setSelectedAttackId(id); }, [params]);
@@ -75,11 +79,14 @@ export function Navigator() {
       if (term)             filtered = filtered.filter(t => t.name.toLowerCase().includes(term) || t.attack_id.toLowerCase().includes(term));
       if (platform)         filtered = filtered.filter(t => t.platforms.includes(platform));
       if (showOnlySelected) filtered = filtered.filter(t => selectedTechniques.has(t.attack_id));
-      if (showOnlyOverlay)  filtered = filtered.filter(t => overlayTechniques.has(t.attack_id));
+      if (showOnlyOverlay) {
+        const compareIds = new Set([...overlayTechniques, ...comparisonLayers.flatMap(layer => layer.techniqueIds)]);
+        filtered = filtered.filter(t => compareIds.has(t.attack_id));
+      }
       result.set(tactic, filtered);
     }
     return result;
-  }, [techniquesByTactic, search, platform, showOnlySelected, showOnlyOverlay, selectedTechniques, overlayTechniques]);
+  }, [techniquesByTactic, search, platform, showOnlySelected, showOnlyOverlay, selectedTechniques, overlayTechniques, comparisonLayers]);
 
   // Simplified: toggle + open panel together (detail panel on click)
   const handleToggle = useCallback(
@@ -118,18 +125,22 @@ export function Navigator() {
         matrixData={matrixData}
         selectedTechniques={selectedTechniques}
         overlayTechniques={overlayTechniques}
+        comparisonLayers={comparisonLayers}
         expandedTechniques={expandedTechniques}
         overlayGroupName={overlayGroupName}
         onExpandAll={handleExpandAll}
         onCollapseAll={collapseAll}
         onClearTechniques={clearTechniques}
-        onClearOverlay={clearOverlay}
+        onClearOverlay={() => { clearOverlay(); clearComparisonLayers(); }}
+        onRemoveComparisonLayer={removeComparisonLayer}
         onExportLayer={exportJson}
         onExportNavigator={exportNavigatorLayer}
         onExportPdf={exportLayerPdf}
-        onImportClick={() => setImportOpen(true)}
+        onImportClick={() => { setImportTarget('selected'); setImportOpen(true); }}
+        onImportOverlayClick={() => { setImportTarget('overlay'); setImportOpen(true); }}
         onSaveClick={() => setSaveOpen(true)}
-        onLoadClick={() => setLoadOpen(true)}
+        onLoadClick={() => { setLoadTarget('selected'); setLoadOpen(true); }}
+        onLoadOverlayClick={() => { setLoadTarget('overlay'); setLoadOpen(true); }}
       />
 
       <MatrixFilters
@@ -138,7 +149,7 @@ export function Navigator() {
         availablePlatforms={availablePlatforms}
         showOnlySelected={showOnlySelected}  onToggleSelected={() => setShowOnlySelected(v => !v)}
         showOnlyOverlay={showOnlyOverlay}    onToggleOverlay={() => setShowOnlyOverlay(v => !v)}
-        hasOverlay={overlayTechniques.size > 0}
+        hasOverlay={overlayTechniques.size > 0 || comparisonLayers.length > 0}
       />
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-gray-800 bg-gray-900 text-[10px]">
         <button onClick={() => setCoverageImportOpen(true)} className="border border-green-800 text-green-400 px-2 py-1 rounded">Import coverage</button>
@@ -165,6 +176,7 @@ export function Navigator() {
               parentsWithSubs={parentsWithSubs}
               selectedTechniques={selectedTechniques}
               overlayTechniques={overlayTechniques}
+              comparisonLayers={comparisonLayers}
               coverageTechniques={coverageTechniques}
               expandedTechniques={expandedTechniques}
               onToggleTechnique={handleToggle}
@@ -173,12 +185,15 @@ export function Navigator() {
           )}
 
           {/* Overlay badge */}
-          {overlayGroupId && overlayGroupName && (
+          {(overlayTechniques.size > 0 || comparisonLayers.length > 0) && (
             <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-blue-900/80 border border-blue-600 text-blue-200 text-xs px-3 py-2 rounded-lg z-20">
               <div className="w-2 h-2 rounded-sm bg-blue-500" />
-              Overlay: <span className="font-medium">{overlayGroupName}</span>
-              <span className="text-blue-400">({overlayTechniques.size})</span>
-              <button onClick={clearOverlay} className="ml-1 text-blue-400 hover:text-white transition-colors">✕</button>
+              Compare:
+              <span className="font-medium">
+                {[overlayGroupName, ...comparisonLayers.map(layer => layer.name)].filter(Boolean).join(', ') || 'Comparison layer'}
+              </span>
+              <span className="text-blue-400">({overlayTechniques.size + comparisonLayers.reduce((sum, layer) => sum + layer.techniqueIds.length, 0)})</span>
+              <button onClick={() => { clearOverlay(); clearComparisonLayers(); }} className="ml-1 text-blue-400 hover:text-white transition-colors">✕</button>
             </div>
           )}
         </div>
@@ -195,11 +210,28 @@ export function Navigator() {
       {/* Import modal */}
       {importOpen && (
         <LayerImport
-          onImport={ids => { addTechniques(ids); }}
+          title={importTarget === 'overlay' ? 'Import comparison layer' : 'Import Navigator Layer'}
+          actionLabel={importTarget === 'overlay' ? 'Load as compare' : 'Import'}
+          targetLabel={importTarget === 'overlay' ? 'the comparison overlay' : 'your TTP layer'}
+          onImport={(ids, name) => {
+            if (importTarget === 'overlay') {
+              addComparisonLayer({ name: name || 'Imported comparison layer', techniqueIds: ids, source: 'import' });
+            } else {
+              addTechniques(ids);
+            }
+          }}
           onClose={() => setImportOpen(false)}
         />
       )}
-      {coverageImportOpen && <LayerImport onImport={ids => setCoverageTechniques(ids)} onClose={() => setCoverageImportOpen(false)} />}
+      {coverageImportOpen && (
+        <LayerImport
+          title="Import coverage layer"
+          actionLabel="Import coverage"
+          targetLabel="coverage"
+          onImport={ids => setCoverageTechniques(ids)}
+          onClose={() => setCoverageImportOpen(false)}
+        />
+      )}
 
       {/* Save layer modal */}
       {saveOpen && (
@@ -215,7 +247,13 @@ export function Navigator() {
       {loadOpen && (
         <LoadLayerModal
           domain={domain}
-          onLoad={(ids) => { replaceTechniques(ids); }}
+          onLoad={(ids, name) => {
+            if (loadTarget === 'overlay') {
+              addComparisonLayer({ name: name || 'Saved comparison layer', techniqueIds: ids, source: 'saved-layer' });
+            } else {
+              replaceTechniques(ids);
+            }
+          }}
           onClose={() => setLoadOpen(false)}
         />
       )}

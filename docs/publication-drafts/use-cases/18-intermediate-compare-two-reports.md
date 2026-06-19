@@ -1,13 +1,11 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 ## Usecase number "18"
 
 ### Compare Two Reports: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.5.9  
-**Level:** Intermediate, 3-5 steps  
+**Version focus:** AdversaryGraph v2.6.0
+**Level:** Intermediate, 3-5 steps
 **Workflow group:** Intermediate Usecases
 
 ## Table Of Contents
@@ -18,6 +16,10 @@
 - [Expected Output](#expected-output)
 - [Analyst Review Standard](#analyst-review-standard)
 - [Where This Fits](#where-this-fits)
+
+## Walkthrough GIF
+
+![Usecase 18 - Compare Two Reports walkthrough](../assets/use-cases/usecase-18-compare-two-reports.gif)
 
 ## Why This Use Case Matters
 
@@ -54,6 +56,6 @@ A comparison record showing overlap, divergence, and next investigation pivots.
 
 This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
-**Project:** https://github.com/anpa1200/adversarygraph  
-**Docs:** https://1200km.com/adversarygraph-docs/  
+**Project:** https://github.com/anpa1200/adversarygraph
+**Docs:** https://1200km.com/adversarygraph-docs/
 **Use cases:** https://1200km.com/adversarygraph/use-cases.html

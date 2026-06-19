@@ -14,6 +14,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import type { Tactic, TechniqueListItem } from '@/types/attack';
 import type { MatrixData } from '@/hooks/useAttackMatrix';
+import type { ComparisonLayer } from '@/store';
 
 // ── Cell dimensions (px, pre-zoom) ───────────────────────────────────────────
 const COL_WIDTH = 138;
@@ -35,14 +36,34 @@ const COLORS = {
 function cellColors(
   id: string,
   selected: Set<string>,
-  overlay: Set<string>
+  overlay: Set<string>,
+  comparisonLayers: ComparisonLayer[] = []
 ) {
   const sel = selected.has(id);
-  const ov  = overlay.has(id);
-  if (sel && ov) return COLORS.shared;
+  const matchedLayers = comparisonLayers.filter(layer => layer.techniqueIds.includes(id));
+  const ov  = overlay.has(id) || matchedLayers.length > 0;
+  const layerColors = matchedLayers.map(layer => layer.color);
+  if (sel && ov) return layeredColors([COLORS.userOnly.border, ...layerColors], true);
+  if (matchedLayers.length > 1) return layeredColors(layerColors, false);
+  if (matchedLayers.length === 1) return { bg: `${matchedLayers[0].color}33`, border: matchedLayers[0].color, id: '#dbeafe', name: '#f8fafc' };
   if (sel)       return COLORS.userOnly;
   if (ov)        return COLORS.overlayOnly;
   return COLORS.none;
+}
+
+function layeredColors(colors: string[], shared: boolean) {
+  const safeColors = colors.length ? colors : [COLORS.shared.border];
+  const stops = safeColors.map((color, index) => {
+    const start = Math.round((index / safeColors.length) * 100);
+    const end = Math.round(((index + 1) / safeColors.length) * 100);
+    return `${color}55 ${start}% ${end}%`;
+  }).join(', ');
+  return {
+    bg: `linear-gradient(135deg, ${stops})`,
+    border: shared ? COLORS.shared.border : safeColors[0],
+    id: shared ? COLORS.shared.id : '#dbeafe',
+    name: shared ? COLORS.shared.name : '#f8fafc',
+  };
 }
 
 // ── Component props ───────────────────────────────────────────────────────────
@@ -50,6 +71,7 @@ function cellColors(
 interface Props extends Pick<MatrixData, 'tactics' | 'techniquesByTactic' | 'subtechsByParent' | 'parentsWithSubs'> {
   selectedTechniques: Set<string>;
   overlayTechniques:  Set<string>;
+  comparisonLayers: ComparisonLayer[];
   coverageTechniques: Set<string>;
   expandedTechniques: Set<string>;
   onToggleTechnique:  (id: string) => void;
@@ -65,6 +87,7 @@ export function AttackMatrix({
   parentsWithSubs,
   selectedTechniques,
   overlayTechniques,
+  comparisonLayers,
   coverageTechniques,
   expandedTechniques,
   onToggleTechnique,
@@ -133,6 +156,7 @@ export function AttackMatrix({
             parentsWithSubs={parentsWithSubs}
             selectedTechniques={selectedTechniques}
             overlayTechniques={overlayTechniques}
+            comparisonLayers={comparisonLayers}
             coverageTechniques={coverageTechniques}
             expandedTechniques={expandedTechniques}
             onToggle={handleToggle}
@@ -153,6 +177,7 @@ interface ColumnProps {
   parentsWithSubs: Set<string>;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  comparisonLayers: ComparisonLayer[];
   coverageTechniques: Set<string>;
   expandedTechniques: Set<string>;
   onToggle: (id: string) => void;
@@ -166,6 +191,7 @@ function TacticColumn({
   parentsWithSubs,
   selectedTechniques,
   overlayTechniques,
+  comparisonLayers,
   coverageTechniques,
   expandedTechniques,
   onToggle,
@@ -173,7 +199,8 @@ function TacticColumn({
 }: ColumnProps) {
   // Count how many selected/overlay techniques are in this column
   const selectedCount = techniques.filter((t) => selectedTechniques.has(t.attack_id)).length;
-  const overlayCount  = techniques.filter((t) => overlayTechniques.has(t.attack_id)).length;
+  const overlayIds = new Set([...overlayTechniques, ...comparisonLayers.flatMap(layer => layer.techniqueIds)]);
+  const overlayCount  = techniques.filter((t) => overlayIds.has(t.attack_id)).length;
 
   return (
     <div style={{ width: COL_WIDTH, flexShrink: 0 }}>
@@ -214,6 +241,7 @@ function TacticColumn({
               expanded={expanded}
               selectedTechniques={selectedTechniques}
               overlayTechniques={overlayTechniques}
+              comparisonLayers={comparisonLayers}
               covered={coverageTechniques.has(tech.attack_id)}
               onToggle={onToggle}
               onToggleExpanded={onToggleExpanded}
@@ -225,6 +253,7 @@ function TacticColumn({
                   tech={sub}
                   selectedTechniques={selectedTechniques}
                   overlayTechniques={overlayTechniques}
+                  comparisonLayers={comparisonLayers}
                   covered={coverageTechniques.has(sub.attack_id)}
                   onToggle={onToggle}
                 />
@@ -244,6 +273,7 @@ interface ParentCellProps {
   expanded: boolean;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  comparisonLayers: ComparisonLayer[];
   covered: boolean;
   onToggle: (id: string) => void;
   onToggleExpanded: (id: string) => void;
@@ -251,10 +281,11 @@ interface ParentCellProps {
 
 function ParentCell({
   tech, hasSubs, expanded,
-  selectedTechniques, overlayTechniques, covered,
+  selectedTechniques, overlayTechniques, comparisonLayers, covered,
   onToggle, onToggleExpanded,
 }: ParentCellProps) {
-  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques);
+  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
+  const tags = layerTags(tech.attack_id, comparisonLayers);
 
   return (
     <div
@@ -318,6 +349,7 @@ function ParentCell({
         </button>
       )}
       {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
+      {tags.length > 0 && <LayerTags tags={tags} />}
     </div>
   );
 }
@@ -328,12 +360,14 @@ interface SubCellProps {
   tech: TechniqueListItem;
   selectedTechniques: Set<string>;
   overlayTechniques: Set<string>;
+  comparisonLayers: ComparisonLayer[];
   covered: boolean;
   onToggle: (id: string) => void;
 }
 
-function SubtechCell({ tech, selectedTechniques, overlayTechniques, covered, onToggle }: SubCellProps) {
-  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques);
+function SubtechCell({ tech, selectedTechniques, overlayTechniques, comparisonLayers, covered, onToggle }: SubCellProps) {
+  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
+  const tags = layerTags(tech.attack_id, comparisonLayers);
 
   return (
     <button
@@ -385,6 +419,32 @@ function SubtechCell({ tech, selectedTechniques, overlayTechniques, covered, onT
         {tech.name}
       </div>
       {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
+      {tags.length > 0 && <LayerTags tags={tags} compact />}
     </button>
+  );
+}
+
+function layerTags(id: string, layers: ComparisonLayer[]) {
+  return layers
+    .filter(layer => layer.techniqueIds.includes(id))
+    .map(layer => ({ label: layer.name.slice(0, 2).toUpperCase(), color: layer.color, title: layer.name }));
+}
+
+function LayerTags({ tags, compact = false }: { tags: Array<{ label: string; color: string; title: string }>; compact?: boolean }) {
+  const limit = compact ? 2 : 3;
+  return (
+    <div className="absolute bottom-1 left-1 flex max-w-[94px] gap-0.5 overflow-hidden">
+      {tags.slice(0, limit).map(tag => (
+        <span
+          key={`${tag.title}-${tag.color}`}
+          title={tag.title}
+          style={{ backgroundColor: tag.color }}
+          className="rounded px-1 text-[7px] font-bold leading-3 text-white shadow"
+        >
+          {tag.label}
+        </span>
+      ))}
+      {tags.length > limit && <span className="text-[7px] text-white">+{tags.length - limit}</span>}
+    </div>
   );
 }

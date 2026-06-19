@@ -5,7 +5,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v2.5.9-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v2.6.0-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -14,7 +14,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.5.9 · [Release Summary](docs/release-summary-v2.5.9.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
+**Current release: v2.6.0 · [Release Summary](docs/release-summary-v2.6.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -122,7 +122,7 @@ On first startup, AdversaryGraph downloads and ingests MITRE ATT&CK / ATLAS refe
 
 ## Project Maturity Evidence
 
-AdversaryGraph v2.5.9 publishes the operational evidence expected from a serious self-hosted CTI tool:
+AdversaryGraph v2.6.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
@@ -137,7 +137,7 @@ AdversaryGraph v2.5.9 publishes the operational evidence expected from a serious
 
 The current documentation is intended to make external review practical rather than promotional.
 
-For the current release scope, see the [v2.5.9 release summary](docs/release-summary-v2.5.9.md) and [release notes](docs/release-notes/v2.5.9.md).
+For the current release scope, see the [v2.6.0 release summary](docs/release-summary-v2.6.0.md) and [release notes](docs/release-notes/v2.6.0.md).
 
 ## Public Demo Privacy Note
 
@@ -1271,6 +1271,15 @@ copy, newsletter pitch text, and current external submission tracking.
 ---
 
 ## Changelog
+
+### v2.6.0 (2026-06-19)
+
+**Telemetry analysis and workflow documentation release:**
+- Added AI log/PCAP analysis with IOC extraction, suspicious activity triage, ATT&CK mapping, actor-overlap hints, and report output
+- Added multi-layer Navigator comparison with saved/imported layers, layer colors, and overlap tags
+- Added actions to inject AI-extracted TTPs into Navigator and compare them as a separate layer
+- Expanded Discover page actions for self-test, report analysis, IOC investigation, actor review, feed management, and matrix workflows
+- Updated the 30-use-case documentation set to v2.6.0, removed draft markers, and embedded animated GIF walkthroughs from the published use-case article
 
 ### v2.5.9 (2026-06-19)
 

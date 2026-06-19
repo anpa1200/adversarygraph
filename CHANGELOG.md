@@ -4,6 +4,21 @@
 
 No unreleased changes.
 
+## v2.6.0 - 2026-06-19
+
+- Added AI log/PCAP analysis for pasted telemetry or uploaded files, with IOC
+  extraction, suspicious activity triage, ATT&CK mapping, actor-overlap hints,
+  and report output.
+- Added Navigator layer save/import/compare workflows for reviewing overlapping
+  ATT&CK layers with distinct layer colors and overlap tags.
+- Added AI Analysis actions to inject extracted TTPs into Navigator or compare
+  them as a separate layer.
+- Expanded the Discover page with direct workflow actions for self-test, report
+  analysis, IOC investigation, actor review, feed management, and matrix work.
+- Updated the 30-use-case documentation set to v2.6.0, removed draft markers,
+  and embedded the animated GIF walkthroughs from the published Medium use-case
+  article.
+
 ## v2.5.9 - 2026-06-19
 
 - Added the public Yara-Rules malware repository as a default YARA feed source.

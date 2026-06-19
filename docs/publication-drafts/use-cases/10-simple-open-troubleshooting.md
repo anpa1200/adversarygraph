@@ -1,13 +1,11 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 ## Usecase number "10"
 
 ### Open Troubleshooting For An Error: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.5.9  
-**Level:** Simple, 1-2 steps  
+**Version focus:** AdversaryGraph v2.6.0
+**Level:** Simple, 1-2 steps
 **Workflow group:** Simple Usecases
 
 ## Table Of Contents
@@ -52,6 +50,6 @@ A clear remediation path and a green All correct message after the issue is fixe
 
 This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
-**Project:** https://github.com/anpa1200/adversarygraph  
-**Docs:** https://1200km.com/adversarygraph-docs/  
+**Project:** https://github.com/anpa1200/adversarygraph
+**Docs:** https://1200km.com/adversarygraph-docs/
 **Use cases:** https://1200km.com/adversarygraph/use-cases.html

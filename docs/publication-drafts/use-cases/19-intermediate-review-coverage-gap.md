@@ -1,13 +1,11 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 ## Usecase number "19"
 
 ### Review One Coverage Gap: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.5.9  
-**Level:** Intermediate, 3-5 steps  
+**Version focus:** AdversaryGraph v2.6.0
+**Level:** Intermediate, 3-5 steps
 **Workflow group:** Intermediate Usecases
 
 ## Table Of Contents
@@ -54,6 +52,6 @@ A coverage-gap note with evidence, affected actors, rule draft, and review statu
 
 This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
-**Project:** https://github.com/anpa1200/adversarygraph  
-**Docs:** https://1200km.com/adversarygraph-docs/  
+**Project:** https://github.com/anpa1200/adversarygraph
+**Docs:** https://1200km.com/adversarygraph-docs/
 **Use cases:** https://1200km.com/adversarygraph/use-cases.html

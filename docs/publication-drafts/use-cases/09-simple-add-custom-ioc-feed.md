@@ -1,13 +1,11 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 ## Usecase number "9"
 
 ### Add A Custom IOC Feed: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.5.9  
-**Level:** Simple, 1-2 steps  
+**Version focus:** AdversaryGraph v2.6.0
+**Level:** Simple, 1-2 steps
 **Workflow group:** Simple Usecases
 
 ## Table Of Contents
@@ -18,6 +16,10 @@
 - [Expected Output](#expected-output)
 - [Analyst Review Standard](#analyst-review-standard)
 - [Where This Fits](#where-this-fits)
+
+## Walkthrough GIF
+
+![Usecase 9 - Add A Custom IOC Feed walkthrough](../assets/use-cases/usecase-09-add-custom-ioc-feed.gif)
 
 ## Why This Use Case Matters
 
@@ -52,6 +54,6 @@ A reusable custom feed source with imported indicators linked to the local IOC L
 
 This use case supports CTI production, SOC triage, threat hunting, detection engineering, customer reporting, or platform validation depending on the workflow level.
 
-**Project:** https://github.com/anpa1200/adversarygraph  
-**Docs:** https://1200km.com/adversarygraph-docs/  
+**Project:** https://github.com/anpa1200/adversarygraph
+**Docs:** https://1200km.com/adversarygraph-docs/
 **Use cases:** https://1200km.com/adversarygraph/use-cases.html

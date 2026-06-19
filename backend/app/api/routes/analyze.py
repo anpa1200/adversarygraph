@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime
 from typing import Annotated, AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -27,6 +28,7 @@ from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Techni
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
 from app.services.file_parser import extract_text
+from app.services.ioc_extractor import extract_iocs_from_text
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 logger = logging.getLogger(__name__)
@@ -94,6 +96,32 @@ class TechniqueReviewUpdate(BaseModel):
     evidence: str | None = Field(default=None, max_length=500)
     review_note: str | None = Field(default=None, max_length=1000)
     reviewer: str | None = Field(default=None, max_length=120)
+
+
+class LogObservable(BaseModel):
+    value: str
+    type: str
+    confidence: int
+    description: str
+
+
+class SuspiciousFinding(BaseModel):
+    severity: str
+    category: str
+    evidence: str
+    reason: str
+
+
+class LogPcapAnalysisOut(BaseModel):
+    provider: str
+    model: str
+    filename: str | None
+    summary: str
+    report: str
+    observables: list[LogObservable]
+    suspicious_findings: list[SuspiciousFinding]
+    techniques: list[TechniqueHit]
+    apt_matches: list[AptMatch]
 
 
 # ── Full analysis (JSON response) ─────────────────────────────────────────────
@@ -170,6 +198,7 @@ async def analyze_stream(
         model=adapter.model,
         domain=domain,
     )
+
     session.add(db_session)
     await session.flush()
     session_id = str(db_session.id)
@@ -219,6 +248,58 @@ async def analyze_stream(
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.post("/log-pcap", response_model=LogPcapAnalysisOut)
+async def analyze_log_pcap(
+    provider: Annotated[str, Form()] = "local",
+    model:    Annotated[str | None, Form()] = None,
+    domain:   Annotated[str, Form()] = "enterprise-attack",
+    text:     Annotated[str | None, Form()] = None,
+    file:     UploadFile | None = File(default=None),
+    session:  AsyncSession = Depends(get_session),
+):
+    body, filename = await _read_log_input(text, file)
+    if not body.strip():
+        raise HTTPException(400, "Uploaded log/pcap did not contain extractable text")
+
+    observables = _observables_from_text(body)
+    suspicious = _suspicious_findings(body)
+    adapter = _get_adapter(provider, model)
+    analysis_text = _build_log_pcap_prompt(body, observables, suspicious)
+
+    try:
+        result = await adapter.extract(analysis_text, domain)
+        apt_matches = await _rank_apt_groups(result, domain, session)
+    except Exception as exc:
+        logger.error("Log/PCAP AI analysis failed: %s", exc, exc_info=True)
+        raise HTTPException(500, f"Log/PCAP AI analysis failed: {exc}") from exc
+
+    report = _build_log_pcap_report(filename, result, observables, suspicious, apt_matches)
+    return LogPcapAnalysisOut(
+        provider=adapter.provider,
+        model=adapter.model,
+        filename=filename,
+        summary=result.summary,
+        report=report,
+        observables=observables,
+        suspicious_findings=suspicious,
+        techniques=[
+            TechniqueHit(
+                attack_id=t.attack_id,
+                name=t.name,
+                tactic=t.tactic,
+                confidence=t.confidence,
+                evidence=t.evidence,
+                review_status=t.review_status,
+                evidence_start=t.evidence_start,
+                evidence_end=t.evidence_end,
+                evidence_source=t.evidence_source,
+            )
+            for t in result.techniques
+        ],
+        apt_matches=apt_matches,
     )
 
 
@@ -460,6 +541,142 @@ async def _read_input(
     if text and text.strip():
         return text.strip(), None
     raise HTTPException(400, "Provide either 'text' or 'file'")
+
+
+async def _read_log_input(text: str | None, file: UploadFile | None) -> tuple[str, str | None]:
+    if file:
+        if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "File exceeds 50 MB limit")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await file.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, "File exceeds 50 MB limit")
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+        name = file.filename or "upload"
+        if name.lower().endswith((".pcap", ".pcapng", ".cap")):
+            return _extract_strings(raw), name
+        return extract_text(raw, name), name
+    if text and text.strip():
+        return text.strip(), None
+    raise HTTPException(400, "Provide either 'text' or 'file'")
+
+
+def _extract_strings(content: bytes) -> str:
+    ascii_strings = re.findall(rb"[\x20-\x7e]{4,}", content)
+    decoded = [item.decode("latin-1", errors="ignore") for item in ascii_strings[:25_000]]
+    return "\n".join(decoded)[:120_000]
+
+
+def _observables_from_text(text: str) -> list[LogObservable]:
+    items = extract_iocs_from_text(text, source_id="log-pcap-analysis", confidence=75)
+    powershell = sorted(set(re.findall(r"(?i)\b(?:powershell(?:\.exe)?|pwsh(?:\.exe)?)\b[^\r\n]{0,240}", text)))[:40]
+    functions = sorted(set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,64}\s*\(", text)))[:80]
+    observables = [
+        LogObservable(
+            value=item.value,
+            type=item.indicator_type,
+            confidence=item.confidence,
+            description=item.description or "Observable extracted from log/pcap input.",
+        )
+        for item in items[:300]
+    ]
+    observables.extend(
+        LogObservable(value=value.strip(), type="powershell", confidence=80, description="PowerShell command or invocation extracted from input.")
+        for value in powershell
+    )
+    observables.extend(
+        LogObservable(value=value.rstrip("("), type="function", confidence=45, description="Function-like token extracted for analyst review.")
+        for value in functions
+    )
+    return observables[:500]
+
+
+def _suspicious_findings(text: str) -> list[SuspiciousFinding]:
+    patterns = [
+        ("high", "PowerShell encoded command", r"(?i)powershell[^\r\n]{0,200}\s-(?:enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,}", "Encoded PowerShell frequently appears in malware execution and defense evasion."),
+        ("high", "Credential dumping keyword", r"(?i)\b(?:mimikatz|sekurlsa|lsass|procdump|nanodump)\b[^\r\n]{0,160}", "Credential dumping tooling or LSASS access indicator was present."),
+        ("medium", "Suspicious LOLBin", r"(?i)\b(?:rundll32|regsvr32|mshta|wmic|bitsadmin|certutil)\b[^\r\n]{0,180}", "Common living-off-the-land binary appeared in execution context."),
+        ("medium", "Persistence keyword", r"(?i)\b(?:schtasks|runonce|startup|services?\.exe|new-service|set-service)\b[^\r\n]{0,180}", "Persistence or service/task modification keyword was present."),
+        ("medium", "Remote access keyword", r"(?i)\b(?:rdp|ssh|winrm|psexec|smbexec|remote desktop)\b[^\r\n]{0,180}", "Remote access or lateral movement keyword was present."),
+        ("medium", "Archive/exfil keyword", r"(?i)\b(?:7z|rar|zip|rclone|megasync|exfil|upload)\b[^\r\n]{0,180}", "Archiving, transfer, or exfiltration keyword was present."),
+        ("low", "Web shell keyword", r"(?i)\b(?:webshell|cmd\.aspx|shell\.php|wso\.php)\b[^\r\n]{0,160}", "Possible web shell naming or description was present."),
+    ]
+    findings: list[SuspiciousFinding] = []
+    seen: set[tuple[str, str]] = set()
+    for severity, category, pattern, reason in patterns:
+        for match in re.finditer(pattern, text):
+            evidence = match.group(0).strip()
+            key = (category, evidence.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(SuspiciousFinding(severity=severity, category=category, evidence=evidence[:500], reason=reason))
+            if len(findings) >= 80:
+                return findings
+    return findings
+
+
+def _build_log_pcap_prompt(text: str, observables: list[LogObservable], suspicious: list[SuspiciousFinding]) -> str:
+    observable_lines = "\n".join(f"- {item.type}: {item.value}" for item in observables[:120])
+    finding_lines = "\n".join(f"- {item.severity} {item.category}: {item.evidence}" for item in suspicious[:50])
+    return (
+        "Log/PCAP security analysis input. Diagnose suspicious or malicious activity, map behaviors to MITRE ATT&CK, "
+        "and use the supplied extracted observables as evidence when relevant.\n\n"
+        f"Extracted observables:\n{observable_lines or 'none'}\n\n"
+        f"Heuristic suspicious findings:\n{finding_lines or 'none'}\n\n"
+        "--- BEGIN LOG/PCAP TEXT ---\n"
+        f"{text[:35_000]}\n"
+        "--- END LOG/PCAP TEXT ---"
+    )
+
+
+def _build_log_pcap_report(
+    filename: str | None,
+    result: ExtractionResult,
+    observables: list[LogObservable],
+    suspicious: list[SuspiciousFinding],
+    apt_matches: list[AptMatch],
+) -> str:
+    lines = [
+        "# AdversaryGraph Log / PCAP Analysis Report",
+        "",
+        f"Source: {filename or 'pasted text'}",
+        f"Generated: {datetime.utcnow().isoformat()}Z",
+        "",
+        "## Executive Summary",
+        "",
+        result.summary or "No AI summary was returned.",
+        "",
+        "## Suspicious / Malicious Activity",
+        "",
+    ]
+    if suspicious:
+        lines.extend(f"- **{item.severity.upper()}** {item.category}: {item.reason}\n  Evidence: `{item.evidence}`" for item in suspicious[:30])
+    else:
+        lines.append("- No suspicious heuristic hits were identified. Review extracted observables and raw evidence manually.")
+    lines.extend(["", "## ATT&CK TTPs", ""])
+    if result.techniques:
+        lines.extend(f"- {item.attack_id} {item.name} ({item.tactic}) confidence={item.confidence:.2f}: {item.evidence}" for item in result.techniques)
+    else:
+        lines.append("- No ATT&CK mappings were returned by the selected AI provider.")
+    lines.extend(["", "## Possible IOCs for Enrichment", ""])
+    if observables:
+        lines.extend(f"- {item.type}: {item.value} ({item.confidence})" for item in observables[:120])
+    else:
+        lines.append("- No IOC candidates extracted.")
+    lines.extend(["", "## Possible Actor Overlap", ""])
+    if apt_matches:
+        lines.extend(f"- {item.group_name} ({item.group_attack_id}): {round(item.similarity * 100)}% overlap, {item.shared_count} shared TTPs" for item in apt_matches[:10])
+    else:
+        lines.append("- No actor overlap calculated.")
+    lines.extend(["", "## Analyst Notes", "", "- Treat this as triage output. Validate every IOC and TTP against original telemetry before escalation."])
+    return "\n".join(lines)
 
 
 def _get_adapter(provider: str, model: str | None):

@@ -25,6 +25,10 @@ interface AppState {
   overlayTechniques: Set<string>;
   setOverlayTechniques: (ids: string[]) => void;
   clearOverlay: () => void;
+  comparisonLayers: ComparisonLayer[];
+  addComparisonLayer: (layer: Omit<ComparisonLayer, 'id' | 'color'> & { color?: string }) => void;
+  removeComparisonLayer: (id: string) => void;
+  clearComparisonLayers: () => void;
 
   // ── Sub-technique expansion ─────────────────────────────────────────────
   expandedTechniques: Set<string>;
@@ -63,6 +67,16 @@ export interface InvestigationWorkspace {
   techniqueAssessments: Record<string, TechniqueAssessment>;
   updatedAt: string;
 }
+
+export interface ComparisonLayer {
+  id: string;
+  name: string;
+  techniqueIds: string[];
+  color: string;
+  source?: string;
+}
+
+const COMPARISON_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
 
 const STORAGE_KEY = 'adversarygraph-docker-workbench-v1';
 const saved = (() => {
@@ -112,6 +126,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ overlayTechniques: new Set(ids) }),
   clearOverlay: () =>
     set({ overlayGroupId: null, overlayGroupName: '', overlayTechniques: new Set() }),
+  comparisonLayers: [],
+  addComparisonLayer: (layer) =>
+    set((state) => {
+      const color = layer.color ?? COMPARISON_COLORS[state.comparisonLayers.length % COMPARISON_COLORS.length];
+      const nextLayer: ComparisonLayer = {
+        id: crypto.randomUUID(),
+        name: layer.name.trim() || `Comparison layer ${state.comparisonLayers.length + 1}`,
+        techniqueIds: Array.from(new Set(layer.techniqueIds.map(id => id.toUpperCase()))).sort(),
+        color,
+        source: layer.source,
+      };
+      return { comparisonLayers: [...state.comparisonLayers, nextLayer] };
+    }),
+  removeComparisonLayer: (id) =>
+    set((state) => ({ comparisonLayers: state.comparisonLayers.filter(layer => layer.id !== id) })),
+  clearComparisonLayers: () =>
+    set({ comparisonLayers: [] }),
 
   // Sub-technique expansion
   expandedTechniques: new Set(),

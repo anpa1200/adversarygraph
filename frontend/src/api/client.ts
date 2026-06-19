@@ -404,6 +404,18 @@ export interface AnalysisResult {
   apt_hints: string[];
 }
 
+export interface LogPcapAnalysisResult {
+  provider: string;
+  model: string;
+  filename: string | null;
+  summary: string;
+  report: string;
+  observables: Array<{ value: string; type: string; confidence: number; description: string }>;
+  suspicious_findings: Array<{ severity: string; category: string; evidence: string; reason: string }>;
+  techniques: AnalysisResult['techniques'];
+  apt_matches: AnalysisResult['apt_matches'];
+}
+
 export const analyzeApi = {
   /** Non-streaming: returns full result */
   submit: (formData: FormData): Promise<AnalysisResult> =>
@@ -423,6 +435,9 @@ export const analyzeApi = {
 
   getResult: (sessionId: string): Promise<AnalysisResult> =>
     http.get(`/analyze/${sessionId}`).then(r => r.data),
+
+  logPcap: (formData: FormData): Promise<LogPcapAnalysisResult> =>
+    http.post('/analyze/log-pcap', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
 
   updateTechniqueReview: (
     sessionId: string,

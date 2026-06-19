@@ -1,12 +1,34 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 # 30 Practical AdversaryGraph Use Cases
 
-AdversaryGraph is a self-hosted CTI-to-detection workbench for analysts who need to move from raw intelligence to reviewed action. It connects report analysis, IOC enrichment, actor context, ATT&CK mapping, feed synchronization, matrix visualization, detection generation, and exportable evidence in one workflow.
+AdversaryGraph is a self-hosted AI CTI and detection engineering platform for analysts who need to move from raw intelligence to reviewed action. It connects report analysis, log and PCAP triage, IOC enrichment, actor context, MITRE ATT&CK mapping, feed synchronization, matrix visualization, detection generation, and exportable evidence in one workflow.
+
+The main idea is simple: an analyst should be able to take a report, IOC, log excerpt, PCAP, actor name, sector requirement, or detection gap and turn it into something operational. That output can be a reviewed ATT&CK layer, an IOC enrichment record, an actor comparison, a customer-ready investigation report, a coverage backlog, or a draft Sigma/YARA/YARA-L detection.
+
+Relevant links:
+
+- GitHub repository: https://github.com/anpa1200/adversarygraph
+- Official documentation: https://1200km.com/adversarygraph-docs/
+- Getting started guide: https://1200km.com/adversarygraph-docs/get-started.html
+- Capabilities overview: https://1200km.com/adversarygraph-docs/capabilities.html
+- Public project page: https://1200km.com/adversarygraph/
+- 1200km research ecosystem: https://1200km.com/
+- Medium publication: https://medium.com/@1200km
+
+This article is not a generic feature list. It is a practical use-case map for the platform. Each use case starts from a real analyst situation, shows where to begin in AdversaryGraph, and defines the expected output. You can read it from top to bottom, but it is more useful as a workflow menu:
+
+- SOC analysts can start with IOC lookup, log/PCAP triage, enrichment, and actor comparison.
+- CTI analysts can start with report-to-ATT&CK mapping, actor profiles, sector intelligence, and campaign comparison.
+- Detection engineers can start with Navigator layers, coverage gaps, rule feeds, and AI-assisted detection generation.
+- Consultants and customer-facing analysts can start with investigation reports, executive coverage summaries, and evidence-backed exports.
+- Platform operators can start with selftest, feed management, TAXII/STIX, MISP, custom feeds, and troubleshooting.
 
 This article collects 30 practical ways to use the platform. The first 10 are simple daily actions, the next 10 are structured analyst workflows, and the final 10 are full investigation and defense workflows.
+
+The value of these use cases is that they show how the platform pieces connect. AdversaryGraph is strongest when it is used as a workflow system, not as isolated pages. For example, an IOC lookup can become a VirusTotal enrichment, which can become mapped TTPs, which can become a Navigator comparison layer, which can become a detection backlog and a report. A vendor article can become accepted or rejected TTP evidence, actor similarity hypotheses, enriched IOCs, and a customer-ready PDF. A sector question can become a prioritized actor/TTP list for a specific customer environment.
+
+Use this article as a checklist when demonstrating, testing, documenting, or improving the platform. If a workflow is important to your team, it should be possible to trace it through one of these use cases from input to reviewed output.
 
 ## Table Of Contents
 
@@ -46,6 +68,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "1" - Check One IOC
 
+![Usecase 1 - Check One IOC walkthrough](assets/use-cases/usecase-01-check-one-ioc.gif)
+
 **Scenario:** SOC triage receives a single IP, domain, URL, or hash from an EDR alert, firewall log, phishing ticket, or customer report.
 
 **Flow:** Open IOC Library or VirusTotal Lookup, paste the indicator, and open Enrichment. Review reputation, source labels, timestamps, malware family, actor hints, and mapped TTPs.
@@ -53,6 +77,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** A short IOC decision record that supports escalation, hunting, blocking, or closure.
 
 ### Usecase number "2" - Open One Actor Profile
+
+![Usecase 2 - Open One Actor Profile walkthrough](assets/use-cases/usecase-02-open-actor-profile.gif)
 
 **Scenario:** A customer asks whether a named actor in a report is relevant to their environment or sector.
 
@@ -62,6 +88,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "3" - Show Actor TTPs On The Matrix
 
+![Usecase 3 - Show Actor TTPs On The Matrix walkthrough](assets/use-cases/usecase-03-show-actor-ttps-on-matrix.gif)
+
 **Scenario:** A detection engineer needs a quick visual view of one actor behavior before planning coverage work.
 
 **Flow:** Open the actor profile and click Show on matrix or Overlay on Navigator.
@@ -69,6 +97,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** An ATT&CK matrix view showing the actor technique set for fast coverage review.
 
 ### Usecase number "4" - Search The IOC Library
+
+![Usecase 4 - Search The IOC Library walkthrough](assets/use-cases/usecase-04-search-ioc-library.gif)
 
 **Scenario:** A SOC analyst wants to know whether an indicator has already appeared in local or synchronized intelligence.
 
@@ -86,6 +116,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "6" - Import A Navigator Layer
 
+![Usecase 6 - Import A Navigator Layer walkthrough](assets/use-cases/usecase-06-import-navigator-layer.gif)
+
 **Scenario:** A team already has an ATT&CK Navigator layer from a previous assessment or another tool.
 
 **Flow:** Open Navigator, import the layer, and compare it against current actor, sector, or report-derived TTPs.
@@ -93,6 +125,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** Imported ATT&CK coverage that can be reused inside the AdversaryGraph workflow.
 
 ### Usecase number "7" - Export A PDF Report
+
+![Usecase 7 - Export A PDF Report walkthrough](assets/use-cases/usecase-07-export-pdf-report.gif)
 
 **Scenario:** A customer or manager needs a clean summary of reviewed investigation output.
 
@@ -102,6 +136,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "8" - Run Deployment Selftest
 
+![Usecase 8 - Run Deployment Selftest walkthrough](assets/use-cases/usecase-08-run-deployment-selftest.gif)
+
 **Scenario:** A new Docker deployment starts, but the analyst needs to know whether API keys, database, and sync services are ready.
 
 **Flow:** Open the selftest popup or Troubleshooting page, click Recheck, and review failed checks if any.
@@ -109,6 +145,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** A clear system status message showing whether API, DB, keys, sync, and frontend connectivity are healthy.
 
 ### Usecase number "9" - Add A Custom IOC Feed
+
+![Usecase 9 - Add A Custom IOC Feed walkthrough](assets/use-cases/usecase-09-add-custom-ioc-feed.gif)
 
 **Scenario:** A private customer or internal team publishes a JSON, CSV, or TXT feed that must stay inside the local environment.
 
@@ -128,6 +166,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "11" - Map A Report To ATT&CK
 
+![Usecase 11 - Map A Report To ATT&CK walkthrough](assets/use-cases/usecase-11-map-report-to-attack.gif)
+
 **Scenario:** A CTI analyst receives a vendor report or incident write-up and needs to convert narrative text into ATT&CK evidence.
 
 **Flow:** Open AI Analysis or Investigation Report, paste or upload the report, run analysis with the configured LLM provider, then review extracted TTPs as accepted, rejected, suggested, or needs-evidence.
@@ -135,6 +175,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** A reviewed ATT&CK mapping with evidence snippets and analyst status for each technique.
 
 ### Usecase number "12" - Compare Incident TTPs To Actors
+
+![Usecase 12 - Compare Incident TTPs To Actors walkthrough](assets/use-cases/usecase-12-compare-incident-ttps-to-actors.gif)
 
 **Scenario:** An incident shows a known set of behaviors, but attribution is not clear.
 
@@ -144,6 +186,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "13" - Build A Sector Threat Brief
 
+![Usecase 13 - Build A Sector Threat Brief walkthrough](assets/use-cases/usecase-13-build-sector-threat-brief.gif)
+
 **Scenario:** A telecom, cloud, finance, healthcare, or industrial customer asks which actors are most relevant now.
 
 **Flow:** Open Sector Intel, choose one or more sectors, regions, and technologies, set the activity window, then open top actors and export key TTPs.
@@ -152,6 +196,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 
 ### Usecase number "14" - Enrich Actor IOCs
 
+![Usecase 14 - Enrich Actor IOCs walkthrough](assets/use-cases/usecase-14-enrich-actor-iocs.gif)
+
 **Scenario:** An actor profile has only partial IOC coverage and the analyst needs current infrastructure context.
 
 **Flow:** Open the actor IOC tab, sync ThreatFox, OTX, MalwareBazaar, Malpedia, or custom feeds, then open IOC Enrichment for high-value values.
@@ -159,6 +205,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** An enriched actor IOC view with source labels, malware family context, TTP hints, and review state.
 
 ### Usecase number "15" - Import MISP JSON
+
+![Usecase 15 - Import MISP JSON walkthrough](assets/use-cases/usecase-15-import-misp-json.gif)
 
 **Scenario:** A partner shares a MISP event or attribute export that needs to be used inside the local investigation workflow.
 
@@ -183,6 +231,8 @@ This article collects 30 practical ways to use the platform. The first 10 are si
 **Output:** Rule feeds available as references for detection review and AI-assisted generation.
 
 ### Usecase number "18" - Compare Two Reports
+
+![Usecase 18 - Compare Two Reports walkthrough](assets/use-cases/usecase-18-compare-two-reports.gif)
 
 **Scenario:** Two reports may describe related campaigns but use different names, IOCs, and writing styles.
 

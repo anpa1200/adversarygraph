@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import { analyzeApi, exportApi, reportsApi } from '@/api/client';
-import type { AnalysisResult } from '@/api/client';
+import type { AnalysisResult, LogPcapAnalysisResult } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
 import type { ReportSession } from '@/types/attack';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
+type AnalysisMode = 'cti' | 'log-pcap';
 
 const PROVIDERS: { id: Provider; label: string; model: string; color: string }[] = [
   { id: 'claude',  label: 'Claude',  model: 'claude-opus-4-8',  color: 'border-orange-600 bg-orange-900/20 text-orange-300' },
@@ -20,14 +21,16 @@ const PROVIDERS: { id: Provider; label: string; model: string; color: string }[]
 ];
 
 export function Analyze() {
-  const { domain, addTechniques } = useAppStore();
+  const { domain, addTechniques, addComparisonLayer } = useAppStore();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [provider, setProvider] = useState<Provider>('claude');
+  const [mode, setMode] = useState<AnalysisMode>('cti');
   const [text,     setText]     = useState('');
   const [file,     setFile]     = useState<File | null>(null);
   const [loadedResult, setLoadedResult] = useState<AnalysisResult | null>(null);
+  const [logPcapResult, setLogPcapResult] = useState<LogPcapAnalysisResult | null>(null);
 
   // result: populated by the server-side "result" SSE event (includes group-similarity leads)
   // tokens: raw LLM token stream shown live while waiting
@@ -59,6 +62,15 @@ export function Analyze() {
     },
   });
 
+  const logPcapMutation = useMutation({
+    mutationFn: (fd: FormData) => analyzeApi.logPcap(fd),
+    onSuccess: data => {
+      reset();
+      setLoadedResult(null);
+      setLogPcapResult(data);
+    },
+  });
+
   useEffect(() => {
     if (result?.session_id) {
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
@@ -75,17 +87,27 @@ export function Analyze() {
 
     reset();
     setLoadedResult(null);
+    setLogPcapResult(null);
+    if (mode === 'log-pcap') {
+      logPcapMutation.mutate(fd);
+      return;
+    }
     await run(analyzeApi.stream(fd));
-  }, [provider, domain, file, text, run, reset]);
+  }, [provider, domain, file, text, reset, mode, logPcapMutation, run]);
 
   const onDrop = useCallback(([f]: File[]) => { if (f) { setFile(f); setText(''); } }, []);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'application/pdf': ['.pdf'], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'], 'text/plain': ['.txt'] },
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt', '.log', '.evtx', '.csv'],
+      'application/vnd.tcpdump.pcap': ['.pcap', '.pcapng', '.cap'],
+    },
     maxFiles: 1,
   });
 
-  const canSubmit = (!!text.trim() || !!file) && !streaming;
+  const canSubmit = (!!text.trim() || !!file) && !streaming && !logPcapMutation.isPending;
 
   return (
     <div className="flex flex-col h-full">
@@ -117,18 +139,36 @@ export function Analyze() {
 
           {/* Text input */}
           <div className="p-4 border-b border-gray-800 flex-1 flex flex-col">
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded bg-gray-950 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setMode('cti')}
+                className={`rounded px-2 py-1.5 ${mode === 'cti' ? 'bg-mitre-accent text-white' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                CTI report
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('log-pcap')}
+                className={`rounded px-2 py-1.5 ${mode === 'log-pcap' ? 'bg-mitre-accent text-white' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Log / PCAP
+              </button>
+            </div>
             <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Paste text</div>
             <textarea
               value={text}
               onChange={e => { setText(e.target.value); setFile(null); }}
               rows={8}
               className="flex-1 bg-gray-800 text-xs text-gray-200 px-3 py-2 rounded border border-gray-700 focus:border-mitre-accent outline-none resize-none font-mono placeholder-gray-600"
-              placeholder="Paste incident report, investigation notes, IOC list, threat intel blog…"
+              placeholder={mode === 'log-pcap' ? 'Paste logs, PowerShell transcript, EDR output, firewall/DNS/proxy lines, Zeek/Suricata output...' : 'Paste incident report, investigation notes, IOC list, threat intel blog…'}
             />
 
             {/* File upload */}
             <div className="mt-3">
-              <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Or upload (PDF / DOCX / TXT)</div>
+              <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">
+                Or upload {mode === 'log-pcap' ? '(LOG / TXT / CSV / PCAP / PCAPNG)' : '(PDF / DOCX / TXT)'}
+              </div>
               <div
                 {...getRootProps()}
                 className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors text-xs ${
@@ -164,12 +204,12 @@ export function Analyze() {
                 disabled={!canSubmit}
                 className="w-full bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white py-2.5 rounded font-medium text-sm transition-colors"
               >
-                Analyse with AI
+                {logPcapMutation.isPending ? 'Analysing log / PCAP...' : mode === 'log-pcap' ? 'Analyse log / PCAP' : 'Analyse with AI'}
               </button>
             )}
-            {error && (
+            {(error || logPcapMutation.error) && (
               <div className="mt-3 text-xs text-red-400 bg-red-900/20 px-3 py-2 rounded">
-                {error}
+                {error || (logPcapMutation.error instanceof Error ? logPcapMutation.error.message : String(logPcapMutation.error))}
               </div>
             )}
           </div>
@@ -206,10 +246,10 @@ export function Analyze() {
           )}
 
           {/* Empty state */}
-          {!streaming && !tokens && !activeResult && (
+          {!streaming && !tokens && !activeResult && !logPcapResult && (
             <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-600">
               <div className="text-5xl mb-4">⬢</div>
-              <p className="text-gray-500">Submit a report to extract ATT&CK techniques.</p>
+              <p className="text-gray-500">Submit a report, log, or PCAP to extract ATT&CK techniques.</p>
               <p className="text-xs mt-2 text-gray-600">
                 Previous analyses are remembered locally and can be reopened from the left panel.
               </p>
@@ -221,6 +261,16 @@ export function Analyze() {
             <ResultsView
               result={activeResult}
               addTechniques={addTechniques}
+              addComparisonLayer={addComparisonLayer}
+              navigate={navigate}
+            />
+          )}
+
+          {logPcapResult && (
+            <LogPcapResultView
+              result={logPcapResult}
+              addTechniques={addTechniques}
+              addComparisonLayer={addComparisonLayer}
               navigate={navigate}
             />
           )}
@@ -230,10 +280,130 @@ export function Analyze() {
             <StreamResultParser
               tokens={tokens}
               addTechniques={addTechniques}
+              addComparisonLayer={addComparisonLayer}
               navigate={navigate}
             />
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LogPcapResultView({
+  result,
+  addTechniques,
+  addComparisonLayer,
+  navigate,
+}: {
+  result: LogPcapAnalysisResult;
+  addTechniques: (ids: string[]) => void;
+  addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const ttpIds = result.techniques.filter(item => item.review_status !== 'rejected').map(item => item.attack_id);
+  const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].includes(item.type));
+  const addToMyTtps = () => addTechniques(ttpIds);
+  const compareOnMatrix = () => {
+    addComparisonLayer({
+      name: `Log/PCAP ${result.filename || new Date().toLocaleTimeString()}`,
+      techniqueIds: ttpIds,
+      source: 'log-pcap-analysis',
+    });
+    navigate('/navigator');
+  };
+  const downloadReport = (format: 'md' | 'txt') => {
+    const content = format === 'md' ? result.report : result.report.replace(/^#{1,6}\s+/gm, '');
+    const url = URL.createObjectURL(new Blob([content], { type: format === 'md' ? 'text/markdown' : 'text/plain' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `adversarygraph-log-pcap-report.${format}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="border-b border-gray-800 bg-gray-900/50 px-6 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <span className="text-xs text-gray-500 font-mono">{result.provider} / {result.model}</span>
+            <h2 className="mt-1 text-lg font-semibold text-white">Log / PCAP Analysis</h2>
+            <p className="mt-1 max-w-4xl text-sm text-gray-300">{result.summary || 'No AI summary returned.'}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={addToMyTtps} disabled={!ttpIds.length} className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">+ My TTPs</button>
+            <button onClick={compareOnMatrix} disabled={!ttpIds.length} className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">⇄ Matrix compare</button>
+            <button onClick={() => downloadReport('md')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ MD report</button>
+            <button onClick={() => downloadReport('txt')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ TXT report</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="space-y-4">
+          <Panel title={`Suspicious / malicious findings (${result.suspicious_findings.length})`}>
+            {result.suspicious_findings.length ? result.suspicious_findings.map((finding, index) => (
+              <div key={`${finding.category}-${index}`} className="border-t border-gray-800 p-3">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${finding.severity === 'high' ? 'bg-red-950 text-red-300' : finding.severity === 'medium' ? 'bg-amber-950 text-amber-300' : 'bg-gray-800 text-gray-400'}`}>
+                    {finding.severity.toUpperCase()}
+                  </span>
+                  <b className="text-sm text-white">{finding.category}</b>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{finding.reason}</p>
+                <pre className="mt-2 whitespace-pre-wrap rounded bg-gray-950 p-2 text-[10px] text-gray-400">{finding.evidence}</pre>
+              </div>
+            )) : <p className="p-3 text-xs text-gray-500">No suspicious heuristic findings.</p>}
+          </Panel>
+
+          <Panel title={`Mapped TTPs (${result.techniques.length})`}>
+            {result.techniques.length ? result.techniques.map(technique => (
+              <div key={technique.attack_id} className="border-t border-gray-800 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <a href={`/navigator?technique=${technique.attack_id}`} className="font-mono text-sm text-mitre-accent hover:underline">{technique.attack_id}</a>
+                  <b className="text-sm text-white">{technique.name}</b>
+                  <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">{technique.tactic}</span>
+                  <span className="rounded bg-green-950 px-1.5 py-0.5 text-[10px] text-green-300">{Math.round(technique.confidence * 100)}%</span>
+                </div>
+                <p className="mt-1 text-xs italic text-gray-500">{technique.evidence}</p>
+              </div>
+            )) : <p className="p-3 text-xs text-gray-500">No TTPs mapped.</p>}
+          </Panel>
+
+          <Panel title="Report">
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-3 text-xs leading-6 text-gray-300">{result.report}</pre>
+          </Panel>
+        </section>
+
+        <aside className="space-y-4">
+          <Panel title={`Possible IOCs for enrichment (${iocCandidates.length})`}>
+            <div className="max-h-[520px] overflow-y-auto">
+              {iocCandidates.length ? iocCandidates.slice(0, 150).map((ioc, index) => (
+                <div key={`${ioc.value}-${index}`} className="border-t border-gray-800 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="break-all font-mono text-xs text-gray-200">{ioc.value}</span>
+                    <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">{ioc.type}</span>
+                  </div>
+                  <p className="mt-1 text-[10px] text-gray-500">{ioc.description}</p>
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => navigate(`/virustotal?indicator=${encodeURIComponent(ioc.value)}`)} className="secondary-action text-[10px]">Enrich</button>
+                    <button onClick={() => navigate(`/ioc-library?search=${encodeURIComponent(ioc.value)}`)} className="secondary-action text-[10px]">Search IOC DB</button>
+                  </div>
+                </div>
+              )) : <p className="p-3 text-xs text-gray-500">No IOC candidates extracted.</p>}
+            </div>
+          </Panel>
+
+          <Panel title={`Actor overlap (${result.apt_matches.length})`}>
+            {result.apt_matches.length ? result.apt_matches.slice(0, 10).map(match => (
+              <div key={match.group_attack_id} className="border-t border-gray-800 p-3">
+                <a href={`/apt?group=${match.group_attack_id}`} className="text-sm font-semibold text-white hover:text-mitre-accent">{match.group_name}</a>
+                <p className="mt-1 text-[10px] text-gray-500">{match.group_attack_id} · {Math.round(match.similarity * 100)}% overlap · {match.shared_count} shared TTPs</p>
+              </div>
+            )) : <p className="p-3 text-xs text-gray-500">No actor overlap.</p>}
+          </Panel>
+        </aside>
       </div>
     </div>
   );
@@ -332,10 +502,11 @@ function PreviousAnalysisList({
 // ── Result view ───────────────────────────────────────────────────────────────
 
 function ResultsView({
-  result, addTechniques, navigate,
+  result, addTechniques, addComparisonLayer, navigate,
 }: {
   result: AnalysisResult;
   addTechniques: (ids: string[]) => void;
+  addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const [tab, setTab] = useState<'techniques' | 'groups' | 'raw'>('techniques');
@@ -369,16 +540,31 @@ function ResultsView({
     },
   });
 
+  const acceptedTechniqueIds = () =>
+    displayResult.techniques
+      .filter(t => t.review_status !== 'rejected')
+      .map(t => t.attack_id);
+
+  const injectAsMyTtps = () => {
+    addTechniques(acceptedTechniqueIds());
+  };
+
   const injectAndNavigate = () => {
-    addTechniques(
-      displayResult.techniques
-        .filter(t => t.review_status !== 'rejected')
-        .map(t => t.attack_id)
-    );
+    addTechniques(acceptedTechniqueIds());
+    navigate('/navigator');
+  };
+
+  const compareOnMatrix = () => {
+    addComparisonLayer({
+      name: `AI ${displayResult.provider} ${new Date().toLocaleTimeString()}`,
+      techniqueIds: acceptedTechniqueIds(),
+      source: 'ai-analysis',
+    });
     navigate('/navigator');
   };
 
   const canReview = result.session_id !== 'stream';
+  const canInject = acceptedTechniqueIds().length > 0;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -388,7 +574,7 @@ function ResultsView({
           <div>
             <span className="text-xs text-gray-500 font-mono">{displayResult.provider} / {displayResult.model}</span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <a
               href={exportApi.analysisUrl(displayResult.session_id)}
               download={`analysis-${displayResult.session_id.slice(0, 8)}.pdf`}
@@ -405,10 +591,28 @@ function ResultsView({
               ↓ STIX/OpenCTI
             </a>
             <button
-              onClick={injectAndNavigate}
-              className="text-xs bg-mitre-accent hover:bg-red-600 text-white px-3 py-1.5 rounded transition-colors"
+              type="button"
+              onClick={injectAsMyTtps}
+              disabled={!canInject}
+              className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors"
             >
-              → Inject into Navigator
+              + My TTPs
+            </button>
+            <button
+              type="button"
+              onClick={injectAndNavigate}
+              disabled={!canInject}
+              className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors"
+            >
+              → Navigator
+            </button>
+            <button
+              type="button"
+              onClick={compareOnMatrix}
+              disabled={!canInject}
+              className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors"
+            >
+              ⇄ Matrix compare
             </button>
           </div>
         </div>
@@ -520,10 +724,11 @@ function ResultsView({
 
 // Parses stream tokens into a result when no explicit result event arrived
 function StreamResultParser({
-  tokens, addTechniques, navigate,
+  tokens, addTechniques, addComparisonLayer, navigate,
 }: {
   tokens: string;
   addTechniques: (ids: string[]) => void;
+  addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
   try {
@@ -548,7 +753,14 @@ function StreamResultParser({
       apt_matches: [],
       apt_hints: data.apt_hints || [],
     };
-    return <ResultsView result={result} addTechniques={addTechniques} navigate={navigate} />;
+    return (
+      <ResultsView
+        result={result}
+        addTechniques={addTechniques}
+        addComparisonLayer={addComparisonLayer}
+        navigate={navigate}
+      />
+    );
   } catch {
     // Couldn't parse yet — show raw
     return (
@@ -613,6 +825,15 @@ function reviewStatusOptionClass(status: NonNullable<AnalysisResult['techniques'
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-gray-800 bg-gray-900/50">
+      <h2 className="border-b border-gray-800 px-3 py-2 text-sm font-semibold text-white">{title}</h2>
+      {children}
+    </section>
+  );
+}
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

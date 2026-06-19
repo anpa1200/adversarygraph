@@ -4,15 +4,18 @@
  * Accepts the official Navigator layer format:
  *   { techniques: [{ techniqueID: "T1059", enabled: true, ... }], ... }
  *
- * Extracts enabled technique IDs and adds them to the user's TTP layer.
+ * Extracts enabled technique IDs and sends them to the caller.
  */
 
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 
 interface Props {
-  onImport: (techniqueIds: string[]) => void;
+  onImport: (techniqueIds: string[], name: string) => void;
   onClose: () => void;
+  title?: string;
+  actionLabel?: string;
+  targetLabel?: string;
 }
 
 interface NavigatorLayer {
@@ -26,7 +29,13 @@ interface NavigatorLayer {
   }>;
 }
 
-export function LayerImport({ onImport, onClose }: Props) {
+export function LayerImport({
+  onImport,
+  onClose,
+  title = 'Import Navigator Layer',
+  actionLabel = 'Import',
+  targetLabel = 'your TTP layer',
+}: Props) {
   const [preview, setPreview] = useState<{ name: string; count: number; ids: string[] } | null>(null);
   const [error, setError] = useState('');
 
@@ -74,7 +83,7 @@ export function LayerImport({ onImport, onClose }: Props) {
 
   const handleConfirm = () => {
     if (preview) {
-      onImport(preview.ids);
+      onImport(preview.ids, preview.name);
       onClose();
     }
   };
@@ -87,7 +96,7 @@ export function LayerImport({ onImport, onClose }: Props) {
     >
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-[480px] max-w-full p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-white font-semibold">Import Navigator Layer</h2>
+          <h2 className="text-white font-semibold">{title}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">✕</button>
         </div>
 
@@ -120,7 +129,7 @@ export function LayerImport({ onImport, onClose }: Props) {
           <div className="bg-gray-800 rounded-lg p-4 mb-4">
             <div className="text-sm text-white font-medium mb-1">{preview.name}</div>
             <div className="text-xs text-gray-400 mb-3">
-              {preview.count} technique{preview.count !== 1 ? 's' : ''} will be added to your TTP layer
+              {preview.count} technique{preview.count !== 1 ? 's' : ''} will be loaded into {targetLabel}
             </div>
             <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
               {preview.ids.slice(0, 40).map((id) => (
@@ -147,7 +156,7 @@ export function LayerImport({ onImport, onClose }: Props) {
             disabled={!preview}
             className="px-4 py-2 text-sm bg-mitre-accent hover:bg-red-600 text-white rounded disabled:opacity-40 transition-colors"
           >
-            Import {preview ? `(${preview.count})` : ''}
+            {actionLabel} {preview ? `(${preview.count})` : ''}
           </button>
         </div>
       </div>

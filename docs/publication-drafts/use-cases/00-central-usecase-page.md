@@ -1,10 +1,8 @@
 # AdversaryGraph Usecases.
 
-## Draft
-
 ## Central Usecase Page
 
-This page is the navigation hub for AdversaryGraph v2.5.9 use-case article drafts.
+This page is the navigation hub for AdversaryGraph v2.6.0 use-case article drafts.
 
 For a single article version, use: [30 Practical AdversaryGraph Use Cases](../adversarygraph-30-use-cases.md).
 
@@ -14,8 +12,6 @@ The collection is organized into:
 - 10 intermediate use cases: structured CTI, SOC, enrichment, and detection workflows, usually 3-5 steps.
 - 5 complex investigation workflows: full platform usage from intake to reviewed findings.
 - 5 complex defense workflows: MITRE coverage, detection roadmap, IOC enrichment pipeline, rule generation, and executive reporting.
-
-Every article intentionally keeps the `Draft` header. Remove it only after the article is expanded with final screenshots and reviewed publication text.
 
 ## Simple Usecases
 
