@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.models.ioc import IOCIndicator
 from app.services.opencti_sync import (
+    _connect_url,
     _guess_ioc_type,
     _indicator_node_to_import_item,
     _indicator_to_opencti_input,
@@ -79,3 +80,10 @@ def test_opencti_guess_ioc_type_for_common_values():
     assert _guess_ioc_type("1.2.3.4") == {"type": "ipv4", "value": "1.2.3.4"}
     assert _guess_ioc_type("https://example.test/a") == {"type": "url", "value": "https://example.test/a"}
     assert _guess_ioc_type("b" * 40) == {"type": "sha1", "value": "b" * 40}
+
+
+def test_opencti_localhost_url_is_translated_for_docker(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "opencti_url", "http://localhost:8080/")
+    assert _connect_url() == "http://host.docker.internal:8080"

@@ -358,6 +358,12 @@ The OpenCTI token should be scoped to read indicators, observables, reports, and
 labels, and to create/update indicators and reports. AdversaryGraph does not
 delete OpenCTI data during sync.
 
+When AdversaryGraph runs in Docker and OpenCTI is published on the host machine,
+`OPENCTI_URL=http://localhost:8080` is automatically translated by the backend to
+`http://host.docker.internal:8080` for API connectivity. The original URL is kept
+as the user-facing OpenCTI URL. For a separate OpenCTI container on the same
+Docker network, prefer the OpenCTI service name instead of `localhost`.
+
 ### STIX Analysis Export
 
 AdversaryGraph can export a completed analysis as a STIX 2.1 JSON bundle from:

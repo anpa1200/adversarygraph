@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy import select
@@ -53,11 +54,11 @@ async def opencti_status() -> dict[str, Any]:
     try:
         payload = await _graphql("query OpenCTIAbout { about { version } }")
         version = ((payload.get("about") or {}).get("version") or "").strip()
-        return {"configured": True, "reachable": True, "version": version, "url": _base_url()}
+        return _status_payload(version=version)
     except Exception:
         payload = await _graphql("query OpenCTIMe { me { id name } }")
         me = payload.get("me") or {}
-        return {"configured": True, "reachable": True, "version": "", "url": _base_url(), "user": me.get("name") or me.get("id") or ""}
+        return _status_payload(version="", user=me.get("name") or me.get("id") or "")
 
 
 async def pull_from_opencti(
@@ -231,7 +232,7 @@ async def _graphql(query: str, variables: dict[str, Any] | None = None) -> dict[
         "Accept": "application/json",
     }
     async with httpx.AsyncClient(timeout=90, verify=settings.opencti_verify_tls) as client:
-        response = await client.post(f"{_base_url()}/graphql", headers=headers, json={"query": query, "variables": variables or {}})
+        response = await client.post(f"{_connect_url()}/graphql", headers=headers, json={"query": query, "variables": variables or {}})
         response.raise_for_status()
         payload = response.json()
     if payload.get("errors"):
@@ -432,6 +433,27 @@ def _require_config() -> None:
 
 def _base_url() -> str:
     return settings.opencti_url.rstrip("/")
+
+
+def _connect_url() -> str:
+    configured = _base_url()
+    parsed = urlsplit(configured)
+    if parsed.hostname in {"localhost", "127.0.0.1"}:
+        netloc = "host.docker.internal"
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path.rstrip("/"), "", ""))
+    return configured
+
+
+def _status_payload(version: str, user: str = "") -> dict[str, Any]:
+    payload = {"configured": True, "reachable": True, "version": version, "url": _base_url()}
+    if user:
+        payload["user"] = user
+    if _connect_url() != _base_url():
+        payload["connection_url"] = _connect_url()
+        payload["note"] = "Docker translated localhost/127.0.0.1 to host.docker.internal for backend connectivity."
+    return payload
 
 
 def _limit(value: int | None) -> int:
