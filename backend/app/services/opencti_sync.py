@@ -268,7 +268,7 @@ def _indicator_node_to_import_item(node: dict[str, Any]) -> IOCImportItem | None
 
 
 def _observable_node_to_import_item(node: dict[str, Any]) -> IOCImportItem | None:
-    value = str(node.get("observable_value") or node.get("value") or node.get("name") or "").strip()
+    value = str(node.get("observable_value") or node.get("value") or _file_hash_value(node) or node.get("name") or node.get("file_name") or "").strip()
     parsed = _guess_ioc_type(value, str(node.get("entity_type") or ""))
     if not parsed:
         return None
@@ -291,13 +291,15 @@ def _report_indicator_items(report: dict[str, Any]) -> list[IOCImportItem]:
     labels = _dedupe([*_labels(report), "opencti-report"])
     technique_ids = _extract_attack_ids(report)
     source_url = _external_url(report) or _object_url(report)
+    report_labels = report.get("labels") or report.get("objectLabel")
+    report_refs = report.get("externalReferences") or report.get("external_references")
     items: list[IOCImportItem] = []
     for obj in _report_objects(report):
         item = None
         if str(obj.get("entity_type") or "").lower().endswith("indicator") or obj.get("pattern"):
-            item = _indicator_node_to_import_item({**obj, "labels": report.get("labels"), "description": report.get("name"), "externalReferences": report.get("externalReferences")})
+            item = _indicator_node_to_import_item({**obj, "objectLabel": report_labels, "description": report.get("name"), "externalReferences": report_refs})
         else:
-            item = _observable_node_to_import_item({**obj, "labels": report.get("labels"), "description": report.get("name")})
+            item = _observable_node_to_import_item({**obj, "objectLabel": report_labels, "description": report.get("name")})
         if not item:
             continue
         item.tags = _dedupe([*(item.tags or []), *labels])
@@ -464,6 +466,8 @@ def _labels(node: dict[str, Any]) -> list[str]:
     raw = node.get("labels") or node.get("objectLabel") or []
     if isinstance(raw, list):
         return _dedupe([str(item.get("value") if isinstance(item, dict) else item) for item in raw])
+    if isinstance(raw, dict) and raw.get("value"):
+        return _dedupe([str(raw.get("value") or "")])
     edges = (raw.get("edges") if isinstance(raw, dict) else []) or []
     return _dedupe([str(((edge.get("node") or {}).get("value")) or "") for edge in edges if isinstance(edge, dict)])
 
@@ -523,6 +527,26 @@ def _guess_ioc_type(value: str, entity_type: str = "") -> dict[str, str] | None:
     return None
 
 
+def _file_hash_value(node: dict[str, Any]) -> str:
+    hashes = node.get("hashes") or []
+    if isinstance(hashes, dict):
+        hashes = hashes.get("edges") or hashes.get("values") or []
+    candidates: list[tuple[str, str]] = []
+    for entry in hashes if isinstance(hashes, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        raw = entry.get("node") if isinstance(entry.get("node"), dict) else entry
+        algorithm = str(raw.get("algorithm") or raw.get("hash_type") or raw.get("type") or "").lower()
+        value = str(raw.get("hash") or raw.get("value") or "").strip()
+        if value:
+            candidates.append((algorithm, value))
+    for preferred in ("sha-256", "sha256", "sha-1", "sha1", "md5"):
+        for algorithm, value in candidates:
+            if algorithm == preferred:
+                return value
+    return candidates[0][1] if candidates else ""
+
+
 def _extract_attack_ids(value: Any) -> list[str]:
     return _dedupe([match.upper() for match in ATTACK_ID_RE.findall(json.dumps(value, default=str))])
 
@@ -570,7 +594,7 @@ query OpenCTIIndicators($first: Int!, $after: ID) {
     pageInfo { endCursor hasNextPage }
     edges { node {
       id standard_id entity_type name description pattern pattern_type valid_from valid_until confidence created modified
-      labels { edges { node { value color } } }
+      objectLabel { value color }
       externalReferences { edges { node { source_name url external_id description } } }
     } }
   }
@@ -591,8 +615,15 @@ query OpenCTIObservables($first: Int!, $after: ID) {
   stixCyberObservables(first: $first, after: $after) {
     pageInfo { endCursor hasNextPage }
     edges { node {
-      id standard_id entity_type observable_value value created_at updated_at
-      labels { edges { node { value color } } }
+      id standard_id entity_type observable_value created_at updated_at
+      objectLabel { value color }
+      ... on DomainName { value }
+      ... on Hostname { value }
+      ... on IPv4Addr { value }
+      ... on IPv6Addr { value }
+      ... on Url { value }
+      ... on EmailAddr { value }
+      ... on StixFile { file_name: name hashes { algorithm hash } }
     } }
   }
 }
@@ -602,7 +633,7 @@ _OBSERVABLES_FALLBACK_QUERY = """
 query OpenCTIObservablesFallback($first: Int!, $after: ID) {
   stixCyberObservables(first: $first, after: $after) {
     pageInfo { endCursor hasNextPage }
-    edges { node { id standard_id entity_type observable_value value } }
+    edges { node { id standard_id entity_type observable_value } }
   }
 }
 """
@@ -613,12 +644,21 @@ query OpenCTIReports($first: Int!, $after: ID) {
     pageInfo { endCursor hasNextPage }
     edges { node {
       id standard_id entity_type name description published confidence report_types created modified
-      labels { edges { node { value color } } }
+      objectLabel { value color }
       externalReferences { edges { node { source_name url external_id description } } }
       objects(first: 50) { edges { node {
         ... on BasicObject { id standard_id entity_type }
-        ... on StixCoreObject { id standard_id entity_type name description }
-        ... on StixCyberObservable { id standard_id entity_type observable_value value }
+        ... on Indicator { id standard_id entity_type name description pattern pattern_type valid_from valid_until confidence created modified }
+        ... on StixCyberObservable {
+          id standard_id entity_type observable_value created_at updated_at
+          ... on DomainName { value }
+          ... on Hostname { value }
+          ... on IPv4Addr { value }
+          ... on IPv6Addr { value }
+          ... on Url { value }
+          ... on EmailAddr { value }
+          ... on StixFile { file_name: name hashes { algorithm hash } }
+        }
       } } }
     } }
   }

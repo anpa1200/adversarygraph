@@ -49,6 +49,26 @@ def test_opencti_observable_node_maps_ioc_value():
     assert "opencti-observable" in item.tags
 
 
+def test_opencti_observable_node_maps_object_label_and_file_hash():
+    item = _observable_node_to_import_item(
+        {
+            "id": "observable--file",
+            "entity_type": "StixFile",
+            "file_name": "payload.exe",
+            "hashes": [
+                {"algorithm": "MD5", "hash": "a" * 32},
+                {"algorithm": "SHA-256", "hash": "b" * 64},
+            ],
+            "objectLabel": [{"value": "malware"}],
+        }
+    )
+
+    assert item is not None
+    assert item.value == "b" * 64
+    assert item.indicator_type == "sha256"
+    assert "malware" in item.tags
+
+
 def test_opencti_push_indicator_input_uses_stix_pattern():
     indicator = IOCIndicator(
         value="a" * 64,
