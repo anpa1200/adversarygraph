@@ -7,6 +7,7 @@ import type {
   CompareResult,
   GroupDetail,
   GroupListItem,
+  OverlapExplanationRequest,
   ReportSession,
   Tactic,
   TechniqueDetail,
@@ -89,6 +90,11 @@ export const aptApi = {
   }): Promise<CampaignResult[]> =>
     http.post('/apt/campaigns/compare', { technique_ids: params.technique_ids }, {
       params: { domain: params.domain, version: params.version, top_n: params.top_n },
+    }).then(r => r.data),
+
+  explainOverlap: (payload: OverlapExplanationRequest, params: { domain: string; version?: string }): Promise<{ markdown: string }> =>
+    http.post('/apt/overlap/explain', payload, {
+      params: { domain: params.domain, version: params.version },
     }).then(r => r.data),
 };
 

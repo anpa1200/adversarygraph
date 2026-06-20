@@ -9,6 +9,11 @@ from app.models.attack import (
     AptGroup, AptGroupTechnique, AptGroupCampaign,
     AttackVersion, Campaign, CampaignTechnique, Technique,
 )
+from app.services.comparison_explainer import (
+    Subject,
+    TechniqueContext,
+    explain_overlap,
+)
 
 router = APIRouter(prefix="/apt", tags=["ATT&CK Group Profiles"])
 
@@ -79,6 +84,31 @@ class CompareResult(BaseModel):
     similarity: float          # Jaccard index 0-1
     shared_count: int
     shared_techniques: list[str]   # ATT&CK IDs
+
+
+class OverlapSubject(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    type: str = Field(..., pattern="^(report|actor|campaign|layer)$")
+
+
+class TacticDistributionItem(BaseModel):
+    subject_a: int = 0
+    subject_b: int = 0
+    shared: int = 0
+
+
+class OverlapExplanationRequest(BaseModel):
+    subject_a: OverlapSubject
+    subject_b: OverlapSubject
+    shared_techniques: list[str] = Field(default_factory=list, max_length=500)
+    unique_to_a: list[str] = Field(default_factory=list, max_length=500)
+    unique_to_b: list[str] = Field(default_factory=list, max_length=500)
+    tactic_distribution: dict[str, TacticDistributionItem] = Field(default_factory=dict)
+    overlap_score: float = Field(..., ge=0)
+
+
+class OverlapExplanationOut(BaseModel):
+    markdown: str
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -267,6 +297,52 @@ async def compare_ttps(
 
     results.sort(key=lambda r: r.similarity, reverse=True)
     return results[:top_n]
+
+
+@router.post("/overlap/explain", response_model=OverlapExplanationOut)
+async def explain_ttp_overlap(
+    req: OverlapExplanationRequest,
+    domain: str = Query("enterprise-attack"),
+    version: str | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return an auditable, caveated explanation for a supplied TTP-overlap result."""
+    ver_id = await _resolve_version_id(session, domain, version)
+    all_ids = {
+        attack_id.upper()
+        for attack_id in [*req.shared_techniques, *req.unique_to_a, *req.unique_to_b]
+        if attack_id
+    }
+    technique_context: dict[str, TechniqueContext] = {}
+    if all_ids:
+        rows = await session.execute(
+            select(Technique)
+            .where(Technique.version_id == ver_id, Technique.attack_id.in_(all_ids))
+            .options(selectinload(Technique.tactics))
+        )
+        for technique in rows.scalars():
+            technique_context[technique.attack_id] = TechniqueContext(
+                attack_id=technique.attack_id,
+                name=technique.name,
+                tactics=tuple(tactic.shortname for tactic in technique.tactics),
+                is_subtechnique=technique.is_subtechnique,
+                parent_attack_id=technique.parent_attack_id,
+            )
+
+    markdown = explain_overlap(
+        subject_a=Subject(name=req.subject_a.name, type=req.subject_a.type),
+        subject_b=Subject(name=req.subject_b.name, type=req.subject_b.type),
+        shared_techniques=req.shared_techniques,
+        unique_to_a=req.unique_to_a,
+        unique_to_b=req.unique_to_b,
+        tactic_distribution={
+            tactic: item.model_dump()
+            for tactic, item in req.tactic_distribution.items()
+        },
+        overlap_score=req.overlap_score,
+        technique_context=technique_context,
+    )
+    return OverlapExplanationOut(markdown=markdown)
 
 
 # ── Campaign schemas ──────────────────────────────────────────────────────────

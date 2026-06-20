@@ -8,10 +8,10 @@ import { MatrixDiff } from '@/components/Compare/MatrixDiff';
 import { TacticBreakdown } from '@/components/Compare/TacticBreakdown';
 import { Header } from '@/components/Layout/Header';
 import { TechniqueModal } from '@/components/TechniqueModal';
-import type { CampaignResult, CompareResult, ReportSession } from '@/types/attack';
+import type { CampaignResult, CompareResult, OverlapExplanationRequest, ReportSession, TechniqueUsage } from '@/types/attack';
 
 type CompareMode = 'groups' | 'campaigns' | 'reports';
-type DetailTab   = 'overview' | 'tactic' | 'matrix' | 'gap';
+type DetailTab   = 'overview' | 'tactic' | 'matrix' | 'gap' | 'explain';
 
 export function Compare() {
   const { domain, version, selectedTechniques, setOverlayGroup } = useAppStore();
@@ -30,6 +30,7 @@ export function Compare() {
   const [groupSearch,   setGroupSearch]   = useState('');
   const [diffOnly,      setDiffOnly]      = useState(false);
   const [exporting,     setExporting]     = useState(false);
+  const [explanation,   setExplanation]   = useState('');
 
   // ── Campaigns mode state ────────────────────────────────────────────────────
   const [campaignResults,  setCampaignResults]  = useState<CampaignResult[]>([]);
@@ -63,6 +64,20 @@ export function Compare() {
     queryKey: ['compare-campaign-detail', activeCampaign?.campaign_attack_id, domain, version],
     queryFn: () => aptApi.campaign(activeCampaign!.campaign_attack_id, domain, version ?? undefined),
     enabled: !!activeCampaign && mode === 'campaigns',
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: activeReportResult } = useQuery({
+    queryKey: ['compare-report-result', selectedReport?.session_id],
+    queryFn: () => analyzeApi.getResult(selectedReport!.session_id),
+    enabled: !!selectedReport && mode === 'reports',
+    staleTime: 60_000,
+  });
+
+  const { data: activeReportGroupDetail } = useQuery({
+    queryKey: ['compare-report-group-detail', activeReportMatch?.group_attack_id, domain, version],
+    queryFn: () => aptApi.group(activeReportMatch!.group_attack_id, domain, version ?? undefined),
+    enabled: !!activeReportMatch && mode === 'reports',
     staleTime: 10 * 60 * 1000,
   });
 
@@ -114,6 +129,12 @@ export function Compare() {
     },
   });
 
+  const explainOverlapMutation = useMutation({
+    mutationFn: (payload: OverlapExplanationRequest) =>
+      aptApi.explainOverlap(payload, { domain, version: version ?? undefined }),
+    onSuccess: data => setExplanation(data.markdown),
+  });
+
   // PDF export (groups mode)
   const exportPdf = async () => {
     if (!activeGroup) return;
@@ -158,6 +179,72 @@ export function Compare() {
   );
 
   const canRun = selectedTechniques.size > 0;
+
+  const buildTacticDistribution = (
+    subjectAIds: Set<string>,
+    subjectBIds: Set<string>,
+    sharedIds: Set<string>,
+  ): OverlapExplanationRequest['tactic_distribution'] => {
+    const distribution: OverlapExplanationRequest['tactic_distribution'] = {};
+    tactics.forEach(tactic => {
+      const techniqueIds = (techniquesByTactic.get(tactic.shortname) ?? []).map(item => item.attack_id);
+      const subjectA = techniqueIds.filter(id => subjectAIds.has(id)).length;
+      const subjectB = techniqueIds.filter(id => subjectBIds.has(id)).length;
+      const shared = techniqueIds.filter(id => sharedIds.has(id)).length;
+      if (subjectA || subjectB || shared) {
+        distribution[tactic.shortname] = { subject_a: subjectA, subject_b: subjectB, shared };
+      }
+    });
+    return distribution;
+  };
+
+  const explainGroupOverlap = () => {
+    if (!activeGroup || !groupDetail) return;
+    const subjectAIds = new Set(Array.from(selectedTechniques));
+    const subjectBIds = new Set(groupDetail.techniques.map(item => item.attack_id));
+    const sharedIds = new Set(activeGroup.shared_techniques);
+    explainOverlapMutation.mutate({
+      subject_a: { name: 'Current Navigator layer', type: 'layer' },
+      subject_b: { name: activeGroup.group_name, type: 'actor' },
+      shared_techniques: activeGroup.shared_techniques,
+      unique_to_a: Array.from(subjectAIds).filter(id => !sharedIds.has(id)),
+      unique_to_b: Array.from(subjectBIds).filter(id => !sharedIds.has(id)),
+      tactic_distribution: buildTacticDistribution(subjectAIds, subjectBIds, sharedIds),
+      overlap_score: activeGroup.similarity,
+    });
+  };
+
+  const explainCampaignOverlap = () => {
+    if (!activeCampaign || !activeCampaignDetail) return;
+    const subjectAIds = new Set(Array.from(selectedTechniques));
+    const subjectBIds = new Set(activeCampaignDetail.techniques.map(item => item.attack_id));
+    const sharedIds = new Set(activeCampaign.shared_techniques);
+    explainOverlapMutation.mutate({
+      subject_a: { name: 'Current Navigator layer', type: 'layer' },
+      subject_b: { name: activeCampaign.campaign_name, type: 'campaign' },
+      shared_techniques: activeCampaign.shared_techniques,
+      unique_to_a: Array.from(subjectAIds).filter(id => !sharedIds.has(id)),
+      unique_to_b: Array.from(subjectBIds).filter(id => !sharedIds.has(id)),
+      tactic_distribution: buildTacticDistribution(subjectAIds, subjectBIds, sharedIds),
+      overlap_score: activeCampaign.similarity,
+    });
+  };
+
+  const explainReportOverlap = () => {
+    if (!selectedReport || !activeReportMatch || !activeReportResult || !activeReportGroupDetail) return;
+    const subjectAIds = new Set(activeReportResult.techniques.map(item => item.attack_id));
+    const subjectBIds = new Set(activeReportGroupDetail.techniques.map((item: TechniqueUsage) => item.attack_id));
+    const sharedIds = new Set(activeReportMatch.shared_techniques);
+    explainOverlapMutation.mutate({
+      subject_a: { name: selectedReport.name || selectedReport.filename || selectedReport.session_id.slice(0, 8), type: 'report' },
+      subject_b: { name: activeReportMatch.group_name, type: 'actor' },
+      shared_techniques: activeReportMatch.shared_techniques,
+      unique_to_a: Array.from(subjectAIds).filter(id => !sharedIds.has(id)),
+      unique_to_b: Array.from(subjectBIds).filter(id => !sharedIds.has(id)),
+      tactic_distribution: buildTacticDistribution(subjectAIds, subjectBIds, sharedIds),
+      overlap_score: activeReportMatch.similarity,
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -252,7 +339,7 @@ export function Compare() {
                 {filteredGroupResults.map((r, i) => (
                   <button
                     key={r.group_attack_id}
-                    onClick={() => { setActiveGroup(r); setTab('overview'); }}
+                    onClick={() => { setActiveGroup(r); setTab('overview'); setExplanation(''); }}
                     className={`w-full text-left px-4 py-3 border-b border-gray-800 transition-colors ${
                       activeGroup?.group_attack_id === r.group_attack_id
                         ? 'bg-gray-800 border-l-2 border-l-mitre-accent' : 'hover:bg-gray-800/60'
@@ -311,6 +398,7 @@ export function Compare() {
                       ['tactic',   'Tactic Breakdown'],
                       ['matrix',   'Visual Diff'],
                       ['gap',      'Gap Analysis'],
+                      ['explain',  'Explanation'],
                     ] as [DetailTab, string][]).map(([id, label]) => (
                       <button key={id} onClick={() => setTab(id)}
                         className={`pb-2 border-b-2 transition-colors ${tab === id ? 'border-mitre-accent text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
@@ -335,6 +423,14 @@ export function Compare() {
                   )}
                   {tab === 'gap' && (
                     <GapAnalysis result={activeGroup} groupDetail={groupDetail ?? null} userIds={selectedTechniques} onTechClick={setTechModalId} />
+                  )}
+                  {tab === 'explain' && (
+                    <ExplanationPanel
+                      markdown={explanation}
+                      isPending={explainOverlapMutation.isPending}
+                      onGenerate={explainGroupOverlap}
+                      disabled={!groupDetail}
+                    />
                   )}
                 </div>
               </div>
@@ -365,7 +461,7 @@ export function Compare() {
                 {filteredCampaignResults.map((r, i) => (
                   <button
                     key={r.campaign_attack_id}
-                    onClick={() => setActiveCampaign(r)}
+                    onClick={() => { setActiveCampaign(r); setExplanation(''); }}
                     className={`w-full text-left px-4 py-3 border-b border-gray-800 transition-colors ${
                       activeCampaign?.campaign_attack_id === r.campaign_attack_id
                         ? 'bg-gray-800 border-l-2 border-l-purple-500' : 'hover:bg-gray-800/60'
@@ -426,6 +522,13 @@ export function Compare() {
                     <StatCard value={String(activeCampaign.shared_count)} label="Shared techniques" color="text-amber-400" />
                     <StatCard value={String(activeCampaignDetail?.techniques.length ?? '—')} label="Total in campaign" color="text-blue-400" />
                   </div>
+                  <ExplanationPanel
+                    markdown={explanation}
+                    isPending={explainOverlapMutation.isPending}
+                    onGenerate={explainCampaignOverlap}
+                    disabled={!activeCampaignDetail}
+                    compact
+                  />
                 </div>
 
                 {/* Shared techniques */}
@@ -509,6 +612,7 @@ export function Compare() {
                         setSelectedReport(s);
                         setReportMatches([]);
                         setActiveReportMatch(null);
+                        setExplanation('');
                         compareReportMutation.mutate(s.session_id);
                       }}
                       className="w-full text-left px-4 pt-3 pb-1"
@@ -586,7 +690,7 @@ export function Compare() {
                     {filteredReportMatches.map((r, i) => (
                       <button
                         key={r.group_attack_id}
-                        onClick={() => setActiveReportMatch(r)}
+                        onClick={() => { setActiveReportMatch(r); setExplanation(''); }}
                         className={`w-full text-left px-4 py-3 border-b border-gray-800 transition-colors ${
                           activeReportMatch?.group_attack_id === r.group_attack_id
                             ? 'bg-gray-800 border-l-2 border-l-green-500' : 'hover:bg-gray-800/60'
@@ -643,6 +747,14 @@ export function Compare() {
                         </div>
                       </div>
                     )}
+                    <div className="mt-6">
+                      <ExplanationPanel
+                        markdown={explanation}
+                        isPending={explainOverlapMutation.isPending}
+                        onGenerate={explainReportOverlap}
+                        disabled={!activeReportResult || !activeReportGroupDetail}
+                      />
+                    </div>
                   </div>
                 )}
               </>
@@ -767,6 +879,49 @@ function GapAnalysis({
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExplanationPanel({
+  markdown,
+  isPending,
+  onGenerate,
+  disabled,
+  compact = false,
+}: {
+  markdown: string;
+  isPending: boolean;
+  onGenerate: () => void;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`rounded border border-gray-800 bg-gray-900/50 ${compact ? 'mb-6 p-3' : 'p-4'}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Auditable overlap explanation</div>
+          <p className="text-xs text-gray-500">
+            Generates a caveated Jaccard explanation with shared techniques, tactic coverage, limitations, and next steps.
+          </p>
+        </div>
+        <button
+          onClick={onGenerate}
+          disabled={disabled || isPending}
+          className="shrink-0 rounded bg-mitre-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-600 disabled:opacity-40"
+        >
+          {isPending ? 'Generating...' : markdown ? 'Regenerate' : 'Generate'}
+        </button>
+      </div>
+      {markdown ? (
+        <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded border border-gray-800 bg-gray-950 p-4 text-xs leading-relaxed text-gray-300">
+          {markdown}
+        </pre>
+      ) : (
+        <div className="rounded border border-dashed border-gray-800 bg-gray-950/50 p-6 text-center text-sm text-gray-600">
+          No explanation generated yet.
         </div>
       )}
     </div>

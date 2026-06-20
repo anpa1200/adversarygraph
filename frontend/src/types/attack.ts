@@ -74,6 +74,16 @@ export interface CompareResult {
   shared_techniques: string[];
 }
 
+export interface OverlapExplanationRequest {
+  subject_a: { name: string; type: 'report' | 'actor' | 'campaign' | 'layer' };
+  subject_b: { name: string; type: 'report' | 'actor' | 'campaign' | 'layer' };
+  shared_techniques: string[];
+  unique_to_a: string[];
+  unique_to_b: string[];
+  tactic_distribution: Record<string, { subject_a: number; subject_b: number; shared: number }>;
+  overlap_score: number;
+}
+
 // ── DB 1: MITRE Campaigns ─────────────────────────────────────────────────────
 
 export interface CampaignListItem {

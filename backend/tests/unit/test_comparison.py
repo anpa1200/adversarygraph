@@ -100,3 +100,68 @@ def test_top_n_truncation():
     assert len(top5) == 5
     assert top5[0]["group_attack_id"] == "G0000"
     assert top5[0]["similarity"] == pytest.approx(1.0)
+
+
+# ── Auditable overlap explanation ─────────────────────────────────────────────
+
+def test_overlap_explanation_uses_required_sections_and_caveats():
+    from app.services.comparison_explainer import Subject, TechniqueContext, explain_overlap
+
+    text = explain_overlap(
+        subject_a=Subject(name="Incident report", type="report"),
+        subject_b=Subject(name="APT Example", type="actor"),
+        shared_techniques=["T1059.001", "T1021.001"],
+        unique_to_a=["T1486"],
+        unique_to_b=["T1078"],
+        tactic_distribution={
+            "execution": {"subject_a": 1, "subject_b": 1, "shared": 1},
+            "lateral-movement": {"subject_a": 1, "subject_b": 1, "shared": 1},
+        },
+        overlap_score=0.5,
+        technique_context={
+            "T1059.001": TechniqueContext(
+                attack_id="T1059.001",
+                name="PowerShell",
+                tactics=("execution",),
+                is_subtechnique=True,
+                parent_attack_id="T1059",
+            ),
+            "T1021.001": TechniqueContext(
+                attack_id="T1021.001",
+                name="Remote Desktop Protocol",
+                tactics=("lateral-movement",),
+            ),
+        },
+    )
+
+    for heading in [
+        "### Overlap Summary",
+        "### Scoring Method",
+        "### What the Score Means",
+        "### Shared Techniques (Evidence Table)",
+        "### Tactic Coverage Comparison",
+        "### Limitations and Caveats",
+        "### Recommended Next Steps",
+    ]:
+        assert heading in text
+    assert "50.0%" in text
+    assert "High-frequency; carries less distinguishing weight." in text
+    assert "Overlap is not attribution" in text
+    assert "T1059.001 is a sub-technique under T1059" in text
+
+
+def test_overlap_explanation_avoids_forbidden_overclaiming_words():
+    from app.services.comparison_explainer import Subject, explain_overlap
+
+    text = explain_overlap(
+        subject_a=Subject(name="A", type="report"),
+        subject_b=Subject(name="B", type="campaign"),
+        shared_techniques=["T1059"],
+        unique_to_a=[],
+        unique_to_b=[],
+        tactic_distribution={},
+        overlap_score=1.0,
+    ).lower()
+
+    for forbidden in ["proves", "confirms", "attributes", "matches"]:
+        assert forbidden not in text
