@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     dynamic_db_ioc_sync_days: int = 7
     otx_api_key: str = ""
     virustotal_api_key: str = ""
+    urlscan_api_key: str = ""
+    greynoise_api_key: str = ""
+    shodan_api_key: str = ""
+    abuseipdb_api_key: str = ""
 
     # OpenCTI symmetric sync
     opencti_url: str = ""

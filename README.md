@@ -5,7 +5,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v2.6.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v2.7.0-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -14,7 +14,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v2.6.0 · [Release Summary](docs/release-summary-v2.6.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
+**Current release: v2.7.0 · [Release Summary](docs/release-summary-v2.7.0.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Full v2 Guide](docs/full-guide-v2.md) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -92,6 +92,12 @@ OTX_API_KEY=your_otx_key
 # VirusTotal on-demand IOC reputation and relationship lookup
 VIRUSTOTAL_API_KEY=your_virustotal_key
 
+# Optional IOC Investigation pivots
+URLSCAN_API_KEY=your_urlscan_key
+GREYNOISE_API_KEY=your_greynoise_key
+SHODAN_API_KEY=your_shodan_key
+ABUSEIPDB_API_KEY=your_abuseipdb_key
+
 # OpenCTI symmetric sync
 OPENCTI_URL=https://opencti.example.com
 OPENCTI_TOKEN=your_opencti_token
@@ -104,7 +110,7 @@ DYNAMIC_DB_SYNC_MINUTE=30
 DYNAMIC_DB_IOC_SYNC_DAYS=7
 ```
 
-No key is required for MITRE ATT&CK/ATLAS sync or built-in public MISP Galaxy metadata sync. MISP JSON exports, STIX/TAXII collection URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are connected from the UI or API as source URLs/tokens. OpenCTI sync needs an OpenCTI API token with read access to indicators, observables, reports, and labels, plus create/update access for indicators and reports. Keep filled `.env` files private.
+No key is required for MITRE ATT&CK/ATLAS sync, built-in public MISP Galaxy metadata sync, Malpedia, or public urlscan/GreyNoise community lookups within provider limits. MISP JSON exports, STIX/TAXII collection URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are connected from the UI or API as source URLs/tokens. OpenCTI sync needs an OpenCTI API token with read access to indicators, observables, reports, and labels, plus create/update access for indicators and reports. Keep filled `.env` files private.
 
 Start the stack:
 
@@ -128,7 +134,7 @@ On first startup, AdversaryGraph downloads and ingests MITRE ATT&CK / ATLAS refe
 
 ## Project Maturity Evidence
 
-AdversaryGraph v2.6.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
+AdversaryGraph v2.7.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
@@ -143,7 +149,7 @@ AdversaryGraph v2.6.0 publishes the operational evidence expected from a serious
 
 The current documentation is intended to make external review practical rather than promotional.
 
-For the current release scope, see the [v2.6.0 release summary](docs/release-summary-v2.6.0.md) and [release notes](docs/release-notes/v2.6.0.md).
+For the current release scope, see the [v2.7.0 release summary](docs/release-summary-v2.7.0.md) and [release notes](docs/release-notes/v2.7.0.md).
 
 ## Public Demo Privacy Note
 
@@ -757,6 +763,10 @@ Supported initial sources:
   adds `malware-family` enrichment records with family aliases, references,
   attribution evidence, and actor links when Malpedia names match ATT&CK actor
   names or aliases. No API key is required for the public family metadata sync.
+- **IOC Investigation pivots** — on-demand Tier 1 / Tier 2 enrichment can query
+  VirusTotal, ThreatFox, MalwareBazaar, OTX, urlscan.io, GreyNoise, AbuseIPDB,
+  Shodan, and the local IOC database. Missing optional provider keys are shown
+  as source-level status, not as platform failure.
 - **Custom / personal IOC feeds** — private JSON, CSV, or TXT feeds registered
   from the IOC Library, actor IOC tab, or API.
 - **MISP JSON exports** — connect a MISP event/attribute export URL as a custom
@@ -797,6 +807,19 @@ The global **IOC Library** page at `/ioc-library` provides:
   source reports, and IOC search
 - per-IOC VirusTotal check button with found ATT&CK TTPs, actor matches, and
   matrix / `My TTPs` actions
+
+The **IOC Investigation** page at `/ioc-investigation` is the v2.7 workflow for
+starting from one artifact and expanding context:
+
+- classify the input as IP, domain, URL, hash, or generic artifact
+- collect local source-backed evidence and configured enrichment-source results
+- expand Tier 1 relationships and local Tier 2 pivots
+- extract ATT&CK technique leads and actor/APT leads from source metadata
+- summarize kill-chain/tactic coverage and suspicion score
+- optionally send the collected evidence to a configured LLM for a concise
+  analyst summary
+- show discovered TTPs on Navigator, add them to `My TTPs`, search IOC Library,
+  or continue in VirusTotal Lookup
 
 IOC types are normalized during import and enrichment. Provider labels such as
 `sha256_hash`, `filehash-sha256`, `sha1_hash`, and `md5_hash` are folded into
@@ -896,6 +919,7 @@ POST /api/ioc/sync/{source_id}
 POST /api/ioc/import
 POST /api/ioc/import/stix
 POST /api/ioc/import/taxii
+POST /api/ioc/investigate
 GET  /api/ioc/actors/G0049?days=180&active_only=true
 GET  /api/ioc/actors/G0049/summary?days=180
 GET  /api/ioc/actors/G0049/export.csv?days=180&active_only=true
@@ -1284,6 +1308,16 @@ copy, newsletter pitch text, and current external submission tracking.
 ---
 
 ## Changelog
+
+### v2.7.0 (2026-06-20)
+
+**IOC investigation and relationship expansion release:**
+- Added a dedicated IOC Investigation workflow for IPs, domains, URLs, hashes, and suspicious artifacts
+- Added Tier 1 and Tier 2 relationship expansion across local IOC data, configured enrichment providers, and source evidence
+- Added `/api/ioc/investigate` with IOC type classification, enrichment source status, TTP leads, actor/APT leads, kill-chain context, relationship graph output, and AI-ready report input
+- Added enrichment pivots for VirusTotal, ThreatFox, MalwareBazaar, OTX, urlscan.io, GreyNoise, AbuseIPDB, Shodan, and local IOC/OpenCTI/MISP-loaded records
+- Added UI actions to show discovered TTPs on the ATT&CK matrix, add them to My TTPs, search IOC Library, and open VirusTotal Lookup
+- Updated environment examples, quickstart, admin guide, and release docs for optional IOC Investigation API keys
 
 ### v2.6.0 (2026-06-19)
 

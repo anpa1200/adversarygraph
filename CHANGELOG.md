@@ -4,6 +4,24 @@
 
 No unreleased changes.
 
+## v2.7.0 - 2026-06-20
+
+- Added IOC Investigation as a dedicated Tier 1 / Tier 2 pivot workflow for
+  IPs, domains, URLs, hashes, and other suspicious artifacts.
+- Added `/api/ioc/investigate` to combine local IOC DB evidence, configured
+  enrichment providers, relationship expansion, ATT&CK TTP leads, actor leads,
+  kill-chain/tactic context, and AI-ready report input.
+- Added enrichment pivots for VirusTotal, ThreatFox, MalwareBazaar, OTX,
+  urlscan.io, GreyNoise, AbuseIPDB, Shodan, and local IOC/OpenCTI/MISP-loaded
+  records.
+- Added the IOC Investigation page with actions to show discovered TTPs on the
+  ATT&CK matrix, add them to My TTPs, search IOC Library, and open VirusTotal
+  Lookup.
+- Added optional AI summarization for IOC investigations through the configured
+  LLM providers.
+- Updated Discover, quickstart, admin docs, and environment examples for the
+  new investigation workflow and optional enrichment keys.
+
 ## v2.6.0 - 2026-06-19
 
 - Added AI log/PCAP analysis for pasted telemetry or uploaded files, with IOC

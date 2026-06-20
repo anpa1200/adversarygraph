@@ -4,7 +4,7 @@
 
 ### Defense: Executive Risk And Coverage Report: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.6.0
+**Version focus:** AdversaryGraph v2.7.0
 **Level:** Complex defense workflow
 **Workflow group:** Complex Defense Usecases
 

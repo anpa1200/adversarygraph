@@ -4,7 +4,7 @@
 
 ### Investigation: Ransomware Intrusion Triage: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.6.0
+**Version focus:** AdversaryGraph v2.7.0
 **Level:** Complex investigation workflow
 **Workflow group:** Complex Investigation Usecases
 

@@ -46,6 +46,10 @@ Important settings:
 | `AUTO_THREATFOX_SYNC_DAYS` | Startup IOC sync window for recent IOC providers, clamped to 1-7 days |
 | `OTX_API_KEY` | Optional AlienVault OTX key for actor pulse IOC enrichment |
 | `VIRUSTOTAL_API_KEY` | Optional VirusTotal key for on-demand IOC reputation and ATT&CK context lookup |
+| `URLSCAN_API_KEY` | Optional urlscan.io key for IOC Investigation URL/domain pivots |
+| `GREYNOISE_API_KEY` | Optional GreyNoise key for IP noise/benign scanner context |
+| `SHODAN_API_KEY` | Optional Shodan key for exposed service, hostname, and vulnerability pivots |
+| `ABUSEIPDB_API_KEY` | Optional AbuseIPDB key for IP abuse confidence, ISP, hostname, and usage-type pivots |
 | `OPENCTI_URL` | Optional OpenCTI base URL for symmetric CTI sync |
 | `OPENCTI_TOKEN` | Optional OpenCTI API token for indicator, observable, label, and report sync |
 | `OPENCTI_SYNC_LIMIT` | Default OpenCTI object limit per sync action |
@@ -146,7 +150,7 @@ docker compose up -d --build
 Review `CHANGELOG.md` before upgrading tagged releases.
 
 For the current feature scope, review
-[`docs/release-summary-v2.6.0.md`](release-summary-v2.6.0.md).
+[`docs/release-summary-v2.7.0.md`](release-summary-v2.7.0.md).
 
 ## Feeds Management
 
@@ -433,3 +437,45 @@ evidence field for each actor match.
 In the UI, use `VirusTotal Lookup` to add found TTPs to `My TTPs`, show found
 TTPs on the Navigator matrix, open a matched adversary page, or overlay a
 matched adversary on the matrix.
+
+## IOC Investigation
+
+IOC Investigation is the v2.7 Tier 1 / Tier 2 pivot workflow for one artifact.
+It combines local IOC database evidence with configured enrichment providers and
+returns source status, relationship pivots, TTP leads, actor leads, kill-chain
+context, and optional AI summary output.
+
+Optional provider settings:
+
+| Setting | Use |
+|---|---|
+| `VIRUSTOTAL_API_KEY` | VirusTotal reputation, DNS, sandbox/rule metadata, TTP evidence, and actor-alias context |
+| `THREATFOX_AUTH_KEY` | ThreatFox IOC and hash lookup |
+| `OTX_API_KEY` | AlienVault OTX pulse context |
+| `URLSCAN_API_KEY` | Higher-limit urlscan.io search; public lookup can work without a key |
+| `GREYNOISE_API_KEY` | GreyNoise IP context beyond public/community limits |
+| `ABUSEIPDB_API_KEY` | AbuseIPDB IP abuse confidence and ISP/hostname context |
+| `SHODAN_API_KEY` | Shodan host exposure, ports, hostnames, and vulnerability context |
+
+API:
+
+```text
+POST /api/ioc/investigate
+```
+
+Request:
+
+```json
+{
+  "artifact": "8.8.8.8",
+  "domain": "enterprise-attack",
+  "depth": 2,
+  "max_tier_nodes": 25,
+  "ai_summarize": false,
+  "ai_provider": "local"
+}
+```
+
+`depth` is capped at 2 by design to keep external-provider fan-out bounded.
+Missing optional keys are returned as source-level `not_configured` statuses and
+do not prevent local enrichment or other configured providers from running.

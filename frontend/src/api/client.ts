@@ -289,6 +289,34 @@ export interface VirusTotalLookupResult {
   context: Record<string, unknown>;
 }
 
+export interface IOCInvestigationResult {
+  artifact: string;
+  artifact_type: string;
+  depth: number;
+  suspicion_score: number;
+  verdict: string;
+  summary: string;
+  kill_chain: Array<{ phase: string; techniques: number }>;
+  techniques: Array<{ attack_id: string; name: string; tactics: string[]; url: string; evidence_sources?: string[] }>;
+  actors: Array<{ attack_id: string; name: string; source: string; confidence: number; evidence: string }>;
+  sources: Array<{
+    source: string;
+    status: string;
+    summary: string;
+    error?: string;
+    relationships: Array<{ source: string; target: string; target_type: string; evidence_source: string; tier: number; evidence: string }>;
+    technique_ids: string[];
+    actors: unknown[];
+    raw: Record<string, unknown>;
+  }>;
+  tier2_sources: Array<Record<string, unknown>>;
+  relationships: {
+    nodes: Array<{ id: string; kind: string; type: string; value: string; tier: number; sources: string[]; suspicious: number }>;
+    edges: Array<{ source: string; target: string; type: string; tier: number; evidence_source: string; evidence: string }>;
+  };
+  ai_input: Record<string, unknown>;
+}
+
 type IOCLibraryParams = {
   search?: string;
   type?: string;
@@ -426,6 +454,15 @@ export const iocApi = {
     `/api/ioc/actors/${actorId}/export.csv?days=${days}&active_only=${activeOnly}`,
   virusTotalLookup: (payload: { indicator: string; domain: string }): Promise<VirusTotalLookupResult> =>
     http.post('/ioc/virustotal/lookup', payload).then(r => r.data),
+  investigate: (payload: {
+    artifact: string;
+    domain: string;
+    depth?: number;
+    max_tier_nodes?: number;
+    ai_summarize?: boolean;
+    ai_provider?: 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
+  }): Promise<IOCInvestigationResult> =>
+    http.post('/ioc/investigate', payload).then(r => r.data),
 };
 
 // ── Analysis ──────────────────────────────────────────────────────────────────

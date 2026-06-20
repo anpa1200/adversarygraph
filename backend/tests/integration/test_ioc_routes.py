@@ -125,6 +125,36 @@ async def test_virustotal_lookup_reports_missing_key(client: AsyncClient, monkey
 
 
 @pytest.mark.asyncio
+async def test_ioc_investigation_route_shape(client: AsyncClient, monkeypatch):
+    from app.api.routes import ioc as ioc_route
+
+    async def fake_investigate(session, artifact, options):
+        return {
+            "artifact": artifact,
+            "artifact_type": "ip",
+            "depth": options.depth,
+            "suspicion_score": 55,
+            "verdict": "suspicious",
+            "summary": "Test investigation summary.",
+            "kill_chain": [{"phase": "command-and-control", "techniques": 1}],
+            "techniques": [{"attack_id": "T1071", "name": "Application Layer Protocol", "tactics": ["command-and-control"], "url": "", "evidence_sources": []}],
+            "actors": [],
+            "sources": [{"source": "local-db", "status": "ok", "summary": "ok", "relationships": [], "technique_ids": [], "actors": [], "raw": {}}],
+            "tier2_sources": [],
+            "relationships": {"nodes": [], "edges": []},
+            "ai_input": {},
+        }
+
+    monkeypatch.setattr(ioc_route, "investigate_ioc", fake_investigate)
+    resp = await client.post("/api/ioc/investigate", json={"artifact": "8.8.8.8", "depth": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["artifact"] == "8.8.8.8"
+    assert body["verdict"] == "suspicious"
+    assert body["techniques"][0]["attack_id"] == "T1071"
+
+
+@pytest.mark.asyncio
 async def test_custom_ioc_source_kind_validation(client: AsyncClient):
     resp = await client.post(
         "/api/ioc/sources",

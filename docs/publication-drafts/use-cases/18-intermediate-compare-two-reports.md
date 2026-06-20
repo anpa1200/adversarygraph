@@ -4,7 +4,7 @@
 
 ### Compare Two Reports: AdversaryGraph Use Case
 
-**Version focus:** AdversaryGraph v2.6.0
+**Version focus:** AdversaryGraph v2.7.0
 **Level:** Intermediate, 3-5 steps
 **Workflow group:** Intermediate Usecases
 

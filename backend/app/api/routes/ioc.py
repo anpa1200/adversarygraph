@@ -35,6 +35,7 @@ from app.services.ioc_intel import (
     update_ioc_source,
 )
 from app.services.virustotal import lookup_virustotal_ioc
+from app.services.ioc_investigation import InvestigationOptions, investigate_ioc
 from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
 from app.services.opencti_sync import (
     OpenCTISyncError,
@@ -360,6 +361,31 @@ class VirusTotalLookupOut(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class IOCInvestigationIn(BaseModel):
+    artifact: str = Field(..., min_length=1, max_length=1000)
+    domain: str = "enterprise-attack"
+    depth: int = Field(2, ge=1, le=2)
+    max_tier_nodes: int = Field(25, ge=5, le=75)
+    ai_summarize: bool = False
+    ai_provider: str = Field("local", pattern="^(local|claude|openai|gemini|minimax)$")
+
+
+class IOCInvestigationOut(BaseModel):
+    artifact: str
+    artifact_type: str
+    depth: int
+    suspicion_score: int
+    verdict: str
+    summary: str
+    kill_chain: list[dict[str, Any]] = Field(default_factory=list)
+    techniques: list[dict[str, Any]] = Field(default_factory=list)
+    actors: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    tier2_sources: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: dict[str, Any] = Field(default_factory=dict)
+    ai_input: dict[str, Any] = Field(default_factory=dict)
+
+
 @router.get("/sources", response_model=list[IOCSourceOut])
 async def sources(session: AsyncSession = Depends(get_session)):
     return await list_ioc_sources(session)
@@ -376,6 +402,26 @@ async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession =
         raise HTTPException(status_code, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(502, f"VirusTotal lookup failed: {type(exc).__name__}: {exc}") from exc
+
+
+@router.post("/investigate", response_model=IOCInvestigationOut)
+async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session)):
+    try:
+        return await investigate_ioc(
+            session,
+            payload.artifact,
+            options=InvestigationOptions(
+                domain=payload.domain,
+                depth=payload.depth,
+                max_tier_nodes=payload.max_tier_nodes,
+                ai_summarize=payload.ai_summarize,
+                ai_provider=payload.ai_provider,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"IOC investigation failed: {type(exc).__name__}: {exc}") from exc
 
 
 @router.post("/sources", response_model=IOCSourceOut)

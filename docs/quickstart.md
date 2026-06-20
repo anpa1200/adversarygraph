@@ -2,8 +2,8 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
-For the current v2.5 capability walkthrough with screenshots and infographics,
-use the 1200km mirror or Medium publication:
+For the public capability walkthrough with screenshots and infographics, use
+the 1200km mirror or Medium publication:
 
 - <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>
 - <https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e>
@@ -56,6 +56,12 @@ OTX_API_KEY=
 # VirusTotal on-demand IOC reputation and relationship lookup
 VIRUSTOTAL_API_KEY=
 
+# Optional IOC Investigation pivots
+URLSCAN_API_KEY=
+GREYNOISE_API_KEY=
+SHODAN_API_KEY=
+ABUSEIPDB_API_KEY=
+
 # OpenCTI symmetric sync
 OPENCTI_URL=
 OPENCTI_TOKEN=
@@ -79,6 +85,10 @@ Feed and key behavior:
 - `THREATFOX_AUTH_KEY` enables abuse.ch ThreatFox recent IOC sync.
 - `OTX_API_KEY` enables AlienVault OTX actor-attributed pulse enrichment.
 - `VIRUSTOTAL_API_KEY` enables on-demand IOC checks from IOC Library and VirusTotal Lookup.
+- `URLSCAN_API_KEY`, `GREYNOISE_API_KEY`, `SHODAN_API_KEY`, and
+  `ABUSEIPDB_API_KEY` enable optional IOC Investigation pivots. Public
+  urlscan/GreyNoise community responses may work without keys within provider
+  limits; Shodan and AbuseIPDB require keys for their API paths.
 - `OPENCTI_URL` and `OPENCTI_TOKEN` enable Feeds Management actions for OpenCTI pull, push, and bidirectional sync.
 - MISP event/attribute JSON exports, STIX bundles, TAXII collection URLs, custom JSON/CSV/TXT feeds, Sigma/YARA feeds, and sandbox behavior feeds are connected from the UI or API as source URLs/tokens.
 - Never commit a filled `.env` file.
@@ -121,7 +131,7 @@ curl "http://localhost:8000/api/attack/versions"
 Expected health response:
 
 ```json
-{"status":"ok","version":"2.6.0"}
+{"status":"ok","version":"2.7.0"}
 ```
 
 Run the deployment self-test:
@@ -224,3 +234,24 @@ VirusTotal summary and provides actions to add found TTPs to `My TTPs`, show
 found TTPs on the matrix, and open any matched local adversary profile. It also
 shows VT rule, sandbox, DNS/WHOIS, and evidence snippets for extracted TTPs and
 actor links when those fields are present in the VT response.
+
+## 9. IOC Investigation
+
+Open:
+
+```text
+http://localhost:3000/ioc-investigation
+```
+
+Paste an IP, domain, URL, hash, or suspicious artifact. Select Tier 1 only or
+Tier 1 + Tier 2 expansion. AdversaryGraph checks the local IOC database and
+configured enrichment sources, then returns source status, relationship pivots,
+ATT&CK TTP leads, possible actor leads, kill-chain/tactic context, and optional
+AI summary input.
+
+Useful actions after a result:
+
+- show discovered TTPs on Navigator
+- add discovered TTPs to `My TTPs`
+- search the artifact in IOC Library
+- continue in VirusTotal Lookup

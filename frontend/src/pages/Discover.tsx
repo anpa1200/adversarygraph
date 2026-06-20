@@ -60,7 +60,7 @@ export function Discover() {
   const runIocLookup = () => {
     const value = iocInput.trim();
     if (!value) return;
-    navigate(`/virustotal?indicator=${encodeURIComponent(value)}`);
+    navigate(`/ioc-investigation?indicator=${encodeURIComponent(value)}`);
   };
   const runIocSearch = () => {
     const value = iocInput.trim();
@@ -102,13 +102,14 @@ export function Discover() {
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={runIocLookup} disabled={!iocInput.trim()} className="primary-action disabled:opacity-40">
-                    Enrichment
+                    Investigate
                   </button>
                   <button type="button" onClick={runIocSearch} className="secondary-action">
                     Search library
                   </button>
                 </div>
                 <ActionLink label="Open IOC Library" detail="Search, sort, enrich, export STIX." onClick={() => navigate('/ioc-library')} />
+                <ActionLink label="Open IOC Investigation" detail="Tier 1/Tier 2 pivots, TTPs, actors, AI summary." onClick={() => navigate('/ioc-investigation')} />
                 <ActionLink label="Manage feeds" detail={`${enabledSources.length} enabled sources${staleSources.length ? `, ${staleSources.length} need attention` : ''}.`} onClick={() => navigate('/feeds')} />
               </div>
             </Panel>

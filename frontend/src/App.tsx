@@ -14,6 +14,7 @@ import { Examples } from '@/pages/Examples';
 import { SectorIntel } from '@/pages/SectorIntel';
 import { Troubleshooting } from '@/pages/Troubleshooting';
 import { VirusTotalLookup } from '@/pages/VirusTotalLookup';
+import { IOCInvestigation } from '@/pages/IOCInvestigation';
 import { IOCLibrary } from '@/pages/IOCLibrary';
 import { IOCDetail } from '@/pages/IOCDetail';
 import { FeedsManagement } from '@/pages/FeedsManagement';
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/feeds" element={<FeedsManagement />} />
               <Route path="/troubleshooting" element={<Troubleshooting />} />
               <Route path="/virustotal" element={<VirusTotalLookup />} />
+              <Route path="/ioc-investigation" element={<IOCInvestigation />} />
             </Routes>
           </main>
           <GlobalErrorPopup />

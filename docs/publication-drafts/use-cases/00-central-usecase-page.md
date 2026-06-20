@@ -2,7 +2,7 @@
 
 ## Central Usecase Page
 
-This page is the navigation hub for AdversaryGraph v2.6.0 use-case article drafts.
+This page is the navigation hub for AdversaryGraph v2.7.0 use-case article drafts.
 
 For a single article version, use: [30 Practical AdversaryGraph Use Cases](../adversarygraph-30-use-cases.md).
 
