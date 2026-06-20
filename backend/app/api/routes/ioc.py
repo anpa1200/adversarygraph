@@ -20,6 +20,7 @@ from app.services.ioc_intel import (
     actor_ioc_summary,
     actor_iocs,
     create_ioc_source,
+    delete_ioc_source,
     enrich_actor_from_otx,
     enrich_ioc_ttp_mappings,
     get_ioc_detail,
@@ -31,6 +32,7 @@ from app.services.ioc_intel import (
     sync_otx_actor_pulses,
     sync_otx_subscribed_pulses,
     sync_threatfox,
+    update_ioc_source,
 )
 from app.services.virustotal import lookup_virustotal_ioc
 from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
@@ -104,6 +106,12 @@ class IOCSourceCreateIn(BaseModel):
     url: str = Field(..., min_length=8)
     kind: str = Field("custom-json", pattern="^custom-(json|csv|txt)$")
     source_id: str | None = None
+
+
+class IOCSourceUpdateIn(BaseModel):
+    label: str = Field(..., min_length=2)
+    url: str = Field(..., min_length=8)
+    kind: str = Field("custom-json", pattern="^custom-(json|csv|txt)$")
 
 
 class TAXIIImportIn(BaseModel):
@@ -382,6 +390,28 @@ async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depe
         )
     except Exception as exc:
         raise HTTPException(400, f"Custom IOC source creation failed: {exc}") from exc
+
+
+@router.patch("/sources/{source_id}", response_model=IOCSourceOut)
+async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session)):
+    try:
+        return await update_ioc_source(
+            session,
+            source_id=source_id,
+            label=payload.label,
+            url=payload.url,
+            kind=payload.kind,
+        )
+    except Exception as exc:
+        raise HTTPException(400, f"Custom IOC source update failed: {exc}") from exc
+
+
+@router.delete("/sources/{source_id}", status_code=204)
+async def delete_source(source_id: str, session: AsyncSession = Depends(get_session)):
+    try:
+        await delete_ioc_source(session, source_id=source_id)
+    except Exception as exc:
+        raise HTTPException(400, f"Custom IOC source delete failed: {exc}") from exc
 
 
 @router.get("/library", response_model=IOCLibraryOut)

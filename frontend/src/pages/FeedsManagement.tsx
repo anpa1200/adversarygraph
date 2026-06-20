@@ -113,6 +113,15 @@ export function FeedsManagement() {
     },
   });
   const syncIocSource = useMutation({ mutationFn: (sourceId: string) => iocApi.syncSource(sourceId, iocSyncOptions()), onSuccess: refreshFeeds });
+  const updateIocSource = useMutation({
+    mutationFn: ({ sourceId, payload }: { sourceId: string; payload: { label: string; url: string; kind: FeedKind } }) =>
+      iocApi.updateSource(sourceId, payload),
+    onSuccess: refreshFeeds,
+  });
+  const deleteIocSource = useMutation({
+    mutationFn: iocApi.deleteSource,
+    onSuccess: refreshFeeds,
+  });
   const enrichIocTtps = useMutation({ mutationFn: () => iocApi.enrichIocTtps({ ...iocSyncOptions(), limit: 20000 }), onSuccess: refreshFeeds });
   const importStix = useMutation({
     mutationFn: async (file: File) => {
@@ -432,7 +441,14 @@ export function FeedsManagement() {
                 </div>
                 <div className="max-h-64 divide-y divide-gray-800 overflow-y-auto rounded border border-gray-800 bg-gray-950">
                   {(iocSources.data ?? []).map(source => (
-                    <IOCSourceRow key={source.source_id} source={source} onSync={() => syncIocSource.mutate(source.source_id)} disabled={syncIocSource.isPending} />
+                    <IOCSourceRow
+                      key={source.source_id}
+                      source={source}
+                      onSync={() => syncIocSource.mutate(source.source_id)}
+                      onUpdate={payload => updateIocSource.mutate({ sourceId: source.source_id, payload })}
+                      onDelete={() => deleteIocSource.mutate(source.source_id)}
+                      disabled={syncIocSource.isPending || updateIocSource.isPending || deleteIocSource.isPending}
+                    />
                   ))}
                 </div>
                 <MutationStatus label="IOC sync" mutation={syncAllIocs} />
@@ -441,6 +457,8 @@ export function FeedsManagement() {
                 <MutationStatus label="OTX" mutation={syncOtx} />
                 <MutationStatus label="Custom source" mutation={createIocSource} />
                 <MutationStatus label="Custom source sync" mutation={syncIocSource} />
+                <MutationStatus label="Custom source update" mutation={updateIocSource} />
+                <MutationStatus label="Custom source delete" mutation={deleteIocSource} />
                 <MutationStatus label="STIX import" mutation={importStix} />
                 <MutationStatus label="IOC-to-TTP enrichment" mutation={enrichIocTtps} />
               </div>
@@ -618,8 +636,63 @@ export function FeedsManagement() {
   );
 }
 
-function IOCSourceRow({ source, onSync, disabled }: { source: IOCSourceStatus; onSync: () => void; disabled: boolean }) {
+function IOCSourceRow({
+  source,
+  onSync,
+  onUpdate,
+  onDelete,
+  disabled,
+}: {
+  source: IOCSourceStatus;
+  onSync: () => void;
+  onUpdate: (payload: { label: string; url: string; kind: FeedKind }) => void;
+  onDelete: () => void;
+  disabled: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(source.label);
+  const [url, setUrl] = useState(source.url);
+  const [kind, setKind] = useState<FeedKind>(source.kind as FeedKind);
   const canSync = source.kind.startsWith('custom-');
+  const canManage = source.kind.startsWith('custom-');
+  const dirty = label.trim() !== source.label || url.trim() !== source.url || kind !== source.kind;
+  const reset = () => {
+    setLabel(source.label);
+    setUrl(source.url);
+    setKind(source.kind as FeedKind);
+    setEditing(false);
+  };
+  const save = () => {
+    onUpdate({ label: label.trim(), url: url.trim(), kind });
+    setEditing(false);
+  };
+  const remove = () => {
+    if (window.confirm(`Delete IOC feed "${source.label}" and its stored indicators?`)) {
+      onDelete();
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="space-y-2 p-3">
+        <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_130px]">
+          <input className={field} value={label} onChange={event => setLabel(event.target.value)} placeholder="Feed label" />
+          <input className={field} value={url} onChange={event => setUrl(event.target.value)} placeholder="Feed URL" />
+          <select className={field} value={kind} onChange={event => setKind(event.target.value as FeedKind)}>
+            <option value="custom-json">JSON</option>
+            <option value="custom-csv">CSV</option>
+            <option value="custom-txt">TXT</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="primary" disabled={disabled || !label.trim() || !url.trim() || !dirty} onClick={save}>Save</button>
+          <button className="secondary-action" disabled={disabled} onClick={reset}>Cancel</button>
+          <span className="text-[10px] text-gray-600">{source.source_id}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-3 p-3">
       <div className="min-w-0 flex-1">
@@ -632,7 +705,19 @@ function IOCSourceRow({ source, onSync, disabled }: { source: IOCSourceStatus; o
         {source.last_synced_at && <p className="mt-1 text-[10px] text-gray-700">Last sync: {source.last_synced_at}</p>}
         {source.sync_error && <p className="mt-1 line-clamp-2 text-[10px] text-red-300">{source.sync_error}</p>}
       </div>
-      {canSync && <button className="secondary-action" disabled={disabled} onClick={onSync}>Sync</button>}
+      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+        {canSync && <button className="secondary-action" disabled={disabled} onClick={onSync}>Sync</button>}
+        {canManage && <button className="secondary-action" disabled={disabled} onClick={() => setEditing(true)}>Edit</button>}
+        {canManage && (
+          <button
+            className="rounded border border-red-900 bg-red-950/30 px-3 py-2 text-xs text-red-300 hover:border-red-500 disabled:opacity-40"
+            disabled={disabled}
+            onClick={remove}
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </div>
   );
 }

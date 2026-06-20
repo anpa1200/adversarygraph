@@ -308,6 +308,43 @@ async def create_ioc_source(
     return source
 
 
+async def update_ioc_source(
+    session: AsyncSession,
+    source_id: str,
+    *,
+    label: str,
+    url: str,
+    kind: str,
+) -> IOCSource:
+    await ensure_ioc_sources(session)
+    source = await session.get(IOCSource, source_id)
+    if not source:
+        raise ValueError(f"IOC source not found: {source_id}")
+    if source.kind not in CUSTOM_FEED_KINDS:
+        raise ValueError(f"IOC source {source_id} is managed by the platform and cannot be edited here")
+    if kind not in CUSTOM_FEED_KINDS:
+        raise ValueError(f"Unsupported custom feed kind: {kind}")
+    source.label = label.strip() or source.label
+    source.url = url.strip()
+    source.kind = kind
+    source.sync_status = "configured"
+    source.sync_error = ""
+    await session.commit()
+    await session.refresh(source)
+    return source
+
+
+async def delete_ioc_source(session: AsyncSession, source_id: str) -> None:
+    await ensure_ioc_sources(session)
+    source = await session.get(IOCSource, source_id)
+    if not source:
+        raise ValueError(f"IOC source not found: {source_id}")
+    if source.kind not in CUSTOM_FEED_KINDS:
+        raise ValueError(f"IOC source {source_id} is managed by the platform and cannot be deleted here")
+    await session.delete(source)
+    await session.commit()
+
+
 async def sync_custom_source(
     session: AsyncSession,
     source_id: str,

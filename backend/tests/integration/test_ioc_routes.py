@@ -134,6 +134,22 @@ async def test_custom_ioc_source_kind_validation(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_custom_ioc_source_update_kind_validation(client: AsyncClient):
+    resp = await client.patch(
+        "/api/ioc/sources/custom-test",
+        json={"label": "Bad Feed", "url": "https://example.com/iocs", "kind": "api"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_custom_ioc_source_delete_missing_source(client: AsyncClient):
+    resp = await client.delete("/api/ioc/sources/custom-does-not-exist")
+    assert resp.status_code == 400
+    assert "not found" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_custom_ioc_source_sync_missing_source(client: AsyncClient):
     resp = await client.post("/api/ioc/sync/custom-does-not-exist")
     assert resp.status_code == 400

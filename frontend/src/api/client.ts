@@ -320,6 +320,10 @@ export const iocApi = {
     http.get(`/ioc/library/${id}/detail`, { params: { domain } }).then(r => r.data),
   createSource: (payload: {label: string; url: string; kind: 'custom-json' | 'custom-csv' | 'custom-txt'; source_id?: string}): Promise<IOCSourceStatus> =>
     http.post('/ioc/sources', payload).then(r => r.data),
+  updateSource: (sourceId: string, payload: {label: string; url: string; kind: 'custom-json' | 'custom-csv' | 'custom-txt'}): Promise<IOCSourceStatus> =>
+    http.patch(`/ioc/sources/${sourceId}`, payload).then(r => r.data),
+  deleteSource: (sourceId: string): Promise<void> =>
+    http.delete(`/ioc/sources/${sourceId}`).then(() => {}),
   syncThreatFox: (days = 7, options?: IOCSyncOptions): Promise<{source: string; days: number; inserted: number; updated: number; actor_links: number; ttp_enriched: number}> =>
     http.post('/ioc/sync/threatfox', null, { params: { days, ...options } }).then(r => r.data),
   syncMalpedia: (): Promise<{
