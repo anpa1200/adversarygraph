@@ -81,8 +81,8 @@ services:
 
   malwaregraph:
     build:
-      context: ../malwaregraph
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/malwaregraph/Dockerfile
     restart: unless-stopped
     environment:
       MALWAREGRAPH_STORAGE_DIR: /app/storage
