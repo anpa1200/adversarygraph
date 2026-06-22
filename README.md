@@ -14,7 +14,7 @@
 **AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v3.1.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v3.2.0-blue)](VERSION)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
@@ -23,7 +23,7 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v3.1.0 · [Release Summary](docs/release-summary-v3.1.0.md) · [Release Article Draft](docs/publication-drafts/adversarygraph-v3-ioc-investigation-ai-log-pcap-analysis.md) · [From Log to Report Workflow](docs/publication-drafts/medium-adversarygraph-from-log-to-report-ioc-investigation.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Capabilities](https://1200km.com/adversarygraph-docs/capabilities/) · [Use Cases](https://1200km.com/adversarygraph/use-cases.html) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
+**Current release: v3.2.0 · [Release Summary](docs/release-summary-v3.2.0.md) · [Release Article Draft](docs/publication-drafts/adversarygraph-v3-ioc-investigation-ai-log-pcap-analysis.md) · [From Log to Report Workflow](docs/publication-drafts/medium-adversarygraph-from-log-to-report-ioc-investigation.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Capabilities](https://1200km.com/adversarygraph-docs/capabilities/) · [Use Cases](https://1200km.com/adversarygraph/use-cases.html) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
@@ -59,6 +59,7 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 - [Screenshots And Visual Evidence](#screenshots-and-visual-evidence)
 - [Features](#features)
 - [Architecture](#architecture)
+- [Malware Analysis Module](docs/malware-analysis-module.md)
 - [Malware Analysis Architecture](docs/malware-analysis-architecture.md)
 - [Quick Start](#quick-start)
 - [Usage Guide](#usage-guide)
@@ -154,7 +155,7 @@ On first startup, AdversaryGraph downloads and ingests MITRE ATT&CK / ATLAS refe
 
 ## From Log to Report Workflow
 
-AdversaryGraph v3.1 documents the practical workflow for turning firewall logs, EDR
+AdversaryGraph documents the practical workflow for turning firewall logs, EDR
 events, proxy records, PCAP-derived text, suspicious commands, and raw IOC lists
 into a structured CTI investigation:
 
@@ -177,7 +178,7 @@ The complete public walkthrough is mirrored in the 1200km ecosystem:
 
 ## Project Maturity Evidence
 
-AdversaryGraph v3.1.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
+AdversaryGraph v3.2.0 publishes the operational evidence expected from a serious self-hosted CTI tool:
 
 | Area | Evidence |
 |---|---|
@@ -192,7 +193,7 @@ AdversaryGraph v3.1.0 publishes the operational evidence expected from a serious
 
 The current documentation is intended to make external review practical rather than promotional.
 
-For the current release scope, see the [v3.1.0 release summary](docs/release-summary-v3.1.0.md) and [release notes](docs/release-notes/v3.1.0.md).
+For the current release scope, see the [v3.2.0 release summary](docs/release-summary-v3.2.0.md) and [release notes](docs/release-notes/v3.2.0.md).
 
 ## Public Demo Privacy Note
 
@@ -246,7 +247,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Intelligence Pipeline** | Scheduled reviewed RSS intake, STIX/TAXII, MISP and ATLAS imports, normalized observables, public enrichment, team audit trail |
 | **Detection Studio** | Versioned Sigma, YARA, YARA-L, KQL, SPL and EQL skeleton or AI-assisted rule generation with structural validation and explicit analyst-review placeholders |
 | **Operations** | Investigations, evidence graphs, report intake, tracked actor changes, and detection engineering lifecycle |
-| **Malware Analysis** | Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP intake, static analysis, unpack detection, Android APK fallback analysis, dynamic function graph, step-debug plans, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
+| **Malware Analysis** | Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP and raw-file intake, static analysis, entropy and PE-header triage, unpack detection, Android APK fallback analysis, string extraction, AI string analysis, dynamic-debug planning, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. This module is under construction; see [Malware Analysis Module](docs/malware-analysis-module.md) and [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
 
 ---
 
@@ -268,8 +269,8 @@ IOC Intelligence, ATT&CK Navigator, Compare Groups, Detection Studio, evidence
 views, and exports. Malware archives and extracted samples stay out of the main
 application containers, and the default workflow is static-only. Any execution,
 debugging, or dynamic unpacking must run in a disposable sandbox boundary with
-fake-internet or restricted network controls. See [Malware Analysis
-Architecture](docs/malware-analysis-architecture.md).
+fake-internet or restricted network controls. See [Malware Analysis Module](docs/malware-analysis-module.md)
+and [Malware Analysis Architecture](docs/malware-analysis-architecture.md).
 
 The Docker deployment gives the operator control over storage, networking, and provider configuration. Trusted-header authentication and roles are available when configured, but internet-facing deployments still require TLS, an authenticating reverse proxy, restricted network exposure, backups, retention controls, and secrets management.
 
