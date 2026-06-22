@@ -954,12 +954,31 @@ export interface MalwareGraphFirstAnalysis {
   file_type: string;
   magic_bytes: string;
   entropy: number;
+  entropy_blocks?: Array<{
+    offset: number;
+    size: number;
+    entropy: number | null;
+    truncated?: boolean;
+  }>;
   packed: boolean;
   packer: string | null;
   obfuscated: boolean;
   obfuscation_signals: string[];
   hashes: Record<string, string>;
   size_bytes: number;
+}
+
+export interface MalwareGraphPeHeaders {
+  artifact_id: string;
+  type: 'pe-headers';
+  target_entity_id: string;
+  target_name: string;
+  valid_pe: boolean;
+  dos_header: Record<string, unknown>;
+  coff_header: Record<string, unknown>;
+  optional_header: Record<string, unknown>;
+  sections: Array<Record<string, unknown>>;
+  warnings: string[];
 }
 
 export interface MalwareGraphWorkflow {
