@@ -1013,7 +1013,9 @@ export interface MalwareGraphStringsAnalysis {
   target_entity_id: string;
   entropy: number;
   obfuscated: boolean;
+  filters: Record<string, unknown>;
   strings_total: number;
+  strings: string[];
   strings_preview: string[];
   categories: Record<string, string[]>;
   findings: Array<{
@@ -1107,8 +1109,8 @@ export const malwareGraphApi = {
     http.post(`/malwaregraph/analyses/${jobId}/runtime-debug-sessions`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   stepRuntimeDebugSession: (sessionId: string): Promise<MalwareGraphRuntimeDebugSession> =>
     http.post(`/malwaregraph/runtime-debug-sessions/${sessionId}/step`).then(r => r.data),
-  strings: (jobId: string, sampleRef = 'archive--file--0001', ai = false, aiProvider = 'local'): Promise<MalwareGraphStringsAnalysis> =>
-    http.get(`/malwaregraph/analyses/${jobId}/strings`, { params: { sample_ref: sampleRef, ai, ai_provider: aiProvider } }).then(r => r.data),
+  strings: (jobId: string, sampleRef = 'archive--file--0001', ai = false, aiProvider = 'local', filters?: { min_chars?: number; max_chars?: number | null }): Promise<MalwareGraphStringsAnalysis> =>
+    http.get(`/malwaregraph/analyses/${jobId}/strings`, { params: { sample_ref: sampleRef, ai, ai_provider: aiProvider, min_chars: filters?.min_chars ?? 4, max_chars: filters?.max_chars ?? undefined } }).then(r => r.data),
   unpack: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphUnpackPlan> =>
     http.post(`/malwaregraph/analyses/${jobId}/unpack`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   obfuscationAnalysis: (jobId: string, sampleRef = 'archive--file--0001', aiProvider = 'local'): Promise<MalwareGraphObfuscationAnalysis> =>

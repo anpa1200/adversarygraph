@@ -16,7 +16,9 @@ export function StringAnalyzer() {
   const [params, setParams] = useSearchParams();
   const [jobId, setJobId] = useState(params.get('job_id') ?? '');
   const [sampleRef, setSampleRef] = useState(params.get('sample_ref') ?? '');
-  const [ai, setAi] = useState((params.get('ai') ?? 'true') !== 'false');
+  const [mode, setMode] = useState<'all' | 'smart' | 'ai'>((params.get('mode') as 'all' | 'smart' | 'ai' | null) ?? ((params.get('ai') ?? 'true') !== 'false' ? 'ai' : 'smart'));
+  const [minChars, setMinChars] = useState(Number(params.get('min_chars') ?? 4));
+  const [maxChars, setMaxChars] = useState(params.get('max_chars') ? Number(params.get('max_chars')) : 4096);
   const [aiProvider, setAiProvider] = useState(params.get('ai_provider') ?? 'local');
 
   const jobs = useQuery({ queryKey: ['malwaregraph-jobs'], queryFn: malwareGraphApi.jobs, retry: false });
@@ -56,14 +58,17 @@ export function StringAnalyzer() {
     const next = new URLSearchParams();
     if (jobId) next.set('job_id', jobId);
     if (sampleRef) next.set('sample_ref', sampleRef);
-    next.set('ai', String(ai));
+    next.set('mode', mode);
+    next.set('ai', String(mode === 'ai'));
     next.set('ai_provider', aiProvider);
+    next.set('min_chars', String(minChars));
+    if (maxChars) next.set('max_chars', String(maxChars));
     setParams(next, { replace: true });
-  }, [ai, aiProvider, jobId, sampleRef, setParams]);
+  }, [aiProvider, jobId, maxChars, minChars, mode, sampleRef, setParams]);
 
   const strings = useQuery({
-    queryKey: ['malwaregraph-string-analyzer', jobId, sampleRef, ai, aiProvider],
-    queryFn: () => malwareGraphApi.strings(jobId, sampleRef, ai, aiProvider),
+    queryKey: ['malwaregraph-string-analyzer', jobId, sampleRef, mode, aiProvider, minChars, maxChars],
+    queryFn: () => malwareGraphApi.strings(jobId, sampleRef, mode === 'ai', aiProvider, { min_chars: minChars, max_chars: maxChars || null }),
     enabled: Boolean(jobId && sampleRef),
     retry: false,
   });
@@ -84,13 +89,18 @@ export function StringAnalyzer() {
               <select value={sampleRef} onChange={event => setSampleRef(event.target.value)} className={input}>
                 {targets.map(target => <option key={target.id} value={target.id}>{target.label}</option>)}
               </select>
-              <label className="flex items-center justify-between rounded border border-gray-800 bg-gray-950 px-3 py-2 text-xs text-gray-300">
-                <span>AI IOC/TTP extraction</span>
-                <input type="checkbox" checked={ai} onChange={event => setAi(event.target.checked)} />
-              </label>
-              <select value={aiProvider} onChange={event => setAiProvider(event.target.value)} className={input}>
+              <div className="grid grid-cols-3 gap-1 text-xs">
+                <ModeButton active={mode === 'all'} label="All strings" onClick={() => setMode('all')} />
+                <ModeButton active={mode === 'smart'} label="Smart" onClick={() => setMode('smart')} />
+                <ModeButton active={mode === 'ai'} label="AI analysis" onClick={() => setMode('ai')} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] uppercase text-gray-600">Min chars<input type="number" min={1} max={4096} value={minChars} onChange={event => setMinChars(Number(event.target.value || 1))} className={`${input} mt-1`} /></label>
+                <label className="text-[10px] uppercase text-gray-600">Max chars<input type="number" min={minChars} max={32768} value={maxChars} onChange={event => setMaxChars(Number(event.target.value || 0))} className={`${input} mt-1`} /></label>
+              </div>
+              {mode === 'ai' && <select value={aiProvider} onChange={event => setAiProvider(event.target.value)} className={input}>
                 {(providers.data ?? []).map(provider => <option key={provider.provider} value={provider.provider}>{provider.provider} · {provider.configured ? provider.model : provider.env_var}</option>)}
-              </select>
+              </select>}
               <button className="primary w-full" onClick={() => strings.refetch()} disabled={!jobId || !sampleRef || strings.isFetching}>{strings.isFetching ? 'Analyzing...' : 'Analyze strings'}</button>
               {jobId && <button className="secondary-action w-full" onClick={() => navigate(`/malware-analysis`)}>Back to Malware Analysis</button>}
               {strings.error && <p className="text-xs text-red-300">{String(strings.error)}</p>}
@@ -107,14 +117,14 @@ export function StringAnalyzer() {
         </div>
 
         <div className="space-y-4">
-          {result ? <StringResults result={result} /> : <Empty text="Select a MalwareGraph job and target to run full entropy-aware string analysis." />}
+          {result ? <StringResults result={result} mode={mode} /> : <Empty text="Select a MalwareGraph job and target to run full entropy-aware string analysis." />}
         </div>
       </div>
     </div>
   </div>;
 }
 
-function StringResults({ result }: { result: MalwareGraphStringsAnalysis }) {
+function StringResults({ result, mode }: { result: MalwareGraphStringsAnalysis; mode: 'all' | 'smart' | 'ai' }) {
   return <>
     <div className="grid gap-3 md:grid-cols-4">
       <Metric label="Target" value={result.target_name} />
@@ -122,10 +132,18 @@ function StringResults({ result }: { result: MalwareGraphStringsAnalysis }) {
       <Metric label="Entropy" value={result.entropy.toFixed(3)} />
       <Metric label="Obfuscated" value={result.obfuscated ? 'yes' : 'no'} />
     </div>
-    {result.ai_analysis && <Panel title="AI String Analysis">
+    {mode === 'ai' && result.ai_analysis && <Panel title="AI String Analysis">
       <div className="p-3 text-sm leading-relaxed text-gray-300">{result.ai_analysis}</div>
     </Panel>}
-    <div className="grid gap-4 xl:grid-cols-2">
+    {mode === 'all' && <Panel title={`All Extracted Strings (${result.strings.length})`}>
+      <div className="max-h-[620px] overflow-y-auto divide-y divide-gray-900 p-3 font-mono text-[10px]">
+        {result.strings.map(value => {
+          const route = stringIocRoute(value);
+          return route ? <a key={value} href={route} className="block break-all py-1 text-mitre-accent hover:underline">{value}</a> : <div key={value} className="break-all py-1 text-gray-500">{value}</div>;
+        })}
+      </div>
+    </Panel>}
+    {mode !== 'all' && <div className="grid gap-4 xl:grid-cols-2">
       <Panel title={`IOC Leads (${result.ioc_leads.length})`}>
         <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-800">
           {result.ioc_leads.map(lead => <a key={`${lead.type}:${lead.value}`} href={lead.adversarygraph_route ?? `/ioc-library?search=${encodeURIComponent(lead.value)}`} className="block p-3 hover:bg-gray-900">
@@ -150,8 +168,8 @@ function StringResults({ result }: { result: MalwareGraphStringsAnalysis }) {
           {!result.ttp_leads.length && <Empty text="Enable AI IOC/TTP extraction to produce ATT&CK leads." />}
         </div>
       </Panel>
-    </div>
-    <Panel title={`Smart Findings (${result.findings.length})`}>
+    </div>}
+    {mode !== 'all' && <Panel title={`Smart Findings (${result.findings.length})`}>
       <div className="grid gap-2 p-3 md:grid-cols-2">
         {result.findings.slice(0, 120).map((finding, index) => finding.adversarygraph_route ? (
           <a key={`${finding.category}-${index}`} href={finding.adversarygraph_route} className="rounded border border-gray-800 bg-gray-950 p-2 hover:border-mitre-accent">
@@ -159,13 +177,20 @@ function StringResults({ result }: { result: MalwareGraphStringsAnalysis }) {
           </a>
         ) : <div key={`${finding.category}-${index}`} className="rounded border border-gray-800 bg-gray-950 p-2"><Finding finding={finding} /></div>)}
       </div>
-    </Panel>
-    <Panel title="Extracted Strings">
+    </Panel>}
+    {mode !== 'all' && <Panel title="Extracted Strings">
       <div className="max-h-80 overflow-y-auto p-3 font-mono text-[10px] text-gray-500">
-        {result.strings_preview.map(value => <div key={value} className="break-all border-b border-gray-900 py-1">{value}</div>)}
+        {result.strings_preview.map(value => {
+          const route = stringIocRoute(value);
+          return route ? <a key={value} href={route} className="block break-all border-b border-gray-900 py-1 text-mitre-accent hover:underline">{value}</a> : <div key={value} className="break-all border-b border-gray-900 py-1">{value}</div>;
+        })}
       </div>
-    </Panel>
+    </Panel>}
   </>;
+}
+
+function ModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={active ? 'rounded bg-mitre-accent px-2 py-1 text-white' : 'rounded border border-gray-700 px-2 py-1 text-gray-300 hover:border-mitre-accent'}>{label}</button>;
 }
 
 function Finding({ finding }: { finding: MalwareGraphStringsAnalysis['findings'][number] }) {
@@ -176,6 +201,20 @@ function Finding({ finding }: { finding: MalwareGraphStringsAnalysis['findings']
     </div>
     <div className="break-all font-mono text-xs text-gray-200">{finding.value}</div>
   </>;
+}
+
+function stringIocRoute(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 512) return null;
+  if (/^https?:\/\/[^\s"'<>]+$/i.test(trimmed)) return `/ioc-node?type=url&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)$/.test(trimmed)) return `/ioc-node?type=ipv4&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^[A-Fa-f0-9]{32}$/.test(trimmed)) return `/ioc-node?type=md5&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^[A-Fa-f0-9]{40}$/.test(trimmed)) return `/ioc-node?type=sha1&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^[A-Fa-f0-9]{64}$/.test(trimmed)) return `/ioc-node?type=sha256&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(trimmed)) return `/ioc-node?type=email&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/.test(trimmed) && !/\.(dll|exe|sys|ocx)$/i.test(trimmed)) return `/ioc-node?type=domain&value=${encodeURIComponent(trimmed)}&tier=0&sources=MalwareGraph`;
+  if (/^(?:HKLM|HKCU|HKCR|HKU|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER)\\/i.test(trimmed)) return `/ioc-library?search=${encodeURIComponent(trimmed)}`;
+  return null;
 }
 
 function isFirstAnalysis(artifact: unknown): artifact is MalwareGraphFirstAnalysis {
