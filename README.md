@@ -237,7 +237,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Intelligence Pipeline** | Scheduled reviewed RSS intake, STIX/TAXII, MISP and ATLAS imports, normalized observables, public enrichment, team audit trail |
 | **Detection Studio** | Versioned Sigma, YARA, YARA-L, KQL, SPL and EQL skeleton or AI-assisted rule generation with structural validation and explicit analyst-review placeholders |
 | **Operations** | Investigations, evidence graphs, report intake, tracked actor changes, and detection engineering lifecycle |
-| **Malware Analysis** | Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP intake, static analysis, unpack detection, Android APK fallback analysis, workflow graph, step-debug plans, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
+| **Malware Analysis** | Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP intake, static analysis, unpack detection, Android APK fallback analysis, dynamic function graph, step-debug plans, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
 
 ---
 
