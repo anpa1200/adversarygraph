@@ -1,13 +1,14 @@
 # AdversaryGraph
 
 <p align="center">
-  <img alt="UNDER CONSTRUCTION" src="https://img.shields.io/badge/MALWARE%20ANALYSIS-UNDER%20CONSTRUCTION-red?style=for-the-badge">
+  <img alt="COMING SOON" src="https://img.shields.io/badge/MALWARE%20ANALYSIS%20MODE-COMING%20SOON-red?style=for-the-badge">
 </p>
 
-> **UNDER CONSTRUCTION:** The integrated Malware Analysis module is under active
-> development. Treat malware static analysis, decompilation, runtime-debug, IOC,
-> TTP, and attribution output as experimental analyst-assistance data. Validate
-> every finding before operational, legal, incident-response, or production use.
+> **COMING SOON:** Malware Analysis mode is in active development and is not a
+> production-ready malware-analysis verdict system. Treat static analysis,
+> decompilation, runtime-debug, IOC, TTP, and attribution output as experimental
+> analyst-assistance data. Validate every finding before operational, legal,
+> incident-response, or production use.
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
@@ -247,7 +248,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Intelligence Pipeline** | Scheduled reviewed RSS intake, STIX/TAXII, MISP and ATLAS imports, normalized observables, public enrichment, team audit trail |
 | **Detection Studio** | Versioned Sigma, YARA, YARA-L, KQL, SPL and EQL skeleton or AI-assisted rule generation with structural validation and explicit analyst-review placeholders |
 | **Operations** | Investigations, evidence graphs, report intake, tracked actor changes, and detection engineering lifecycle |
-| **Malware Analysis** | Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP and raw-file intake, static analysis, entropy and PE-header triage, unpack detection, Android APK fallback analysis, string extraction, AI string analysis, dynamic-debug planning, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. This module is under construction; see [Malware Analysis Module](docs/malware-analysis-module.md) and [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
+| **Malware Analysis** | Coming soon. Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP and raw-file intake, static analysis, entropy and PE-header triage, unpack detection, Android APK fallback analysis, string extraction, AI string analysis, dynamic-debug planning, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Module](docs/malware-analysis-module.md) and [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
 
 ---
 
