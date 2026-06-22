@@ -1030,6 +1030,69 @@ export interface MalwareGraphRuntimeDebugSession extends MalwareGraphDebugSessio
   completed: boolean;
 }
 
+export interface MalwareGraphDebuggerWorkspace {
+  _schema: string;
+  session_id: string;
+  job_id: string;
+  sample_ref: string;
+  target_entity_id: string;
+  target_name: string;
+  file_type: string;
+  created_at: string;
+  mode: string;
+  dynamic_enabled: boolean;
+  warning: string | null;
+  ai_provider: string;
+  engine: Record<string, unknown>;
+  safety: Record<string, unknown>;
+  isolation: Record<string, unknown>;
+  binary: Record<string, unknown>;
+  controls: Array<Record<string, unknown>>;
+  breakpoints: Array<Record<string, unknown>>;
+  registers: Array<{ name: string; entry: string; exit: string; changed: boolean }>;
+  memory_regions: Array<Record<string, unknown>>;
+  api_hooks: Array<Record<string, unknown>>;
+  api_calls: Array<Record<string, unknown>>;
+  network_events: Array<Record<string, unknown>>;
+  function_traces: Array<{
+    trace_id: string;
+    node_id: string;
+    address: string;
+    address_int: number;
+    rva: string | null;
+    name: string;
+    status: string;
+    executed: boolean;
+    source: string;
+    section: string | null;
+    confidence: number;
+    instruction_count: number;
+    disassembly: Array<Record<string, unknown>>;
+    calls_to: string[];
+    called_from: string[];
+    strings_referenced: string[];
+    risk_level: string;
+    mitre_technique: string;
+    summary: string;
+    behaviors: string[];
+    notes: string;
+    snapshot: Record<string, unknown>;
+    adversarygraph_route: string;
+  }>;
+  graph: MalwareGraphWorkflow;
+  decompilation: Record<string, unknown>;
+  current_trace_index: number;
+  current_trace_id: string;
+  current_snapshot: Record<string, unknown>;
+  step_count: number;
+  completed: boolean;
+  events: Array<Record<string, unknown>>;
+  risk_summary: Record<string, number>;
+  attack_leads: Array<Record<string, unknown>>;
+  ioc_leads: Array<Record<string, unknown>>;
+  export: Record<string, unknown>;
+}
+
 export interface MalwareGraphDecompilation {
   artifact_id: string;
   type: 'decompilation';
@@ -1177,6 +1240,12 @@ export const malwareGraphApi = {
     http.post(`/malwaregraph/analyses/${jobId}/debug-sessions`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   runtimeDebugSession: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphRuntimeDebugSession> =>
     http.post(`/malwaregraph/analyses/${jobId}/runtime-debug-sessions`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
+  debugWorkspace: (jobId: string, sampleRef = 'archive--file--0001', aiProvider = 'local'): Promise<MalwareGraphDebuggerWorkspace> =>
+    http.post(`/malwaregraph/analyses/${jobId}/debug-workspaces`, null, { params: { sample_ref: sampleRef, ai_provider: aiProvider } }).then(r => r.data),
+  getDebugWorkspace: (sessionId: string): Promise<MalwareGraphDebuggerWorkspace> =>
+    http.get(`/malwaregraph/debug-workspaces/${sessionId}`).then(r => r.data),
+  stepDebugWorkspace: (sessionId: string): Promise<MalwareGraphDebuggerWorkspace> =>
+    http.post(`/malwaregraph/debug-workspaces/${sessionId}/step`).then(r => r.data),
   decompilation: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphDecompilation> =>
     http.post(`/malwaregraph/analyses/${jobId}/decompilation`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   stepRuntimeDebugSession: (sessionId: string): Promise<MalwareGraphRuntimeDebugSession> =>
