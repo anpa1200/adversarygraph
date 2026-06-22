@@ -1099,6 +1099,29 @@ export interface MalwareGraphUnpackPlan {
   entropy: number | null;
   status: string;
   safety: Record<string, unknown>;
+  output: {
+    artifact_id: string;
+    target_entity_id: string;
+    name: string;
+    relative_path: string;
+    size_bytes: number;
+    file_type: string;
+    hashes: Record<string, string>;
+  } | null;
+  validation: {
+    output_exists: boolean;
+    source_size_bytes: number;
+    output_size_bytes: number;
+    size_delta_bytes: number;
+    source_entropy: number;
+    output_entropy: number;
+    entropy_delta: number;
+    output_file_type: string;
+    still_detected_packed: boolean;
+    packer_after_unpack: string | null;
+  } | null;
+  log: string[];
+  error?: string;
   steps: Array<{
     step_id: string;
     action: string;
