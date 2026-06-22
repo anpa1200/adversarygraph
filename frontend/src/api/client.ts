@@ -943,6 +943,10 @@ export interface MalwareGraphAnalysis {
     network_mode: string;
     sandbox_profile: string;
     third_party_binary_submission: boolean;
+    dynamic_analysis_requested?: boolean;
+    decompilation_performed?: boolean;
+    runtime_debug_requested?: boolean;
+    runtime_debug_enabled?: boolean;
   };
 }
 
@@ -1023,6 +1027,27 @@ export interface MalwareGraphRuntimeDebugSession extends MalwareGraphDebugSessio
   isolation: Record<string, unknown>;
   current_step: number;
   completed: boolean;
+}
+
+export interface MalwareGraphDecompilation {
+  artifact_id: string;
+  type: 'decompilation';
+  target_entity_id: string;
+  target_name: string;
+  file_type: string;
+  status: string;
+  toolchain: string;
+  mode: string;
+  executed: boolean;
+  language?: string;
+  entrypoint?: string;
+  api_calls: string[];
+  interesting_strings: string[];
+  pseudocode: string[];
+  source_preview?: string[];
+  android_references?: string[];
+  sections?: Array<Record<string, unknown>>;
+  warnings: string[];
 }
 
 export interface MalwareGraphStringsAnalysis {
@@ -1109,11 +1134,12 @@ export const malwareGraphApi = {
   health: (): Promise<Record<string, unknown>> => http.get('/malwaregraph/health').then(r => r.data),
   providers: (): Promise<MalwareGraphProvider[]> => http.get('/malwaregraph/llm/providers').then(r => r.data),
   jobs: (): Promise<MalwareGraphJob[]> => http.get('/malwaregraph/analyses').then(r => r.data),
-  submit: (body: { file: File; password?: string; case_id?: string }): Promise<MalwareGraphAnalysis> => {
+  submit: (body: { file: File; password?: string; case_id?: string; dynamic_analysis?: boolean }): Promise<MalwareGraphAnalysis> => {
     const form = new FormData();
     form.append('file', body.file);
     if (body.password) form.append('password', body.password);
     if (body.case_id) form.append('case_id', body.case_id);
+    form.append('dynamic_analysis', body.dynamic_analysis ? 'true' : 'false');
     return http.post('/malwaregraph/analyses', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data);
@@ -1126,6 +1152,8 @@ export const malwareGraphApi = {
     http.post(`/malwaregraph/analyses/${jobId}/debug-sessions`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   runtimeDebugSession: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphRuntimeDebugSession> =>
     http.post(`/malwaregraph/analyses/${jobId}/runtime-debug-sessions`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
+  decompilation: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphDecompilation> =>
+    http.post(`/malwaregraph/analyses/${jobId}/decompilation`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   stepRuntimeDebugSession: (sessionId: string): Promise<MalwareGraphRuntimeDebugSession> =>
     http.post(`/malwaregraph/runtime-debug-sessions/${sessionId}/step`).then(r => r.data),
   strings: (jobId: string, sampleRef = 'archive--file--0001', ai = false, aiProvider = 'local', filters?: { min_chars?: number; max_chars?: number | null }): Promise<MalwareGraphStringsAnalysis> =>
