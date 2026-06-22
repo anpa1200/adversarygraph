@@ -23,6 +23,7 @@ import { MalwareAnalysis } from '@/pages/MalwareAnalysis';
 import { StringAnalyzer } from '@/pages/StringAnalyzer';
 import { SystemSelfTestPopup } from '@/components/SystemSelfTestPopup';
 import { GlobalErrorPopup } from '@/components/GlobalErrorPopup';
+import { ResizableWindows } from '@/components/ResizableWindows';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,6 +67,7 @@ export default function App() {
           </main>
           <GlobalErrorPopup />
           <SystemSelfTestPopup />
+          <ResizableWindows />
         </div>
       </BrowserRouter>
     </QueryClientProvider>
