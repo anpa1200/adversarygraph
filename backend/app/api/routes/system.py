@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone
-from time import perf_counter
+from pathlib import Path
+from time import perf_counter, sleep
 from typing import Any
 
 from fastapi import APIRouter
@@ -155,6 +156,135 @@ def _api_key_check() -> SelfTestCheck:
     )
 
 
+def _format_bytes(size_bytes: int) -> str:
+    value = float(max(0, size_bytes))
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
+        if value < 1024 or unit == "PiB":
+            return f"{int(value)} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} PiB"
+
+
+def _read_proc_cpu_totals(proc_stat_path: str = "/proc/stat") -> tuple[int, int]:
+    with open(proc_stat_path, encoding="utf-8") as handle:
+        line = handle.readline().strip()
+    fields = line.split()
+    if not fields or fields[0] != "cpu":
+        raise ValueError("Missing aggregate CPU row in /proc/stat")
+    values = [int(value) for value in fields[1:]]
+    if len(values) < 4:
+        raise ValueError("Incomplete aggregate CPU row in /proc/stat")
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return idle, sum(values)
+
+
+def _cpu_percent_from_totals(first: tuple[int, int], second: tuple[int, int]) -> float:
+    idle_delta = max(0, second[0] - first[0])
+    total_delta = max(0, second[1] - first[1])
+    if total_delta <= 0:
+        return 0.0
+    return round(max(0.0, min(100.0, (1 - idle_delta / total_delta) * 100)), 2)
+
+
+def _cpu_usage_details(sample_seconds: float = 0.1, proc_stat_path: str = "/proc/stat") -> dict[str, Any]:
+    first = _read_proc_cpu_totals(proc_stat_path)
+    sleep(max(0.01, sample_seconds))
+    second = _read_proc_cpu_totals(proc_stat_path)
+    details: dict[str, Any] = {
+        "usage_percent": _cpu_percent_from_totals(first, second),
+        "sample_seconds": sample_seconds,
+        "cpu_count": os.cpu_count() or 1,
+    }
+    if hasattr(os, "getloadavg"):
+        load_1m, load_5m, load_15m = os.getloadavg()
+        details["load_average"] = {
+            "1m": round(load_1m, 2),
+            "5m": round(load_5m, 2),
+            "15m": round(load_15m, 2),
+        }
+    return details
+
+
+def _parse_kib_file(path: str) -> dict[str, int]:
+    values: dict[str, int] = {}
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            key = parts[0].rstrip(":")
+            try:
+                values[key] = int(parts[1]) * 1024
+            except ValueError:
+                continue
+    return values
+
+
+def _read_int_file(path: Path) -> int | None:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not raw or raw == "max":
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _memory_usage_details(
+    meminfo_path: str = "/proc/meminfo",
+    self_status_path: str = "/proc/self/status",
+    cgroup_root: str = "/sys/fs/cgroup",
+) -> dict[str, Any]:
+    meminfo = _parse_kib_file(meminfo_path)
+    total = int(meminfo.get("MemTotal") or 0)
+    available = int(meminfo.get("MemAvailable") or meminfo.get("MemFree") or 0)
+    used = max(0, total - available)
+    details: dict[str, Any] = {
+        "host": {
+            "total_bytes": total,
+            "available_bytes": available,
+            "used_bytes": used,
+            "used_percent": round((used / total) * 100, 2) if total else 0.0,
+            "total": _format_bytes(total),
+            "available": _format_bytes(available),
+            "used": _format_bytes(used),
+        }
+    }
+
+    status = _parse_kib_file(self_status_path)
+    rss = int(status.get("VmRSS") or 0)
+    if rss:
+        details["process"] = {
+            "rss_bytes": rss,
+            "rss": _format_bytes(rss),
+        }
+
+    cgroup = Path(cgroup_root)
+    current = _read_int_file(cgroup / "memory.current")
+    maximum = _read_int_file(cgroup / "memory.max")
+    if current is None:
+        current = _read_int_file(cgroup / "memory" / "memory.usage_in_bytes")
+        maximum = _read_int_file(cgroup / "memory" / "memory.limit_in_bytes")
+    if current is not None:
+        cgroup_details: dict[str, Any] = {
+            "current_bytes": current,
+            "current": _format_bytes(current),
+        }
+        if maximum and maximum < 1 << 60:
+            cgroup_details.update(
+                {
+                    "limit_bytes": maximum,
+                    "limit": _format_bytes(maximum),
+                    "used_percent": round((current / maximum) * 100, 2),
+                }
+            )
+        details["cgroup"] = cgroup_details
+    return details
+
+
 @router.get("/selftest", response_model=SelfTestResult)
 async def selftest() -> SelfTestResult:
     started = perf_counter()
@@ -173,6 +303,21 @@ async def selftest() -> SelfTestResult:
                         "db_host": settings.db_host,
                         "external_data_dir": os.environ.get("ADVERSARYGRAPH_DB_DIR", "./data/postgres"),
                         "layout": "persistent external Postgres data directory; public references and private/custom data are source-separated",
+                    },
+                )
+            )
+            db_size_bytes = int(await session.scalar(text("select pg_database_size(current_database())")) or 0)
+            db_size_pretty = await session.scalar(text("select pg_size_pretty(pg_database_size(current_database()))"))
+            checks.append(
+                _check(
+                    "database_size",
+                    True,
+                    f"Local database size: {db_size_pretty or _format_bytes(db_size_bytes)}.",
+                    {
+                        "db_name": settings.db_name,
+                        "size_bytes": db_size_bytes,
+                        "size": db_size_pretty or _format_bytes(db_size_bytes),
+                        "external_data_dir": os.environ.get("ADVERSARYGRAPH_DB_DIR", "./data/postgres"),
                     },
                 )
             )
@@ -282,6 +427,33 @@ async def selftest() -> SelfTestResult:
         checks.append(_check("redis", True, "Redis connection succeeded."))
     except Exception as exc:
         checks.append(_check("redis", False, f"Redis self-test failed: {type(exc).__name__}: {exc}"))
+
+    try:
+        cpu_details = _cpu_usage_details()
+        checks.append(
+            _check(
+                "cpu_usage",
+                True,
+                f"CPU usage sampled at {cpu_details['usage_percent']}%.",
+                cpu_details,
+            )
+        )
+    except Exception as exc:
+        checks.append(_check("cpu_usage", False, f"CPU usage self-test failed: {type(exc).__name__}: {exc}"))
+
+    try:
+        memory_details = _memory_usage_details()
+        host_memory = memory_details["host"]
+        checks.append(
+            _check(
+                "memory_usage",
+                True,
+                f"Memory usage: {host_memory['used']} of {host_memory['total']} ({host_memory['used_percent']}%).",
+                memory_details,
+            )
+        )
+    except Exception as exc:
+        checks.append(_check("memory_usage", False, f"Memory usage self-test failed: {type(exc).__name__}: {exc}"))
 
     checks.append(_api_key_check())
 
