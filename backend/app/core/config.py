@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # MalwareGraph integration
     malwaregraph_url: str = "http://malwaregraph:8100"
     malwaregraph_api_key: str = ""
+    malwaregraph_request_timeout_seconds: int = 30
+    malwaregraph_upload_timeout_seconds: int = 180
+    malwaregraph_long_timeout_seconds: int = 300
 
     # ATT&CK ingestion
     attck_domains: str = "enterprise-attack,mobile-attack,ics-attack,atlas"
@@ -65,6 +68,9 @@ class Settings(BaseSettings):
     auth_default_role: str = "admin"
 
     log_level: str = "info"
+    log_dir: str = "logs"
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
 
     @property
     def attck_domain_list(self) -> list[str]:

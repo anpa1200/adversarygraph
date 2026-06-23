@@ -13,6 +13,8 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 *.log
+logs/
+backend/logs/
 .DS_Store
 data/
 *.json.gz

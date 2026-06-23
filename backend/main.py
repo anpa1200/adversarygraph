@@ -1,19 +1,19 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, malwaregraph, operations, pipeline, sector, system
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
+from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
 
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +58,36 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        logger.exception(
+            "request failed method=%s path=%s duration_ms=%s error=%r",
+            request.method,
+            request.url.path,
+            duration_ms,
+            exc,
+            extra={"request_id": request_id},
+        )
+        raise
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request complete method=%s path=%s status=%s duration_ms=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        extra={"request_id": request_id},
+    )
+    return response
 
 app.add_middleware(
     CORSMiddleware,
