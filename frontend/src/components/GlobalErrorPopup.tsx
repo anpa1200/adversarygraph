@@ -8,7 +8,7 @@ interface ApiErrorDetail {
   retry?: () => Promise<unknown>;
 }
 
-type PopupState = 'error' | 'checking' | 'ok';
+type PopupState = 'error' | 'checking' | 'ok' | 'warning';
 
 const providerRequirements = [
   { provider: 'threatfox', envVar: 'THREATFOX_AUTH_KEY', match: ['/ioc/sync/threatfox', 'THREATFOX_AUTH_KEY'] },
@@ -69,6 +69,14 @@ export function GlobalErrorPopup() {
         }
         setPopupState('ok');
         setError({ message: 'All correct.', status: 200, url: '/system/selftest' });
+      } else if (result.status === 'degraded') {
+        const degraded = result.checks.filter(check => check.status === 'degraded' || check.status === 'warning');
+        setPopupState('warning');
+        setError({
+          message: degraded.map(check => `${check.name}: ${check.message}`).join(' ') || 'Self-test degraded.',
+          status: 200,
+          url: '/system/selftest',
+        });
       } else {
         const failed = result.checks.filter(check => check.status !== 'ok');
         setPopupState('error');
@@ -89,16 +97,19 @@ export function GlobalErrorPopup() {
 
   const isOk = popupState === 'ok';
   const isChecking = popupState === 'checking';
+  const isWarning = popupState === 'warning';
   const boxClass = isOk
     ? 'border-emerald-500/60 bg-emerald-950/95 text-emerald-50'
+    : isWarning
+      ? 'border-amber-500/60 bg-amber-950/95 text-amber-50'
     : 'border-red-500/60 bg-red-950/95 text-red-50';
-  const metaClass = isOk ? 'text-emerald-200/80' : 'text-red-200/80';
+  const metaClass = isOk ? 'text-emerald-200/80' : isWarning ? 'text-amber-200/80' : 'text-red-200/80';
 
   return (
     <div className={`fixed top-4 right-4 z-[60] w-[min(460px,calc(100vw-2rem))] rounded-lg border p-4 shadow-2xl ${boxClass}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">{isOk ? 'All correct.' : 'API request failed'}</p>
+          <p className="text-sm font-semibold">{isOk ? 'All correct.' : isWarning ? 'Self-test degraded' : 'API request failed'}</p>
           <p className="mt-1 text-xs leading-5 opacity-90">
             {isChecking ? 'Running self-test...' : error.message}
           </p>

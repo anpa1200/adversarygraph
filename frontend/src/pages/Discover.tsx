@@ -327,16 +327,17 @@ function SelfTestReportPopup({
   const sources = syncDetails?.sources ?? [];
   const indicatorCount = syncDetails?.sources?.reduce((sum, source) => sum + Number(source.indicator_count ?? 0), 0) ?? 0;
   const ok = result?.status === 'ok' && !error;
+  const degraded = result?.status === 'degraded' && !error;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-xl border border-gray-700 bg-gray-950 shadow-2xl">
-        <div className={`border-b px-5 py-4 ${ok ? 'border-emerald-500/30 bg-emerald-950/20' : error || result?.status === 'error' ? 'border-red-500/40 bg-red-950/25' : 'border-sky-500/30 bg-sky-950/20'}`}>
+        <div className={`border-b px-5 py-4 ${ok ? 'border-emerald-500/30 bg-emerald-950/20' : degraded ? 'border-amber-500/40 bg-amber-950/25' : error || result?.status === 'error' ? 'border-red-500/40 bg-red-950/25' : 'border-sky-500/30 bg-sky-950/20'}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-white">Self-test report</h2>
               <p className="mt-1 text-sm text-gray-400">
-                {loading ? 'Running platform checks...' : error ? 'Self-test request failed.' : ok ? 'All platform checks passed.' : 'One or more platform checks returned errors.'}
+                {loading ? 'Running platform checks...' : error ? 'Self-test request failed.' : ok ? 'All platform checks passed.' : degraded ? 'Core checks passed, but one or more enabled feeds are degraded.' : 'One or more platform checks returned errors.'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -356,7 +357,7 @@ function SelfTestReportPopup({
           ) : result ? (
             <div className="space-y-5">
               <div className="grid gap-3 md:grid-cols-4">
-                <ReportMetric label="Overall status" value={result.status.toUpperCase()} tone={ok ? 'ok' : 'error'} />
+                <ReportMetric label="Overall status" value={result.status.toUpperCase()} tone={ok ? 'ok' : degraded ? 'warning' : 'error'} />
                 <ReportMetric label="Checks passed" value={`${result.checks.filter(check => check.status === 'ok').length}/${result.checks.length}`} />
                 <ReportMetric label="Runtime" value={`${result.duration_ms} ms`} />
                 <ReportMetric label="Version" value={result.version} />
@@ -426,7 +427,7 @@ function SelfTestReportPopup({
                   {result.checks.map(check => (
                     <details key={check.name} className="rounded border border-gray-800 bg-gray-950/50 p-3" open={check.status !== 'ok'}>
                       <summary className="cursor-pointer text-sm text-gray-200">
-                        <span className={check.status === 'ok' ? 'text-emerald-300' : 'text-red-300'}>{check.status === 'ok' ? 'OK' : 'FAIL'}</span>
+                        <span className={checkStatusClass(check.status)}>{checkStatusLabel(check.status)}</span>
                         <span className="ml-2 font-mono">{check.name}</span>
                         <span className="ml-2 text-xs text-gray-500">{check.message}</span>
                       </summary>
@@ -465,14 +466,26 @@ function providerLabel(name: string) {
   return labels[name] ?? name;
 }
 
-function ReportMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'ok' | 'error' }) {
-  const valueColor = tone === 'ok' ? 'text-emerald-300' : tone === 'error' ? 'text-red-300' : 'text-white';
+function ReportMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'ok' | 'warning' | 'error' }) {
+  const valueColor = tone === 'ok' ? 'text-emerald-300' : tone === 'warning' ? 'text-amber-300' : tone === 'error' ? 'text-red-300' : 'text-white';
   return (
     <div className="rounded border border-gray-800 bg-gray-900/70 p-3">
       <b className={`block text-lg ${valueColor}`}>{value}</b>
       <span className="text-[10px] text-gray-500">{label}</span>
     </div>
   );
+}
+
+function checkStatusLabel(status: SelfTestResult['checks'][number]['status']) {
+  if (status === 'ok') return 'OK';
+  if (status === 'degraded' || status === 'warning') return 'WARN';
+  return 'FAIL';
+}
+
+function checkStatusClass(status: SelfTestResult['checks'][number]['status']) {
+  if (status === 'ok') return 'text-emerald-300';
+  if (status === 'degraded' || status === 'warning') return 'text-amber-300';
+  return 'text-red-300';
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

@@ -62,6 +62,16 @@ function summarize(result?: SelfTestResult, error?: Error | null) {
       tone: 'ok' as const,
     };
   }
+  if (result.status === 'degraded') {
+    const syncCheck = checkByName(result, 'ioc_sync');
+    const syncDetails = asRecord(syncCheck?.details);
+    const degradedSources = Number(syncDetails.degraded_sources ?? 0);
+    return {
+      title: 'AdversaryGraph self-test degraded',
+      body: `Core platform checks passed, but ${degradedSources || 'one or more'} enabled IOC feed source${degradedSources === 1 ? '' : 's'} need attention. Checked in ${result.duration_ms} ms.`,
+      tone: 'warning' as const,
+    };
+  }
   const failed = result.checks.filter(check => check.status !== 'ok');
   return {
     title: 'AdversaryGraph self-test failed',
@@ -152,7 +162,7 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="font-semibold">Sync status</p>
           <span className="opacity-80">
-            {String(syncDetails.enabled_sources ?? sources.length)} enabled sources · {storedIndicators.toLocaleString()} indicators
+            {String(syncDetails.enabled_sources ?? sources.length)} enabled sources · {String(syncDetails.degraded_sources ?? 0)} degraded · {storedIndicators.toLocaleString()} indicators
           </span>
         </div>
         <div className="mt-2 max-h-36 space-y-1 overflow-y-auto pr-1">
@@ -208,23 +218,26 @@ export function SystemSelfTestPopup() {
   const troubleshootingUrl = `/troubleshooting?${new URLSearchParams({
     error: summary.body,
     url: '/system/selftest',
-    ...(error ? {} : { status: query.data?.status === 'ok' ? '200' : 'selftest-failed' }),
+    ...(error ? {} : { status: query.data?.status === 'ok' ? '200' : query.data?.status === 'degraded' ? 'selftest-degraded' : 'selftest-failed' }),
   }).toString()}`;
   const color =
     summary.tone === 'ok'
       ? 'border-emerald-500/50 bg-emerald-950/90 text-emerald-50'
+      : summary.tone === 'warning'
+        ? 'border-amber-500/60 bg-amber-950/95 text-amber-50'
       : summary.tone === 'error'
         ? 'border-red-500/60 bg-red-950/95 text-red-50'
         : 'border-sky-500/50 bg-slate-950/95 text-sky-50';
 
   if (popupState === 'collapsed') {
+    const isDegraded = query.data?.status === 'degraded';
     return (
       <button
         type="button"
         onClick={() => setPopupState('visible')}
-        className="fixed bottom-4 right-4 z-50 rounded border border-emerald-500/50 bg-emerald-950/90 px-3 py-2 text-xs font-semibold text-emerald-100 shadow-lg"
+        className={`fixed bottom-4 right-4 z-50 rounded border px-3 py-2 text-xs font-semibold shadow-lg ${isDegraded ? 'border-amber-500/50 bg-amber-950/90 text-amber-100' : 'border-emerald-500/50 bg-emerald-950/90 text-emerald-100'}`}
       >
-        Self-test OK
+        {isDegraded ? 'Self-test Degraded' : 'Self-test OK'}
       </button>
     );
   }
@@ -251,8 +264,8 @@ export function SystemSelfTestPopup() {
           <SelfTestDetails result={query.data} />
           {query.data.checks.map(check => (
             <div key={check.name} className="flex gap-2 text-xs">
-              <span className={check.status === 'ok' ? 'text-emerald-300' : 'text-red-300'}>
-                {check.status === 'ok' ? 'OK' : 'FAIL'}
+              <span className={checkStatusClass(check.status)}>
+                {checkStatusLabel(check.status)}
               </span>
               <span className="font-mono">{check.name}</span>
               <span className="opacity-80">{check.message}</span>
@@ -280,4 +293,16 @@ export function SystemSelfTestPopup() {
       )}
     </div>
   );
+}
+
+function checkStatusLabel(status: SelfTestCheck['status']) {
+  if (status === 'ok') return 'OK';
+  if (status === 'degraded' || status === 'warning') return 'WARN';
+  return 'FAIL';
+}
+
+function checkStatusClass(status: SelfTestCheck['status']) {
+  if (status === 'ok') return 'text-emerald-300';
+  if (status === 'degraded' || status === 'warning') return 'text-amber-200';
+  return 'text-red-300';
 }

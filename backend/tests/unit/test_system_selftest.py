@@ -2,6 +2,8 @@ from app.api.routes.system import (
     _cpu_percent_from_totals,
     _format_bytes,
     _memory_usage_details,
+    _check_status,
+    _overall_selftest_status,
 )
 
 
@@ -50,3 +52,20 @@ def test_memory_usage_details_reads_proc_and_cgroup(tmp_path):
     assert details["cgroup"]["current_bytes"] == 512
     assert details["cgroup"]["limit_bytes"] == 1024
     assert details["cgroup"]["used_percent"] == 50.0
+
+
+def test_overall_selftest_status_distinguishes_degraded_from_error():
+    assert _overall_selftest_status([_check_status("database", "ok", "ok")]) == "ok"
+    assert _overall_selftest_status(
+        [
+            _check_status("database", "ok", "ok"),
+            _check_status("ioc_sync", "degraded", "feed degraded"),
+        ]
+    ) == "degraded"
+    assert _overall_selftest_status(
+        [
+            _check_status("database", "ok", "ok"),
+            _check_status("redis", "error", "redis failed"),
+            _check_status("ioc_sync", "degraded", "feed degraded"),
+        ]
+    ) == "error"

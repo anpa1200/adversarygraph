@@ -594,13 +594,13 @@ export const healthApi = {
 
 export interface SelfTestCheck {
   name: string;
-  status: 'ok' | 'error';
+  status: 'ok' | 'degraded' | 'warning' | 'error';
   message: string;
   details: Record<string, unknown>;
 }
 
 export interface SelfTestResult {
-  status: 'ok' | 'error';
+  status: 'ok' | 'degraded' | 'error';
   version: string;
   checked_at: string;
   duration_ms: number;

@@ -33,12 +33,29 @@ class SelfTestResult(BaseModel):
 
 
 def _check(name: str, ok: bool, message: str, details: dict[str, Any] | None = None) -> SelfTestCheck:
+    return _check_status(name, "ok" if ok else "error", message, details)
+
+
+def _check_status(
+    name: str,
+    status: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> SelfTestCheck:
     return SelfTestCheck(
         name=name,
-        status="ok" if ok else "error",
+        status=status,
         message=message,
         details=details or {},
     )
+
+
+def _overall_selftest_status(checks: list[SelfTestCheck]) -> str:
+    if any(check.status == "error" for check in checks):
+        return "error"
+    if any(check.status in {"warning", "degraded"} for check in checks):
+        return "degraded"
+    return "ok"
 
 
 def _api_key_check() -> SelfTestCheck:
@@ -397,9 +414,9 @@ async def selftest() -> SelfTestResult:
                 if source["sync_status"] and source["sync_status"] not in {"ok", "active", "configured"}
             ]
             checks.append(
-                _check(
+                _check_status(
                     "ioc_sync",
-                    True,
+                    "degraded" if degraded_sources else "ok",
                     f"IOC sources checked: {len(enabled_sources)} enabled, {sum(item['indicator_count'] for item in sources)} indicators stored.",
                     {
                         "auto_full_sync_on_startup": settings.auto_ioc_full_sync_on_startup,
@@ -457,8 +474,7 @@ async def selftest() -> SelfTestResult:
 
     checks.append(_api_key_check())
 
-    failed = [check for check in checks if check.status != "ok"]
-    status = "ok" if not failed else "error"
+    status = _overall_selftest_status(checks)
     return SelfTestResult(
         status=status,
         version=APP_VERSION,
