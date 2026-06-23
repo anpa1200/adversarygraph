@@ -132,8 +132,12 @@ function StringResults({ result, mode }: { result: MalwareGraphStringsAnalysis; 
       <Metric label="Entropy" value={result.entropy.toFixed(3)} />
       <Metric label="Obfuscated" value={result.obfuscated ? 'yes' : 'no'} />
     </div>
-    {mode === 'ai' && result.ai_analysis && <Panel title="AI String Analysis">
-      <div className="p-3 text-sm leading-relaxed text-gray-300">{result.ai_analysis}</div>
+    {mode === 'ai' && <Panel title={`AI String Analysis${result.ai_provider ? ` · ${result.ai_provider}` : ''}`}>
+      <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2 text-[10px] uppercase text-gray-500">
+        <span>Status</span>
+        <span className={result.ai_status === 'llm-complete' ? 'text-green-300' : result.ai_status === 'llm-fallback' ? 'text-amber-300' : 'text-gray-400'}>{result.ai_status}</span>
+      </div>
+      <pre className="max-h-[680px] overflow-y-auto whitespace-pre-wrap break-words p-3 text-sm leading-relaxed text-gray-300">{result.ai_analysis || 'AI analysis was not returned for this request.'}</pre>
     </Panel>}
     <CategorySections result={result} />
     {mode === 'all' && <Panel title={`All Extracted Strings (${result.strings.length})`}>
