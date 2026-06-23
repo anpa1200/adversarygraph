@@ -1,14 +1,14 @@
 # AdversaryGraph
 
 <p align="center">
-  <img alt="COMING SOON" src="https://img.shields.io/badge/MALWARE%20ANALYSIS%20MODE-COMING%20SOON-red?style=for-the-badge">
+  <img alt="UNDER CONSTRUCTION" src="https://img.shields.io/badge/MALWARE%20ANALYSIS%20MODE-UNDER%20CONSTRUCTION-red?style=for-the-badge">
 </p>
 
-> **COMING SOON:** Malware Analysis mode is in active development and is not a
-> production-ready malware-analysis verdict system. Treat static analysis,
-> decompilation, runtime-debug, IOC, TTP, and attribution output as experimental
-> analyst-assistance data. Validate every finding before operational, legal,
-> incident-response, or production use.
+> **UNDER CONSTRUCTION:** Malware Analysis mode is in active development and is
+> not a production-ready malware-analysis verdict system. Treat static analysis,
+> unpacking, string analysis, decompilation, runtime-debug, IOC, TTP, and
+> attribution output as experimental analyst-assistance data. Validate every
+> finding before operational, legal, incident-response, or production use.
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
@@ -55,6 +55,7 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 - [Short Installation Guide](#short-installation-guide)
 - [From Log to Report Workflow](#from-log-to-report-workflow)
 - [Project Maturity Evidence](#project-maturity-evidence)
+- [Malware Analysis Mode](#malware-analysis-mode)
 - [Public Demo Privacy Note](#public-demo-privacy-note)
 - [Validation and Limitations](#validation-and-limitations)
 - [Screenshots And Visual Evidence](#screenshots-and-visual-evidence)
@@ -196,6 +197,38 @@ The current documentation is intended to make external review practical rather t
 
 For the current release scope, see the [v3.2.0 release summary](docs/release-summary-v3.2.0.md) and [release notes](docs/release-notes/v3.2.0.md).
 
+## Malware Analysis Mode
+
+> **Status: under construction.** This module is available for controlled lab
+> testing and UX/API development, but its outputs must not be treated as final
+> malware verdicts or attribution.
+
+AdversaryGraph includes an experimental Malware Analysis workspace backed by a
+separate MalwareGraph service in the same Docker Compose stack. The workflow is
+case-based: create a malware-analysis case, upload a raw sample or
+password-protected ZIP, run first-pass static triage, and collect all extracted
+IOCs, TTPs, strings, artifacts, files, behaviors, unpack layers, and analysis
+leads into one AdversaryGraph-linked case view.
+
+Current under-construction pages include:
+
+- **First Analysis** - file type, magic bytes, entropy, packed/obfuscated
+  signals, packer hints, hashes, and PE-header triage.
+- **Unpacker** - packer detection, safe unpack attempts, output validation,
+  AI-assisted packer analysis, and saving unpacked artifacts back to the case.
+- **Strings** - full string extraction, smart IOC/API/registry/command
+  categorization, optional AI string analysis, and clickable IOC/TTP links.
+- **Decompilation and Debug** - IDE-style decompilation/debug workspace for
+  functions, pseudo-code, registers, memory views, breakpoints, and step plans.
+- **Dynamic Analysis** - isolated runtime workflow planning and gated dynamic
+  debugging controls for disposable, network-isolated environments only.
+
+Every extracted hash, IP, domain, URL, file, registry key, behavior, and ATT&CK
+technique lead is designed to be clickable into the existing AdversaryGraph IOC,
+Navigator, VirusTotal, and investigation workflows. Runtime execution and live
+debugging remain disabled by default and require an explicitly isolated
+MalwareGraph runtime profile.
+
 ## Public Demo Privacy Note
 
 The public Web workspace is intended for exploration. Do not upload confidential, customer-sensitive, classified, or internal reports into public demos or third-party environments. Use the self-hosted Docker deployment for private analysis.
@@ -248,7 +281,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Intelligence Pipeline** | Scheduled reviewed RSS intake, STIX/TAXII, MISP and ATLAS imports, normalized observables, public enrichment, team audit trail |
 | **Detection Studio** | Versioned Sigma, YARA, YARA-L, KQL, SPL and EQL skeleton or AI-assisted rule generation with structural validation and explicit analyst-review placeholders |
 | **Operations** | Investigations, evidence graphs, report intake, tracked actor changes, and detection engineering lifecycle |
-| **Malware Analysis** | Coming soon. Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Password-protected ZIP and raw-file intake, static analysis, entropy and PE-header triage, unpack detection, Android APK fallback analysis, string extraction, AI string analysis, dynamic-debug planning, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Module](docs/malware-analysis-module.md) and [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
+| **Malware Analysis** | Under construction. Fully integrated MalwareGraph dashboard backed by an isolated analysis service in the same Docker Compose stack. Case-based password-protected ZIP and raw-file intake, first-pass static analysis, entropy and PE-header triage, unpack detection, Android APK fallback analysis, string extraction, AI string analysis, decompilation/debug workspaces, dynamic-analysis planning, IOC/TTP extraction, AI provider status, and clickable links from every hash/IP/domain/URL/TTP/behavior/detection into AdversaryGraph data. See [Malware Analysis Module](docs/malware-analysis-module.md) and [Malware Analysis Architecture](docs/malware-analysis-architecture.md). |
 
 ---
 
