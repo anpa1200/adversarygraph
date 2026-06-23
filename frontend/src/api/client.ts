@@ -1176,6 +1176,21 @@ export interface MalwareGraphUnpackPlan {
     file_type: string;
     hashes: Record<string, string>;
   } | null;
+  runtime_unpack: {
+    required: boolean;
+    status: string;
+    blocked_by_policy: boolean;
+    dynamic_debug_enabled: boolean;
+    engine: string;
+    engine_available: boolean;
+    profile: string;
+    architecture: Record<string, unknown>;
+    static_error: string | null;
+    requirements: string[];
+    safety: Record<string, unknown>;
+    next_steps: string[];
+    notes: string;
+  } | null;
   validation: {
     output_exists: boolean;
     source_size_bytes: number;
