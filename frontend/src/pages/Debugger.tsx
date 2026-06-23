@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent, ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   malwareGraphApi,
+  type MalwareGraphDebugAssistant,
   type MalwareGraphDecompilation,
   type MalwareGraphDebuggerWorkspace,
   type MalwareGraphFirstAnalysis,
@@ -24,6 +25,7 @@ export function Debugger() {
   const [dynamicDebug, setDynamicDebug] = useState(params.get('dynamic') === 'true');
   const [workspace, setWorkspace] = useState<MalwareGraphDebuggerWorkspace | null>(null);
   const [decompilation, setDecompilation] = useState<MalwareGraphDecompilation | null>(null);
+  const [aiAssistant, setAiAssistant] = useState<MalwareGraphDebugAssistant | null>(null);
   const [selectedTraceId, setSelectedTraceId] = useState<string>('');
 
   const jobs = useQuery({ queryKey: ['malwaregraph-jobs'], queryFn: malwareGraphApi.jobs, retry: false });
@@ -76,6 +78,7 @@ export function Debugger() {
     mutationFn: () => malwareGraphApi.debugWorkspace(jobId, sampleRef, aiProvider, dynamicDebug, dynamicDebug),
     onSuccess: result => {
       setWorkspace(result);
+      setAiAssistant(result.ai_assistant ?? null);
       if (isDecompilation(result.decompilation)) setDecompilation(result.decompilation);
     },
   });
@@ -86,6 +89,13 @@ export function Debugger() {
   const loadDecompilation = useMutation({
     mutationFn: () => malwareGraphApi.decompilation(jobId, sampleRef),
     onSuccess: setDecompilation,
+  });
+  const runAiAssistant = useMutation({
+    mutationFn: () => malwareGraphApi.debugWorkspaceAiAssistant(workspace!.session_id, aiProvider),
+    onSuccess: result => {
+      setAiAssistant(result);
+      setWorkspace(current => current ? { ...current, ai_assistant: result } : current);
+    },
   });
 
   const currentTrace = workspace?.function_traces.find(trace => trace.trace_id === workspace.current_trace_id)
@@ -103,11 +113,11 @@ export function Debugger() {
           <Panel title="Source">
             <div className="space-y-3 p-3">
               <label className="block text-[10px] uppercase text-gray-600">Analysis job</label>
-              <select value={jobId} onChange={event => { setJobId(event.target.value); setSampleRef(''); setWorkspace(null); setDecompilation(null); }} className={input}>
+              <select value={jobId} onChange={event => { setJobId(event.target.value); setSampleRef(''); setWorkspace(null); setDecompilation(null); setAiAssistant(null); }} className={input}>
                 {(jobs.data ?? []).map(job => <option key={job.job_id} value={job.job_id}>{job.archive_name ?? job.job_id}</option>)}
               </select>
               <label className="block text-[10px] uppercase text-gray-600">Debug target</label>
-              <select value={sampleRef} onChange={event => { setSampleRef(event.target.value); setWorkspace(null); setDecompilation(null); }} className={input}>
+              <select value={sampleRef} onChange={event => { setSampleRef(event.target.value); setWorkspace(null); setDecompilation(null); setAiAssistant(null); }} className={input}>
                 {targets.map(target => <option key={target.id} value={target.id}>{target.label}</option>)}
               </select>
               <label className="block text-[10px] uppercase text-gray-600">AI provider</label>
@@ -124,9 +134,10 @@ export function Debugger() {
               <button className="primary w-full" onClick={() => createWorkspace.mutate()} disabled={!jobId || !sampleRef || createWorkspace.isPending}>{createWorkspace.isPending ? 'Creating...' : 'Create debug workspace'}</button>
               <button className="secondary-action w-full" onClick={() => loadDecompilation.mutate()} disabled={!jobId || !sampleRef || loadDecompilation.isPending}>{loadDecompilation.isPending ? 'Decompiling...' : 'Load decompilation'}</button>
               <button className="secondary-action w-full" onClick={() => stepWorkspace.mutate()} disabled={!workspace || workspace.completed || stepWorkspace.isPending}>{stepWorkspace.isPending ? 'Stepping...' : workspace?.completed ? 'Session complete' : 'Step function'}</button>
+              <button className="secondary-action w-full" onClick={() => runAiAssistant.mutate()} disabled={!workspace || runAiAssistant.isPending}>{runAiAssistant.isPending ? 'AI assistant running...' : 'AI debug assistant'}</button>
               <button className="secondary-action w-full" onClick={() => navigate(`/dynamic-analysis?job_id=${encodeURIComponent(jobId)}&sample_ref=${encodeURIComponent(sampleRef)}${dynamicDebug ? '&dynamic=true' : ''}`)}>Dynamic analysis</button>
               <button className="secondary-action w-full" onClick={() => navigate(`/malware-analysis?job_id=${encodeURIComponent(jobId)}&sample_ref=${encodeURIComponent(sampleRef)}`)}>Back to Malware Analysis</button>
-              {(createWorkspace.error || stepWorkspace.error || loadDecompilation.error) && <p className="text-xs text-red-300">{String(createWorkspace.error ?? stepWorkspace.error ?? loadDecompilation.error)}</p>}
+              {(createWorkspace.error || stepWorkspace.error || loadDecompilation.error || runAiAssistant.error) && <p className="text-xs text-red-300">{String(createWorkspace.error ?? stepWorkspace.error ?? loadDecompilation.error ?? runAiAssistant.error)}</p>}
             </div>
           </Panel>
           <Panel title="Controls">
@@ -163,8 +174,14 @@ export function Debugger() {
             <Panel title="Decompilation">
               {decompilation ? <DecompilationPane result={decompilation} /> : <Empty text="Load decompilation to view pseudocode, recovered APIs, and interesting strings." />}
             </Panel>
+            <Panel title="Entrypoint Finding">
+              <EntrypointFinding workspace={workspace} decompilation={decompilation} onTrace={setSelectedTraceId} />
+            </Panel>
             <Panel title="AIDebug Function Graph">
               <DebuggerGraph workspace={workspace} selectedTrace={selectedTrace} onTrace={setSelectedTraceId} />
+            </Panel>
+            <Panel title={`AI Debug Assistant${aiAssistant?.provider ? ` · ${aiAssistant.provider}` : ''}`}>
+              <AiAssistantPanel result={aiAssistant} pending={runAiAssistant.isPending} />
             </Panel>
             <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
               <Panel title="Function Traces">
@@ -206,6 +223,8 @@ export function Debugger() {
 }
 
 function DebuggerGraph({ workspace, selectedTrace, onTrace }: { workspace: MalwareGraphDebuggerWorkspace; selectedTrace: DebugTrace | null; onTrace: (traceId: string) => void }) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0, moved: false });
   const traces = workspace.function_traces.slice(0, 80);
   const width = Math.max(900, traces.length * 170);
   const height = 360;
@@ -215,7 +234,44 @@ function DebuggerGraph({ workspace, selectedTrace, onTrace }: { workspace: Malwa
   const nodeHeight = 46;
   const edgeBySource = new Map(workspace.graph.edges.map(edge => [edge.source, edge]));
 
-  return <div className="h-[380px] overflow-auto p-3">
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('[data-debug-node="true"]')) return;
+    const element = scrollerRef.current;
+    if (!element) return;
+    dragRef.current = {
+      active: true,
+      x: event.clientX,
+      y: event.clientY,
+      left: element.scrollLeft,
+      top: element.scrollTop,
+      moved: false,
+    };
+    element.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const element = scrollerRef.current;
+    const drag = dragRef.current;
+    if (!element || !drag.active) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    element.scrollLeft = drag.left - dx;
+    element.scrollTop = drag.top - dy;
+  };
+  const stopDrag = (event: PointerEvent<HTMLDivElement>) => {
+    dragRef.current.active = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  return <div
+    ref={scrollerRef}
+    className="h-[380px] cursor-grab overflow-auto p-3 active:cursor-grabbing"
+    onPointerDown={onPointerDown}
+    onPointerMove={onPointerMove}
+    onPointerUp={stopDrag}
+    onPointerCancel={stopDrag}
+  >
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="block rounded border border-gray-800 bg-gray-950">
       <defs>
         <marker id={`debugger-arrow-${workspace.session_id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
@@ -228,27 +284,27 @@ function DebuggerGraph({ workspace, selectedTrace, onTrace }: { workspace: Malwa
       </g>)}
       {traces.map((trace, index) => {
         const x = 44 + index * 170;
-        const lane = trace.risk_level === 'HIGH' || trace.risk_level === 'CRITICAL' ? 0 : trace.risk_level === 'MEDIUM' ? 1 : 2;
+        const lane = riskLane(trace.risk_level);
         const y = top + lane * laneHeight;
         const active = selectedTrace?.trace_id === trace.trace_id;
         const edge = edgeBySource.get(trace.node_id);
         const nextIndex = edge ? traces.findIndex(item => item.node_id === edge.target) : index + 1;
-        const color = active ? '#38bdf8' : riskColor(trace.risk_level);
+        const color = trace.is_entrypoint ? '#22c55e' : active ? '#38bdf8' : riskColor(trace.risk_level);
         return <g key={trace.trace_id}>
           {nextIndex > index && nextIndex < traces.length && <path
-            d={`M ${x + nodeWidth} ${y + nodeHeight / 2} C ${x + 84} ${y - 34}, ${44 + nextIndex * 170 - 44} ${y - 34}, ${44 + nextIndex * 170} ${top + (traces[nextIndex].risk_level === 'HIGH' ? 0 : traces[nextIndex].risk_level === 'MEDIUM' ? 1 : 2) * laneHeight + nodeHeight / 2}`}
+            d={`M ${x + nodeWidth} ${y + nodeHeight / 2} C ${x + 84} ${y - 34}, ${44 + nextIndex * 170 - 44} ${y - 34}, ${44 + nextIndex * 170} ${top + riskLane(traces[nextIndex].risk_level) * laneHeight + nodeHeight / 2}`}
             fill="none"
             stroke="#475569"
             strokeWidth="1"
             opacity="0.7"
             markerEnd={`url(#debugger-arrow-${workspace.session_id})`}
           />}
-          <g role="button" tabIndex={0} className="cursor-pointer" onClick={() => onTrace(trace.trace_id)} onKeyDown={event => {
+          <g data-debug-node="true" role="button" tabIndex={0} className="cursor-pointer" onClick={() => onTrace(trace.trace_id)} onKeyDown={event => {
             if (event.key === 'Enter' || event.key === ' ') onTrace(trace.trace_id);
           }}>
             <rect x={x} y={y} width={nodeWidth} height={nodeHeight} rx="4" fill="#111827" stroke={color} strokeWidth={active ? 2.4 : 1.3} />
             <rect x={x} y={y} width="5" height={nodeHeight} rx="2" fill={color} />
-            <text x={x + 12} y={y + 17} fill="#e5e7eb" fontSize="11" fontWeight="700">{shortLabel(trace.name, 18)}</text>
+            <text x={x + 12} y={y + 17} fill="#e5e7eb" fontSize="11" fontWeight="700">{shortLabel(trace.is_entrypoint ? 'entrypoint' : trace.name, 18)}</text>
             <text x={x + 12} y={y + 33} fill="#64748b" fontSize="10">{trace.address}</text>
             <title>{trace.name} · {trace.risk_level} · {trace.summary}</title>
           </g>
@@ -281,7 +337,7 @@ function CurrentFunction({ trace }: { trace: DebugTrace }) {
       <Info label="Address" value={trace.address} />
       <Info label="Risk" value={trace.risk_level} />
       <Info label="ATT&CK" value={trace.mitre_technique || 'none'} />
-      <Info label="Source" value={trace.source} />
+      <Info label="Source" value={`${trace.source}${trace.is_entrypoint ? ' · entrypoint' : ''}`} />
     </div>
     <div className="p-3">
       <b className="text-gray-200">{trace.name}</b>
@@ -290,6 +346,12 @@ function CurrentFunction({ trace }: { trace: DebugTrace }) {
         {trace.behaviors.map(item => <span key={item} className="rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300">{item}</span>)}
       </div>
     </div>
+    {(trace.api_hooks ?? []).length > 0 && <div className="p-3">
+      <b className="text-gray-200">Function API hooks</b>
+      <div className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
+        {(trace.api_hooks ?? []).map(value => <span key={value} className="rounded border border-gray-700 px-2 py-1 font-mono text-[10px] text-gray-300">{value}</span>)}
+      </div>
+    </div>}
     {trace.strings_referenced.length > 0 && <div className="p-3">
       <b className="text-gray-200">Referenced strings</b>
       <div className="mt-2 max-h-28 overflow-y-auto rounded border border-gray-800 bg-gray-950">
@@ -299,6 +361,72 @@ function CurrentFunction({ trace }: { trace: DebugTrace }) {
     <div className="p-3">
       <b className="text-gray-200">Disassembly</b>
       <pre className="mt-2 max-h-[360px] overflow-auto rounded border border-gray-800 bg-gray-950 p-3 font-mono text-[10px] leading-relaxed text-gray-400">{trace.disassembly.map(row => field(row.text)).join('\n') || 'No disassembly recovered.'}</pre>
+    </div>
+  </div>;
+}
+
+function EntrypointFinding({ workspace, decompilation, onTrace }: { workspace: MalwareGraphDebuggerWorkspace; decompilation: MalwareGraphDecompilation | null; onTrace: (traceId: string) => void }) {
+  const entryTrace = workspace.function_traces.find(trace => trace.is_entrypoint || trace.name === 'entrypoint');
+  const entry = workspace.entrypoint ?? decompilation?.entrypoint_details ?? {};
+  return <div className="grid gap-3 p-3 text-xs md:grid-cols-[1fr_auto]">
+    <div className="grid gap-2 md:grid-cols-4">
+      <Info label="Status" value={field(entry.status ?? (entryTrace ? 'found' : 'missing'))} />
+      <Info label="RVA" value={field(entry.rva ?? decompilation?.entrypoint ?? entryTrace?.rva)} />
+      <Info label="VA" value={field(entry.va ?? entryTrace?.address)} />
+      <Info label="Section" value={field(entry.section ?? entryTrace?.section)} />
+    </div>
+    <div className="flex items-center">
+      <button className="secondary-action min-w-32" disabled={!entryTrace} onClick={() => entryTrace && onTrace(entryTrace.trace_id)}>Select entrypoint</button>
+    </div>
+    <div className="md:col-span-2 text-[11px] leading-relaxed text-gray-500">
+      {entryTrace ? `${entryTrace.summary} Source: ${entryTrace.source}. File offset: ${field(entry.file_offset) || 'unknown'}.` : 'No entrypoint trace was recovered for this target.'}
+    </div>
+  </div>;
+}
+
+function AiAssistantPanel({ result, pending }: { result: MalwareGraphDebugAssistant | null; pending: boolean }) {
+  if (pending) return <Empty text="AI assistant is analyzing the debug workspace." />;
+  if (!result) return <Empty text="Run AI debug assistant to prioritize entrypoint validation, suspicious functions, hooks, IOC/TTP leads, and next steps." />;
+  const assessment = result.assessment ?? {};
+  return <div className="grid gap-4 p-3 text-xs xl:grid-cols-[1fr_1fr]">
+    <div className="space-y-3">
+      <div>
+        <b className="text-gray-200">Summary</b>
+        <p className="mt-1 leading-relaxed text-gray-400">{field(assessment.summary) || 'No summary returned.'}</p>
+      </div>
+      <div>
+        <b className="text-gray-200">Entrypoint</b>
+        <p className="mt-1 leading-relaxed text-gray-400">{field(assessment.entrypoint_assessment) || 'No entrypoint assessment returned.'}</p>
+      </div>
+      <ListBlock title="Next Steps" items={assessment.debug_next_steps ?? []} />
+      <ListBlock title="Validation Gaps" items={assessment.validation_gaps ?? []} />
+    </div>
+    <div className="space-y-3">
+      <ObjectList title="Suspicious Functions" items={assessment.suspicious_functions ?? []} />
+      <ListBlock title="API Hooks To Prioritize" items={assessment.api_hooks_to_prioritize ?? []} mono />
+      <ObjectList title="IOC / TTP Leads" items={assessment.ioc_or_ttp_leads ?? []} />
+      {result.error && <div className="rounded border border-amber-500/30 bg-amber-950/20 p-2 text-amber-100">{result.error}</div>}
+    </div>
+  </div>;
+}
+
+function ListBlock({ title, items, mono = false }: { title: string; items: unknown[]; mono?: boolean }) {
+  return <div>
+    <b className="text-gray-200">{title}</b>
+    <div className={`mt-2 max-h-40 overflow-y-auto rounded border border-gray-800 bg-gray-950 ${mono ? 'font-mono' : ''}`}>
+      {items.length ? items.slice(0, 40).map((item, index) => <div key={`${field(item)}-${index}`} className="border-b border-gray-900 px-2 py-1.5 text-[11px] leading-relaxed text-gray-400">{field(item)}</div>) : <div className="p-2 text-gray-600">none</div>}
+    </div>
+  </div>;
+}
+
+function ObjectList({ title, items }: { title: string; items: Array<Record<string, unknown>> }) {
+  return <div>
+    <b className="text-gray-200">{title}</b>
+    <div className="mt-2 max-h-56 overflow-y-auto rounded border border-gray-800 bg-gray-950">
+      {items.length ? items.slice(0, 40).map((item, index) => <div key={index} className="border-b border-gray-900 p-2 text-[11px] leading-relaxed text-gray-400">
+        <div className="font-mono text-gray-200">{field(item.name ?? item.value ?? item.address ?? item.type)}</div>
+        <div className="mt-1 text-gray-500">{field(item.reason ?? item.risk ?? item)}</div>
+      </div>) : <div className="p-2 text-gray-600">none</div>}
     </div>
   </div>;
 }
@@ -464,6 +592,12 @@ function riskColor(risk: string) {
   if (risk === 'MEDIUM') return '#f59e0b';
   if (risk === 'LOW') return '#22c55e';
   return '#64748b';
+}
+
+function riskLane(risk: string) {
+  if (risk === 'HIGH' || risk === 'CRITICAL') return 0;
+  if (risk === 'MEDIUM') return 1;
+  return 2;
 }
 
 function statusColor(status: string) {

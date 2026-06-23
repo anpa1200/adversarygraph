@@ -1052,6 +1052,7 @@ export interface MalwareGraphDebuggerWorkspace {
   safety: Record<string, unknown>;
   isolation: Record<string, unknown>;
   binary: Record<string, unknown>;
+  entrypoint: Record<string, unknown> | null;
   controls: Array<Record<string, unknown>>;
   breakpoints: Array<Record<string, unknown>>;
   registers: Array<{ name: string; entry: string; exit: string; changed: boolean }>;
@@ -1070,11 +1071,13 @@ export interface MalwareGraphDebuggerWorkspace {
     executed: boolean;
     source: string;
     section: string | null;
+    is_entrypoint?: boolean;
     confidence: number;
     instruction_count: number;
     disassembly: Array<Record<string, unknown>>;
     calls_to: string[];
     called_from: string[];
+    api_hooks?: string[];
     strings_referenced: string[];
     risk_level: string;
     mitre_technique: string;
@@ -1095,7 +1098,27 @@ export interface MalwareGraphDebuggerWorkspace {
   risk_summary: Record<string, number>;
   attack_leads: Array<Record<string, unknown>>;
   ioc_leads: Array<Record<string, unknown>>;
+  ai_assistant?: MalwareGraphDebugAssistant | null;
   export: Record<string, unknown>;
+}
+
+export interface MalwareGraphDebugAssistant {
+  status: string;
+  provider: string;
+  model: string;
+  generated_at: string;
+  assessment: {
+    summary?: string;
+    entrypoint_assessment?: string;
+    suspicious_functions?: Array<Record<string, unknown>>;
+    debug_next_steps?: string[];
+    api_hooks_to_prioritize?: string[];
+    ioc_or_ttp_leads?: Array<Record<string, unknown>>;
+    validation_gaps?: string[];
+    raw_response?: string;
+  };
+  prompt_context: Record<string, unknown>;
+  error?: string;
 }
 
 export interface MalwareGraphDecompilation {
@@ -1110,6 +1133,7 @@ export interface MalwareGraphDecompilation {
   executed: boolean;
   language?: string;
   entrypoint?: string;
+  entrypoint_details?: Record<string, unknown>;
   api_calls: string[];
   interesting_strings: string[];
   pseudocode: string[];
@@ -1404,6 +1428,8 @@ export const malwareGraphApi = {
     http.get(`/malwaregraph/debug-workspaces/${sessionId}`).then(r => r.data),
   stepDebugWorkspace: (sessionId: string): Promise<MalwareGraphDebuggerWorkspace> =>
     http.post(`/malwaregraph/debug-workspaces/${sessionId}/step`).then(r => r.data),
+  debugWorkspaceAiAssistant: (sessionId: string, aiProvider = 'local'): Promise<MalwareGraphDebugAssistant> =>
+    http.post(`/malwaregraph/debug-workspaces/${sessionId}/ai-assistant`, null, { params: { ai_provider: aiProvider } }).then(r => r.data),
   decompilation: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphDecompilation> =>
     http.post(`/malwaregraph/analyses/${jobId}/decompilation`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   stepRuntimeDebugSession: (sessionId: string): Promise<MalwareGraphRuntimeDebugSession> =>
