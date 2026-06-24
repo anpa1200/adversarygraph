@@ -10,7 +10,7 @@ import {
   type MalwareGraphFirstAnalysis,
 } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
-import { RUNTIME_DEBUG_DISCLAIMER } from '@/pages/malwareShared';
+import { RUNTIME_DEBUG_DISCLAIMER, readHiddenCases, visibleJobs } from '@/pages/malwareShared';
 
 const input = 'w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 outline-none focus:border-mitre-accent';
 
@@ -54,7 +54,12 @@ export function Debugger() {
   }, [analysis.data?.artifacts, analysis.data?.entities]);
 
   useEffect(() => {
-    if (!jobId && jobs.data?.length) setJobId(jobs.data[0].job_id);
+    if (jobId && readHiddenCases().has(jobId)) { setJobId(''); setSampleRef(''); }
+  }, [jobId]);
+
+  useEffect(() => {
+    const visible = visibleJobs(jobs.data ?? []);
+    if (!jobId && visible.length) setJobId(visible[0].job_id);
   }, [jobId, jobs.data]);
 
   useEffect(() => {
@@ -114,7 +119,7 @@ export function Debugger() {
             <div className="space-y-3 p-3">
               <label className="block text-[10px] uppercase text-gray-600">Analysis job</label>
               <select value={jobId} onChange={event => { setJobId(event.target.value); setSampleRef(''); setWorkspace(null); setDecompilation(null); setAiAssistant(null); }} className={input}>
-                {(jobs.data ?? []).map(job => <option key={job.job_id} value={job.job_id}>{job.archive_name ?? job.job_id}</option>)}
+                {visibleJobs(jobs.data ?? []).map(job => <option key={job.job_id} value={job.job_id}>{job.archive_name ?? job.job_id}</option>)}
               </select>
               <label className="block text-[10px] uppercase text-gray-600">Debug target</label>
               <select value={sampleRef} onChange={event => { setSampleRef(event.target.value); setWorkspace(null); setDecompilation(null); setAiAssistant(null); }} className={input}>

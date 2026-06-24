@@ -18,8 +18,10 @@ import {
   field,
   malwareInput,
   primarySampleRef,
+  readHiddenCases,
   shortLabel,
   statusColor,
+  visibleJobs,
 } from '@/pages/malwareShared';
 
 export function DynamicAnalysis() {
@@ -41,7 +43,12 @@ export function DynamicAnalysis() {
   const targets = useMemo(() => analysisTargets(analysis.data), [analysis.data]);
 
   useEffect(() => {
-    if (!jobId && jobs.data?.length) setJobId(jobs.data[0].job_id);
+    if (jobId && readHiddenCases().has(jobId)) { setJobId(''); setSampleRef(''); }
+  }, [jobId]);
+
+  useEffect(() => {
+    const visible = visibleJobs(jobs.data ?? []);
+    if (!jobId && visible.length) setJobId(visible[0].job_id);
   }, [jobId, jobs.data]);
 
   useEffect(() => {
@@ -75,7 +82,7 @@ export function DynamicAnalysis() {
             <div className="space-y-3 p-3">
               <label className="block text-[10px] uppercase text-gray-600">Analysis case</label>
               <select value={jobId} onChange={event => { setJobId(event.target.value); setSampleRef(''); setSession(null); }} className={malwareInput}>
-                {(jobs.data ?? []).map(job => <option key={job.job_id} value={job.job_id}>{caseTitle(job, undefined)} - {job.case_id ?? job.job_id}</option>)}
+                {visibleJobs(jobs.data ?? []).map(job => <option key={job.job_id} value={job.job_id}>{caseTitle(job, undefined)} - {job.case_id ?? job.job_id}</option>)}
               </select>
               <label className="block text-[10px] uppercase text-gray-600">Runtime target</label>
               <select value={sampleRef} onChange={event => { setSampleRef(event.target.value); setSession(null); }} className={malwareInput}>
