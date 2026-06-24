@@ -1512,4 +1512,16 @@ export const malwareGraphApi = {
         prefer_unpacked_output: preferUnpackedOutput,
       },
     }).then(r => r.data),
+
+  saveUnpacked: (jobId: string): Promise<SavedUnpackedLayer[]> =>
+    http.post(`/malwaregraph/analyses/${jobId}/save-unpacked`).then(r => r.data),
 };
+
+export interface SavedUnpackedLayer {
+  layer: number;
+  method: string;
+  filename: string;
+  saved_path: string;
+  size_bytes: number;
+  sha256: string;
+}

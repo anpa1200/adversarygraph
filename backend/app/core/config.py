@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     db_port: int = 5432
     db_name: str = "adversarygraph"
     db_user: str = "ag_user"
-    db_pass: str = "changeme"
+    db_pass: str
 
     # Redis / Celery
     redis_url: str = "redis://localhost:6379/0"
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     malwaregraph_request_timeout_seconds: int = 30
     malwaregraph_upload_timeout_seconds: int = 180
     malwaregraph_long_timeout_seconds: int = 300
+    malwaregraph_storage_dir: str = "/malwaregraph-storage"
 
     # ATT&CK ingestion
     attck_domains: str = "enterprise-attack,mobile-attack,ics-attack,atlas"
@@ -65,7 +66,17 @@ class Settings(BaseSettings):
 
     # Optional trusted-proxy team authentication. Keep disabled for local use.
     auth_enabled: bool = False
-    auth_default_role: str = "admin"
+    auth_default_role: str = "viewer"
+    # Secret shared between the reverse proxy and the API. When non-empty, every
+    # request that carries X-Auth-User / X-Auth-Roles headers MUST also carry
+    # X-Internal-Proxy-Secret with this value; requests that fail the check are
+    # treated as anonymous regardless of AUTH_ENABLED.
+    proxy_secret: str = ""
+
+    # CORS — comma-separated list of allowed origins.
+    # In production set this to the actual frontend domain, e.g.
+    #   CORS_ALLOWED_ORIGINS=https://adversarygraph.example.com
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
     log_level: str = "info"
     log_dir: str = "logs"

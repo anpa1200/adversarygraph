@@ -156,6 +156,7 @@ services:
     volumes:
       - attck_data:/app/data/attck
       - adversarygraph_logs:/app/logs
+      - malwaregraph_storage:/malwaregraph-storage:ro
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -203,6 +204,7 @@ services:
       PROXY_SECRET: ${PROXY_SECRET:-}
       MALWAREGRAPH_URL: http://malwaregraph:8100
       MALWAREGRAPH_API_KEY: ${MALWAREGRAPH_API_KEY:-}
+      MALWAREGRAPH_STORAGE_DIR: /malwaregraph-storage
       MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS: ${MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS:-30}
       MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS: ${MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS:-180}
       MALWAREGRAPH_LONG_TIMEOUT_SECONDS: ${MALWAREGRAPH_LONG_TIMEOUT_SECONDS:-300}
