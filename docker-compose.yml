@@ -156,7 +156,7 @@ services:
     volumes:
       - attck_data:/app/data/attck
       - adversarygraph_logs:/app/logs
-      - malwaregraph_storage:/malwaregraph-storage:ro
+      - malwaregraph_storage:/malwaregraph-storage
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
