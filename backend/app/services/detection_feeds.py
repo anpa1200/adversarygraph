@@ -15,6 +15,7 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.safe_http import safe_get
 from app.core.version import APP_USER_AGENT
 from app.models.pipeline import CollectionRun, CollectionSource, DetectionVersion
 from app.services.detections import validate_detection
@@ -94,8 +95,8 @@ async def ensure_default_detection_feeds(session: AsyncSession) -> list[Collecti
 async def sync_detection_rule_feed(session: AsyncSession, source: CollectionSource) -> CollectionRun:
     if source.kind not in {"sigma", "yara"}:
         raise ValueError(f"{source.kind.upper()} is not a Sigma/YARA detection-rule feed")
-    limit = int((source.config or {}).get("limit") or 250)
-    limit = max(1, min(limit, 2000))
+    limit = int((source.config or {}).get("limit") or 100)
+    limit = max(1, min(limit, 100))
     run = CollectionRun(source_id=source.id)
     session.add(run)
     await session.flush()
@@ -124,15 +125,18 @@ def fetch_detection_rules(url: str, kind: str, limit: int = 250, explicit_urls: 
     items: list[DetectionRuleItem] = []
     for rule_url in candidates[:limit]:
         try:
-            response = requests.get(rule_url, timeout=30, headers=HTTP_HEADERS)
+            response = safe_get(rule_url, timeout=30, headers=HTTP_HEADERS)
             response.raise_for_status()
+        except ValueError:
+            # SSRF guard blocked the URL — skip silently
+            continue
         except Exception:
             continue
         parsed = _parse_rule_text(response.text, kind, rule_url)
         if parsed:
             items.append(parsed)
     if not items and _looks_like_rule_url(url, kind):
-        response = requests.get(url, timeout=30, headers=HTTP_HEADERS)
+        response = safe_get(url, timeout=30, headers=HTTP_HEADERS)
         response.raise_for_status()
         parsed = _parse_rule_text(response.text, kind, url)
         if parsed:
@@ -145,7 +149,7 @@ def _candidate_rule_urls(url: str, kind: str, limit: int, explicit_urls: list[st
         return [item for item in explicit_urls if isinstance(item, str) and _looks_like_rule_url(item, kind)][:limit]
     if "github.com" in url and "/tree/" in url:
         return _github_tree_rule_urls(url, kind, limit)
-    response = requests.get(url, timeout=45, headers=HTTP_HEADERS)
+    response = safe_get(url, timeout=45, headers=HTTP_HEADERS)
     response.raise_for_status()
     text = response.text
     content_type = response.headers.get("content-type", "")

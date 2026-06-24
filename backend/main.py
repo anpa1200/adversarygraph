@@ -7,6 +7,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.rate_limit import RateLimitMiddleware
+
 from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, malwaregraph, operations, pipeline, sector, system
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
@@ -35,6 +37,12 @@ async def _startup_ioc_sync() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.auth_enabled:
+        logger.warning(
+            "AUTH_ENABLED=false — all requests are treated as authenticated. "
+            "Do not expose this instance to untrusted networks without enabling auth."
+        )
+
     await create_tables()
     logger.info("Database tables ready")
 
@@ -89,13 +97,22 @@ async def request_logging_middleware(request: Request, call_next):
     )
     return response
 
+_cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+if "*" in _cors_origins:
+    raise ValueError(
+        "CORS_ALLOWED_ORIGINS must not contain '*' — wildcard origins are "
+        "incompatible with allow_credentials=True and expose the API to any origin. "
+        "Set an explicit list of allowed origins."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(attack.router,  prefix="/api")
 app.include_router(apt.router,     prefix="/api")

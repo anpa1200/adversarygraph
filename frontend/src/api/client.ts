@@ -773,7 +773,7 @@ export interface SandboxBehavior {
 }
 const pipeline = '/pipeline';
 export const pipelineApi = {
-  me: (): Promise<{name: string; roles: string[]}> => http.get(`${pipeline}/me`).then(r => r.data),
+  me: (): Promise<{name: string; roles: string[]; auth_enabled: boolean}> => http.get(`${pipeline}/me`).then(r => r.data),
   sources: (): Promise<CollectionSource[]> => http.get(`${pipeline}/sources`).then(r => r.data),
   createSource: (body: Omit<CollectionSource, 'id'|'last_run_at'|'created_at'|'updated_at'>): Promise<CollectionSource> => http.post(`${pipeline}/sources`, body).then(r => r.data),
   createDefaultRuleFeeds: (): Promise<CollectionSource[]> => http.post(`${pipeline}/rule-feeds/defaults`).then(r => r.data),

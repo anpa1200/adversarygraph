@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import logging
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,22 @@ def _pdf(content: bytes) -> str:
 
 # ── DOCX ──────────────────────────────────────────────────────────────────────
 
+_MAX_DOCX_DECOMPRESSED = 50 * 1024 * 1024  # 50 MB
+
+
 def _docx(content: bytes) -> str:
+    # Guard against zip bombs: check total decompressed size before python-docx
+    # opens the archive, since python-docx doesn't impose a size limit itself.
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            total = sum(info.file_size for info in zf.infolist())
+            if total > _MAX_DOCX_DECOMPRESSED:
+                raise RuntimeError(
+                    f"DOCX decompressed size {total} bytes exceeds {_MAX_DOCX_DECOMPRESSED} limit"
+                )
+    except zipfile.BadZipFile as exc:
+        raise RuntimeError(f"DOCX is not a valid ZIP archive: {exc}") from exc
+
     try:
         from docx import Document
 

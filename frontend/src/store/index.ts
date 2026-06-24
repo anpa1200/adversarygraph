@@ -78,6 +78,9 @@ export interface ComparisonLayer {
 
 const COMPARISON_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
 
+// NOTE: techniqueAssessments (free-text analyst notes) are stored unencrypted
+// in localStorage. This is acceptable for a self-hosted single-operator
+// deployment but should be moved server-side if the instance is shared.
 const STORAGE_KEY = 'adversarygraph-docker-workbench-v1';
 const saved = (() => {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'); } catch { return {}; }

@@ -37,13 +37,15 @@ class GeminiAdapter(LLMAdapter):
             ),
         )
 
+    _TIMEOUT = {"timeout": 120}
+
     async def _raw_complete(self, system: str, user: str) -> str:
         model = self._build_model(system)
-        response = await model.generate_content_async(user)
+        response = await model.generate_content_async(user, request_options=self._TIMEOUT)
         return response.text
 
     async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
         model = self._build_model(system)
-        async for chunk in await model.generate_content_async(user, stream=True):
+        async for chunk in await model.generate_content_async(user, stream=True, request_options=self._TIMEOUT):
             if chunk.text:
                 yield chunk.text

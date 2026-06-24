@@ -26,6 +26,7 @@ import { MalwareUnpacker } from '@/pages/MalwareUnpacker';
 import { DynamicAnalysis } from '@/pages/DynamicAnalysis';
 import { SystemSelfTestPopup } from '@/components/SystemSelfTestPopup';
 import { GlobalErrorPopup } from '@/components/GlobalErrorPopup';
+import { RoleGate } from '@/components/RoleGate';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,14 +53,14 @@ export default function App() {
               <Route path="/compare" element={<Compare />} />
               <Route path="/group-compare" element={<GroupCompare />} />
               <Route path="/report" element={<InvestigationReport />} />
-              <Route path="/operations" element={<Operations />} />
-              <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/operations" element={<RoleGate require="analyst"><Operations /></RoleGate>} />
+              <Route path="/pipeline" element={<RoleGate require="analyst"><Pipeline /></RoleGate>} />
               <Route path="/examples" element={<Examples />} />
               <Route path="/sector-intel" element={<SectorIntel />} />
               <Route path="/ioc-library" element={<IOCLibrary />} />
               <Route path="/ioc-library/:id" element={<IOCDetail />} />
               <Route path="/ioc-node" element={<IOCNodeDetail />} />
-              <Route path="/feeds" element={<FeedsManagement />} />
+              <Route path="/feeds" element={<RoleGate require="analyst"><FeedsManagement /></RoleGate>} />
               <Route path="/malware-analysis" element={<MalwareAnalysis />} />
               <Route path="/malware-unpacker" element={<MalwareUnpacker />} />
               <Route path="/string-analyzer" element={<StringAnalyzer />} />

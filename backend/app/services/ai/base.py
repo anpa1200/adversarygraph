@@ -29,6 +29,7 @@ class ExtractedTechnique:
     evidence_start: int | None = None
     evidence_end: int | None = None
     evidence_source: str = "llm"
+    llm_verified: bool = True   # False when the ID was not found in the local ATT&CK DB
 
 
 @dataclass
@@ -236,4 +237,5 @@ def technique_to_record(technique: ExtractedTechnique) -> dict:
         "evidence_start": technique.evidence_start,
         "evidence_end": technique.evidence_end,
         "evidence_source": technique.evidence_source,
+        "llm_verified": technique.llm_verified,
     }

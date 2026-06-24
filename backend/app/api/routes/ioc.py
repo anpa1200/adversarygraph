@@ -7,13 +7,21 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sql_delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.safe_http import require_body_size
+
+_limit_10mb = require_body_size(10 * 1024 * 1024)
+from app.services.auth import TeamUser, analyst, audit, current_user
 from app.models.ioc import IOCInvestigationSession
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
@@ -407,25 +415,28 @@ class IOCInvestigationOut(BaseModel):
 
 
 @router.get("/sources", response_model=list[IOCSourceOut])
-async def sources(session: AsyncSession = Depends(get_session)):
+async def sources(session: AsyncSession = Depends(get_session), _: TeamUser = Depends(current_user)):
     return await list_ioc_sources(session)
 
 
 @router.post("/virustotal/lookup", response_model=VirusTotalLookupOut)
-async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session)):
+async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(analyst)):
     try:
         return await lookup_virustotal_ioc(session, payload.indicator, domain=payload.domain)
     except ValueError as exc:
-        raise HTTPException(404 if "not found" in str(exc).lower() else 400, str(exc)) from exc
+        logger.warning("VirusTotal lookup validation error: %s", exc)
+        raise HTTPException(404 if "not found" in str(exc).lower() else 400, "Operation failed. See server logs.") from exc
     except RuntimeError as exc:
+        logger.error("VirusTotal lookup runtime error: %s", exc, exc_info=True)
         status_code = 400 if "VIRUSTOTAL_API_KEY" in str(exc) else 502
-        raise HTTPException(status_code, str(exc)) from exc
+        raise HTTPException(status_code, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"VirusTotal lookup failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("VirusTotal lookup failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/investigate", response_model=IOCInvestigationOut)
-async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session)):
+async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     try:
         result = await investigate_ioc(
             session,
@@ -450,13 +461,17 @@ async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSessi
             result=result,
         )
         session.add(saved)
+        await session.flush()
+        await audit(session, user, "ioc.investigate", "ioc_investigation", str(saved.id), {"artifact": result["artifact"], "verdict": result["verdict"]})
         await session.commit()
         result["session_id"] = str(saved.id)
         return result
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("IOC investigation validation error: %s", exc)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"IOC investigation failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("IOC investigation failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.get("/investigations", response_model=list[IOCInvestigationHistoryOut])
@@ -464,6 +479,7 @@ async def list_ioc_investigations(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     rows = await session.execute(
         select(IOCInvestigationSession)
@@ -491,7 +507,7 @@ async def list_ioc_investigations(
 
 
 @router.get("/investigations/{session_id}", response_model=IOCInvestigationOut)
-async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session)):
+async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(current_user)):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
@@ -506,11 +522,12 @@ async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends
 
 
 @router.delete("/investigations/{session_id}", status_code=204)
-async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
         raise HTTPException(400, "Invalid investigation session ID") from None
+    await audit(session, user, "ioc.delete_investigation", "ioc_investigation", session_id)
     result = await session.execute(sql_delete(IOCInvestigationSession).where(IOCInvestigationSession.id == sid))
     if not getattr(result, "rowcount", 0):
         raise HTTPException(404, "IOC investigation session not found")
@@ -518,39 +535,47 @@ async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depe
 
 
 @router.post("/sources", response_model=IOCSourceOut)
-async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session)):
+async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     try:
-        return await create_ioc_source(
+        result = await create_ioc_source(
             session,
             label=payload.label,
             url=payload.url,
             kind=payload.kind,
             source_id=payload.source_id,
         )
+        await audit(session, user, "ioc.create_source", "ioc_source", result.source_id, {"label": result.label, "kind": result.kind})
+        return result
     except Exception as exc:
-        raise HTTPException(400, f"Custom IOC source creation failed: {exc}") from exc
+        logger.error("Custom IOC source creation failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.patch("/sources/{source_id}", response_model=IOCSourceOut)
-async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session)):
+async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     try:
-        return await update_ioc_source(
+        result = await update_ioc_source(
             session,
             source_id=source_id,
             label=payload.label,
             url=payload.url,
             kind=payload.kind,
         )
+        await audit(session, user, "ioc.update_source", "ioc_source", source_id)
+        return result
     except Exception as exc:
-        raise HTTPException(400, f"Custom IOC source update failed: {exc}") from exc
+        logger.error("Custom IOC source update failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.delete("/sources/{source_id}", status_code=204)
-async def delete_source(source_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_source(source_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     try:
+        await audit(session, user, "ioc.delete_source", "ioc_source", source_id)
         await delete_ioc_source(session, source_id=source_id)
     except Exception as exc:
-        raise HTTPException(400, f"Custom IOC source delete failed: {exc}") from exc
+        logger.error("Custom IOC source delete failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.get("/library", response_model=IOCLibraryOut)
@@ -566,6 +591,7 @@ async def ioc_library_route(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     return await list_ioc_library(
         session,
@@ -584,6 +610,7 @@ async def ioc_library_detail_route(
     indicator_id: int,
     domain: str = Query("enterprise-attack"),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     detail = await get_ioc_detail(session, indicator_id, domain=domain)
     if detail is None:
@@ -603,6 +630,7 @@ async def export_ioc_library_stix_route(
     ),
     limit: int = Query(5000, ge=1, le=5000),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(analyst),
 ):
     import json
 
@@ -632,20 +660,25 @@ async def import_ioc_stix_route(
     source_label: str = Query("STIX IOC Import", max_length=255),
     source_url: str = Query("", max_length=1000),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await import_ioc_stix_bundle(session, bundle, source_label=source_label, source_url=source_url)
+        result = await import_ioc_stix_bundle(session, bundle, source_label=source_label, source_url=source_url)
+        await audit(session, user, "ioc.import_stix", "ioc_source", details={"source_label": source_label})
+        return result
     except Exception as exc:
-        raise HTTPException(400, f"STIX IOC import failed: {exc}") from exc
+        logger.error("STIX IOC import failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.post("/import/taxii")
 async def import_ioc_taxii_route(
     payload: TAXIIImportIn,
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await import_taxii_collection(
+        result = await import_taxii_collection(
             session,
             objects_url=payload.objects_url,
             token=payload.token,
@@ -653,18 +686,23 @@ async def import_ioc_taxii_route(
             password=payload.password,
             source_label=payload.source_label,
         )
+        await audit(session, user, "ioc.import_taxii", "ioc_source", details={"source_label": payload.source_label})
+        return result
     except Exception as exc:
-        raise HTTPException(400, f"TAXII IOC import failed: {exc}") from exc
+        logger.error("TAXII IOC import failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.get("/opencti/status")
-async def opencti_status_route():
+async def opencti_status_route(_: TeamUser = Depends(current_user)):
     try:
         return await opencti_status()
     except OpenCTISyncError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("OpenCTI status check sync error: %s", exc)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"OpenCTI status check failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("OpenCTI status check failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/opencti/pull", response_model=OpenCTISyncOut)
@@ -672,13 +710,18 @@ async def opencti_pull_route(
     limit: int = Query(500, ge=1, le=5000),
     domain: str = Query("enterprise-attack"),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await pull_from_opencti(session, limit=limit, domain=domain)
+        result = await pull_from_opencti(session, limit=limit, domain=domain)
+        await audit(session, user, "ioc.opencti_pull", "ioc_source", details={"domain": domain, "limit": limit})
+        return result
     except OpenCTISyncError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("OpenCTI pull sync error: %s", exc)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"OpenCTI pull failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("OpenCTI pull failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/opencti/push", response_model=OpenCTISyncOut)
@@ -687,13 +730,18 @@ async def opencti_push_route(
     source_id: str = Query("", max_length=120),
     include_reports: bool = Query(True),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await push_to_opencti(session, limit=limit, source_id=source_id, include_reports=include_reports)
+        result = await push_to_opencti(session, limit=limit, source_id=source_id, include_reports=include_reports)
+        await audit(session, user, "ioc.opencti_push", "ioc_source", details={"limit": limit, "source_id": source_id})
+        return result
     except OpenCTISyncError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("OpenCTI push sync error: %s", exc)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"OpenCTI push failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("OpenCTI push failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/opencti/sync", response_model=OpenCTISyncOut)
@@ -702,13 +750,18 @@ async def opencti_sync_route(
     domain: str = Query("enterprise-attack"),
     include_reports: bool = Query(True),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await sync_opencti(session, limit=limit, domain=domain, include_reports=include_reports)
+        result = await sync_opencti(session, limit=limit, domain=domain, include_reports=include_reports)
+        await audit(session, user, "ioc.opencti_sync", "ioc_source", details={"domain": domain, "limit": limit})
+        return result
     except OpenCTISyncError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("OpenCTI sync error: %s", exc)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except Exception as exc:
-        raise HTTPException(502, f"OpenCTI sync failed: {type(exc).__name__}: {exc}") from exc
+        logger.error("OpenCTI sync failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/sync/threatfox", response_model=SyncOut)
@@ -718,12 +771,16 @@ async def sync_threatfox_route(
     ai_enrich: bool = Query(False),
     ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await sync_threatfox(session, days=days, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
+        result = await sync_threatfox(session, days=days, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
+        await audit(session, user, "ioc.sync_threatfox", "ioc_source", details={"days": days, "domain": domain, "inserted": result.inserted, "updated": result.updated})
+        return result
     except Exception as exc:
+        logger.error("ThreatFox sync failed: %s", exc, exc_info=True)
         status_code = 400 if "THREATFOX_AUTH_KEY" in str(exc) else 502
-        raise HTTPException(status_code, f"ThreatFox sync failed: {exc}") from exc
+        raise HTTPException(status_code, "Operation failed. See server logs.") from exc
 
 
 @router.post("/sync/otx")
@@ -737,31 +794,40 @@ async def sync_otx_route(
     aliases_per_group: int = Query(4, ge=1, le=8),
     pulses_per_alias: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
         if mode == "subscribed":
-            return await sync_otx_subscribed_pulses(session, domain=domain, limit=limit, ai_enrich=ai_enrich, ai_provider=ai_provider)
-        return await sync_otx_actor_pulses(
-            session,
-            domain=domain,
-            max_groups=max_groups,
-            aliases_per_group=aliases_per_group,
-            pulses_per_alias=pulses_per_alias,
-        )
+            result = await sync_otx_subscribed_pulses(session, domain=domain, limit=limit, ai_enrich=ai_enrich, ai_provider=ai_provider)
+        else:
+            result = await sync_otx_actor_pulses(
+                session,
+                domain=domain,
+                max_groups=max_groups,
+                aliases_per_group=aliases_per_group,
+                pulses_per_alias=pulses_per_alias,
+            )
+        await audit(session, user, "ioc.sync_otx", "ioc_source", details={"mode": mode, "domain": domain})
+        return result
     except Exception as exc:
+        logger.error("OTX sync failed: %s", exc, exc_info=True)
         status_code = 400 if "OTX_API_KEY" in str(exc) else 502
-        raise HTTPException(status_code, f"OTX sync failed: {exc}") from exc
+        raise HTTPException(status_code, "Operation failed. See server logs.") from exc
 
 
 @router.post("/sync/malpedia")
 async def sync_malpedia_route(
     domain: str = Query("enterprise-attack"),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await sync_malpedia_families(session, domain=domain)
+        result = await sync_malpedia_families(session, domain=domain)
+        await audit(session, user, "ioc.sync_malpedia", "ioc_source", details={"domain": domain})
+        return result
     except Exception as exc:
-        raise HTTPException(502, f"Malpedia sync failed: {exc}") from exc
+        logger.error("Malpedia sync failed: %s", exc, exc_info=True)
+        raise HTTPException(502, "Operation failed. See server logs.") from exc
 
 
 @router.post("/sync/{source_id}", response_model=SyncOut)
@@ -771,11 +837,15 @@ async def sync_source_route(
     ai_enrich: bool = Query(False),
     ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await sync_custom_source(session, source_id=source_id, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
+        result = await sync_custom_source(session, source_id=source_id, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
+        await audit(session, user, "ioc.sync_source", "ioc_source", source_id, {"domain": domain, "inserted": result.inserted, "updated": result.updated})
+        return result
     except Exception as exc:
-        raise HTTPException(400, f"Custom IOC source sync failed: {exc}") from exc
+        logger.error("Custom IOC source sync failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.post("/enrich/ttps", response_model=IOCMappingEnrichmentOut)
@@ -786,6 +856,7 @@ async def enrich_ioc_ttps_route(
     domain: str = Query("enterprise-attack"),
     limit: int = Query(500, ge=1, le=20000),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
         result = await enrich_ioc_ttp_mappings(
@@ -796,14 +867,16 @@ async def enrich_ioc_ttps_route(
             domain=domain,
             limit=limit,
         )
+        await audit(session, user, "ioc.enrich_ttps", "ioc_source", details={"domain": domain, "checked": result.checked, "updated": result.updated})
         await session.commit()
         return result
     except Exception as exc:
-        raise HTTPException(500, f"IOC-to-TTP enrichment failed: {exc}") from exc
+        logger.error("IOC-to-TTP enrichment failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
 
 
 @router.post("/import", response_model=SyncOut)
-async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = Depends(get_session)):
+async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
     items = [
         IOCImportItem(
             value=item.value,
@@ -826,6 +899,7 @@ async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = De
         for item in payload.indicators
     ]
     result = await import_iocs(session, items)
+    await audit(session, user, "ioc.import", "ioc_source", details={"count": len(items), "inserted": result.get("inserted", 0), "updated": result.get("updated", 0)})
     return {**result, "days": None}
 
 
@@ -837,6 +911,7 @@ async def import_iocs_from_report(
     confidence: int = Form(default=65),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     content = await file.read()
     if not content:
@@ -854,6 +929,7 @@ async def import_iocs_from_report(
         for item in items:
             item.technique_ids = report_techniques
         result = await import_iocs(session, items) if items else {"source": "manual-report-import", "inserted": 0, "updated": 0, "actor_links": 0}
+        await audit(session, user, "ioc.import_report", "ioc_source", details={"filename": file.filename, "extracted": len(items), "inserted": result.get("inserted", 0)})
         preview = [
             {
                 "value": item.value,
@@ -876,7 +952,8 @@ async def import_iocs_from_report(
         ]
         return {"filename": file.filename or "", "extracted": len(items), "imported": {**result, "days": None}, "preview": preview}
     except Exception as exc:
-        raise HTTPException(400, f"Report IOC extraction failed: {exc}") from exc
+        logger.error("Report IOC extraction failed: %s", exc, exc_info=True)
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
 
 
 @router.get("/actors/counts", response_model=IOCCountsOut)
@@ -885,6 +962,7 @@ async def actor_ioc_counts_route(
     days: int = Query(180, ge=1, le=1825),
     active_only: bool = Query(True),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     return {"counts": await actor_ioc_counts(session, actor_ids=actor_ids, days=days, active_only=active_only)}
 
@@ -896,6 +974,7 @@ async def actor_ioc_route(
     active_only: bool = Query(True),
     limit: int = Query(250, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     return await actor_iocs(session, actor_id, days=days, active_only=active_only, limit=limit)
 
@@ -907,18 +986,22 @@ async def enrich_actor_otx_route(
     aliases_per_group: int = Query(6, ge=1, le=10),
     pulses_per_alias: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
-        return await enrich_actor_from_otx(
+        result = await enrich_actor_from_otx(
             session,
             actor_id=actor_id,
             domain=domain,
             aliases_per_group=aliases_per_group,
             pulses_per_alias=pulses_per_alias,
         )
+        await audit(session, user, "ioc.enrich_actor_otx", "ioc_source", actor_id, {"domain": domain})
+        return result
     except Exception as exc:
+        logger.error("Actor OTX enrichment failed: %s", exc, exc_info=True)
         status_code = 400 if "OTX_API_KEY" in str(exc) or "not found" in str(exc) else 502
-        raise HTTPException(status_code, f"Actor OTX enrichment failed: {exc}") from exc
+        raise HTTPException(status_code, "Operation failed. See server logs.") from exc
 
 
 @router.get("/actors/{actor_id}/summary")
@@ -926,6 +1009,7 @@ async def actor_ioc_summary_route(
     actor_id: str,
     days: int = Query(180, ge=1, le=1825),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     return await actor_ioc_summary(session, actor_id, days=days)
 
@@ -936,6 +1020,7 @@ async def actor_ioc_csv_route(
     days: int = Query(180, ge=1, le=1825),
     active_only: bool = Query(True),
     session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(analyst),
 ):
     rows = await actor_iocs(session, actor_id, days=days, active_only=active_only, limit=1000)
     output = io.StringIO()

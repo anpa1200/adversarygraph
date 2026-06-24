@@ -4,6 +4,9 @@ set -eu
 SOURCE_DIR="${1:-}"
 TARGET_DIR="${2:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/anomaly_detection/docs-site}"
 ATLAS_REPOSITORY="${ATLAS_REPOSITORY:-https://github.com/anpa1200/anomaly-detection-atlas.git}"
+# Pin to a specific commit to prevent supply-chain substitution of HEAD.
+# Set ATLAS_REPOSITORY_REF to a full SHA or signed tag to override.
+ATLAS_REPOSITORY_REF="${ATLAS_REPOSITORY_REF:-}"
 TEMP_DIR=""
 
 cleanup() {
@@ -20,6 +23,12 @@ if [ -z "$SOURCE_DIR" ]; then
   else
     TEMP_DIR="$(mktemp -d)"
     git clone --depth 1 "$ATLAS_REPOSITORY" "$TEMP_DIR/source"
+    if [ -n "$ATLAS_REPOSITORY_REF" ]; then
+      # Fetch the pinned ref and check it out; fail loudly if it's missing.
+      git -C "$TEMP_DIR/source" fetch --depth 1 origin "$ATLAS_REPOSITORY_REF"
+      git -C "$TEMP_DIR/source" checkout FETCH_HEAD
+      echo "Checked out pinned ref $ATLAS_REPOSITORY_REF"
+    fi
     SOURCE_DIR="$TEMP_DIR/source"
   fi
 fi

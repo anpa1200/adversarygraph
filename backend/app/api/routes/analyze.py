@@ -7,7 +7,6 @@ POST /api/analyze/chat     — single-turn LLM chat about a specific technique o
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -27,6 +26,7 @@ from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
+from app.services.auth import TeamUser, analyst, audit, current_user
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
 
@@ -49,6 +49,7 @@ class TechniqueHit(BaseModel):
     evidence_start: int | None = None
     evidence_end: int | None = None
     evidence_source: str = "llm"
+    llm_verified: bool = True
 
 
 class AptMatch(BaseModel):
@@ -137,6 +138,7 @@ async def analyze(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
+    user:     TeamUser = Depends(analyst),
 ):
     body, filename = await _read_input(text, file)
     adapter = _get_adapter(provider, model)
@@ -157,15 +159,17 @@ async def analyze(
 
     try:
         result = await adapter.extract(body, domain)
+        await _validate_technique_ids(result, domain, session)
         apt_matches = await _rank_apt_groups(result, domain, session)
         await _store_result(db_session, result, apt_matches, session)
+        await audit(session, user, "analyze.create_session", "analysis_session", session_id, {"provider": provider, "domain": domain, "technique_count": len(result.techniques)})
         await session.commit()
     except Exception as exc:
         db_session.status = "failed"
         db_session.error = str(exc)
         await session.commit()
         logger.error("Analysis failed: %s", exc, exc_info=True)
-        raise HTTPException(500, f"Analysis failed: {exc}") from exc
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     return _build_out(session_id, adapter.provider, adapter.model, result, apt_matches)
 
@@ -181,6 +185,7 @@ async def analyze_stream(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
+    user:     TeamUser = Depends(analyst),
 ):
     """
     Streams SSE events:
@@ -223,15 +228,17 @@ async def analyze_stream(
                 db_s = await fresh.get(AnalysisSession, db_session.id)
                 if db_s:
                     try:
+                        await _validate_technique_ids(result, domain, fresh)
                         apt_matches = await _rank_apt_groups(result, domain, fresh)
                         await _store_result(db_s, result, apt_matches, fresh)
+                        await audit(fresh, user, "analyze.create_session", "analysis_session", session_id, {"provider": provider, "domain": domain, "technique_count": len(result.techniques)})
                         await fresh.commit()
                     except Exception as store_exc:
                         db_s.status = "failed"
                         db_s.error = str(store_exc)
                         await fresh.commit()
                         logger.error("Stream DB write failed: %s", store_exc, exc_info=True)
-                        yield _sse({"type": "error", "message": str(store_exc)})
+                        yield _sse({"type": "error", "message": "Operation failed. See server logs."})
                         return
                 else:
                     apt_matches = []
@@ -241,7 +248,7 @@ async def analyze_stream(
 
         except Exception as exc:
             logger.error("Stream failed: %s", exc, exc_info=True)
-            yield _sse({"type": "error", "message": str(exc)})
+            yield _sse({"type": "error", "message": "Operation failed. See server logs."})
 
     return StreamingResponse(
         event_generator(),
@@ -261,6 +268,7 @@ async def analyze_log_pcap(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
+    user:     TeamUser = Depends(analyst),
 ):
     body, filename = await _read_log_input(text, file)
     if not body.strip():
@@ -273,10 +281,12 @@ async def analyze_log_pcap(
 
     try:
         result = await adapter.extract(analysis_text, domain)
+        await _validate_technique_ids(result, domain, session)
         apt_matches = await _rank_apt_groups(result, domain, session)
+        await audit(session, user, "analyze.log_pcap", "analysis_session", details={"provider": provider, "domain": domain, "filename": filename, "technique_count": len(result.techniques)})
     except Exception as exc:
         logger.error("Log/PCAP AI analysis failed: %s", exc, exc_info=True)
-        raise HTTPException(500, f"Log/PCAP AI analysis failed: {exc}") from exc
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     report = _build_log_pcap_report(filename, result, observables, suspicious, apt_matches)
     return LogPcapAnalysisOut(
@@ -313,6 +323,7 @@ async def list_sessions(
     db: AsyncSession = Depends(get_session),
     limit: int = 50,
     offset: int = 0,
+    _: TeamUser = Depends(current_user),
 ):
     """
     Return all completed analysis sessions (DB 2 — user report mappings),
@@ -351,6 +362,7 @@ async def compare_session(
     session_id: str,
     top_n: int = 10,
     db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(analyst),
 ):
     """
     Re-run Jaccard comparison for a stored report session against all group profiles
@@ -389,6 +401,7 @@ async def compare_session(
 async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
         sid = uuid.UUID(session_id)
@@ -398,6 +411,7 @@ async def delete_session(
     exists = await db.execute(select(AnalysisSession.id).where(AnalysisSession.id == sid))
     if not exists.scalar_one_or_none():
         raise HTTPException(404, "Session not found")
+    await audit(db, user, "analyze.delete_session", "analysis_session", session_id)
     await db.execute(sql_delete(AnalysisSession).where(AnalysisSession.id == sid))
     await db.commit()
 
@@ -410,6 +424,7 @@ async def update_technique_review(
     attack_id: str,
     body: TechniqueReviewUpdate,
     db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
 ):
     try:
         sid = uuid.UUID(session_id)
@@ -435,6 +450,7 @@ async def update_technique_review(
         raise HTTPException(404, "Technique not found")
 
     flag_modified(result, "extracted_techniques")
+    await audit(db, user, "analyze.review_technique", "analysis_session", session_id, {"attack_id": attack_id, "review_status": body.review_status})
     await db.commit()
     return TechniqueHit(**updated)
 
@@ -445,6 +461,7 @@ async def update_technique_review(
 async def get_result(
     session_id: str,
     db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     try:
         sid = uuid.UUID(session_id)
@@ -488,7 +505,7 @@ async def get_result(
 # ── Single-turn LLM chat ──────────────────────────────────────────────────────
 
 @router.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, _: TeamUser = Depends(analyst)):
     """
     Analyst asks a free-form question about ATT&CK, a technique, or a TTP set.
     Returns a streaming SSE response of plain text (not JSON).
@@ -510,7 +527,8 @@ async def chat(req: ChatRequest):
                 yield _sse({"type": "token", "content": token})
             yield _sse({"type": "done"})
         except Exception as exc:
-            yield _sse({"type": "error", "message": str(exc)})
+            logger.error("Chat stream failed: %s", exc, exc_info=True)
+            yield _sse({"type": "error", "message": "Operation failed. See server logs."})
 
     return StreamingResponse(
         direct_stream(),
@@ -691,6 +709,40 @@ def _get_adapter(provider: str, model: str | None):
         return get_adapter(provider, model)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+async def _validate_technique_ids(
+    result: ExtractionResult,
+    domain: str,
+    session: AsyncSession,
+) -> None:
+    """Mark techniques whose ATT&CK IDs don't exist in the local DB as unverified."""
+    if not result.techniques:
+        return
+
+    ver_row = await session.execute(
+        select(AttackVersion.id).where(
+            AttackVersion.domain == domain,
+            AttackVersion.is_latest.is_(True),
+        )
+    )
+    ver_id = ver_row.scalar_one_or_none()
+    if not ver_id:
+        return
+
+    rows = await session.execute(
+        select(Technique.attack_id).where(Technique.version_id == ver_id)
+    )
+    known_ids = {row[0].upper() for row in rows}
+
+    for tech in result.techniques:
+        tech.llm_verified = tech.attack_id.upper() in known_ids
+        if not tech.llm_verified:
+            logger.warning(
+                "LLM returned unrecognised ATT&CK ID %r for domain %s — flagging as unverified",
+                tech.attack_id,
+                domain,
+            )
 
 
 async def _rank_apt_groups(

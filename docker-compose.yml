@@ -1,3 +1,8 @@
+# Production compose file. For development, overlay the dev overrides:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# The dev override file re-adds --reload for the API, source bind-mounts for
+# hot-reloading, and replaces the nginx frontend with the Vite dev server.
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,6 +24,11 @@ services:
       retries: 15
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '1.0'
 
   db-apply-env-creds:
     image: postgres:16-alpine
@@ -73,11 +83,17 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme_redis}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_redis}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: '0.5'
 
   malwaregraph:
     build:
@@ -136,9 +152,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
-      - ./backend:/app
       - attck_data:/app/data/attck
       - adversarygraph_logs:/app/logs
     environment:
@@ -148,7 +163,7 @@ services:
       DB_USER: ${DB_USER:-ag_user}
       DB_PASS: ${DB_PASS:-changeme}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
@@ -184,7 +199,8 @@ services:
       LOG_MAX_BYTES: ${LOG_MAX_BYTES:-10485760}
       LOG_BACKUP_COUNT: ${LOG_BACKUP_COUNT:-5}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-admin}
+      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-viewer}
+      PROXY_SECRET: ${PROXY_SECRET:-}
       MALWAREGRAPH_URL: http://malwaregraph:8100
       MALWAREGRAPH_API_KEY: ${MALWAREGRAPH_API_KEY:-}
       MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS: ${MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS:-30}
@@ -202,8 +218,13 @@ services:
     networks:
       - default
       - malwaregraph_internal
-    ports:
-      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '2.0'
+    # API is only reachable via the internal compose network (e.g. through the
+    # frontend or a reverse proxy). Port 8000 is NOT published to the host.
 
   worker:
     build:
@@ -212,7 +233,6 @@ services:
     restart: unless-stopped
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
     volumes:
-      - ./backend:/app
       - attck_data:/app/data/attck
     environment:
       DB_HOST: postgres
@@ -221,7 +241,7 @@ services:
       DB_USER: ${DB_USER:-ag_user}
       DB_PASS: ${DB_PASS:-changeme}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
@@ -250,12 +270,17 @@ services:
       OPENCTI_SYNC_LIMIT: ${OPENCTI_SYNC_LIMIT:-500}
       OPENCTI_VERIFY_TLS: ${OPENCTI_VERIFY_TLS:-true}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-admin}
+      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-viewer}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - redis
       - postgres
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '2.0'
 
   beat:
     build:
@@ -264,7 +289,6 @@ services:
     restart: unless-stopped
     command: celery -A app.tasks.celery_app beat --loglevel=info
     volumes:
-      - ./backend:/app
       - attck_data:/app/data/attck
     environment:
       DB_HOST: postgres
@@ -273,7 +297,7 @@ services:
       DB_USER: ${DB_USER:-ag_user}
       DB_PASS: ${DB_PASS:-changeme}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
       ATTCK_DATA_DIR: /app/data/attck
       THREATFOX_AUTH_KEY: ${THREATFOX_AUTH_KEY:-}
       OTX_API_KEY: ${OTX_API_KEY:-}
@@ -292,25 +316,23 @@ services:
       DYNAMIC_DB_SYNC_MINUTE: ${DYNAMIC_DB_SYNC_MINUTE:-30}
       DYNAMIC_DB_IOC_SYNC_DAYS: ${DYNAMIC_DB_IOC_SYNC_DAYS:-7}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-admin}
+      AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-viewer}
     depends_on:
       - redis
       - postgres
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: '0.5'
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
-    environment:
-      VITE_API_URL: http://api:8000
-      VITE_REFERENCE_URL: ${REFERENCE_URL:-http://localhost:3001/anomaly-detection-atlas}
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - api
 

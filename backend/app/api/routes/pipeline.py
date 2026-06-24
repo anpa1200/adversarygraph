@@ -9,6 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.safe_http import require_body_size
+
+_limit_10mb = require_body_size(10 * 1024 * 1024)
 from app.models.operations import ReportIntake
 from app.models.pipeline import AuditEvent, CollectionRun, CollectionSource, DetectionVersion, EnrichmentResult, Observable
 from app.services.atlas import normalize_atlas
@@ -108,7 +111,8 @@ async def ingest_reports(db: AsyncSession, reports: list[dict], publisher: str, 
 
 @router.get("/me")
 async def me(user: TeamUser = Depends(current_user)):
-    return {"name": user.name, "roles": user.roles}
+    from app.core.config import settings
+    return {"name": user.name, "roles": user.roles, "auth_enabled": settings.auth_enabled}
 
 
 @router.get("/sources")
@@ -182,7 +186,7 @@ async def runs(db: AsyncSession = Depends(get_session)):
 
 
 @router.post("/import/stix")
-async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
     reports = stix_reports(bundle)
     result = await ingest_reports(db, reports, "STIX/TAXII import", "manual STIX/TAXII import")
     await audit(db, user, "import.stix", "report_intake", details={"seen": len(reports), **result})
@@ -191,7 +195,7 @@ async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), use
 
 
 @router.post("/import/misp")
-async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
     reports = misp_reports(event)
     result = await ingest_reports(db, reports, "MISP import", "manual MISP import")
     await audit(db, user, "import.misp", "report_intake", details={"seen": len(reports), **result})
@@ -200,7 +204,7 @@ async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user
 
 
 @router.post("/import/atlas")
-async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
     result = normalize_atlas(payload)
     await audit(db, user, "import.atlas", "framework", "atlas", {"technique_count": result["technique_count"]})
     await db.commit()

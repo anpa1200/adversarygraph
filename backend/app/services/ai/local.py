@@ -24,6 +24,8 @@ class LocalLLMAdapter(LLMAdapter):
         self._api_client = AsyncOpenAI(
             api_key=api_key or settings.local_llm_api_key or "local",
             base_url=self._base_url,
+            timeout=30.0,
+            max_retries=1,
         )
 
     @property

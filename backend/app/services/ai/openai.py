@@ -11,11 +11,18 @@ DEFAULT_MODEL = "gpt-4.1"
 MAX_TOKENS = 8192
 
 
+TIMEOUT_SECONDS = 120.0
+
+
 class OpenAIAdapter(LLMAdapter):
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self._model = model
         from openai import AsyncOpenAI
-        self._api_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self._api_client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=TIMEOUT_SECONDS,
+            max_retries=1,
+        )
 
     @property
     def provider(self) -> str:

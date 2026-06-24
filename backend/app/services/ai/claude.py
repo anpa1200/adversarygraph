@@ -11,11 +11,18 @@ DEFAULT_MODEL = "claude-opus-4-8"
 MAX_TOKENS = 8192
 
 
+TIMEOUT_SECONDS = 120.0
+
+
 class ClaudeAdapter(LLMAdapter):
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self._model = model
         import anthropic
-        self._api_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._api_client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=TIMEOUT_SECONDS,
+            max_retries=1,
+        )
 
     @property
     def provider(self) -> str:
