@@ -13,6 +13,7 @@ import { Pipeline } from '@/pages/Pipeline';
 import { Examples } from '@/pages/Examples';
 import { SectorIntel } from '@/pages/SectorIntel';
 import SectorPacks from '@/pages/SectorPacks';
+import RetroHunt from '@/pages/RetroHunt';
 import { Troubleshooting } from '@/pages/Troubleshooting';
 import { VirusTotalLookup } from '@/pages/VirusTotalLookup';
 import { IOCInvestigation } from '@/pages/IOCInvestigation';
@@ -59,6 +60,7 @@ export default function App() {
               <Route path="/examples" element={<Examples />} />
               <Route path="/sector-intel" element={<SectorIntel />} />
               <Route path="/sector-packs" element={<SectorPacks />} />
+              <Route path="/retrohunt" element={<RetroHunt />} />
               <Route path="/ioc-library" element={<IOCLibrary />} />
               <Route path="/ioc-library/:id" element={<IOCDetail />} />
               <Route path="/ioc-node" element={<IOCNodeDetail />} />

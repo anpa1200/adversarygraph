@@ -10,7 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 
 import app.models.sector_packs  # noqa: F401 — registers SectorPack with Base metadata
-from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, malwaregraph, operations, pipeline, sector, system
+import app.models.retrohunt     # noqa: F401 — registers RetroHuntSignal with Base metadata
+from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, malwaregraph, operations, pipeline, retrohunt, sector, system
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -125,6 +126,7 @@ app.include_router(layers.router,  prefix="/api")
 app.include_router(malwaregraph.router, prefix="/api")
 app.include_router(operations.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
+app.include_router(retrohunt.router, prefix="/api")
 app.include_router(sector.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 

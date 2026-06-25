@@ -8,15 +8,23 @@ import { useAppStore } from '@/store';
 import { useState } from 'react';
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
 
-const nav = [
+type NavItem = { to: string; label: string; icon: string; sub?: SubNavItem[] };
+type SubNavItem = { to: string; label: string; icon: string };
+
+const nav: NavItem[] = [
   { to: '/discover',      label: 'Discover',      icon: '⌕' },
   { to: '/navigator',     label: 'Navigator',     icon: '⬡' },
   { to: '/apt',           label: 'ATT&CK Group Library', icon: '◈' },
   { to: '/analyze',       label: 'AI Analysis',   icon: '⬢' },
   { to: '/compare',       label: 'Compare',       icon: '⬡' },
   { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
-  { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
-  { to: '/sector-packs',  label: 'NVIDIA Sector Packs', icon: '◈' },
+  {
+    to: '/sector-intel',  label: 'Sector Intel', icon: '◎',
+    sub: [
+      { to: '/sector-packs', label: 'NVIDIA Packs', icon: '◈' },
+    ],
+  },
+  { to: '/retrohunt',     label: 'RetroHunt', icon: '⌖' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
   { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬' },
   { to: '/feeds',         label: 'Feeds Management', icon: '≋' },
@@ -56,22 +64,40 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         <div className="pb-3"><GlobalSearch /></div>
-        {nav.map(({ to, label, icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              clsx(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-mitre-accent/20 text-mitre-accent'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              )
-            }
-          >
-            <span className="text-base">{icon}</span>
-            {label}
-          </NavLink>
+        {nav.map(({ to, label, icon, sub }) => (
+          <div key={to}>
+            <NavLink
+              to={to}
+              className={({ isActive }) =>
+                clsx(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-mitre-accent/20 text-mitre-accent'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                )
+              }
+            >
+              <span className="text-base">{icon}</span>
+              {label}
+            </NavLink>
+            {sub?.map(({ to: subTo, label: subLabel, icon: subIcon }) => (
+              <NavLink
+                key={subTo}
+                to={subTo}
+                className={({ isActive }) =>
+                  clsx(
+                    'flex items-center gap-2 pl-8 pr-3 py-1.5 rounded-lg text-xs font-medium transition-colors ml-1 border-l border-gray-700',
+                    isActive
+                      ? 'text-mitre-accent border-mitre-accent/50'
+                      : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/40'
+                  )
+                }
+              >
+                <span className="text-xs">{subIcon}</span>
+                {subLabel}
+              </NavLink>
+            ))}
+          </div>
         ))}
         <a
           href={`${REFERENCE_BASE_URL}/`}

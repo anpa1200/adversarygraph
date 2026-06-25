@@ -11,6 +11,7 @@ celery_app = Celery(
         "app.tasks.analysis",
         "app.tasks.sync",
         "app.tasks.pipeline",
+        "app.tasks.retrohunt",
     ],
 )
 
@@ -46,6 +47,13 @@ celery_app.conf.beat_schedule = {
     "discover-enabled-collection-sources": {
         "task": "pipeline.collect_enabled_sources",
         "schedule": crontab(minute="*/15"),
+        "options": {"queue": "celery"},
+    },
+    # RetroHunt: collect new signals every 6 hours
+    "retrohunt-collect-6h": {
+        "task": "retrohunt.collect_all",
+        "schedule": crontab(minute=0, hour="*/6"),
+        "args": (7,),   # last 7 days window
         "options": {"queue": "celery"},
     },
 }

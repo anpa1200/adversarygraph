@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     censys_api_key: str = ""
     censys_org_id: str = ""
 
+    # RetroHunt collectors
+    nvd_api_key: str = ""          # Optional — increases NVD rate limit from 5 to 50 req/30s
+    github_token: str = ""         # Optional — increases GitHub API rate limit
+
     # OpenCTI symmetric sync
     opencti_url: str = ""
     opencti_token: str = ""

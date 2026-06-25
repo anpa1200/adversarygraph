@@ -1574,3 +1574,75 @@ export const sectorPacksApi = {
   get: (sectorId: string): Promise<SectorPack> =>
     http.get(`/sector/packs/${sectorId}`).then(r => r.data),
 };
+
+// ── RetroHunt ─────────────────────────────────────────────────────────────────
+
+export interface RetroHuntSignal {
+  id: number;
+  source: string;
+  signal_type: string;
+  external_id: string;
+  title: string;
+  body: string;
+  url: string;
+  published_at: string | null;
+  severity: string;
+  cvss_score: number | null;
+  sector_tags: string[];
+  tech_tags: string[];
+  cve_ids: string[];
+  product_tags: string[];
+}
+
+export interface RetroHuntStats {
+  total: number;
+  by_source: Record<string, number>;
+  by_severity: Record<string, number>;
+  by_signal_type: Record<string, number>;
+  latest_published_at: string | null;
+}
+
+export interface RetroHuntCollectOut {
+  task_id: string;
+  status: string;
+}
+
+export interface RetroHuntTaskStatus {
+  task_id: string;
+  status: string;
+  result: { results: Array<{ source: string; inserted: number; skipped: number; errors: string[] }>; total_inserted: number } | null;
+}
+
+export const retroHuntApi = {
+  signals: (params?: {
+    q?: string;
+    source?: string;
+    signal_type?: string;
+    severity?: string;
+    sector?: string;
+    tech?: string;
+    cve?: string;
+    days?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<RetroHuntSignal[]> => {
+    const query = new URLSearchParams();
+    if (params?.q) query.set('q', params.q);
+    if (params?.source) query.set('source', params.source);
+    if (params?.signal_type) query.set('signal_type', params.signal_type);
+    if (params?.severity) query.set('severity', params.severity);
+    if (params?.sector) query.set('sector', params.sector);
+    if (params?.tech) query.set('tech', params.tech);
+    if (params?.cve) query.set('cve', params.cve);
+    if (params?.days) query.set('days', String(params.days));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    return http.get(`/retrohunt/signals?${query}`).then(r => r.data);
+  },
+  stats: (days?: number): Promise<RetroHuntStats> =>
+    http.get(`/retrohunt/stats${days ? `?days=${days}` : ''}`).then(r => r.data),
+  collect: (days?: number): Promise<RetroHuntCollectOut> =>
+    http.post(`/retrohunt/collect${days ? `?days=${days}` : ''}`).then(r => r.data),
+  taskStatus: (taskId: string): Promise<RetroHuntTaskStatus> =>
+    http.get(`/retrohunt/collect/${taskId}`).then(r => r.data),
+};
