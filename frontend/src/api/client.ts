@@ -1525,3 +1525,52 @@ export interface SavedUnpackedLayer {
   size_bytes: number;
   sha256: string;
 }
+
+// ── NVIDIA Sector Intelligence Packs ───────────────────────────────────────
+
+export interface SectorPack {
+  id: number;
+  sector_id: string;
+  sector_name: string;
+  sector_summary: string;
+  relevance_to_nvidia: string;
+  relevant_nvidia_products: string[];
+  crown_jewel_assets: string[];
+  likely_threat_actors: string[];
+  adversary_motivations: string[];
+  common_attack_surfaces: string[];
+  likely_attack_paths: string[];
+  intelligence_requirements: string[];
+  priority_intelligence_requirements: string[];
+  early_warning_indicators: string[];
+  relevant_ioc_types: string[];
+  relevant_ttp_categories: string[];
+  mitre_attack_focus: string[];
+  vulnerability_intelligence_focus: string[];
+  supply_chain_risk_focus: string[];
+  product_security_relevance: string;
+  telemetry_requirements: string[];
+  hunting_opportunities: string[];
+  detection_engineering_opportunities: string[];
+  mitigation_recommendations: string[];
+  engineering_follow_up_actions: string[];
+  psirt_relevance: string;
+  customer_risk_considerations: string[];
+  executive_summary_points: string[];
+  analyst_notes: string;
+  confidence_level: string;
+  source_requirements: string[];
+  pack_source: string;
+}
+
+export const sectorPacksApi = {
+  list: (params?: { pack_source?: string; confidence_level?: string }): Promise<SectorPack[]> => {
+    const query = new URLSearchParams();
+    if (params?.pack_source) query.set('pack_source', params.pack_source);
+    if (params?.confidence_level) query.set('confidence_level', params.confidence_level);
+    const qs = query.toString();
+    return http.get(`/sector/packs${qs ? `?${qs}` : ''}`).then(r => r.data);
+  },
+  get: (sectorId: string): Promise<SectorPack> =>
+    http.get(`/sector/packs/${sectorId}`).then(r => r.data),
+};

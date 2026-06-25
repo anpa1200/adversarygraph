@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.rate_limit import RateLimitMiddleware
 
+import app.models.sector_packs  # noqa: F401 — registers SectorPack with Base metadata
 from app.api.routes import attack, apt, analyze, sync, export, ioc, layers, malwaregraph, operations, pipeline, sector, system
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables

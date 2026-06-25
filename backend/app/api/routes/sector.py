@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
@@ -113,6 +114,68 @@ async def regions(session: AsyncSession = Depends(get_session)):
 @router.get("/technologies", response_model=list[TechnologyOut])
 async def technologies():
     return await list_technologies()
+
+
+from app.services.sector_packs import ensure_sector_packs, get_sector_pack, list_sector_packs
+
+
+class SectorPackOut(BaseModel):
+    id: int
+    sector_id: str
+    sector_name: str
+    sector_summary: str
+    relevance_to_nvidia: str
+    relevant_nvidia_products: list[str]
+    crown_jewel_assets: list[str]
+    likely_threat_actors: list[str]
+    adversary_motivations: list[str]
+    common_attack_surfaces: list[str]
+    likely_attack_paths: list[str]
+    intelligence_requirements: list[str]
+    priority_intelligence_requirements: list[str]
+    early_warning_indicators: list[str]
+    relevant_ioc_types: list[str]
+    relevant_ttp_categories: list[str]
+    mitre_attack_focus: list[str]
+    vulnerability_intelligence_focus: list[str]
+    supply_chain_risk_focus: list[str]
+    product_security_relevance: str
+    telemetry_requirements: list[str]
+    hunting_opportunities: list[str]
+    detection_engineering_opportunities: list[str]
+    mitigation_recommendations: list[str]
+    engineering_follow_up_actions: list[str]
+    psirt_relevance: str
+    customer_risk_considerations: list[str]
+    executive_summary_points: list[str]
+    analyst_notes: str
+    confidence_level: str
+    source_requirements: list[str]
+    pack_source: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/packs", response_model=list[SectorPackOut])
+async def sector_packs(
+    pack_source: str | None = Query(None),
+    confidence_level: str | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+):
+    await ensure_sector_packs(session)
+    return await list_sector_packs(session, pack_source=pack_source, confidence_level=confidence_level)
+
+
+@router.get("/packs/{sector_id}", response_model=SectorPackOut)
+async def sector_pack_detail(
+    sector_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    await ensure_sector_packs(session)
+    pack = await get_sector_pack(session, sector_id)
+    if pack is None:
+        raise HTTPException(status_code=404, detail=f"Sector pack '{sector_id}' not found")
+    return pack
 
 
 @router.get("/relevance", response_model=list[ActorRelevanceOut])

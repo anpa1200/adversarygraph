@@ -16,6 +16,7 @@ const nav = [
   { to: '/compare',       label: 'Compare',       icon: '⬡' },
   { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
   { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
+  { to: '/sector-packs',  label: 'NVIDIA Sector Packs', icon: '◈' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
   { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬' },
   { to: '/feeds',         label: 'Feeds Management', icon: '≋' },
