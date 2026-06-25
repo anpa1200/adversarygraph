@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -142,9 +143,15 @@ function ArticleCard({ article, onClick }: { article: KnowledgeArticle; onClick:
 
 export function KnowledgeLibrary() {
   const qc = useQueryClient();
+  const [params] = useSearchParams();
   const [category, setCategory] = useState('');
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const qParam = params.get('q');
+    if (qParam) setQ(qParam);
+  }, [params]);
 
   const { data: stats } = useQuery({
     queryKey: ['knowledge-stats'],

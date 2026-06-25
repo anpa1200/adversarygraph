@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { sectorPacksApi, SectorPack } from '../api/client';
 
@@ -62,6 +63,148 @@ function TextSection({ title, text }: { title: string; text: string }) {
 export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () => void }) {
   const [tab, setTab] = useState<TabKey>('overview');
   const confColor = CONFIDENCE_COLORS[pack.confidence_level] ?? '#6b7280';
+  const navigate = useNavigate();
+
+  function goTo(path: string) {
+    onClose();
+    navigate(path);
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontWeight: 600, color: '#9ca3af', fontSize: 11,
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6,
+  };
+
+  // MITRE ATT&CK techniques — items like "T1190 Exploit Public-Facing Application"
+  function TechniqueListSection({ title, items }: { title: string; items: string[] }) {
+    if (!items || items.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={labelStyle}>{title}</div>
+        <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
+          {items.map((item, i) => {
+            const match = item.match(/^(T\d{4}(?:\.\d{3})?)\s*(.*)/);
+            if (match) {
+              const [, id, name] = match;
+              return (
+                <li key={i} style={{ marginBottom: 7, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => goTo(`/navigator?technique=${id}`)}
+                    title={`Open ${id} in Navigator`}
+                    style={{
+                      fontFamily: 'monospace', fontSize: 11, padding: '2px 8px',
+                      borderRadius: 4, background: '#1e3a5f', color: '#60a5fa',
+                      border: '1px solid #1d4ed8', cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    {id}
+                  </button>
+                  <span style={{ fontSize: 13, color: '#e5e7eb' }}>{name}</span>
+                </li>
+              );
+            }
+            return <li key={i} style={{ marginBottom: 3, fontSize: 13, color: '#e5e7eb' }}>{item}</li>;
+          })}
+        </ul>
+      </div>
+    );
+  }
+
+  // Threat actor names — link to APT library search
+  function ActorListSection({ title, items }: { title: string; items: string[] }) {
+    if (!items || items.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={labelStyle}>{title}</div>
+        <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
+          {items.map((item, i) => (
+            <li key={i} style={{ marginBottom: 5 }}>
+              <button
+                onClick={() => goTo(`/apt?search=${encodeURIComponent(item)}`)}
+                title={`Search ${item} in ATT&CK Group Library`}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                  color: '#a78bfa', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                <span style={{
+                  display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                  background: '#a78bfa', flexShrink: 0,
+                }} />
+                {item}
+                <span style={{ fontSize: 10, color: '#6b7280' }}>↗</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  // IOC types — pill chips linking to IOC library
+  function IocListSection({ title, items }: { title: string; items: string[] }) {
+    if (!items || items.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={labelStyle}>{title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {items.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => goTo('/ioc-library')}
+              title="Open IOC Library"
+              style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 12,
+                background: '#052e16', color: '#4ade80',
+                border: '1px solid #166534', cursor: 'pointer',
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // CVE IDs — link to Knowledge Library search
+  function VulnListSection({ title, items }: { title: string; items: string[] }) {
+    if (!items || items.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={labelStyle}>{title}</div>
+        <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
+          {items.map((item, i) => {
+            const cves = item.match(/CVE-\d{4}-\d{4,7}/g);
+            if (cves) {
+              return (
+                <li key={i} style={{ marginBottom: 5, display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                  {cves.map(cve => (
+                    <button
+                      key={cve}
+                      onClick={() => goTo(`/knowledge?q=${cve}`)}
+                      title={`Open ${cve} in Knowledge Library`}
+                      style={{
+                        fontFamily: 'monospace', fontSize: 11, padding: '2px 8px',
+                        borderRadius: 4, background: '#2d1a1a', color: '#f87171',
+                        border: '1px solid #7f1d1d', cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      {cve}
+                    </button>
+                  ))}
+                  <span style={{ fontSize: 13, color: '#e5e7eb' }}>
+                    {item.replace(/CVE-\d{4}-\d{4,7}/g, '').replace(/^[\s,:-]+/, '')}
+                  </span>
+                </li>
+              );
+            }
+            return <li key={i} style={{ marginBottom: 3, fontSize: 13, color: '#e5e7eb' }}>{item}</li>;
+          })}
+        </ul>
+      </div>
+    );
+  }
 
   function exportMarkdown() {
     const lines: string[] = [
@@ -229,7 +372,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
               <TextSection title="Relevance to NVIDIA" text={pack.relevance_to_nvidia} />
               <ListSection title="Relevant NVIDIA Products" items={pack.relevant_nvidia_products} />
               <ListSection title="Crown Jewel Assets" items={pack.crown_jewel_assets} />
-              <ListSection title="Likely Threat Actors" items={pack.likely_threat_actors} />
+              <ActorListSection title="Likely Threat Actors" items={pack.likely_threat_actors} />
               <ListSection title="Adversary Motivations" items={pack.adversary_motivations} />
               <ListSection title="Executive Summary Points" items={pack.executive_summary_points} />
             </>
@@ -239,7 +382,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
               <ListSection title="Priority Intelligence Requirements (PIRs)" items={pack.priority_intelligence_requirements} />
               <ListSection title="Intelligence Requirements" items={pack.intelligence_requirements} />
               <ListSection title="Early Warning Indicators" items={pack.early_warning_indicators} />
-              <ListSection title="Relevant IOC Types" items={pack.relevant_ioc_types} />
+              <IocListSection title="Relevant IOC Types" items={pack.relevant_ioc_types} />
               <ListSection title="Common Attack Surfaces" items={pack.common_attack_surfaces} />
               <ListSection title="Likely Attack Paths" items={pack.likely_attack_paths} />
               <ListSection title="Customer Risk Considerations" items={pack.customer_risk_considerations} />
@@ -248,7 +391,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
           {tab === 'ttps' && (
             <>
               <ListSection title="TTP Categories" items={pack.relevant_ttp_categories} />
-              <ListSection title="MITRE ATT&CK Focus" items={pack.mitre_attack_focus} />
+              <TechniqueListSection title="MITRE ATT&CK Focus" items={pack.mitre_attack_focus} />
               <ListSection title="Hunting Opportunities" items={pack.hunting_opportunities} />
               <ListSection title="Detection Engineering Opportunities" items={pack.detection_engineering_opportunities} />
               <ListSection title="Telemetry Requirements" items={pack.telemetry_requirements} />
@@ -257,7 +400,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
           {tab === 'psirt' && (
             <>
               <TextSection title="Product Security (PSIRT) Relevance" text={pack.product_security_relevance} />
-              <ListSection title="Vulnerability Intelligence Focus" items={pack.vulnerability_intelligence_focus} />
+              <VulnListSection title="Vulnerability Intelligence Focus" items={pack.vulnerability_intelligence_focus} />
               <ListSection title="Supply Chain Risk Focus" items={pack.supply_chain_risk_focus} />
               <ListSection title="Source Requirements" items={pack.source_requirements} />
               <TextSection title="Analyst Notes" text={pack.analyst_notes} />
