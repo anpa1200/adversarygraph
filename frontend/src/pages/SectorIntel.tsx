@@ -5,6 +5,7 @@ import { iocApi, sectorApi } from '@/api/client';
 import type { ActorRelevance } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { useAppStore } from '@/store';
+import { safeHref } from '@/utils/url';
 
 const windows = [
   { label: 'Quarter', days: 90 },
@@ -16,9 +17,9 @@ export function SectorIntel() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { replaceTechniques, setOverlayGroup } = useAppStore();
-  const [selectedSectors, setSelectedSectors] = useState<string[]>(['telecom']);
+  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
-  const [technologies, setTechnologies] = useState<string[]>(['cloud', 'kubernetes', 'microsoft 365']);
+  const [technologies, setTechnologies] = useState<string[]>([]);
   const [days, setDays] = useState(365);
 
   const sources = useQuery({ queryKey: ['sector-sources'], queryFn: sectorApi.sources });
@@ -58,7 +59,7 @@ export function SectorIntel() {
                   placeholder="Select sectors"
                   selected={selectedSectors}
                   onChange={setSelectedSectors}
-                  options={(sectors.data ?? [{ id: 'telecom', label: 'Telecom', actor_count: 0 }]).map(item => ({
+                  options={(sectors.data ?? []).map(item => ({
                     id: item.id,
                     label: item.label,
                     meta: item.actor_count ? `${item.actor_count}` : '',
@@ -324,7 +325,7 @@ function ActorRow({
               {actor.techniques.slice(0, 36).map(tech => (
                 <a
                   key={tech.attack_id}
-                  href={`/navigator?technique=${tech.attack_id}`}
+                  href={`/navigator?technique=${encodeURIComponent(tech.attack_id)}`}
                   className="rounded border border-gray-800 bg-gray-950 px-2 py-1.5 hover:border-mitre-accent"
                 >
                   <span className="block font-mono text-[10px] text-mitre-accent">{tech.attack_id}</span>
@@ -339,7 +340,7 @@ function ActorRow({
       </div>
       <div className="space-y-2">
         {actor.evidence.slice(0, 4).map((item, idx) => (
-          <a key={`${item.type}-${idx}`} href={item.url || undefined} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 bg-gray-950 p-2 hover:border-mitre-accent">
+          <a key={`${item.type}-${idx}`} href={safeHref(item.url)} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 bg-gray-950 p-2 hover:border-mitre-accent">
             <div className="flex items-center justify-between gap-2">
               <b className="text-[11px] text-gray-300">{item.type}: {item.value}</b>
               <span className="text-[10px] text-gray-600">{item.confidence}</span>
