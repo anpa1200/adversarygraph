@@ -29,6 +29,8 @@ export function Debugger() {
   const [aiAssistant, setAiAssistant] = useState<MalwareGraphDebugAssistant | null>(null);
   const [selectedTraceId, setSelectedTraceId] = useState<string>('');
   const [autoRunFunctions, setAutoRunFunctions] = useState(false);
+  const autoWorkspaceKey = useRef('');
+  const autoDecompilationKey = useRef('');
 
   const jobs = useQuery({ queryKey: ['malwaregraph-jobs'], queryFn: malwareGraphApi.jobs, retry: false });
   const providers = useQuery({ queryKey: ['malwaregraph-providers'], queryFn: malwareGraphApi.providers, retry: false });
@@ -162,6 +164,24 @@ export function Debugger() {
       setWorkspace({ ...refreshedWorkspace, ai_assistant: result });
     },
   });
+
+  useEffect(() => {
+    if (!jobId || !sampleRef || workspace || createWorkspace.isPending) return;
+    const key = `${jobId}:${sampleRef}:${aiProvider}:${dynamicDebug ? 'dynamic' : 'static'}`;
+    if (autoWorkspaceKey.current === key) return;
+    autoWorkspaceKey.current = key;
+    createWorkspace.mutate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiProvider, dynamicDebug, jobId, sampleRef, workspace?.session_id, createWorkspace.isPending]);
+
+  useEffect(() => {
+    if (!jobId || !sampleRef || decompilation || loadDecompilation.isPending) return;
+    const key = `${jobId}:${sampleRef}`;
+    if (autoDecompilationKey.current === key) return;
+    autoDecompilationKey.current = key;
+    loadDecompilation.mutate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, sampleRef, decompilation?.artifact_id, loadDecompilation.isPending]);
 
   const currentTrace = workspace?.function_traces.find(trace => trace.trace_id === workspace.current_trace_id)
     ?? workspace?.function_traces[workspace.current_trace_index]
