@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   malwareGraphApi,
+  type MalwareGraphDebugAssistant,
   type MalwareGraphDebuggerWorkspace,
   type MalwareGraphRuntimeDebugSession,
 } from '@/api/client';
@@ -31,12 +32,15 @@ export function DynamicAnalysis() {
   const [jobId, setJobId]                         = useState(params.get('job_id') ?? '');
   const [sampleRef, setSampleRef]                 = useState(params.get('sample_ref') ?? '');
   const [disclaimerAccepted, setDisclaimer]       = useState(params.get('dynamic') === 'true');
+  const [aiProvider, setAiProvider]               = useState(params.get('ai_provider') ?? 'local');
   const [session, setSession]                     = useState<MalwareGraphRuntimeDebugSession | null>(null);
   const [workspace, setWorkspace]                 = useState<MalwareGraphDebuggerWorkspace | null>(null);
+  const [aiSummary, setAiSummary]                 = useState<MalwareGraphDebugAssistant | null>(null);
   const [autoStepping, setAutoStepping]           = useState(false);
   const [autoFunctionStepping, setAutoFunctionStepping] = useState(false);
 
   const jobs     = useQuery({ queryKey: ['malwaregraph-jobs'],             queryFn: malwareGraphApi.jobs,      retry: false });
+  const providers = useQuery({ queryKey: ['malwaregraph-providers'], queryFn: malwareGraphApi.providers, retry: false });
   const analysis = useQuery({ queryKey: ['malwaregraph-analysis', jobId], queryFn: () => malwareGraphApi.analysis(jobId), enabled: Boolean(jobId) });
 
   const currentJob = useMemo(() => jobs.data?.find(job => job.job_id === jobId), [jobId, jobs.data]);
@@ -57,8 +61,9 @@ export function DynamicAnalysis() {
     if (jobId)              next.set('job_id',   jobId);
     if (sampleRef)          next.set('sample_ref', sampleRef);
     if (disclaimerAccepted) next.set('dynamic',  'true');
+    next.set('ai_provider', aiProvider);
     setParams(next, { replace: true });
-  }, [disclaimerAccepted, jobId, sampleRef, setParams]);
+  }, [aiProvider, disclaimerAccepted, jobId, sampleRef, setParams]);
 
   // Auto-step effect: fires whenever current_step advances while auto-stepping.
   useEffect(() => {
@@ -75,7 +80,7 @@ export function DynamicAnalysis() {
 
   const createSession = useMutation({
     mutationFn: () => malwareGraphApi.runtimeDebugSession(jobId, sampleRef, disclaimerAccepted, disclaimerAccepted),
-    onSuccess: result => { setSession(result); setAutoStepping(false); setWorkspace(null); setAutoFunctionStepping(false); },
+    onSuccess: result => { setSession(result); setAutoStepping(false); setWorkspace(null); setAiSummary(null); setAutoFunctionStepping(false); },
   });
 
   const stepSession = useMutation({
@@ -87,9 +92,10 @@ export function DynamicAnalysis() {
   });
 
   const createWorkspace = useMutation({
-    mutationFn: () => malwareGraphApi.debugWorkspace(jobId, sampleRef, 'local', disclaimerAccepted, disclaimerAccepted),
+    mutationFn: () => malwareGraphApi.debugWorkspace(jobId, sampleRef, aiProvider, disclaimerAccepted, disclaimerAccepted),
     onSuccess: result => {
       setWorkspace(result);
+      setAiSummary(result.ai_assistant ?? null);
       setAutoFunctionStepping(false);
     },
   });
@@ -99,6 +105,14 @@ export function DynamicAnalysis() {
     onSuccess: result => {
       setWorkspace(result);
       if (result.completed) setAutoFunctionStepping(false);
+    },
+  });
+
+  const runAiSummary = useMutation({
+    mutationFn: () => malwareGraphApi.debugWorkspaceAiAssistant(workspace!.session_id, aiProvider),
+    onSuccess: result => {
+      setAiSummary(result);
+      setWorkspace(current => current ? { ...current, ai_assistant: result } : current);
     },
   });
 
@@ -128,14 +142,23 @@ export function DynamicAnalysis() {
           <Panel title="Runtime Target">
             <div className="space-y-3 p-3">
               <label className="block text-[10px] uppercase text-gray-600">Analysis case</label>
-              <select value={jobId} onChange={e => { setJobId(e.target.value); setSampleRef(''); setSession(null); setWorkspace(null); setAutoStepping(false); setAutoFunctionStepping(false); }} className={malwareInput}>
+              <select value={jobId} onChange={e => { setJobId(e.target.value); setSampleRef(''); setSession(null); setWorkspace(null); setAiSummary(null); setAutoStepping(false); setAutoFunctionStepping(false); }} className={malwareInput}>
                 {visibleJobs(jobs.data ?? []).map(job => (
                   <option key={job.job_id} value={job.job_id}>{caseTitle(job, undefined)} · {job.case_id ?? job.job_id}</option>
                 ))}
               </select>
               <label className="block text-[10px] uppercase text-gray-600">Runtime target</label>
-              <select value={sampleRef} onChange={e => { setSampleRef(e.target.value); setSession(null); setWorkspace(null); setAutoStepping(false); setAutoFunctionStepping(false); }} className={malwareInput}>
+              <select value={sampleRef} onChange={e => { setSampleRef(e.target.value); setSession(null); setWorkspace(null); setAiSummary(null); setAutoStepping(false); setAutoFunctionStepping(false); }} className={malwareInput}>
                 {targets.map(target => <option key={target.id} value={target.id}>{target.label}</option>)}
+              </select>
+              <label className="block text-[10px] uppercase text-gray-600">AI analysis provider</label>
+              <select value={aiProvider} onChange={e => { setAiProvider(e.target.value); setAiSummary(null); }} className={malwareInput}>
+                {(providers.data ?? []).map(provider => (
+                  <option key={provider.provider} value={provider.provider}>
+                    {provider.provider} · {provider.configured ? provider.model : provider.env_var}
+                  </option>
+                ))}
+                {!(providers.data ?? []).length && <option value="local">local</option>}
               </select>
               <label className="flex items-start gap-3 rounded border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
                 <input className="mt-0.5 shrink-0" type="checkbox" checked={disclaimerAccepted} onChange={e => setDisclaimer(e.target.checked)} />
@@ -178,6 +201,11 @@ export function DynamicAnalysis() {
                     <button className="secondary-action w-full" onClick={() => setAutoFunctionStepping(false)}>Stop function run</button>
                   )}
                 </>}
+                {workspace && (
+                  <button className="primary w-full" onClick={() => runAiSummary.mutate()} disabled={runAiSummary.isPending}>
+                    {runAiSummary.isPending ? 'AI analyzing dynamic results...' : aiSummary ? 'Re-run AI malware summary' : 'AI analyze dynamic results'}
+                  </button>
+                )}
               </>}
               {session?.completed && (
                 <div className="rounded border border-green-600/30 bg-green-950/20 px-3 py-2 text-xs text-green-300">
@@ -187,8 +215,8 @@ export function DynamicAnalysis() {
               <button className="secondary-action w-full" onClick={() => navigate(`/malware-analysis?job_id=${encodeURIComponent(jobId)}&sample_ref=${encodeURIComponent(sampleRef)}`)}>
                 ← Back to case
               </button>
-              {(createSession.error || stepSession.error || createWorkspace.error || stepWorkspace.error) && (
-                <p className="text-xs text-red-300">{String(createSession.error ?? stepSession.error ?? createWorkspace.error ?? stepWorkspace.error)}</p>
+              {(createSession.error || stepSession.error || createWorkspace.error || stepWorkspace.error || runAiSummary.error) && (
+                <p className="text-xs text-red-300">{String(createSession.error ?? stepSession.error ?? createWorkspace.error ?? stepWorkspace.error ?? runAiSummary.error)}</p>
               )}
             </div>
           </Panel>
@@ -210,6 +238,8 @@ export function DynamicAnalysis() {
                 isRunning={isRunning}
                 workspace={workspace}
                 isFunctionRunning={isFunctionRunning}
+                aiSummary={aiSummary}
+                aiPending={runAiSummary.isPending}
                 onOpenDebugger={() => navigate(`/malware-debug?job_id=${encodeURIComponent(jobId)}&sample_ref=${encodeURIComponent(sampleRef)}${session.dynamic_enabled ? '&dynamic=true' : ''}`)}
               />
             : <div className="rounded border border-amber-500/40 bg-amber-950/30 p-4 text-sm font-semibold text-amber-100">
@@ -224,11 +254,13 @@ export function DynamicAnalysis() {
 
 // ── Session view ──────────────────────────────────────────────────────────────
 
-function DynamicSession({ session, isRunning, workspace, isFunctionRunning, onOpenDebugger }: {
+function DynamicSession({ session, isRunning, workspace, isFunctionRunning, aiSummary, aiPending, onOpenDebugger }: {
   session: MalwareGraphRuntimeDebugSession;
   isRunning: boolean;
   workspace: MalwareGraphDebuggerWorkspace | null;
   isFunctionRunning: boolean;
+  aiSummary: MalwareGraphDebugAssistant | null;
+  aiPending: boolean;
   onOpenDebugger: () => void;
 }) {
   const current = session.steps[session.current_step] ?? session.steps[0] ?? null;
@@ -259,7 +291,7 @@ function DynamicSession({ session, isRunning, workspace, isFunctionRunning, onOp
     </Panel>
 
     {workspace
-      ? <FullFunctionWorkflow workspace={workspace} isRunning={isFunctionRunning} />
+      ? <FullFunctionWorkflow workspace={workspace} isRunning={isFunctionRunning} aiSummary={aiSummary} aiPending={aiPending} />
       : <Panel title="Full Function Workflow">
           <Empty text="Load the full function workflow to view function traces, API hooks, memory/register state, event logs, graph export, and raw runtime snapshots." />
         </Panel>}
@@ -287,9 +319,11 @@ function DynamicSession({ session, isRunning, workspace, isFunctionRunning, onOp
   </>;
 }
 
-function FullFunctionWorkflow({ workspace, isRunning }: {
+function FullFunctionWorkflow({ workspace, isRunning, aiSummary, aiPending }: {
   workspace: MalwareGraphDebuggerWorkspace;
   isRunning: boolean;
+  aiSummary: MalwareGraphDebugAssistant | null;
+  aiPending: boolean;
 }) {
   return <div className="space-y-4">
     <div className="grid gap-3 md:grid-cols-5">
@@ -310,6 +344,8 @@ function FullFunctionWorkflow({ workspace, isRunning }: {
         <Info label="Risk summary" value={JSON.stringify(workspace.risk_summary)} />
       </div>
     </Panel>
+
+    <AiDynamicSummary result={aiSummary} pending={aiPending} />
 
     <div className="grid gap-4 xl:grid-cols-2">
       <KeyValuePanel title="Engine" data={workspace.engine} />
@@ -400,6 +436,110 @@ function FunctionTraceRow({ trace, index, current }: {
       </details>
     </div>}
   </div>;
+}
+
+function AiDynamicSummary({ result, pending }: { result: MalwareGraphDebugAssistant | null; pending: boolean }) {
+  if (pending) return <Panel title="AI Malware Behavior Summary"><Empty text="AI is analyzing the dynamic function workflow and runtime evidence." /></Panel>;
+  if (!result) return <Panel title="AI Malware Behavior Summary"><Empty text="Run AI analysis after loading the full function workflow to summarize what the malware does and which evidence supports it." /></Panel>;
+  const assessment = result.assessment ?? {};
+  return <Panel title={`AI Malware Behavior Summary${result.provider ? ` · ${result.provider}` : ''}`}>
+    <div className="grid gap-4 p-3 text-xs xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="space-y-4">
+        <SummaryBlock title="What This Malware Does" text={assessment.main_purpose ?? assessment.summary ?? assessment.raw_response} important />
+        <SummaryBlock title="Behavior Summary" text={assessment.summary ?? assessment.raw_response} />
+        <SummaryBlock title="Entrypoint Assessment" text={assessment.entrypoint_assessment} />
+        <ObjectList title="Function-Level Analysis" items={assessment.function_analysis ?? []} limit={100} />
+        <ObjectList title="Malicious / Suspicious Functions" items={assessment.malicious_or_suspicious_functions ?? assessment.suspicious_functions ?? []} />
+      </div>
+      <div className="space-y-4">
+        <ObjectList title="ATT&CK Techniques" items={assessment.ttps ?? []} />
+        <ObjectList title="IOCs" items={assessment.iocs ?? []} />
+        <ObjectList title="IOC / TTP Leads" items={assessment.ioc_or_ttp_leads ?? []} />
+        <ListBlock title="API Hooks To Prioritize" items={assessment.api_hooks_to_prioritize ?? []} mono />
+        <ListBlock title="Validation Gaps" items={assessment.validation_gaps ?? []} />
+        <ListBlock title="Recommended Next Steps" items={assessment.debug_next_steps ?? []} />
+        {assessment.raw_response && <details className="rounded border border-gray-800">
+          <summary className="cursor-pointer px-3 py-2 text-[10px] uppercase text-gray-500 hover:text-gray-300">Raw AI response</summary>
+          <pre className="max-h-80 overflow-auto p-3 text-[10px] leading-relaxed text-gray-500">{assessment.raw_response}</pre>
+        </details>}
+        {result.error && <div className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">{result.error}</div>}
+      </div>
+    </div>
+  </Panel>;
+}
+
+function SummaryBlock({ title, text, important = false }: { title: string; text: unknown; important?: boolean }) {
+  return <section className={important ? 'rounded border border-mitre-accent/30 bg-mitre-accent/10 p-3' : ''}>
+    <b className={important ? 'text-sm text-white' : 'text-gray-200'}>{title}</b>
+    <p className="mt-2 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-gray-300">{field(text) || 'No AI assessment returned for this section.'}</p>
+  </section>;
+}
+
+function ListBlock({ title, items, mono = false }: { title: string; items: unknown[]; mono?: boolean }) {
+  return <div>
+    <b className="text-gray-200">{title}</b>
+    <div className={`mt-2 max-h-48 overflow-y-auto rounded border border-gray-800 bg-gray-950 ${mono ? 'font-mono' : ''}`}>
+      {items.length ? items.slice(0, 60).map((item, index) => <div key={`${field(item)}-${index}`} className="border-b border-gray-900 px-2 py-1.5 text-[11px] leading-relaxed text-gray-400">{field(item)}</div>) : <div className="p-2 text-gray-600">none</div>}
+    </div>
+  </div>;
+}
+
+function ObjectList({ title, items, limit = 60 }: { title: string; items: Array<Record<string, unknown>>; limit?: number }) {
+  return <div>
+    <b className="text-gray-200">{title}</b>
+    <div className="mt-2 max-h-72 overflow-y-auto rounded border border-gray-800 bg-gray-950">
+      {items.length ? items.slice(0, limit).map((item, index) => <div key={index} className="border-b border-gray-900 p-2 text-[11px] leading-relaxed text-gray-400">
+        <ObjectHeader item={item} />
+        <div className="mt-1 space-y-1 text-gray-500">
+          {objectDetailRows(item).map(row => <div key={row.key}>
+            <span className="text-gray-600">{row.key}: </span>
+            <span className={row.mono ? 'break-all font-mono text-gray-400' : 'text-gray-500'}>{row.value}</span>
+          </div>)}
+        </div>
+      </div>) : <div className="p-2 text-gray-600">none</div>}
+    </div>
+  </div>;
+}
+
+function ObjectHeader({ item }: { item: Record<string, unknown> }) {
+  const title = field(item.name ?? item.attack_id ?? item.value ?? item.address ?? item.function ?? item.type) || 'item';
+  const route = objectRoute(item);
+  const meta = [field(item.address), field(item.risk_level ?? item.risk), field(item.confidence)].filter(Boolean).join(' · ');
+  return <div>
+    {route ? <a className="break-all font-mono text-gray-200 hover:text-mitre-accent" href={route}>{title}</a> : <div className="break-all font-mono text-gray-200">{title}</div>}
+    {meta && <div className="mt-0.5 text-[10px] uppercase text-gray-600">{meta}</div>}
+  </div>;
+}
+
+function objectRoute(item: Record<string, unknown>) {
+  const attackId = field(item.attack_id ?? (field(item.type) === 'ttp' ? item.value : ''));
+  if (/^T\d{4}(?:\.\d{3})?$/.test(attackId)) return `/navigator?technique=${encodeURIComponent(attackId)}`;
+  const value = field(item.value ?? item.indicator);
+  if (value) return `/ioc-library?search=${encodeURIComponent(value)}`;
+  return '';
+}
+
+function objectDetailRows(item: Record<string, unknown>) {
+  const keys = [
+    'role',
+    'description',
+    'reason',
+    'evidence',
+    'summary',
+    'behavior',
+    'ttps',
+    'iocs',
+    'next_debug_action',
+    'type',
+    'value',
+  ];
+  return keys
+    .filter(key => item[key] !== undefined && item[key] !== null && field(item[key]) !== '')
+    .map(key => ({
+      key: key.replace(/_/g, ' '),
+      value: field(item[key]),
+      mono: ['value', 'iocs', 'ttps'].includes(key),
+    }));
 }
 
 function TokenList({ label, values, tone }: { label: string; values: string[]; tone: 'default' | 'warn' }) {
