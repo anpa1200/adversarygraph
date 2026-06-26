@@ -191,11 +191,12 @@ async def _safe_source(name: str, fn) -> dict[str, Any]:
     try:
         return await fn()
     except Exception as exc:
+        msg = str(exc) or f"{type(exc).__name__}"
         return {
             "source": name,
             "status": "error",
-            "error": str(exc),
-            "summary": f"{name} enrichment failed: {exc}",
+            "error": msg,
+            "summary": f"{name} enrichment failed: {msg}",
             "relationships": [],
             "technique_ids": [],
             "actors": [],
@@ -303,7 +304,10 @@ async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any
 async def _malwarebazaar_enrichment(value: str) -> dict[str, Any]:
     if not HASH_RE.fullmatch(value):
         return {"source": "malwarebazaar", "status": "skipped", "summary": "MalwareBazaar is hash-focused; input is not a hash.", "relationships": [], "technique_ids": [], "actors": [], "raw": {}}
-    payload = await _post_json("https://mb-api.abuse.ch/api/v1/", json_body={"query": "get_info", "hash": value})
+    mb_headers: dict[str, str] = {"Accept": "application/json", "User-Agent": APP_USER_AGENT}
+    if settings.threatfox_auth_key:
+        mb_headers["Auth-Key"] = settings.threatfox_auth_key
+    payload = await _post_json("https://mb-api.abuse.ch/api/v1/", json_body={"query": "get_info", "hash": value}, headers=mb_headers)
     rows = payload.get("data") or []
     relationships: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
@@ -332,7 +336,7 @@ async def _otx_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
         endpoint = f"https://otx.alienvault.com/api/v1/search/pulses?q={quote(value)}"
     else:
         endpoint = f"https://otx.alienvault.com/api/v1/indicators/{section}/{quote(value, safe='')}/general"
-    payload = await _get_json(endpoint, headers={"X-OTX-API-KEY": settings.otx_api_key})
+    payload = await _get_json(endpoint, headers={"X-OTX-API-KEY": settings.otx_api_key}, timeout=45)
     pulses = ((payload.get("pulse_info") or {}).get("pulses") or payload.get("results") or [])
     relationships: list[dict[str, Any]] = []
     for pulse in pulses[:20] if isinstance(pulses, list) else []:
@@ -686,8 +690,8 @@ async def _censys_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     }
 
 
-async def _get_json(url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+async def _get_json(url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, timeout: int = 25) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         response = await client.get(url, params=params, headers=headers or {})
         if response.status_code in {401, 403}:
             raise RuntimeError(_credential_error_detail(url, response))
@@ -713,10 +717,10 @@ def _credential_error_detail(url: str, response: httpx.Response) -> str:
     except ValueError:
         payload = {}
     query_status = str(payload.get("query_status") or "").strip() if isinstance(payload, dict) else ""
-    if host == "threatfox-api.abuse.ch" and query_status in {"unknown_auth_key", "auth_key_required"}:
+    if host in {"threatfox-api.abuse.ch", "mb-api.abuse.ch"} and query_status in {"unknown_auth_key", "auth_key_required"}:
         return (
-            f"ThreatFox rejected THREATFOX_AUTH_KEY: {query_status}. "
-            "Generate a new Auth-Key in the abuse.ch authentication portal, update .env, and restart the API container."
+            f"abuse.ch rejected THREATFOX_AUTH_KEY for {host}: {query_status}. "
+            "Generate a new Auth-Key in the abuse.ch authentication portal, update THREATFOX_AUTH_KEY in .env, and restart the API container."
         )
     if query_status:
         return f"API rejected credentials for {host}: {query_status}"

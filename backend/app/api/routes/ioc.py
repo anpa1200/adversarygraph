@@ -45,7 +45,7 @@ from app.services.ioc_intel import (
     sync_threatfox,
     update_ioc_source,
 )
-from app.services.virustotal import lookup_virustotal_ioc
+from app.services.virustotal import classify_indicator, lookup_virustotal_ioc
 from app.services.ioc_investigation import InvestigationOptions, investigate_ioc
 from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
 from app.services.opencti_sync import (
@@ -424,8 +424,19 @@ async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession =
     try:
         return await lookup_virustotal_ioc(session, payload.indicator, domain=payload.domain)
     except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            target = classify_indicator(payload.indicator)
+            return {
+                "indicator": target.value,
+                "type": target.type,
+                "virustotal_url": target.vt_url,
+                "permalink": target.vt_url,
+                "summary": msg,
+                "reputation": 0,
+            }
         logger.warning("VirusTotal lookup validation error: %s", exc)
-        raise HTTPException(404 if "not found" in str(exc).lower() else 400, "Operation failed. See server logs.") from exc
+        raise HTTPException(400, "Operation failed. See server logs.") from exc
     except RuntimeError as exc:
         logger.error("VirusTotal lookup runtime error: %s", exc, exc_info=True)
         status_code = 400 if "VIRUSTOTAL_API_KEY" in str(exc) else 502
