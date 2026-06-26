@@ -87,8 +87,10 @@ export function Debugger() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRunFunctions, workspace?.step_count, workspace?.completed]);
 
+  const createDebugWorkspace = () => malwareGraphApi.debugWorkspace(jobId, sampleRef, aiProvider, dynamicDebug, dynamicDebug);
+
   const createWorkspace = useMutation({
-    mutationFn: () => malwareGraphApi.debugWorkspace(jobId, sampleRef, aiProvider, dynamicDebug, dynamicDebug),
+    mutationFn: createDebugWorkspace,
     onSuccess: result => {
       setWorkspace(result);
       setAiAssistant(result.ai_assistant ?? null);
@@ -100,7 +102,16 @@ export function Debugger() {
     },
   });
   const stepWorkspace = useMutation({
-    mutationFn: () => malwareGraphApi.stepDebugWorkspace(workspace!.session_id),
+    mutationFn: async () => {
+      if (!workspace) return malwareGraphApi.stepDebugWorkspace((await createDebugWorkspace()).session_id);
+      try {
+        return await malwareGraphApi.stepDebugWorkspace(workspace.session_id);
+      } catch (error) {
+        if (!isMissingDebugWorkspace(error)) throw error;
+        const fresh = await createDebugWorkspace();
+        return malwareGraphApi.stepDebugWorkspace(fresh.session_id);
+      }
+    },
     onSuccess: result => {
       setWorkspace(result);
       if (result.completed) setAutoRunFunctions(false);
@@ -124,10 +135,31 @@ export function Debugger() {
     onError: error => setDecompilationError(String(error)),
   });
   const runAiAssistant = useMutation({
-    mutationFn: () => malwareGraphApi.debugWorkspaceAiAssistant(workspace!.session_id, aiProvider),
-    onSuccess: result => {
+    mutationFn: async () => {
+      if (!workspace) {
+        const fresh = await createDebugWorkspace();
+        return {
+          workspace: fresh,
+          assistant: await malwareGraphApi.debugWorkspaceAiAssistant(fresh.session_id, aiProvider),
+        };
+      }
+      try {
+        return {
+          workspace,
+          assistant: await malwareGraphApi.debugWorkspaceAiAssistant(workspace.session_id, aiProvider),
+        };
+      } catch (error) {
+        if (!isMissingDebugWorkspace(error)) throw error;
+        const fresh = await createDebugWorkspace();
+        return {
+          workspace: fresh,
+          assistant: await malwareGraphApi.debugWorkspaceAiAssistant(fresh.session_id, aiProvider),
+        };
+      }
+    },
+    onSuccess: ({ workspace: refreshedWorkspace, assistant: result }) => {
       setAiAssistant(result);
-      setWorkspace(current => current ? { ...current, ai_assistant: result } : current);
+      setWorkspace({ ...refreshedWorkspace, ai_assistant: result });
     },
   });
 
@@ -164,7 +196,7 @@ export function Debugger() {
                   {RUNTIME_DEBUG_DISCLAIMER}
                 </span>
               </label>
-              <button className="primary w-full" onClick={() => createWorkspace.mutate()} disabled={!jobId || !sampleRef || createWorkspace.isPending}>{createWorkspace.isPending ? 'Creating...' : 'Create debug workspace'}</button>
+              <button className="primary w-full" onClick={() => { stepWorkspace.reset(); runAiAssistant.reset(); createWorkspace.mutate(); }} disabled={!jobId || !sampleRef || createWorkspace.isPending}>{createWorkspace.isPending ? 'Creating...' : 'Create debug workspace'}</button>
               <button className="secondary-action w-full" onClick={() => loadDecompilation.mutate()} disabled={!jobId || !sampleRef || loadDecompilation.isPending}>{loadDecompilation.isPending ? 'Decompiling...' : decompilation ? 'Reload decompilation' : 'Load decompilation'}</button>
               <button className="secondary-action w-full" onClick={() => stepWorkspace.mutate()} disabled={!workspace || workspace.completed || stepWorkspace.isPending}>{stepWorkspace.isPending ? 'Stepping...' : workspace?.completed ? 'Session complete' : 'Step function'}</button>
               <button className="secondary-action w-full" onClick={() => setAutoRunFunctions(true)} disabled={!workspace || workspace.completed || stepWorkspace.isPending || autoRunFunctions}>{autoRunFunctions ? 'Running functions...' : 'Run all functions'}</button>
@@ -790,6 +822,10 @@ function field(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
   if (Array.isArray(value)) return value.map(item => field(item)).join(', ');
   return String(value);
+}
+
+function isMissingDebugWorkspace(error: unknown) {
+  return String(error).toLowerCase().includes('debug workspace not found');
 }
 
 function riskColor(risk: string) {

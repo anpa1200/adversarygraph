@@ -29,7 +29,8 @@ http.interceptors.response.use(
     const url = error.config?.url || '';
     const silentOn500 = ['/report', '/workflow-graph', '/logs'];
     const isSilent500 = error.response?.status === 500 && silentOn500.some(p => url.endsWith(p));
-    if (typeof window !== 'undefined' && !url.includes('/system/selftest') && !isSilent500) {
+    const skipGlobalError = Boolean((error.config as { skipGlobalError?: boolean } | undefined)?.skipGlobalError);
+    if (typeof window !== 'undefined' && !skipGlobalError && !url.includes('/system/selftest') && !isSilent500) {
       window.dispatchEvent(new CustomEvent('adversarygraph:api-error', {
         detail: {
           message,
@@ -1459,11 +1460,11 @@ export const malwareGraphApi = {
       },
     }).then(r => r.data),
   getDebugWorkspace: (sessionId: string): Promise<MalwareGraphDebuggerWorkspace> =>
-    http.get(`/malwaregraph/debug-workspaces/${sessionId}`).then(r => r.data),
+    http.get(`/malwaregraph/debug-workspaces/${sessionId}`, { skipGlobalError: true } as any).then(r => r.data),
   stepDebugWorkspace: (sessionId: string): Promise<MalwareGraphDebuggerWorkspace> =>
-    http.post(`/malwaregraph/debug-workspaces/${sessionId}/step`).then(r => r.data),
+    http.post(`/malwaregraph/debug-workspaces/${sessionId}/step`, null, { skipGlobalError: true } as any).then(r => r.data),
   debugWorkspaceAiAssistant: (sessionId: string, aiProvider = 'local'): Promise<MalwareGraphDebugAssistant> =>
-    http.post(`/malwaregraph/debug-workspaces/${sessionId}/ai-assistant`, null, { params: { ai_provider: aiProvider } }).then(r => r.data),
+    http.post(`/malwaregraph/debug-workspaces/${sessionId}/ai-assistant`, null, { params: { ai_provider: aiProvider }, skipGlobalError: true } as any).then(r => r.data),
   decompilation: (jobId: string, sampleRef = 'archive--file--0001'): Promise<MalwareGraphDecompilation> =>
     http.post(`/malwaregraph/analyses/${jobId}/decompilation`, null, { params: { sample_ref: sampleRef } }).then(r => r.data),
   stepRuntimeDebugSession: (sessionId: string): Promise<MalwareGraphRuntimeDebugSession> =>
