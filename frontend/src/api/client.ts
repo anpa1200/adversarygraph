@@ -1517,6 +1517,16 @@ export const malwareGraphApi = {
 
   saveUnpacked: (jobId: string): Promise<SavedUnpackedLayer[]> =>
     http.post(`/malwaregraph/analyses/${jobId}/save-unpacked`).then(r => r.data),
+
+  injectFile: (jobId: string, file: File, sourceLabel: string, sourceSampleRef?: string): Promise<MalwareGraphAnalysis> => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('source_label', sourceLabel);
+    if (sourceSampleRef) form.append('source_sample_ref', sourceSampleRef);
+    return http.post(`/malwaregraph/analyses/${jobId}/inject-file`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
 };
 
 export interface SavedUnpackedLayer {
