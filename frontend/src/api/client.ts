@@ -27,7 +27,9 @@ http.interceptors.response.use(
       ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join('; ')
       : detail || error.response?.data?.message || error.message || 'Unknown API error';
     const url = error.config?.url || '';
-    if (typeof window !== 'undefined' && !url.includes('/system/selftest')) {
+    const silentOn500 = ['/report', '/workflow-graph', '/logs'];
+    const isSilent500 = error.response?.status === 500 && silentOn500.some(p => url.endsWith(p));
+    if (typeof window !== 'undefined' && !url.includes('/system/selftest') && !isSilent500) {
       window.dispatchEvent(new CustomEvent('adversarygraph:api-error', {
         detail: {
           message,
