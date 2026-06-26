@@ -1,18 +1,18 @@
 # AdversaryGraph
 
 <p align="center">
-  <img alt="UNDER CONSTRUCTION" src="https://img.shields.io/badge/MALWARE%20ANALYSIS%20MODE-UNDER%20CONSTRUCTION-red?style=for-the-badge">
+  <img alt="V4 Malware Analysis documented" src="https://img.shields.io/badge/V4%20MALWARE%20ANALYSIS-DOCUMENTED%20LAB%20WORKFLOW-green?style=for-the-badge">
 </p>
 
-> **UNDER CONSTRUCTION:** Malware Analysis mode is in active development and is
-> not a production-ready malware-analysis verdict system. Treat static analysis,
-> unpacking, string analysis, decompilation, runtime-debug, IOC, TTP, and
-> attribution output as experimental analyst-assistance data. Validate every
-> finding before operational, legal, incident-response, or production use.
+> **Malware Analysis safety note:** Malware Analysis is a controlled lab workflow
+> backed by the isolated MalwareGraph service. Treat static analysis, unpacking,
+> string analysis, decompilation, runtime-debug, IOC, TTP, family, and attribution
+> output as analyst-assistance data. Validate every finding before operational,
+> legal, incident-response, customer-reporting, blocking, or production use.
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
-**AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping and detection-gap analysis.**
+**AI-assisted CTI-to-detection workbench for MITRE ATT&CK mapping, malware-analysis evidence, IOC enrichment, and detection-gap analysis.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v4.0.0-blue)](VERSION)
@@ -24,11 +24,11 @@
 [![Awesome Threat Intelligence](https://img.shields.io/badge/awesome--threat--intelligence-submitted-yellow)](https://github.com/hslatman/awesome-threat-intelligence/pull/385)
 [![Threat Hunting](https://img.shields.io/badge/awesome--threat--hunting-submitted-yellow)](https://github.com/threat-hunting/awesome_Threat-Hunting/pull/5)
 
-**Current release: v4.0.0 · [Release Summary](docs/release-summary-v4.0.0.md) · [Malware Analysis Guide](docs/malware-analysis-guide.md) · [Release Article Draft](docs/publication-drafts/adversarygraph-v4-malware-analysis.md) · [From Log to Report Workflow](docs/publication-drafts/medium-adversarygraph-from-log-to-report-ioc-investigation.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Capabilities](https://1200km.com/adversarygraph-docs/capabilities/) · [Use Cases](https://1200km.com/adversarygraph/use-cases.html) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
+**Current release: v4.0.0 · [Release Summary](docs/release-summary-v4.0.0.md) · [Malware Analysis Guide](docs/malware-analysis-guide.md) · [Official Platform Guide](https://1200km.com/adversarygraph-docs/platform-guide/) · [Official Malware Analysis Docs](https://1200km.com/adversarygraph-docs/malware-analysis/) · [Release Article Draft](docs/publication-drafts/adversarygraph-v4-malware-analysis.md) · [From Log to Report Workflow](docs/publication-drafts/medium-adversarygraph-from-log-to-report-ioc-investigation.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Capabilities](https://1200km.com/adversarygraph-docs/capabilities/) · [Use Cases](https://1200km.com/adversarygraph/use-cases.html) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
 **Current v4 visual documentation:** [Platform Guide](docs/adversarygraph-platform-guide.md) · [Platform Screenshot Manifest](docs/assets/adversarygraph-v4-platform/manifest.md) · [Malware Screenshot Manifest](docs/assets/malware-analysis-v4/manifest.md)
 
-AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
+AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports, IOC context, malware-analysis findings, and operational telemetry to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
 > **Rename note:** AdversaryGraph is the canonical product name. Legacy public URLs are preserved as static redirect pages where possible.
 
@@ -39,6 +39,10 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 **Documentation:** https://1200km.com/adversarygraph-docs/
 
 **Capabilities:** https://1200km.com/adversarygraph-docs/capabilities/
+
+**Platform Guide:** https://1200km.com/adversarygraph-docs/platform-guide/
+
+**Malware Analysis Docs:** https://1200km.com/adversarygraph-docs/malware-analysis/
 
 **Use Cases:** https://1200km.com/adversarygraph/use-cases.html
 
@@ -203,18 +207,14 @@ For the current release scope, see the [v4.0.0 release summary](docs/release-sum
 
 ## Malware Analysis Mode
 
-> **Status: under construction.** This module is available for controlled lab
-> testing and UX/API development, but its outputs must not be treated as final
-> malware verdicts or attribution.
-
-AdversaryGraph includes an experimental Malware Analysis workspace backed by a
+AdversaryGraph v4 includes an integrated Malware Analysis workspace backed by a
 separate MalwareGraph service in the same Docker Compose stack. The workflow is
 case-based: create a malware-analysis case, upload a raw sample or
-password-protected ZIP, run first-pass static triage, and collect all extracted
-IOCs, TTPs, strings, artifacts, files, behaviors, unpack layers, and analysis
-leads into one AdversaryGraph-linked case view.
+password-protected ZIP, run first-pass static triage, and collect extracted IOCs,
+TTPs, strings, artifacts, files, behaviors, unpack layers, debug findings, and AI
+analysis leads into one AdversaryGraph-linked case view.
 
-Current under-construction pages include:
+Current malware-analysis pages include:
 
 - **First Analysis** - file type, magic bytes, entropy, packed/obfuscated
   signals, packer hints, hashes, and PE-header triage.

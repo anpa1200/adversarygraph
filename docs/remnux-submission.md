@@ -25,7 +25,8 @@ AdversaryGraph should not be submitted directly as a normal REMnux Salt-state
 tool until these points are resolved:
 
 - it is a multi-container Docker Compose platform, not a single CLI utility;
-- Malware Analysis mode is currently marked "Coming soon" / under construction;
+- Malware Analysis mode is documented for v4 as a controlled lab workflow, but
+  runtime execution remains gated to explicit isolated profiles;
 - the repository uses a personal-use license, not a standard OSI license;
 - REMnux may prefer a Docker-image, documentation-only, or no-inclusion path
   instead of installing the full platform into the distro.
