@@ -932,6 +932,9 @@ export interface MalwareGraphAnalysis {
       size_bytes: number;
       file_type: string;
       hashes: Record<string, string>;
+      source?: string;
+      source_entity_id?: string | null;
+      entity_prefix?: string;
     }>;
   };
   iocs: MalwareGraphEntity[];
