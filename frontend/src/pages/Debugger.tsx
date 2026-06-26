@@ -268,6 +268,11 @@ export function Debugger() {
             <Panel title="Entrypoint Finding">
               <EntrypointFinding workspace={workspace} decompilation={decompilation} onTrace={setSelectedTraceId} />
             </Panel>
+            <Panel title="OllyDbg CPU View">
+              {selectedTrace
+                ? <OllyDbgCpuView workspace={workspace} trace={selectedTrace} assistant={aiAssistant} onTrace={setSelectedTraceId} />
+                : <Empty text="Select a function to inspect CPU-style disassembly, registers, stack, API hooks, and AI notes." />}
+            </Panel>
             <Panel title="AIDebug Function Graph">
               <DebuggerGraph workspace={workspace} selectedTrace={selectedTrace} onTrace={setSelectedTraceId} />
             </Panel>
@@ -487,6 +492,140 @@ function CurrentFunction({ trace, assistant }: { trace: DebugTrace; assistant: M
     <div className="p-3">
       <b className="text-gray-200">Disassembly</b>
       <pre className="mt-2 max-h-[360px] overflow-auto rounded border border-gray-800 bg-gray-950 p-3 font-mono text-[10px] leading-relaxed text-gray-400">{trace.disassembly.map(row => field(row.text)).join('\n') || 'No disassembly recovered.'}</pre>
+    </div>
+  </div>;
+}
+
+function OllyDbgCpuView({
+  workspace,
+  trace,
+  assistant,
+  onTrace,
+}: {
+  workspace: MalwareGraphDebuggerWorkspace;
+  trace: DebugTrace;
+  assistant: MalwareGraphDebugAssistant | null;
+  onTrace: (traceId: string) => void;
+}) {
+  const ai = functionAiForTrace(assistant, trace);
+  const tag = functionTag(trace, ai);
+  const snapshot = asRecord(trace.snapshot);
+  const entryRegisters = asRecord(snapshot.entry_registers);
+  const exitRegisters = asRecord(snapshot.exit_registers);
+  const registerRows = registerRowsForTrace(workspace, entryRegisters, exitRegisters);
+  const stackRows = stackRowsFromHex(field(snapshot.entry_stack_hex ?? snapshot.stack_hex ?? snapshot.stack_preview));
+  const memoryDiffs = Array.isArray(snapshot.memory_diffs) ? snapshot.memory_diffs : [];
+  const apiHooks = trace.api_hooks?.length ? trace.api_hooks : workspace.api_hooks.map(hook => field(hook.name)).filter(Boolean);
+  const nextTrace = nextTraceAfter(workspace, trace);
+
+  return <div className="grid gap-3 p-3 text-xs xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="overflow-hidden rounded border border-gray-800 bg-[#05070c]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950 px-3 py-2">
+        <div className="min-w-0">
+          <div className="truncate font-mono text-sm font-semibold text-gray-100">{trace.name}</div>
+          <div className="mt-0.5 flex flex-wrap gap-2 text-[10px] uppercase text-gray-600">
+            <span>{trace.address}</span>
+            <span>{trace.executed ? 'executed' : 'symbolic/static'}</span>
+            <span>{trace.instruction_count} instructions</span>
+            <span>{trace.source}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <span className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${tagClass(tag)}`}>{tag}</span>
+          <span className="rounded border border-gray-700 px-2 py-1 text-[10px] font-semibold" style={{ color: riskColor(trace.risk_level) }}>{trace.risk_level}</span>
+        </div>
+      </div>
+      <div className="max-h-[560px] overflow-auto">
+        <table className="w-full min-w-[860px] border-collapse text-left font-mono text-[11px]">
+          <thead className="sticky top-0 z-10 bg-gray-950 text-[10px] uppercase text-gray-600">
+            <tr>
+              <th className="w-12 px-2 py-2">BP</th>
+              <th className="w-28 px-2 py-2">Address</th>
+              <th className="w-44 px-2 py-2">Bytes</th>
+              <th className="px-2 py-2">Instruction</th>
+              <th className="w-72 px-2 py-2">Comment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trace.disassembly.length ? trace.disassembly.map((row, index) => {
+              const item = asRecord(row);
+              const address = field(item.address) || (index === 0 ? trace.address : '');
+              const breakpoint = hasBreakpoint(workspace, address);
+              const instruction = instructionText(item);
+              const active = index === 0 || address.toLowerCase() === trace.address.toLowerCase();
+              return <tr key={`${address}-${index}`} className={`border-b border-gray-900 ${active ? 'bg-mitre-accent/10' : 'hover:bg-gray-900/60'}`}>
+                <td className="px-2 py-1.5 text-center">{breakpoint ? <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">B</span> : <span className="text-gray-800">.</span>}</td>
+                <td className={active ? 'px-2 py-1.5 text-mitre-accent' : 'px-2 py-1.5 text-gray-400'}>{address || '-'}</td>
+                <td className="break-all px-2 py-1.5 text-gray-600">{field(item.bytes ?? item.opcodes ?? item.hex) || '-'}</td>
+                <td className={`break-all px-2 py-1.5 ${instructionTone(instruction)}`}>{instruction}</td>
+                <td className="break-words px-2 py-1.5 text-gray-500">{instructionComment(trace, ai, item, index)}</td>
+              </tr>;
+            }) : <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-600">No disassembly recovered for this function.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <div className="rounded border border-gray-800 bg-gray-950">
+        <div className="border-b border-gray-800 px-3 py-2 font-semibold text-gray-200">Registers</div>
+        <div className="max-h-64 overflow-auto">
+          <table className="w-full text-left font-mono text-[11px]">
+            <thead className="bg-gray-950 text-[10px] uppercase text-gray-600"><tr><th className="px-3 py-2">Reg</th><th className="px-3 py-2">Entry</th><th className="px-3 py-2">Exit</th></tr></thead>
+            <tbody className="divide-y divide-gray-900">
+              {registerRows.map(row => <tr key={row.name}>
+                <td className="px-3 py-1.5 text-gray-200">{row.name}</td>
+                <td className="break-all px-3 py-1.5 text-gray-500">{row.entry || '-'}</td>
+                <td className={row.changed ? 'break-all px-3 py-1.5 text-mitre-accent' : 'break-all px-3 py-1.5 text-gray-500'}>{row.exit || '-'}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded border border-gray-800 bg-gray-950">
+        <div className="border-b border-gray-800 px-3 py-2 font-semibold text-gray-200">Stack</div>
+        <div className="max-h-52 overflow-auto font-mono text-[11px]">
+          {stackRows.length ? stackRows.map(row => <div key={row.offset} className="grid grid-cols-[70px_1fr] border-b border-gray-900 px-3 py-1.5">
+            <span className="text-gray-600">{row.offset}</span>
+            <span className="break-all text-gray-400">{row.bytes}</span>
+          </div>) : <div className="p-3 text-gray-600">No stack snapshot returned.</div>}
+        </div>
+      </div>
+
+      <div className="rounded border border-gray-800 bg-gray-950 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <b className="text-gray-200">Step Context</b>
+          {nextTrace && <button className="secondary-action min-w-24" onClick={() => onTrace(nextTrace.trace_id)}>Next function</button>}
+        </div>
+        <div className="mt-2 grid gap-2">
+          <Info label="Status" value={trace.status} />
+          <Info label="Branch / calls" value={trace.calls_to.length ? trace.calls_to.join(', ') : field(snapshot.branch_decision ?? snapshot.branch ?? 'not observed')} />
+          <Info label="Return" value={field(snapshot.return_value ?? snapshot.exit_code ?? 'unknown')} />
+        </div>
+      </div>
+    </div>
+
+    <div className="grid gap-3 xl:col-span-2 lg:grid-cols-3">
+      <div className="rounded border border-gray-800 bg-gray-950 p-3">
+        <b className="text-gray-200">AI Function Explanation</b>
+        <p className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-400">{field(ai?.purpose ?? ai?.summary ?? ai?.description) || trace.summary || 'Run Full AI debug summary for per-function explanation.'}</p>
+        <p className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-500">{field(ai?.evidence ?? ai?.reason ?? ai?.next_debug_action)}</p>
+      </div>
+      <div className="rounded border border-gray-800 bg-gray-950 p-3">
+        <b className="text-gray-200">API / Import Focus</b>
+        <div className="mt-2 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+          {apiHooks.slice(0, 80).map(value => <span key={value} className="rounded border border-gray-700 px-2 py-1 font-mono text-[10px] text-gray-300">{value}</span>)}
+          {!apiHooks.length && <span className="text-gray-600">none</span>}
+        </div>
+      </div>
+      <div className="rounded border border-gray-800 bg-gray-950 p-3">
+        <b className="text-gray-200">Memory / Runtime Notes</b>
+        <div className="mt-2 max-h-32 overflow-y-auto divide-y divide-gray-900 text-[11px] text-gray-500">
+          {memoryDiffs.length ? memoryDiffs.slice(0, 20).map((item, index) => <div key={index} className="break-all py-1">{field(item)}</div>) : <div className="py-1">No memory diff returned for this step.</div>}
+          {trace.behaviors.map(item => <div key={item} className="break-all py-1 text-gray-400">{item}</div>)}
+        </div>
+      </div>
     </div>
   </div>;
 }
@@ -723,21 +862,41 @@ function Events({ workspace }: { workspace: MalwareGraphDebuggerWorkspace }) {
 }
 
 function DecompilationPane({ result }: { result: MalwareGraphDecompilation }) {
-  return <div className="grid gap-4 p-3 xl:grid-cols-[1fr_360px]">
-    <div>
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] uppercase text-gray-500">
-        <span>{result.toolchain}</span>
-        <span>{result.mode}</span>
-        <span>{result.executed ? 'executed' : 'static'}</span>
-        <span>{result.status}</span>
+  const pseudocode = result.pseudocode.length ? result.pseudocode : ['// No pseudocode recovered.'];
+  return <div className="grid gap-4 p-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="min-w-0 overflow-hidden rounded border border-gray-800 bg-[#05070c]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950 px-3 py-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-gray-100">{result.target_name}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] uppercase text-gray-600">
+            <span>{result.toolchain}</span>
+            <span>{result.mode}</span>
+            <span>{result.executed ? 'executed' : 'static artifact'}</span>
+            <span>{result.status}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 rounded border border-gray-800 bg-gray-900 p-0.5 text-[10px]">
+          <span className="rounded bg-mitre-accent px-2 py-1 font-semibold text-white">Pseudocode</span>
+          <span className="px-2 py-1 text-gray-500">Strings</span>
+          <span className="px-2 py-1 text-gray-500">Imports</span>
+        </div>
       </div>
-      <div className="mb-3 grid gap-2 text-xs md:grid-cols-4">
-        <Info label="Target" value={result.target_name} />
+      <div className="grid gap-2 border-b border-gray-800 p-3 text-xs md:grid-cols-4">
         <Info label="File type" value={result.file_type} />
         <Info label="Entrypoint" value={result.entrypoint ?? 'unknown'} />
         <Info label="Language" value={result.language ?? 'unknown'} />
+        <Info label="Lines" value={String(pseudocode.length)} />
       </div>
-      <pre className="max-h-[420px] overflow-auto rounded border border-gray-800 bg-gray-950 p-3 font-mono text-[11px] leading-relaxed text-gray-300">{result.pseudocode.join('\n') || 'No pseudocode recovered.'}</pre>
+      <div className="max-h-[620px] overflow-auto">
+        <table className="w-full min-w-[760px] border-collapse font-mono text-[11px] leading-relaxed">
+          <tbody>
+            {pseudocode.map((line, index) => <tr key={`${index}-${line}`} className="border-b border-gray-900 hover:bg-gray-900/70">
+              <td className="sticky left-0 w-14 select-none bg-[#05070c] px-3 py-0.5 text-right text-gray-700">{index + 1}</td>
+              <td className={`break-words px-3 py-0.5 ${codeLineTone(line)}`}>{line || ' '}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
     </div>
     <div className="space-y-3">
       {result.warnings.length > 0 && <div className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100">{result.warnings.join(' ')}</div>}
@@ -775,6 +934,87 @@ function DecompilationPane({ result }: { result: MalwareGraphDecompilation }) {
       </div>}
     </div>
   </div>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function codeLineTone(line: string) {
+  const trimmed = line.trim();
+  const lower = trimmed.toLowerCase();
+  if (trimmed.startsWith('//')) return 'text-slate-500';
+  if (lower.includes('createprocess') || lower.includes('writeprocessmemory') || lower.includes('virtualalloc') || lower.includes('connect') || lower.includes('regopenkey')) return 'text-amber-200';
+  if (/^(if|for|while|return|switch)\b/.test(lower) || lower.includes(' return ')) return 'text-sky-200';
+  if (lower.includes('observe_api') || lower.includes('analyze_section') || lower.includes('collect_')) return 'text-emerald-200';
+  return 'text-gray-300';
+}
+
+function instructionText(row: Record<string, unknown>) {
+  const mnemonic = field(row.mnemonic);
+  const opStr = field(row.op_str ?? row.operands ?? row.operand);
+  if (mnemonic || opStr) return `${mnemonic}${opStr ? ` ${opStr}` : ''}`.trim();
+  return field(row.text) || 'db ?';
+}
+
+function instructionTone(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (lower.includes('call') || lower.includes('jmp') || lower.includes('int ')) return 'text-amber-200';
+  if (lower.includes('push') || lower.includes('pop')) return 'text-sky-200';
+  if (lower.includes('mov') || lower.includes('lea')) return 'text-gray-300';
+  if (lower.includes('ret')) return 'text-fuchsia-200';
+  return 'text-gray-400';
+}
+
+function instructionComment(trace: DebugTrace, ai: Record<string, unknown> | null, row: Record<string, unknown>, index: number) {
+  const explicit = field(row.comment ?? row.annotation ?? row.api ?? row.symbol);
+  if (explicit) return explicit;
+  const text = instructionText(row).toLowerCase();
+  const api = (trace.api_hooks ?? []).find(value => text.includes(value.toLowerCase()));
+  if (api) return `API focus: ${api}`;
+  if (index === 0) return field(ai?.purpose ?? ai?.summary ?? trace.summary);
+  if (text.includes('call')) return 'Follow call target and validate imported function resolution.';
+  if (text.includes('jmp')) return 'Branch target; compare with conditional runtime path.';
+  if (text.includes('ret')) return 'Function return boundary.';
+  return '';
+}
+
+function hasBreakpoint(workspace: MalwareGraphDebuggerWorkspace, address: string) {
+  const needle = address.toLowerCase();
+  if (!needle) return false;
+  return workspace.breakpoints.some(item => field(item.address).toLowerCase() === needle || field(item.name).toLowerCase().includes(needle));
+}
+
+function registerRowsForTrace(
+  workspace: MalwareGraphDebuggerWorkspace,
+  entryRegisters: Record<string, unknown>,
+  exitRegisters: Record<string, unknown>,
+) {
+  if (Object.keys(entryRegisters).length || Object.keys(exitRegisters).length) {
+    const names = Array.from(new Set([...Object.keys(entryRegisters), ...Object.keys(exitRegisters)])).sort();
+    return names.map(name => {
+      const entry = field(entryRegisters[name]);
+      const exit = field(exitRegisters[name]);
+      return { name, entry, exit, changed: Boolean(entry && exit && entry !== exit) };
+    });
+  }
+  return workspace.registers;
+}
+
+function stackRowsFromHex(value: string) {
+  const clean = value.replace(/[^a-fA-F0-9]/g, '');
+  if (!clean) return [];
+  const chunks = clean.match(/.{1,16}/g) ?? [];
+  return chunks.slice(0, 24).map((bytes, index) => ({
+    offset: `esp+${(index * 8).toString(16).padStart(2, '0')}`,
+    bytes: bytes.match(/.{1,2}/g)?.join(' ') ?? bytes,
+  }));
+}
+
+function nextTraceAfter(workspace: MalwareGraphDebuggerWorkspace, trace: DebugTrace) {
+  const index = workspace.function_traces.findIndex(item => item.trace_id === trace.trace_id);
+  if (index < 0) return null;
+  return workspace.function_traces[index + 1] ?? null;
 }
 
 function isFirstAnalysis(artifact: unknown): artifact is MalwareGraphFirstAnalysis {
