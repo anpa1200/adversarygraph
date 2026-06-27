@@ -1792,3 +1792,92 @@ export const knowledgeApi = {
   seed: (): Promise<{ inserted: number; skipped: number; total: number }> =>
     http.post('/knowledge/seed').then(r => r.data),
 };
+
+// ── External TTP Simulation ──────────────────────────────────────────────────
+
+export interface ExternalSimulationCatalogItem {
+  id: string;
+  technique_id: string;
+  name: string;
+  category: string;
+  risk_level: number;
+  target_types: string[];
+  description: string;
+  expected_telemetry: string[];
+  safety_controls: string[];
+  steps: string[];
+  destructive: boolean;
+  emits_network_traffic: boolean;
+}
+
+export interface ExternalSimulationTarget {
+  id: string;
+  name: string;
+  address: string;
+  target_type: string;
+  environment: string;
+  owner: string;
+  authorization: string;
+  allowed_categories: string[];
+  allowed_simulations: string[];
+  rate_limit: string;
+  allowed_hours: string;
+}
+
+export interface ExternalSimulationPlan {
+  plan_id: string;
+  simulation: ExternalSimulationCatalogItem;
+  target: ExternalSimulationTarget;
+  allowed: boolean;
+  block_reasons: string[];
+  execution_mode: string;
+  safety_notice: string;
+  expected_telemetry: string[];
+  steps: string[];
+  approval_checklist: string[];
+}
+
+export interface ExternalSimulationRun {
+  run_id: string;
+  status: string;
+  started_at: string;
+  ended_at: string;
+  plan: ExternalSimulationPlan;
+  transcript: string[];
+  traffic_emitted: boolean;
+  result: string;
+  validation_status: string;
+  gaps: string[];
+  next_steps?: string[];
+}
+
+export interface ExternalSimulationManualResult {
+  result_id: string;
+  created_at: string;
+  plan: ExternalSimulationPlan;
+  detection_result: string;
+  validation_status: string;
+  evidence: string;
+  gaps: string[];
+  traffic_emitted_by_platform: boolean;
+  note: string;
+}
+
+export const simulationApi = {
+  catalog: (): Promise<ExternalSimulationCatalogItem[]> =>
+    http.get('/simulation/catalog').then(r => r.data),
+  targets: (): Promise<ExternalSimulationTarget[]> =>
+    http.get('/simulation/targets').then(r => r.data),
+  plan: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<ExternalSimulationPlan> =>
+    http.post('/simulation/plan', payload).then(r => r.data),
+  run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<ExternalSimulationRun> =>
+    http.post('/simulation/run', payload).then(r => r.data),
+  manualResult: (payload: {
+    simulation_id: string;
+    target_id: string;
+    detection_result: 'passed' | 'failed' | 'partial' | 'not_proven';
+    evidence: string;
+    gaps: string[];
+  }): Promise<ExternalSimulationManualResult> =>
+    http.post('/simulation/manual-result', payload).then(r => r.data),
+};

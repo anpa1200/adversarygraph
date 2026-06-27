@@ -63,6 +63,7 @@ AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat
 - [Project Maturity Evidence](#project-maturity-evidence)
 - [Malware Analysis Mode](#malware-analysis-mode)
 - [Asset Attack Surface Mapping](docs/asset-attack-surface.md)
+- [External TTP Simulation](docs/external-ttp-simulation.md)
 - [Public Demo Privacy Note](#public-demo-privacy-note)
 - [Validation and Limitations](#validation-and-limitations)
 - [Screenshots And Visual Evidence](#screenshots-and-visual-evidence)
@@ -303,6 +304,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Compare — Reports** | Browse stored AI analyses (DB 2); re-run group-similarity comparison without re-calling the LLM |
 | **Sector Intelligence** | Local actor relevance scoring by client sector, geography, environment keywords, activity window, ATT&CK campaign recency, and MISP Galaxy evidence |
 | **Asset Attack Surface Mapping** | Upload CSV/JSON/TXT asset inventories or paste host/IP/service lists, normalize exposed assets, score internet/internal/third-party surfaces, generate an attack surface matrix, propose likely entry points, ATT&CK technique candidates, priority actions, validation gaps, and optional AI-enriched executive summaries. See [Asset Attack Surface Mapping](docs/asset-attack-surface.md). |
+| **External TTP Simulation** | Prepare safe allowlisted ATT&CK validation plans for external-facing behaviors, review expected telemetry, create controlled run records, and capture manual lab evidence without exploit execution or arbitrary command execution. See [External TTP Simulation](docs/external-ttp-simulation.md). |
 | **IOC Intelligence** | Local source-backed IOC storage with ThreatFox/OTX/Malpedia sync, global IOC Library search, MISP/custom feed connection, actor IOC tabs, IOC-to-TTP mapping, freshness filtering, confidence, source links, VT check, and CSV export |
 | **VirusTotal Lookup** | On-demand IOC reputation lookup for IPs, domains, URLs, and hashes with clean verdicts, extracted ATT&CK TTPs, local actor matches, and matrix/My TTP actions |
 | **DFIR Examples** | Indexed public DFIR Report examples with TTP/actor metadata and a local PDF workflow for private AI analysis |
