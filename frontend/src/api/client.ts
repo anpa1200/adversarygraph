@@ -1793,9 +1793,9 @@ export const knowledgeApi = {
     http.post('/knowledge/seed').then(r => r.data),
 };
 
-// ── External TTP Simulation ──────────────────────────────────────────────────
+// ── Attack Simulation ──────────────────────────────────────────────────
 
-export interface ExternalSimulationCatalogItem {
+export interface AttackSimulationCatalogItem {
   id: string;
   technique_id: string;
   name: string;
@@ -1810,7 +1810,7 @@ export interface ExternalSimulationCatalogItem {
   emits_network_traffic: boolean;
 }
 
-export interface ExternalSimulationTarget {
+export interface AttackSimulationTarget {
   id: string;
   name: string;
   address: string;
@@ -1824,10 +1824,10 @@ export interface ExternalSimulationTarget {
   allowed_hours: string;
 }
 
-export interface ExternalSimulationPlan {
+export interface AttackSimulationPlan {
   plan_id: string;
-  simulation: ExternalSimulationCatalogItem;
-  target: ExternalSimulationTarget;
+  simulation: AttackSimulationCatalogItem;
+  target: AttackSimulationTarget;
   allowed: boolean;
   block_reasons: string[];
   execution_mode: string;
@@ -1837,24 +1837,90 @@ export interface ExternalSimulationPlan {
   approval_checklist: string[];
 }
 
-export interface ExternalSimulationRun {
+export interface AttackSimulationRun {
   run_id: string;
   status: string;
   started_at: string;
   ended_at: string;
-  plan: ExternalSimulationPlan;
+  plan: AttackSimulationPlan;
   transcript: string[];
   traffic_emitted: boolean;
   result: string;
   validation_status: string;
   gaps: string[];
   next_steps?: string[];
+  telemetry?: {
+    server?: {
+      url: string;
+      host: string;
+      port: number;
+      status: string;
+    };
+    log_file?: string;
+    web_access_log_file?: string;
+    request_count?: number;
+    success_count?: number;
+    events?: Array<{
+      timestamp: string;
+      event_type: string;
+      request_index: number;
+      method: string;
+      url: string;
+      path: string;
+      status: number;
+      ok: boolean;
+      duration_ms: number;
+      response_bytes: number;
+      error?: string;
+    }>;
+    summary?: Record<string, unknown>;
+  };
 }
 
-export interface ExternalSimulationManualResult {
+export interface AttackSimulationLogEvent {
+  timestamp?: string;
+  event_type?: string;
+  run_id?: string;
+  simulation_id?: string;
+  request_index?: string | number;
+  client_ip?: string;
+  method?: string;
+  path?: string;
+  url?: string;
+  status?: number;
+  duration_ms?: number;
+  response_bytes?: number;
+  headers?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface AttackSimulationLogs {
+  source: string;
+  run_id: string;
+  log_file: string;
+  exists: boolean;
+  line_count: number;
+  events: AttackSimulationLogEvent[];
+  returned_at: string;
+}
+
+export interface AttackSimulationForwardResult {
+  ok: boolean;
+  status: number;
+  destination_url: string;
+  source: string;
+  run_id: string;
+  event_count: number;
+  duration_ms: number;
+  error: string;
+  response_preview: string;
+  response_headers: Record<string, string>;
+}
+
+export interface AttackSimulationManualResult {
   result_id: string;
   created_at: string;
-  plan: ExternalSimulationPlan;
+  plan: AttackSimulationPlan;
   detection_result: string;
   validation_status: string;
   evidence: string;
@@ -1864,20 +1930,30 @@ export interface ExternalSimulationManualResult {
 }
 
 export const simulationApi = {
-  catalog: (): Promise<ExternalSimulationCatalogItem[]> =>
+  catalog: (): Promise<AttackSimulationCatalogItem[]> =>
     http.get('/simulation/catalog').then(r => r.data),
-  targets: (): Promise<ExternalSimulationTarget[]> =>
+  targets: (): Promise<AttackSimulationTarget[]> =>
     http.get('/simulation/targets').then(r => r.data),
-  plan: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<ExternalSimulationPlan> =>
+  plan: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationPlan> =>
     http.post('/simulation/plan', payload).then(r => r.data),
-  run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<ExternalSimulationRun> =>
+  run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationRun> =>
     http.post('/simulation/run', payload).then(r => r.data),
+  logs: (params: { source?: 'web' | 'run'; run_id?: string; limit?: number }): Promise<AttackSimulationLogs> =>
+    http.get('/simulation/logs', { params }).then(r => r.data),
+  forwardLogs: (payload: {
+    source: 'web' | 'run';
+    run_id?: string;
+    destination_url: string;
+    limit?: number;
+    bearer_token?: string;
+  }): Promise<AttackSimulationForwardResult> =>
+    http.post('/simulation/forward-logs', payload).then(r => r.data),
   manualResult: (payload: {
     simulation_id: string;
     target_id: string;
     detection_result: 'passed' | 'failed' | 'partial' | 'not_proven';
     evidence: string;
     gaps: string[];
-  }): Promise<ExternalSimulationManualResult> =>
+  }): Promise<AttackSimulationManualResult> =>
     http.post('/simulation/manual-result', payload).then(r => r.data),
 };

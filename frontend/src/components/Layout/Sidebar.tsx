@@ -17,7 +17,7 @@ const nav = [
   { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
   { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
   { to: '/asset-surface', label: 'Asset Surface', icon: '▥' },
-  { to: '/external-simulation', label: 'External Simulation', icon: '◎' },
+  { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎' },
   { to: '/retrohunt',     label: 'RetroHunt', icon: '⌖' },
   { to: '/knowledge',     label: 'Knowledge Library', icon: '◎' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },

@@ -13,7 +13,7 @@ import { Pipeline } from '@/pages/Pipeline';
 import { Examples } from '@/pages/Examples';
 import { SectorIntel } from '@/pages/SectorIntel';
 import { AssetSurface } from '@/pages/AssetSurface';
-import { ExternalSimulation } from '@/pages/ExternalSimulation';
+import { AttackSimulation } from '@/pages/AttackSimulation';
 import { KnowledgeLibrary } from '@/pages/KnowledgeLibrary';
 import SectorPacks from '@/pages/SectorPacks';
 import RetroHunt from '@/pages/RetroHunt';
@@ -63,7 +63,9 @@ export default function App() {
               <Route path="/examples" element={<Examples />} />
               <Route path="/sector-intel" element={<SectorIntel />} />
               <Route path="/asset-surface" element={<AssetSurface />} />
-              <Route path="/external-simulation" element={<RoleGate require="analyst"><ExternalSimulation /></RoleGate>} />
+              <Route path="/attack-simulation" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
+              <Route path="/attack-simulation/:simulationId" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
+              <Route path="/external-simulation" element={<Navigate to="/attack-simulation" replace />} />
               <Route path="/sector-packs" element={<SectorPacks />} />
               <Route path="/knowledge" element={<KnowledgeLibrary />} />
               <Route path="/retrohunt" element={<RetroHunt />} />
