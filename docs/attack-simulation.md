@@ -26,7 +26,10 @@ before marking detection coverage as passed.
 For web-focused simulations in Docker Compose, AdversaryGraph runs a separate
 `attack-lab-web` target container and the API performs real HTTP attack flows
 against `http://attack-lab-web:8080` over the compose network. The target
-container owns the web application behavior and writes the server logs. The
+container uses NGINX as the front web server and a small upstream lab
+application for controlled responses. `lab-web-access.log` and
+`lab-web-error.log` are emitted by NGINX from the real requests received by the
+container; they are not formatted by the AdversaryGraph API runner. The
 in-process `127.0.0.1:8765` server remains only as a test/development fallback
 when the Docker target URL is not configured.
 
@@ -56,13 +59,16 @@ Generated files include:
   clean path, query keys, client IP, headers, request body length, request body
   hash, short body preview, matched canary categories, status, response bytes,
   run ID, and simulation ID.
-- `lab-web-access.log` — real NGINX/Apache-style access log lines. These are
-  the closest webserver-under-attack logs for SIEM parser validation.
+- `lab-web-access.log` — real NGINX access log lines written by the Docker lab
+  web server while it receives the attack requests. The format includes normal
+  webserver fields plus correlation fields for run ID, simulation ID, request
+  index, request length, request time, upstream time, and upstream status.
 - `lab-web-security.log` — WAF/security-style alert lines emitted whenever a
   canary category is matched, including severity, category, rule ID, client,
   URI, run ID, simulation ID, and body hash.
-- `lab-web-error.log` — web error log lines for 4xx/5xx style responses such as
-  missing admin, backup, repository, secret, or exposed-path probes.
+- `lab-web-error.log` — real NGINX error log for the Docker lab web server.
+  Most benign canary requests are valid HTTP requests and may not generate error
+  lines unless NGINX or upstream handling emits an operational warning/error.
 - `lab-web-auth.log` — application authentication log lines for login attacks,
   including username, user-exists flag, outcome, failure reason, attack type,
   password length/hash, source IP, status, run ID, and simulation ID. The lab
@@ -112,8 +118,12 @@ Forwarding guardrails:
   local lab collectors that expose an HTTPS-looking URL while listening over
   plain HTTP.
 - Payload formats:
-  - **One event per request** is the recommended mode for Logeye/XpoLog-style
-    `logger.jsp` collectors.
+  - **Raw original line per request** is the recommended mode for
+    Logeye/XpoLog-style `logger.jsp` collectors when you want the SIEM event
+    body to be the native NGINX/auth/security log line rather than an
+    AdversaryGraph JSON wrapper.
+  - **JSON event per request** sends one normalized AdversaryGraph JSON event per
+    POST.
   - **JSON lines** sends newline-delimited JSON events in one request.
   - **Batch envelope** sends the original AdversaryGraph wrapper object with an
     `events` array.

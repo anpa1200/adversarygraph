@@ -153,8 +153,8 @@ services:
       dockerfile: docker/attack-lab-web/Dockerfile
     restart: unless-stopped
     environment:
-      ATTACK_LAB_WEB_HOST: 0.0.0.0
-      ATTACK_LAB_WEB_PORT: 8080
+      ATTACK_LAB_WEB_HOST: 127.0.0.1
+      ATTACK_LAB_WEB_PORT: 8081
       ATTACK_LAB_WEB_LOG_DIR: /app/logs
     volumes:
       - adversarygraph_logs:/app/logs

@@ -1317,14 +1317,14 @@ def forward_telemetry_logs(
     header_name: str = "",
     connection_mode: str = "auto",
     allow_http_fallback: bool = True,
-    payload_format: str = "per_event",
+    payload_format: str = "raw_lines",
 ) -> dict[str, Any]:
     destination = _validate_siem_destination(destination_url, connection_mode=connection_mode)
     logs = tail_telemetry_logs(source=source, run_id=run_id, limit=limit)
-    if payload_format not in {"per_event", "json_lines", "envelope"}:
+    if payload_format not in {"raw_lines", "per_event", "json_lines", "envelope"}:
         raise ValueError("Unsupported SIEM payload format")
     headers = {
-        "Content-Type": "application/json",
+        "Content-Type": "text/plain; charset=utf-8" if payload_format == "raw_lines" else "application/json",
         "User-Agent": "AdversaryGraph-AttackSimulation-Forwarder/1.0",
         "X-AdversaryGraph-Module": "attack-simulation",
         "X-AdversaryGraph-Run-Id": run_id,
@@ -1332,7 +1332,7 @@ def forward_telemetry_logs(
     }
     headers.update(_siem_auth_headers(auth_type, username=username, password=password, token=token, header_name=header_name))
     started = time.perf_counter()
-    if payload_format == "per_event":
+    if payload_format in {"raw_lines", "per_event"}:
         return _forward_siem_events_individually(
             destination=destination,
             logs=logs,
@@ -1341,6 +1341,7 @@ def forward_telemetry_logs(
             original_destination=destination_url,
             connection_mode=connection_mode,
             allow_http_fallback=allow_http_fallback,
+            payload_format=payload_format,
         )
     body = _siem_payload_body(logs, payload_format)
     result, fallback_note = _post_siem_payload(
@@ -1410,6 +1411,13 @@ def _siem_event_message(event: dict[str, Any]) -> str:
     return " ".join(item for item in parts if item)
 
 
+def _siem_raw_line_payload(event: dict[str, Any]) -> bytes:
+    line = str(event.get("raw_line") or event.get("message") or "").rstrip("\n")
+    if not line:
+        line = json.dumps(event, sort_keys=True)
+    return f"{line}\n".encode("utf-8")
+
+
 def _forward_siem_events_individually(
     destination: str,
     logs: dict[str, Any],
@@ -1418,6 +1426,7 @@ def _forward_siem_events_individually(
     original_destination: str,
     connection_mode: str,
     allow_http_fallback: bool,
+    payload_format: str,
 ) -> dict[str, Any]:
     events = logs["events"] or [
         {
@@ -1433,7 +1442,11 @@ def _forward_siem_events_individually(
     fallback_note = ""
     errors: list[str] = []
     for event in events:
-        body = json.dumps(_siem_event_payload(event, logs), sort_keys=True).encode("utf-8")
+        body = (
+            _siem_raw_line_payload(event)
+            if payload_format == "raw_lines"
+            else json.dumps(_siem_event_payload(event, logs), sort_keys=True).encode("utf-8")
+        )
         result, note = _post_siem_payload(
             destination=destination,
             body=body,
@@ -1466,7 +1479,7 @@ def _forward_siem_events_individually(
         "event_count": logs["line_count"],
         "http_fallback_used": fallback_used,
         "fallback_note": fallback_note,
-        "payload_format": "per_event",
+        "payload_format": payload_format,
         "sent_event_count": sent,
     }
 

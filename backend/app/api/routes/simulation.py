@@ -40,7 +40,7 @@ class ForwardLogsRequest(BaseModel):
     header_name: str = Field(default="", max_length=80)
     connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
     allow_http_fallback: bool = Field(default=True)
-    payload_format: str = Field(default="per_event", pattern="^(per_event|json_lines|envelope)$")
+    payload_format: str = Field(default="raw_lines", pattern="^(raw_lines|per_event|json_lines|envelope)$")
 
 
 @router.get("/catalog")

@@ -1923,7 +1923,7 @@ export interface AttackSimulationForwardResult {
   duration_ms: number;
   http_fallback_used: boolean;
   fallback_note: string;
-  payload_format: 'per_event' | 'json_lines' | 'envelope';
+  payload_format: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
   sent_event_count: number;
   error: string;
   response_preview: string;
@@ -1967,7 +1967,7 @@ export const simulationApi = {
     header_name?: string;
     connection_mode?: 'auto' | 'direct' | 'docker_host';
     allow_http_fallback?: boolean;
-    payload_format?: 'per_event' | 'json_lines' | 'envelope';
+    payload_format?: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
   }): Promise<AttackSimulationForwardResult> =>
     http.post('/simulation/forward-logs', payload).then(r => r.data),
   manualResult: (payload: {

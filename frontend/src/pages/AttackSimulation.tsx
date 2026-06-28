@@ -21,7 +21,7 @@ import { TtpLink } from '@/utils/ctiLinks';
 type DetectionResult = 'passed' | 'failed' | 'partial' | 'not_proven';
 type SiemAuthType = 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
 type SiemConnectionMode = 'auto' | 'direct' | 'docker_host';
-type SiemPayloadFormat = 'per_event' | 'json_lines' | 'envelope';
+type SiemPayloadFormat = 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
 type SiemDestinationHistoryItem = {
   id: string;
   url: string;
@@ -53,6 +53,7 @@ export function AttackSimulation() {
   const [run, setRun] = useState<AttackSimulationRun | null>(null);
   const [manual, setManual] = useState<AttackSimulationManualResult | null>(null);
   const [followRunId, setFollowRunId] = useState('');
+  const [showAllLiveLogs, setShowAllLiveLogs] = useState(false);
   const [liveLogsEnabled, setLiveLogsEnabled] = useState(true);
   const [siemUrl, setSiemUrl] = useState('');
   const [siemAuthType, setSiemAuthType] = useState<SiemAuthType>('none');
@@ -62,7 +63,7 @@ export function AttackSimulation() {
   const [siemHeaderName, setSiemHeaderName] = useState('Authorization');
   const [siemConnectionMode, setSiemConnectionMode] = useState<SiemConnectionMode>('auto');
   const [allowHttpFallback, setAllowHttpFallback] = useState(true);
-  const [siemPayloadFormat, setSiemPayloadFormat] = useState<SiemPayloadFormat>('per_event');
+  const [siemPayloadFormat, setSiemPayloadFormat] = useState<SiemPayloadFormat>('raw_lines');
   const [liveLogSource, setLiveLogSource] = useState<AttackSimulationLogSource>('access');
   const [siemSource, setSiemSource] = useState<AttackSimulationLogSource>('access');
   const [siemHistory, setSiemHistory] = useState<SiemDestinationHistoryItem[]>(() => loadSiemHistory());
@@ -133,6 +134,7 @@ export function AttackSimulation() {
       setPlan(next.plan);
       setManual(null);
       setFollowRunId(next.run_id);
+      setShowAllLiveLogs(false);
       setLiveLogsEnabled(true);
     },
   });
@@ -210,10 +212,12 @@ export function AttackSimulation() {
   };
 
   const canAct = Boolean(simulationId && targetId);
+  const activeLiveLogRunId = showAllLiveLogs || liveLogSource === 'run' ? '' : followRunId;
+  const liveLogLimit = showAllLiveLogs ? 500 : 120;
   const liveLogsQuery = useQuery({
-    queryKey: ['attack-simulation-live-logs', liveLogSource, followRunId || 'latest-web', liveLogsEnabled],
-    queryFn: () => simulationApi.logs({ source: liveLogSource, run_id: followRunId || undefined, limit: 80 }),
-    enabled: Boolean(routeSimulationId) && liveLogsEnabled,
+    queryKey: ['attack-simulation-live-logs', liveLogSource, activeLiveLogRunId || 'all-shared', liveLogLimit, liveLogsEnabled],
+    queryFn: () => simulationApi.logs({ source: liveLogSource, run_id: activeLiveLogRunId || undefined, limit: liveLogLimit }),
+    enabled: Boolean(routeSimulationId) && liveLogsEnabled && liveLogSource !== 'run',
     refetchInterval: runMutation.isPending || liveLogsEnabled ? 1000 : false,
     retry: false,
   });
@@ -352,11 +356,20 @@ export function AttackSimulation() {
             isFetching={liveLogsQuery.isFetching}
             enabled={liveLogsEnabled}
             followRunId={followRunId}
+            activeRunFilter={activeLiveLogRunId}
+            showingAllLogs={showAllLiveLogs}
             source={liveLogSource}
             onToggle={() => setLiveLogsEnabled(value => !value)}
-            onClearFollow={() => setFollowRunId('')}
+            onClearFollow={() => {
+              setShowAllLiveLogs(true);
+              setLiveLogsEnabled(true);
+            }}
+            onFollowRun={() => setShowAllLiveLogs(false)}
             onRefresh={() => liveLogsQuery.refetch()}
-            onSourceChange={setLiveLogSource}
+            onSourceChange={(value) => {
+              setLiveLogSource(value);
+              if (value === 'run') setShowAllLiveLogs(false);
+            }}
           />
           <SiemForwarder
             destinationUrl={siemUrl}
@@ -499,9 +512,12 @@ function LiveLogsView({
   isFetching,
   enabled,
   followRunId,
+  activeRunFilter,
+  showingAllLogs,
   source,
   onToggle,
   onClearFollow,
+  onFollowRun,
   onRefresh,
   onSourceChange,
 }: {
@@ -510,13 +526,18 @@ function LiveLogsView({
   isFetching: boolean;
   enabled: boolean;
   followRunId: string;
+  activeRunFilter: string;
+  showingAllLogs: boolean;
   source: AttackSimulationLogSource;
   onToggle: () => void;
   onClearFollow: () => void;
+  onFollowRun: () => void;
   onRefresh: () => void;
   onSourceChange: (value: AttackSimulationLogSource) => void;
 }) {
   const events = logs?.events ?? [];
+  const logScopeText = activeRunFilter ? `Filtering run ${activeRunFilter}` : `Showing all ${source} events`;
+  const footerScopeText = activeRunFilter ? `filtered run ${shortRun(activeRunFilter)}` : 'all shared events';
   return (
     <Panel title="Real-Time Attack Logs">
       <div className="space-y-3 p-4">
@@ -524,7 +545,7 @@ function LiveLogsView({
           <div className="text-xs leading-5 text-gray-400">
             <span className={enabled ? 'text-green-300' : 'text-gray-500'}>{enabled ? 'Live follow enabled' : 'Live follow paused'}</span>
             <span className="mx-2 text-gray-700">|</span>
-            <span>{followRunId ? `Filtering run ${followRunId}` : `Showing latest ${source} telemetry`}</span>
+            <span>{logScopeText}</span>
             {logs?.log_file && <span className="ml-2 font-mono text-gray-500">{logs.log_file}</span>}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -536,9 +557,14 @@ function LiveLogsView({
               <option value="web">Structured web JSONL</option>
               <option value="run">Attack run JSONL</option>
             </select>
-            {followRunId && (
+            {followRunId && !showingAllLogs && source !== 'run' && (
               <button type="button" onClick={onClearFollow} className="secondary-action">
                 Show all
+              </button>
+            )}
+            {followRunId && showingAllLogs && source !== 'run' && (
+              <button type="button" onClick={onFollowRun} className="secondary-action">
+                Follow run
               </button>
             )}
             <button type="button" onClick={onRefresh} className="secondary-action">
@@ -592,7 +618,7 @@ function LiveLogsView({
           </table>
         </div>
         <div className="text-[11px] text-gray-600">
-          {logs?.returned_at ? `Last update ${formatLogTime(logs.returned_at)} · ${logs.line_count} events returned` : 'Live log source is the built-in lab web access JSONL file.'}
+          {logs?.returned_at ? `Last update ${formatLogTime(logs.returned_at)} · ${logs.line_count} ${footerScopeText} returned` : 'Live log source is the built-in lab web access JSONL file.'}
         </div>
       </div>
     </Panel>
@@ -735,7 +761,8 @@ function SiemForwarder({
           </select>
           <label className="label">Payload format</label>
           <select className="field" value={payloadFormat} onChange={event => onPayloadFormatChange(event.target.value as SiemPayloadFormat)}>
-            <option value="per_event">One event per request (Logeye)</option>
+            <option value="raw_lines">Raw original line per request</option>
+            <option value="per_event">JSON event per request</option>
             <option value="json_lines">JSON lines</option>
             <option value="envelope">Batch envelope</option>
           </select>
@@ -939,7 +966,7 @@ function isSiemHistoryItem(value: unknown): value is SiemDestinationHistoryItem 
     typeof item.url === 'string' &&
     ['none', 'bearer', 'token', 'basic', 'custom_header'].includes(String(item.authType)) &&
     ['auto', 'direct', 'docker_host'].includes(String(item.connectionMode)) &&
-    ['per_event', 'json_lines', 'envelope'].includes(String(item.payloadFormat)) &&
+    ['raw_lines', 'per_event', 'json_lines', 'envelope'].includes(String(item.payloadFormat)) &&
     ['web', 'run', 'access', 'security', 'error', 'auth'].includes(String(item.source))
   );
 }

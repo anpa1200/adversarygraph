@@ -9,8 +9,8 @@ from pathlib import Path
 from urllib import parse
 
 
-HOST = os.environ.get("ATTACK_LAB_WEB_HOST", "0.0.0.0")
-PORT = int(os.environ.get("ATTACK_LAB_WEB_PORT", "8080"))
+HOST = os.environ.get("ATTACK_LAB_WEB_HOST", "127.0.0.1")
+PORT = int(os.environ.get("ATTACK_LAB_WEB_PORT", "8081"))
 LOG_DIR = Path(os.environ.get("ATTACK_LAB_WEB_LOG_DIR", "/app/logs")) / "attack-simulation"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -106,7 +106,7 @@ class AttackLabWebHandler(BaseHTTPRequestHandler):
             "run_id": header_lookup.get("x-adversarygraph-run-id", ""),
             "simulation_id": header_lookup.get("x-adversarygraph-simulation-id", ""),
             "request_index": header_lookup.get("x-adversarygraph-request-index", ""),
-            "client_ip": self.client_address[0],
+            "client_ip": _client_ip_from_headers(header_lookup, self.client_address[0]),
             "client_port": self.client_address[1],
             "method": self.command,
             "path": self.path,
@@ -225,6 +225,14 @@ def _credential_attack_type(canary: str, exists: bool) -> str:
     return "login"
 
 
+def _client_ip_from_headers(headers: dict[str, str], fallback: str) -> str:
+    forwarded_for = str(headers.get("x-forwarded-for") or "").split(",", 1)[0].strip()
+    if forwarded_for:
+        return forwarded_for
+    real_ip = str(headers.get("x-real-ip") or "").strip()
+    return real_ip or fallback
+
+
 def _classify_web_canaries(method: str, path: str, headers: dict[str, str], body: bytes) -> list[str]:
     haystack = " ".join(
         [
@@ -255,30 +263,10 @@ def _classify_web_canaries(method: str, path: str, headers: dict[str, str], body
 
 
 def _append_operational_web_logs(event: dict[str, object]) -> None:
-    _append_text_line(_web_server_access_log_path(), _format_web_access_line(event))
     for category in event.get("matched_canaries") or []:
         _append_text_line(_web_security_log_path(), _format_web_security_line(event, str(category)))
     if event.get("credential_attack_type") or str(event.get("event_type") or "").startswith("lab_web_auth"):
         _append_text_line(_web_auth_log_path(), _format_web_auth_line(event))
-    if int(event.get("status") or 0) >= 400:
-        _append_text_line(_web_error_log_path(), _format_web_error_line(event))
-
-
-def _format_web_access_line(event: dict[str, object]) -> str:
-    timestamp = _apache_log_time(str(event.get("timestamp") or ""))
-    headers = event.get("headers") if isinstance(event.get("headers"), dict) else {}
-    matches = ",".join(str(item) for item in event.get("matched_canaries") or []) or "-"
-    return (
-        f'{event.get("client_ip") or "-"} - - [{timestamp}] '
-        f'"{event.get("method") or "-"} {str(event.get("path") or "-").replace(chr(34), r"\"")} {event.get("protocol") or "HTTP/1.1"}" '
-        f'{int(event.get("status") or 0)} {int(event.get("response_bytes") or 0)} '
-        f'"{str(headers.get("Referer") or "-").replace(chr(34), r"\"")}" '
-        f'"{str(headers.get("User-Agent") or "-").replace(chr(34), r"\"")}" rt=0.001 '
-        f'run_id="{event.get("run_id") or "-"}" simulation_id="{event.get("simulation_id") or "-"}" '
-        f'body_bytes={int(event.get("body_length") or 0)} canaries="{matches}" '
-        f'auth_user="{str(event.get("auth_username") or "-").replace(chr(34), r"\"")}" '
-        f'auth_outcome="{str(event.get("auth_outcome") or "-").replace(chr(34), r"\"")}"'
-    )
 
 
 def _format_web_security_line(event: dict[str, object], category: str) -> str:
@@ -291,15 +279,6 @@ def _format_web_security_line(event: dict[str, object], category: str) -> str:
         f'status={int(event.get("status") or 0)} run_id="{event.get("run_id") or "-"}" '
         f'simulation_id="{event.get("simulation_id") or "-"}" body_sha256="{event.get("body_sha256") or "-"}" '
         f'msg="Matched AdversaryGraph {category} canary in Docker lab web telemetry"'
-    )
-
-
-def _format_web_error_line(event: dict[str, object]) -> str:
-    return (
-        f'[{event.get("timestamp") or datetime.now(timezone.utc).isoformat()}] [error] '
-        f'[client {event.get("client_ip") or "-"}] Docker lab web server returned HTTP {int(event.get("status") or 0)}, '
-        f'request="{event.get("method") or "-"} {str(event.get("path") or "-").replace(chr(34), r"\"")}" '
-        f'run_id="{event.get("run_id") or "-"}" simulation_id="{event.get("simulation_id") or "-"}"'
     )
 
 
@@ -329,14 +308,6 @@ def _security_severity(category: str) -> str:
     return "low"
 
 
-def _apache_log_time(value: str) -> str:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        parsed = datetime.now(timezone.utc)
-    return parsed.strftime("%d/%b/%Y:%H:%M:%S %z")
-
-
 def _stable_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -345,16 +316,8 @@ def _web_access_log_path() -> Path:
     return LOG_DIR / "lab-web-access.jsonl"
 
 
-def _web_server_access_log_path() -> Path:
-    return LOG_DIR / "lab-web-access.log"
-
-
 def _web_security_log_path() -> Path:
     return LOG_DIR / "lab-web-security.log"
-
-
-def _web_error_log_path() -> Path:
-    return LOG_DIR / "lab-web-error.log"
 
 
 def _web_auth_log_path() -> Path:
