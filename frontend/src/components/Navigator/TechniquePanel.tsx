@@ -5,7 +5,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { attackApi } from '@/api/client';
+import { attackApi, simulationApi } from '@/api/client';
 import { loadTechniqueReferenceIndex, techniqueReferenceUrl, getEcosystemLinks } from '@/config/references';
 import { useAppStore } from '@/store';
 import { LLMChat } from './LLMChat';
@@ -35,6 +35,12 @@ export function TechniquePanel({ attackId, onClose }: Props) {
   const techniqueReferences = referenceIndex[attackId] || [];
   const { data: reports = [] } = useQuery({ queryKey: ['technique-reports', attackId], queryFn: () => getTechniqueReports(attackId) });
   const { data: resources = [] } = useQuery({ queryKey: ['technique-resources', attackId], queryFn: () => getTechniqueResources(attackId) });
+  const { data: simulationCatalog = [] } = useQuery({
+    queryKey: ['simulation-catalog'],
+    queryFn: simulationApi.catalog,
+    staleTime: 5 * 60 * 1000,
+  });
+  const simulation = simulationCatalog.find(item => item.technique_id === attackId);
   const assessment = techniqueAssessments[attackId] ?? {};
 
   return (
@@ -60,6 +66,14 @@ export function TechniquePanel({ attackId, onClose }: Props) {
           </button>
           <button onClick={() => navigator.clipboard.writeText(`${location.origin}/navigator?technique=${attackId}`)}
             className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Link</button>
+          {simulation && (
+            <a
+              href={`/attack-simulation/${simulation.id}`}
+              className="rounded bg-green-900 px-2 py-1 text-xs text-green-100 hover:bg-green-800"
+            >
+              Attack Simulation
+            </a>
+          )}
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-white transition-colors text-lg leading-none"

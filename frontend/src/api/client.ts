@@ -1858,6 +1858,10 @@ export interface AttackSimulationRun {
     };
     log_file?: string;
     web_access_log_file?: string;
+    web_server_access_log_file?: string;
+    web_security_log_file?: string;
+    web_error_log_file?: string;
+    web_auth_log_file?: string;
     request_count?: number;
     success_count?: number;
     events?: Array<{
@@ -1890,6 +1894,10 @@ export interface AttackSimulationLogEvent {
   status?: number;
   duration_ms?: number;
   response_bytes?: number;
+  raw_line?: string;
+  message?: string;
+  severity?: string;
+  matched_canaries?: string[];
   headers?: Record<string, string>;
   [key: string]: unknown;
 }
@@ -1908,14 +1916,21 @@ export interface AttackSimulationForwardResult {
   ok: boolean;
   status: number;
   destination_url: string;
+  connection_mode: 'auto' | 'direct' | 'docker_host';
   source: string;
   run_id: string;
   event_count: number;
   duration_ms: number;
+  http_fallback_used: boolean;
+  fallback_note: string;
+  payload_format: 'per_event' | 'json_lines' | 'envelope';
+  sent_event_count: number;
   error: string;
   response_preview: string;
   response_headers: Record<string, string>;
 }
+
+export type AttackSimulationLogSource = 'web' | 'run' | 'access' | 'security' | 'error' | 'auth';
 
 export interface AttackSimulationManualResult {
   result_id: string;
@@ -1938,14 +1953,21 @@ export const simulationApi = {
     http.post('/simulation/plan', payload).then(r => r.data),
   run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationRun> =>
     http.post('/simulation/run', payload).then(r => r.data),
-  logs: (params: { source?: 'web' | 'run'; run_id?: string; limit?: number }): Promise<AttackSimulationLogs> =>
+  logs: (params: { source?: AttackSimulationLogSource; run_id?: string; limit?: number }): Promise<AttackSimulationLogs> =>
     http.get('/simulation/logs', { params }).then(r => r.data),
   forwardLogs: (payload: {
-    source: 'web' | 'run';
+    source: AttackSimulationLogSource;
     run_id?: string;
     destination_url: string;
     limit?: number;
-    bearer_token?: string;
+    auth_type?: 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
+    username?: string;
+    password?: string;
+    token?: string;
+    header_name?: string;
+    connection_mode?: 'auto' | 'direct' | 'docker_host';
+    allow_http_fallback?: boolean;
+    payload_format?: 'per_event' | 'json_lines' | 'envelope';
   }): Promise<AttackSimulationForwardResult> =>
     http.post('/simulation/forward-logs', payload).then(r => r.data),
   manualResult: (payload: {

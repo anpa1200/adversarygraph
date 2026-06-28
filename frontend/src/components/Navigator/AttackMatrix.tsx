@@ -76,6 +76,8 @@ interface Props extends Pick<MatrixData, 'tactics' | 'techniquesByTactic' | 'sub
   overlayTechniques:  Set<string>;
   comparisonLayers: ComparisonLayer[];
   coverageTechniques: Set<string>;
+  simulationTechniques?: Set<string>;
+  simulationMode?: boolean;
   expandedTechniques: Set<string>;
   onToggleTechnique:  (id: string) => void;
   onToggleExpanded:   (id: string) => void;
@@ -92,6 +94,8 @@ export function AttackMatrix({
   overlayTechniques,
   comparisonLayers,
   coverageTechniques,
+  simulationTechniques = new Set<string>(),
+  simulationMode = false,
   expandedTechniques,
   onToggleTechnique,
   onToggleExpanded,
@@ -161,6 +165,8 @@ export function AttackMatrix({
             overlayTechniques={overlayTechniques}
             comparisonLayers={comparisonLayers}
             coverageTechniques={coverageTechniques}
+            simulationTechniques={simulationTechniques}
+            simulationMode={simulationMode}
             expandedTechniques={expandedTechniques}
             onToggle={handleToggle}
             onToggleExpanded={handleExpanded}
@@ -182,6 +188,8 @@ interface ColumnProps {
   overlayTechniques: Set<string>;
   comparisonLayers: ComparisonLayer[];
   coverageTechniques: Set<string>;
+  simulationTechniques: Set<string>;
+  simulationMode: boolean;
   expandedTechniques: Set<string>;
   onToggle: (id: string) => void;
   onToggleExpanded: (id: string) => void;
@@ -196,6 +204,8 @@ function TacticColumn({
   overlayTechniques,
   comparisonLayers,
   coverageTechniques,
+  simulationTechniques,
+  simulationMode,
   expandedTechniques,
   onToggle,
   onToggleExpanded,
@@ -246,6 +256,8 @@ function TacticColumn({
               overlayTechniques={overlayTechniques}
               comparisonLayers={comparisonLayers}
               covered={coverageTechniques.has(tech.attack_id)}
+              simulationAvailable={simulationTechniques.has(tech.attack_id)}
+              simulationMode={simulationMode}
               onToggle={onToggle}
               onToggleExpanded={onToggleExpanded}
             />
@@ -258,6 +270,8 @@ function TacticColumn({
                   overlayTechniques={overlayTechniques}
                   comparisonLayers={comparisonLayers}
                   covered={coverageTechniques.has(sub.attack_id)}
+                  simulationAvailable={simulationTechniques.has(sub.attack_id)}
+                  simulationMode={simulationMode}
                   onToggle={onToggle}
                 />
               ))}
@@ -278,16 +292,20 @@ interface ParentCellProps {
   overlayTechniques: Set<string>;
   comparisonLayers: ComparisonLayer[];
   covered: boolean;
+  simulationAvailable: boolean;
+  simulationMode: boolean;
   onToggle: (id: string) => void;
   onToggleExpanded: (id: string) => void;
 }
 
 function ParentCell({
   tech, hasSubs, expanded,
-  selectedTechniques, overlayTechniques, comparisonLayers, covered,
+  selectedTechniques, overlayTechniques, comparisonLayers, covered, simulationAvailable, simulationMode,
   onToggle, onToggleExpanded,
 }: ParentCellProps) {
-  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
+  const c = simulationMode && simulationAvailable
+    ? { bg: '#064e3b', border: '#22c55e', id: '#bbf7d0', name: '#f0fdf4' }
+    : cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
   const tags = layerTags(tech.attack_id, comparisonLayers);
 
   return (
@@ -352,6 +370,8 @@ function ParentCell({
         </button>
       )}
       {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
+      {simulationAvailable && !simulationMode && <span title="Attack Simulation available" className="absolute right-1 top-1 text-[11px] leading-none text-red-400">⚑</span>}
+      {simulationAvailable && simulationMode && <span title="Click to configure this simulation" className="absolute right-1 top-1 rounded bg-green-950 px-1 text-[8px] font-semibold text-green-200">SIM</span>}
       {tags.length > 0 && <LayerTags tags={tags} />}
     </div>
   );
@@ -365,11 +385,15 @@ interface SubCellProps {
   overlayTechniques: Set<string>;
   comparisonLayers: ComparisonLayer[];
   covered: boolean;
+  simulationAvailable: boolean;
+  simulationMode: boolean;
   onToggle: (id: string) => void;
 }
 
-function SubtechCell({ tech, selectedTechniques, overlayTechniques, comparisonLayers, covered, onToggle }: SubCellProps) {
-  const c = cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
+function SubtechCell({ tech, selectedTechniques, overlayTechniques, comparisonLayers, covered, simulationAvailable, simulationMode, onToggle }: SubCellProps) {
+  const c = simulationMode && simulationAvailable
+    ? { bg: '#064e3b', border: '#22c55e', id: '#bbf7d0', name: '#f0fdf4' }
+    : cellColors(tech.attack_id, selectedTechniques, overlayTechniques, comparisonLayers);
   const tags = layerTags(tech.attack_id, comparisonLayers);
 
   return (
@@ -422,6 +446,8 @@ function SubtechCell({ tech, selectedTechniques, overlayTechniques, comparisonLa
         {tech.name}
       </div>
       {covered && <span title="Detection/hunt coverage" className="absolute right-1 bottom-1 w-2 h-2 rounded-full bg-green-500 ring-1 ring-green-300" />}
+      {simulationAvailable && !simulationMode && <span title="Attack Simulation available" className="absolute right-1 top-1 text-[10px] leading-none text-red-400">⚑</span>}
+      {simulationAvailable && simulationMode && <span title="Click to configure this simulation" className="absolute right-1 top-1 rounded bg-green-950 px-1 text-[7px] font-semibold text-green-200">SIM</span>}
       {tags.length > 0 && <LayerTags tags={tags} compact />}
     </button>
   );

@@ -30,6 +30,16 @@
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports, IOC context, malware-analysis findings, and operational telemetry to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
+v5 expands Attack Simulation with a local webserver telemetry lab for ATT&CK
+web TTP validation: fingerprinting, public exposure checks, path discovery,
+traversal, SQLi/XSS, SSRF, command-injection, web-shell, upload/download,
+exposed secret/config/key paths, failed-login, HTTP beacon, and
+brute-force, password-spray, user-enumeration, HTTP beacon, and
+exfiltration-shaped canaries. In Docker Compose the API performs real HTTP
+attack flows against the `attack-lab-web` target container, and the target
+webserver writes real access, security, error, auth, and JSONL telemetry streams
+that can be forwarded to SIEM collectors for detection engineering validation.
+
 > **Rename note:** AdversaryGraph is the canonical product name. Legacy public URLs are preserved as static redirect pages where possible.
 
 **Live Web Workspace:** https://1200km.com/threat-matrix/
@@ -304,7 +314,7 @@ also available at [`docs/demo-videos/dfir-report-ai-analysis-compare.gif`](docs/
 | **Compare — Reports** | Browse stored AI analyses (DB 2); re-run group-similarity comparison without re-calling the LLM |
 | **Sector Intelligence** | Local actor relevance scoring by client sector, geography, environment keywords, activity window, ATT&CK campaign recency, and MISP Galaxy evidence |
 | **Asset Attack Surface Mapping** | Upload CSV/JSON/TXT asset inventories or paste host/IP/service lists, normalize exposed assets, score internet/internal/third-party surfaces, generate an attack surface matrix, propose likely entry points, ATT&CK technique candidates, priority actions, validation gaps, and optional AI-enriched executive summaries. See [Asset Attack Surface Mapping](docs/asset-attack-surface.md). |
-| **Attack Simulation** | Choose an ATT&CK TTP first, then open a dedicated simulation workspace to configure approved lab targets, prepare safe allowlisted validation plans, run benign web simulations against the built-in local telemetry server, save JSONL request/access logs, view real-time attack logs, forward generated telemetry to an HTTP(S) SIEM collector, and capture manual lab evidence without exploit execution or arbitrary command execution. See [Attack Simulation](docs/attack-simulation.md). |
+| **Attack Simulation** | Choose an ATT&CK TTP first, then open a dedicated simulation workspace to configure approved lab targets, prepare safe allowlisted validation plans, run web attack flows against the Docker `attack-lab-web` target, save target-owned JSONL plus real access/security/error/auth logs, view real-time attack logs, forward generated telemetry to an HTTP(S) SIEM collector with IP/URL input, direct/Docker-host routing, and none/bearer/token/basic/custom-header auth, and capture manual lab evidence without arbitrary external targets. See [Attack Simulation](docs/attack-simulation.md). |
 | **IOC Intelligence** | Local source-backed IOC storage with ThreatFox/OTX/Malpedia sync, global IOC Library search, MISP/custom feed connection, actor IOC tabs, IOC-to-TTP mapping, freshness filtering, confidence, source links, VT check, and CSV export |
 | **VirusTotal Lookup** | On-demand IOC reputation lookup for IPs, domains, URLs, and hashes with clean verdicts, extracted ATT&CK TTPs, local actor matches, and matrix/My TTP actions |
 | **DFIR Examples** | Indexed public DFIR Report examples with TTP/actor metadata and a local PDF workflow for private AI analysis |

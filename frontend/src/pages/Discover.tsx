@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { aptApi, attackApi, iocApi, syncApi, systemApi, type SelfTestResult } from '@/api/client';
+import { aptApi, attackApi, iocApi, simulationApi, syncApi, systemApi, type SelfTestResult } from '@/api/client';
 import { loadReportIndex } from '@/config/intelligence';
 import { useAppStore } from '@/store';
 import { Header } from '@/components/Layout/Header';
@@ -30,6 +30,11 @@ export function Discover() {
     queryFn: () => attackApi.techniques({ domain, version: version ?? undefined }),
   });
   const { data: reports } = useQuery({ queryKey: ['report-index'], queryFn: loadReportIndex });
+  const { data: simulationCatalog = [] } = useQuery({
+    queryKey: ['simulation-catalog'],
+    queryFn: simulationApi.catalog,
+    staleTime: 5 * 60 * 1000,
+  });
   const { data: sources = [] } = useQuery({ queryKey: ['discover-ioc-sources'], queryFn: iocApi.sources });
   const { data: syncStatus } = useQuery({ queryKey: ['discover-sync-status'], queryFn: syncApi.status });
   const selfTest = useMutation({ mutationFn: systemApi.selftest });
@@ -52,6 +57,13 @@ export function Discover() {
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
+  const simulationByTechnique = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of simulationCatalog) {
+      if (!map.has(item.technique_id)) map.set(item.technique_id, item.id);
+    }
+    return map;
+  }, [simulationCatalog]);
   const selectedCount = selectedTechniques.size;
   const missingCoverageCount = Math.max(0, selectedTechniques.size - coverageTechniques.size);
   const enabledSources = sources.filter(source => source.enabled);
@@ -204,10 +216,23 @@ export function Discover() {
               {trending.map(item => (
                 <button key={item.id} onClick={() => navigate(`/navigator?technique=${item.id}`)} className="list-row">
                   <span className="min-w-0">
-                    <b>{item.id}</b>
+                    <b>{item.id} {simulationByTechnique.has(item.id) && <span title="Attack Simulation available" className="text-red-400">⚑</span>}</b>
                     <small>{item.name}</small>
                   </span>
-                  <small className="shrink-0 text-right">{item.count} reports</small>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {simulationByTechnique.get(item.id) && (
+                      <span
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          navigate(`/attack-simulation/${simulationByTechnique.get(item.id)}`);
+                        }}
+                        className="rounded bg-green-950 px-2 py-1 text-[10px] text-green-300"
+                      >
+                        Sim
+                      </span>
+                    )}
+                    <small className="text-right">{item.count} reports</small>
+                  </span>
                 </button>
               ))}
             </Panel>

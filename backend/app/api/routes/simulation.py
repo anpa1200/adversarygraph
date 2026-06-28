@@ -29,11 +29,18 @@ class ManualResultRequest(BaseModel):
 
 
 class ForwardLogsRequest(BaseModel):
-    source: str = Field(default="web", pattern="^(web|run)$")
+    source: str = Field(default="access", pattern="^(web|run|access|security|error|auth)$")
     run_id: str = Field(default="", max_length=80)
     destination_url: str = Field(..., min_length=8, max_length=1000)
     limit: int = Field(default=100, ge=1, le=500)
-    bearer_token: str = Field(default="", max_length=2048)
+    auth_type: str = Field(default="none", pattern="^(none|bearer|token|basic|custom_header)$")
+    username: str = Field(default="", max_length=256)
+    password: str = Field(default="", max_length=2048)
+    token: str = Field(default="", max_length=4096)
+    header_name: str = Field(default="", max_length=80)
+    connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
+    allow_http_fallback: bool = Field(default=True)
+    payload_format: str = Field(default="per_event", pattern="^(per_event|json_lines|envelope)$")
 
 
 @router.get("/catalog")
@@ -71,7 +78,14 @@ async def forward_logs(
             run_id=payload.run_id,
             destination_url=payload.destination_url,
             limit=payload.limit,
-            bearer_token=payload.bearer_token,
+            auth_type=payload.auth_type,
+            username=payload.username,
+            password=payload.password,
+            token=payload.token,
+            header_name=payload.header_name,
+            connection_mode=payload.connection_mode,
+            allow_http_fallback=payload.allow_http_fallback,
+            payload_format=payload.payload_format,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -84,7 +98,12 @@ async def forward_logs(
         details={
             "source": payload.source,
             "run_id": payload.run_id,
-            "destination_url": payload.destination_url,
+            "destination_url": result["destination_url"],
+            "auth_type": payload.auth_type,
+            "auth_header": payload.header_name if payload.auth_type == "custom_header" else "",
+            "connection_mode": payload.connection_mode,
+            "http_fallback_allowed": payload.allow_http_fallback,
+            "payload_format": payload.payload_format,
             "event_count": result["event_count"],
             "ok": result["ok"],
             "status": result["status"],

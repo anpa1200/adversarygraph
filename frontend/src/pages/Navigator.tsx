@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
-import { aptApi, exportApi } from '@/api/client';
+import { aptApi, exportApi, simulationApi } from '@/api/client';
 import { useAttackMatrix } from '@/hooks/useAttackMatrix';
 import { AttackMatrix } from '@/components/Navigator/AttackMatrix';
 import { LayerControls } from '@/components/Navigator/LayerControls';
@@ -55,6 +55,15 @@ export function Navigator() {
     enabled: !!overlayGroupId,
     staleTime: 10 * 60 * 1000,
   });
+  const { data: simulationCatalog = [] } = useQuery({
+    queryKey: ['simulation-catalog'],
+    queryFn: simulationApi.catalog,
+    staleTime: 5 * 60 * 1000,
+  });
+  const simulationTechniqueIds = useMemo(
+    () => new Set(simulationCatalog.map(item => item.technique_id)),
+    [simulationCatalog],
+  );
 
   useEffect(() => {
     if (overlayGroup) setOverlayTechniques(overlayGroup.techniques.map(t => t.attack_id));
@@ -178,6 +187,7 @@ export function Navigator() {
               overlayTechniques={overlayTechniques}
               comparisonLayers={comparisonLayers}
               coverageTechniques={coverageTechniques}
+              simulationTechniques={simulationTechniqueIds}
               expandedTechniques={expandedTechniques}
               onToggleTechnique={handleToggle}
               onToggleExpanded={toggleExpanded}
