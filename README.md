@@ -26,19 +26,21 @@
 
 **Current release: v5.0.0 · [Release Summary](docs/release-summary-v5.0.0.md) · [Attack Simulation](docs/attack-simulation.md) · [Malware Analysis Guide](docs/malware-analysis-guide.md) · [Official Platform Guide](https://1200km.com/adversarygraph-docs/platform-guide/) · [Official Malware Analysis Docs](https://1200km.com/adversarygraph-docs/malware-analysis/) · [Release Article Draft](docs/publication-drafts/adversarygraph-v4-malware-analysis.md) · [From Log to Report Workflow](docs/publication-drafts/medium-adversarygraph-from-log-to-report-ioc-investigation.md) · [Live Intelligence Workspace](https://1200km.com/threat-matrix/) · [Documentation & Usage Guide](https://1200km.com/adversarygraph-docs/) · [Capabilities](https://1200km.com/adversarygraph-docs/capabilities/) · [Use Cases](https://1200km.com/adversarygraph/use-cases.html) · [1200km Article](https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html) · [Published Medium Article](https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e)**
 
-**Current v4.1 visual documentation:** [Platform Guide](docs/adversarygraph-platform-guide.md) · [v4.1 Screenshot Manifest](docs/assets/adversarygraph-v4.1-platform/manifest.md) · [v4 Platform Screenshot Manifest](docs/assets/adversarygraph-v4-platform/manifest.md) · [Malware Screenshot Manifest](docs/assets/malware-analysis-v4/manifest.md)
+**Current visual documentation:** [Platform Guide](docs/adversarygraph-platform-guide.md) · [v5 Attack Simulation Screenshot Manifest](docs/assets/attack-simulation-v5/manifest.md) · [v4.1 Screenshot Manifest](docs/assets/adversarygraph-v4.1-platform/manifest.md) · [v4 Platform Screenshot Manifest](docs/assets/adversarygraph-v4-platform/manifest.md) · [Malware Screenshot Manifest](docs/assets/malware-analysis-v4/manifest.md)
 
 AdversaryGraph AI is a self-hosted CTI-to-detection workbench for mapping threat reports, IOC context, malware-analysis findings, and operational telemetry to MITRE ATT&CK, comparing TTP overlap with known groups and campaigns, identifying detection gaps, and exporting analyst-ready outputs.
 
-v5 expands Attack Simulation with a local webserver telemetry lab for ATT&CK
-web TTP validation: fingerprinting, public exposure checks, path discovery,
-traversal, SQLi/XSS, SSRF, command-injection, web-shell, upload/download,
-exposed secret/config/key paths, failed-login, HTTP beacon, and
-brute-force, password-spray, user-enumeration, HTTP beacon, and
-exfiltration-shaped canaries. In Docker Compose the API performs real HTTP
-attack flows against the `attack-lab-web` target container, and the target
-webserver writes real access, security, error, auth, and JSONL telemetry streams
-that can be forwarded to SIEM collectors for detection engineering validation.
+v5 expands Attack Simulation into a TTP-first validation workspace. It includes
+a local webserver telemetry lab for ATT&CK web TTP validation, real-time
+target-side logs, SIEM forwarding with saved non-secret destinations, and an AI
+Attack Assistant for coherent multi-phase detection drills. The assistant can
+build selected-TTP, actor-oriented, or Challenge Me scenarios, render an
+attack-chain graph, explain the scenario, and send source-shaped Windows Event,
+Sysmon, EDR, DNS, proxy, firewall, web, and WAF telemetry to a configured SIEM
+collector. In Docker Compose the API performs real HTTP attack flows against
+the `attack-lab-web` target container, and the target webserver writes real
+access, security, error, auth, and JSONL telemetry streams for parser and rule
+validation.
 
 > **Rename note:** AdversaryGraph is the canonical product name. Legacy public URLs are preserved as static redirect pages where possible.
 

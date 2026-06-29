@@ -1803,6 +1803,16 @@ export interface AttackSimulationCatalogItem {
   risk_level: number;
   target_types: string[];
   description: string;
+  detection_brief?: {
+    technique_id: string;
+    title: string;
+    risk_level: number;
+    tags: string[];
+    adversary_activity: string;
+    production_log_sources: string;
+    detection_logic: string;
+    discriminators_tuning: string;
+  } | null;
   expected_telemetry: string[];
   safety_controls: string[];
   steps: string[];
@@ -1931,7 +1941,75 @@ export interface AttackSimulationForwardResult {
   response_headers: Record<string, string>;
 }
 
+export interface AttackSimulationAiAssistantResult {
+  run_id: string;
+  mode: 'ttps' | 'actor' | 'challenge';
+  ai_provider: 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
+  ai_model: string;
+  ai_used: boolean;
+  ai_error: string;
+  ai_planner_summary: string;
+  scenario?: AttackSimulationAiAssistantScenario | null;
+  complicated_attack: boolean;
+  actor_profile: string;
+  technique_ids: string[];
+  attack_plan: {
+    summary: string;
+    mode: string;
+    ai_provider?: string;
+    complicated_attack?: boolean;
+    payload_style?: string;
+    actor_profile: string;
+    analyst_goal: string;
+    kill_chain: Array<{
+      step: number;
+      technique_id: string;
+      event_source: string;
+      event_id: string;
+      detection_goal: string;
+      focus: string[];
+      flow_stage?: string;
+      source_format?: string;
+      event_count?: number;
+    }>;
+    validation_note: string;
+  };
+  events: Array<Record<string, unknown>>;
+  delivery: AttackSimulationForwardResult;
+  log_file: string;
+}
+
+export interface AttackSimulationAiAssistantScenario {
+  id: string;
+  name: string;
+  difficulty: string;
+  description: string;
+  technique_ids: string[];
+  preconditions: string[];
+  success_criteria: string[];
+  telemetry_sources: string[];
+  expected_detections: string[];
+  tags: string[];
+}
+
 export type AttackSimulationLogSource = 'attacked_server' | 'web' | 'run' | 'access' | 'security' | 'error' | 'auth' | 'endpoint';
+
+export interface AttackSimulationSiemDestination {
+  id: string;
+  destination_url: string;
+  auth_type: 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
+  username: string;
+  header_name: string;
+  connection_mode: 'auto' | 'direct' | 'docker_host';
+  allow_http_fallback: boolean;
+  payload_format: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
+  source: AttackSimulationLogSource;
+  last_status: number;
+  last_ok: boolean;
+  last_event_count: number;
+  last_error: string;
+  updated_at: string;
+}
 
 export interface AttackSimulationManualResult {
   result_id: string;
@@ -1950,12 +2028,29 @@ export const simulationApi = {
     http.get('/simulation/catalog').then(r => r.data),
   targets: (): Promise<AttackSimulationTarget[]> =>
     http.get('/simulation/targets').then(r => r.data),
+  aiAssistantScenarios: (): Promise<AttackSimulationAiAssistantScenario[]> =>
+    http.get('/simulation/ai-assistant/scenarios').then(r => r.data),
   plan: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationPlan> =>
     http.post('/simulation/plan', payload).then(r => r.data),
   run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationRun> =>
     http.post('/simulation/run', payload).then(r => r.data),
   logs: (params: { source?: AttackSimulationLogSource; run_id?: string; limit?: number }): Promise<AttackSimulationLogs> =>
     http.get('/simulation/logs', { params }).then(r => r.data),
+  siemDestinations: (): Promise<AttackSimulationSiemDestination[]> =>
+    http.get('/simulation/siem-destinations').then(r => r.data),
+  saveSiemDestination: (payload: {
+    destination_url: string;
+    auth_type?: 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
+    username?: string;
+    header_name?: string;
+    connection_mode?: 'auto' | 'direct' | 'docker_host';
+    allow_http_fallback?: boolean;
+    payload_format?: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
+    source?: AttackSimulationLogSource;
+  }): Promise<AttackSimulationSiemDestination> =>
+    http.post('/simulation/siem-destinations', payload).then(r => r.data),
+  clearSiemDestinations: (): Promise<{ deleted: number }> =>
+    http.delete('/simulation/siem-destinations').then(r => r.data),
   forwardLogs: (payload: {
     source: AttackSimulationLogSource;
     run_id?: string;
@@ -1971,6 +2066,25 @@ export const simulationApi = {
     payload_format?: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
   }): Promise<AttackSimulationForwardResult> =>
     http.post('/simulation/forward-logs', payload).then(r => r.data),
+  aiAssistantTelemetry: (payload: {
+    mode: 'ttps' | 'actor' | 'challenge';
+    ai_provider?: 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
+    complicated_attack?: boolean;
+    scenario_id?: string;
+    technique_ids?: string[];
+    actor_profile?: string;
+    analyst_goal?: string;
+    destination_url: string;
+    auth_type?: 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
+    username?: string;
+    password?: string;
+    token?: string;
+    header_name?: string;
+    connection_mode?: 'auto' | 'direct' | 'docker_host';
+    allow_http_fallback?: boolean;
+    payload_format?: 'raw_lines' | 'per_event' | 'json_lines' | 'envelope';
+  }): Promise<AttackSimulationAiAssistantResult> =>
+    http.post('/simulation/ai-assistant/telemetry', payload).then(r => r.data),
   manualResult: (payload: {
     simulation_id: string;
     target_id: string;

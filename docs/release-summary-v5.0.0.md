@@ -5,6 +5,11 @@ workflow for choosing a TTP, running benign web simulations against a built-in
 local telemetry target, viewing real-time attack logs, and forwarding generated
 telemetry to HTTP(S) SIEM collectors.
 
+The release also adds an AI Attack Assistant for detection engineering drills:
+analysts can generate coherent multi-phase telemetry stories, send source-shaped
+events to a SIEM collector, review an attack-chain graph, and open an
+explanation of the scenario logic.
+
 ## Highlights
 
 - New **Attack Simulation** workspace with TTP-first selection.
@@ -27,6 +32,16 @@ telemetry to HTTP(S) SIEM collectors.
 - SIEM forwarding for generated telemetry with HTTP(S), IP/URL destination
   input, direct/Docker-host/auto connection routing, none/bearer/token/basic/
   custom-header authentication, and destination guardrails.
+- Last 10 non-secret SIEM destinations are retained for repeated parser and
+  rule validation.
+- AI Attack Assistant with selected-TTP, actor-oriented, and Challenge Me modes.
+- 25 named coherent scenario templates for repeatable kill-chain validation.
+- Complicated attack mode for longer multi-source flows across web, WAF, DNS,
+  proxy, firewall, Windows Security, Sysmon, and EDR-shaped telemetry.
+- Attack-chain graph with ordered phases, ATT&CK IDs, telemetry sources, event
+  counts, and detection goals.
+- Explain Attack panel for analyst-facing scenario rationale and validation
+  focus.
 - Compatibility redirect from `/external-simulation` to `/attack-simulation`.
 
 ## Safety Boundaries
@@ -42,4 +57,5 @@ telemetry to HTTP(S) SIEM collectors.
 ## Documentation
 
 - Detailed module docs: [`docs/attack-simulation.md`](attack-simulation.md)
+- Screenshot manifest: [`docs/assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - Release notes: [`docs/release-notes/v5.0.0.md`](release-notes/v5.0.0.md)

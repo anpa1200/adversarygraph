@@ -4,6 +4,16 @@ Attack Simulation prepares and records ATT&CK-aligned validation scenarios
 for approved lab targets. It is designed for detection validation, telemetry
 verification, and coverage-gap documentation.
 
+The v5 workspace combines three related workflows:
+
+- TTP-first simulation selection from an ATT&CK-style matrix.
+- Real lab-target attack flows that produce target-side telemetry.
+- AI-assisted kill-chain telemetry generation for SIEM rule validation,
+  scenario drills, and detection engineering exercises.
+
+Screenshots for this release are stored in
+[`docs/assets/attack-simulation-v5`](assets/attack-simulation-v5/manifest.md).
+
 ## Safety Model
 
 The MVP is intentionally conservative:
@@ -24,6 +34,79 @@ The MVP is intentionally conservative:
 The module creates dry-run plans, expected telemetry checklists, and manual
 validation records. Analysts must attach evidence from an authorized lab run
 before marking detection coverage as passed.
+
+## Visual Walkthrough
+
+### TTP-First Simulation Matrix
+
+![Attack Simulation matrix](assets/attack-simulation-v5/01-attack-simulation-matrix.png)
+
+The Attack Simulation landing page shows the ATT&CK matrix first. Techniques
+with available simulations are marked as runnable cells so an analyst starts
+from the behavior they want to validate, not from a generic form.
+
+### Per-TTP Configuration
+
+![Per-TTP configuration page](assets/attack-simulation-v5/02-ttp-configuration-page.png)
+
+After selecting a technique, the workspace opens a dedicated configuration page.
+The left panel explains the selected scenario, adversary activity, production
+log sources, detection logic, discriminators, and validation gaps. The analyst
+can run a lab simulation, inspect live telemetry, forward events to a SIEM, or
+use the AI assistant to build a broader kill chain.
+
+### SIEM Forwarding
+
+![SIEM forwarding configuration](assets/attack-simulation-v5/03-siem-forwarding-configuration.png)
+
+Forwarding supports HTTP(S) collectors, raw host/IP inputs, route selection,
+payload format selection, source selection, and authentication modes. Recent
+destinations are saved so repeated validation against the same collector does
+not require retyping the URL. Secret values such as bearer tokens and passwords
+are not stored.
+
+### AI Scenario Library
+
+![AI scenario library](assets/attack-simulation-v5/04-ai-scenario-library.png)
+
+The AI Attack Assistant can work from a selected TTP, a named threat actor, or
+Challenge Me mode. For repeatable work, the Scenario Library contains named
+coherent kill-chain templates with preconditions, success criteria, expected
+detections, and ordered phase definitions.
+
+### Attack Chain Graph
+
+![AI generated attack chain graph](assets/attack-simulation-v5/05-ai-generated-attack-chain-graph.png)
+
+Generated scenarios include an attack-chain graph. Each phase shows the ATT&CK
+technique, phase order, telemetry source, event format, event count, and
+detection goal. This helps analysts verify that the story is a plausible
+sequence rather than a random set of unrelated events.
+
+### Explain Attack
+
+![Explain attack panel](assets/attack-simulation-v5/06-explain-attack-panel.png)
+
+Challenge and AI-generated scenarios expose an **Explain attack** action. The
+explanation summarizes the kill chain, phase rationale, expected telemetry,
+detection opportunities, and assumptions that must be validated in the SIEM.
+
+### Real-Time Logs
+
+![Real-time attack logs](assets/attack-simulation-v5/07-real-time-attack-logs.png)
+
+The real-time log panel tails target-side logs. For web scenarios, this includes
+the Docker lab web server access log, security/WAF-style log, error log, auth
+log, structured web JSONL, endpoint fixture log, or merged attacked-server
+events.
+
+### Delivery and History
+
+![SIEM history and delivery](assets/attack-simulation-v5/08-siem-history-and-delivery.png)
+
+Delivery status reports how many events were posted to the configured SIEM
+collector and the HTTP result. The UI keeps the last 10 non-secret destinations
+for fast retesting.
 
 ## Target-Specific Lab Instances
 
@@ -208,6 +291,77 @@ scenario in a wider lab.
 9. Paste SIEM/WAF/firewall/DNS/proxy/EDR/IdP evidence into the manual result form
    when validating beyond the local lab server.
 10. Mark the detection result as `passed`, `failed`, `partial`, or `not_proven`.
+
+## AI Attack Assistant
+
+The AI Attack Assistant builds SIEM-validation telemetry stories. It does not
+execute malware, exploit targets, or run arbitrary commands. The assistant sends
+generated telemetry to the configured SIEM destination so detection rules,
+parsers, dashboards, and correlation logic can be tested.
+
+Assistant modes:
+
+- **Selected TTP** — build a focused telemetry sequence around the selected
+  technique.
+- **Threat actor** — build a coherent actor-inspired validation scenario using
+  ATT&CK techniques and telemetry sources relevant to that actor profile.
+- **Challenge me** — generate a multi-phase detection challenge for analyst
+  training and blind rule validation.
+
+Planning controls:
+
+- **LLM provider** selects Claude, OpenAI, Gemini, MiniMax, or a local
+  OpenAI-compatible model when configured.
+- **Complicated attack** asks the assistant for a longer, multi-source flow with
+  Windows Event, Sysmon, EDR, DNS, proxy, firewall, web, and WAF-style events.
+- If the selected LLM is unavailable or times out, AdversaryGraph falls back to
+  deterministic scenario templates so the workflow remains repeatable. The UI
+  reports whether AI planning succeeded or a deterministic fallback was used.
+
+Event-shape rules:
+
+- Windows Security events keep Windows Event Log structure and event IDs such as
+  `4624`, `4625`, `4698`, and `1102`.
+- Sysmon events keep Sysmon-style provider/channel structure and event IDs such
+  as `1`, `3`, `7`, `10`, `11`, `13`, and `22`.
+- EDR, proxy, DNS, firewall, WAF, and web events are sent in source/vendor
+  shaped formats instead of being flattened into one generic schema.
+- The attack-chain graph remains the high-level explanation; the SIEM receives
+  source-shaped event bodies.
+
+## Named AI Scenario Library
+
+The current library contains 25 named coherent scenarios. They are designed as
+plausible detection-validation stories with ordered phases, not as random event
+bundles.
+
+| Scenario | Difficulty | Main validation focus |
+|---|---:|---|
+| Web App to Endpoint Compromise | full intrusion | Reconnaissance, web access, endpoint execution, credential access, persistence, C2/exfiltration |
+| Password Spray to Valid Account Foothold | simple chain | User enumeration, password spray, successful logon, endpoint discovery |
+| SQL Injection to Data Theft | full intrusion | SQLi-shaped web telemetry, database audit style events, staging, exfiltration |
+| Recon to Web Shell Persistence | full intrusion | HTTP discovery, upload/web-shell canaries, persistence-style access |
+| Valid Account to LSASS Access | simple chain | Successful logon, discovery, LSASS access, credential-dumping detections |
+| Password Spray to Exfiltration | full intrusion | Identity attack, valid account, staged collection, proxy upload |
+| XSS Canary to Session Abuse | simple chain | XSS-shaped telemetry, session token misuse, suspicious authenticated actions |
+| SSRF Metadata Probe to C2 | full intrusion | SSRF-shaped requests, metadata access canaries, follow-on beaconing |
+| Ransomware Precursor Chain | full intrusion | Discovery, defense evasion, credential access, mass file change canaries |
+| Living-off-the-Land Transfer and Execution | simple chain | Certutil/BITS/rundll32 style telemetry and process lineage |
+| Internal Discovery After Foothold | simple chain | Host, user, network, process, and service discovery telemetry |
+| Web Enumeration to Password Spray | simple chain | HTTP enumeration followed by identity/authentication failures |
+| Public App Exploit to Persistence | full intrusion | Public web exposure, endpoint execution, Run key/service persistence |
+| Credential Dump to Cloud Upload | full intrusion | LSASS access, archive creation, proxy/cloud upload telemetry |
+| Signed Binary Proxy to C2 | simple chain | LOLBin process creation, suspicious network connection, beacon pattern |
+| FIN7-Style Web, Identity, Persistence | full intrusion | Web entry, credential attack, persistence, lateral discovery signals |
+| APT29-Style Identity and PowerShell | full intrusion | Identity abuse, PowerShell, discovery, C2-style telemetry |
+| Lazarus-Style Delivery and Exfiltration | full intrusion | Delivery, execution, credential access, collection, exfiltration |
+| Noisy Red-Team Drill | noisy drill | High-volume multi-source detections for tuning and dashboard testing |
+| Stealthy Low-Volume Intrusion Chain | full intrusion | Sparse cross-source correlation and low-noise detections |
+| WAF Bypass Retry Chain | simple chain | Repeated web probes with encoding/bypass variation |
+| Service Account Abuse | simple chain | Service-account logon behavior, privilege use, unusual source host |
+| External Recon to Credential Access | full intrusion | Public discovery, credential attack, endpoint credential-access telemetry |
+| C2 Telemetry Validation | atomic chain | DNS/proxy/beacon detections and periodicity checks |
+| Persistence Control Validation | atomic chain | Run key, scheduled task, service, WMI, and startup artifact events |
 
 ## Current Simulation Catalog
 

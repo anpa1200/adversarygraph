@@ -12,8 +12,9 @@
 3. [Modules and Abilities](#modules-and-abilities)
 4. [Module Walkthrough](#module-walkthrough)
 5. [Asset Attack Surface Mapping](#asset-attack-surface-mapping)
-6. [Malware Analysis Extension](#malware-analysis-extension)
-7. [Operating Notes](#operating-notes)
+6. [Attack Simulation](#attack-simulation)
+7. [Malware Analysis Extension](#malware-analysis-extension)
+8. [Operating Notes](#operating-notes)
 
 ## Visual Evidence
 
@@ -23,6 +24,8 @@ The v4.1 Asset Surface and Discover addendum is stored in
 [`docs/assets/adversarygraph-v4.1-platform`](assets/adversarygraph-v4.1-platform/manifest.md).
 The malware-analysis screenshot set is stored in
 [`docs/assets/malware-analysis-v4`](assets/malware-analysis-v4/manifest.md).
+The v5 Attack Simulation screenshot set is stored in
+[`docs/assets/attack-simulation-v5`](assets/attack-simulation-v5/manifest.md).
 
 Both screenshot packs include validation metadata. The platform set records
 route load, expected page text, `1920x1200` dimensions, byte size, mean RGB, and
@@ -32,6 +35,11 @@ nonblank image checks in
 The v4.1 addendum validates the current Discover launcher layout, Asset Surface
 analysis output, saved analysis history, and the white Navigator layer created
 from asset-inventory TTP candidates.
+
+The v5 Attack Simulation set validates the TTP-first simulation matrix, per-TTP
+configuration page, SIEM forwarding controls, AI scenario library, generated
+attack-chain graph, explain-attack panel, real-time log view, and saved SIEM
+destination history.
 
 ## Core Workflow
 
@@ -63,6 +71,7 @@ AI assistant should remain traceable back to evidence.
 | Group vs Group | Select multiple actor profiles; compare shared and exclusive techniques; view overlap matrix, combined matrix, and technique table. |
 | Sector Intel | Rank actors by sector, geography, technology, recency, campaign evidence, and MISP Galaxy context. |
 | Asset Surface | Upload or paste asset inventories; normalize assets, exposure, ports, technologies, and owners; create saved attack-surface cases; build an AI-assisted matrix with risk levels, entry points, ATT&CK candidates, priority actions, validation gaps, and cross-asset findings. |
+| Attack Simulation | Select ATT&CK TTPs, run safe lab simulations, view real-time attacked-server logs, forward telemetry to SIEM collectors, save recent destinations, generate AI-assisted multi-phase attack stories, review attack-chain graphs, and explain validation logic. |
 | RetroHunt | Search historical local intelligence, reports, indicators, techniques, and evidence for repeated patterns. |
 | Knowledge Library | Browse stored reports, references, entities, and investigation source material. |
 | IOC Library | Search observables, source attribution, freshness, enrichment fields, mapped TTPs, and actor links. |
@@ -265,6 +274,50 @@ Representative screenshots:
 | Asset Surface analysis result | ![Asset Surface analysis result](assets/adversarygraph-v4.1-platform/02-asset-surface-analysis.png) |
 | Saved Asset Surface history | ![Saved Asset Surface history](assets/adversarygraph-v4.1-platform/03-asset-surface-history.png) |
 | White asset-surface Navigator layer | ![White asset-surface Navigator layer](assets/adversarygraph-v4.1-platform/04-asset-surface-white-matrix.png) |
+
+## Attack Simulation
+
+Attack Simulation is the v5 detection-validation workspace. Analysts select an
+ATT&CK technique first, open a dedicated simulation page, run approved lab
+scenarios, inspect real-time target-side logs, and forward telemetry to a SIEM
+collector. Web scenarios use the Docker `attack-lab-web` target, which receives
+real HTTP requests and writes target-side NGINX access, security/WAF-style,
+error, auth, and structured JSONL logs.
+
+The AI Attack Assistant adds a second workflow for detection engineering drills.
+It can generate source-shaped telemetry for selected TTPs, actor-oriented
+stories, or Challenge Me scenarios. Complicated mode builds longer coherent
+kill chains across web, WAF, DNS, proxy, firewall, Windows Security, Sysmon, and
+EDR-style sources. The generated attack-chain graph shows phase order,
+technique, event source, event format, event count, and detection purpose.
+
+Use this module to answer:
+
+- Which ATT&CK behaviors already have runnable validation scenarios?
+- Does the lab target emit the telemetry needed by the detection rule?
+- Can the SIEM parser ingest raw web, auth, endpoint, WAF, and source-shaped
+  events correctly?
+- Does correlation logic detect a coherent attack chain rather than one atomic
+  indicator?
+- Which assumptions and validation gaps must an analyst document before marking
+  coverage as passed?
+
+See the dedicated [Attack Simulation](attack-simulation.md) guide for the full
+workflow, safety model, log locations, SIEM forwarding modes, AI assistant
+behavior, and scenario catalog.
+
+Representative screenshots:
+
+| Workflow | Screenshot |
+|---|---|
+| TTP-first simulation matrix | ![Attack Simulation matrix](assets/attack-simulation-v5/01-attack-simulation-matrix.png) |
+| Per-TTP configuration | ![Per-TTP configuration page](assets/attack-simulation-v5/02-ttp-configuration-page.png) |
+| SIEM forwarding controls | ![SIEM forwarding configuration](assets/attack-simulation-v5/03-siem-forwarding-configuration.png) |
+| AI scenario library | ![AI scenario library](assets/attack-simulation-v5/04-ai-scenario-library.png) |
+| Attack-chain graph | ![AI generated attack chain graph](assets/attack-simulation-v5/05-ai-generated-attack-chain-graph.png) |
+| Explain attack panel | ![Explain attack panel](assets/attack-simulation-v5/06-explain-attack-panel.png) |
+| Real-time logs | ![Real-time attack logs](assets/attack-simulation-v5/07-real-time-attack-logs.png) |
+| SIEM destination history | ![SIEM history and delivery](assets/attack-simulation-v5/08-siem-history-and-delivery.png) |
 
 ## Malware Analysis Extension
 

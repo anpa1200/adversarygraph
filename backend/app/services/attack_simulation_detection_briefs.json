@@ -1,0 +1,1197 @@
+{
+  "sim-t1003-lsass-mimikatz-canary": {
+    "adversary_activity": "Reading `lsass.exe` memory extracts plaintext passwords, NTLM hashes, and Kerberos tickets (Mimikatz `sekurlsa::logonpasswords`, `procdump -ma lsass`, `rundll32 comsvcs.dll MiniDump`, task-manager dump, `nanodump`). The fixture posts process/command-line-shaped telemetry but never touches LSASS memory.",
+    "detection_logic": "Alert on any non-allowlisted process opening `lsass.exe` with read/VM access rights, on `comsvcs.dll`+`MiniDump` via rundll32, on `procdump ... lsass`, and on `sekurlsa`/`lsadump`/`mimikatz` strings. `GrantedAccess` to LSASS combined with an unusual `SourceImage` is the core signal.",
+    "discriminators_tuning": "AV/EDR, `MsMpEng.exe`, and some monitoring legitimately access LSASS \u2014 maintain a tight allowlist of those `SourceImage`s; anything outside it accessing LSASS memory is high-severity.",
+    "production_log_sources": "Sysmon EID 10 (ProcessAccess targeting `lsass.exe` with `GrantedAccess` masks like `0x1010`/`0x1410`/`0x143A`), EID 1 (dumping-tool command lines), Defender ASR \"block credential stealing from LSASS\", EDR credential-theft telemetry, EID 11 (an `.dmp` written).",
+    "risk_level": 2,
+    "tags": [
+      "credential-dumping-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1003.001",
+    "title": "LSASS and Mimikatz usage canary"
+  },
+  "sim-t1003-shadow-file-access": {
+    "adversary_activity": "Reading `/etc/shadow` (and `/etc/gshadow`) yields hashed credentials for offline cracking (`cat`/`cp`/`awk` on shadow, copying it out). The fixture posts process/file telemetry but never reads the real file.",
+    "detection_logic": "Add an auditd watch on `/etc/shadow` and `/etc/gshadow` and alert on read/copy by any non-system process or any interactive user, on `cat`/`cp`/`tar`/`scp` referencing shadow, and on shadow access by a web/service account. Read of shadow by an unexpected UID is high-fidelity.",
+    "discriminators_tuning": "`passwd`, `vipw`, PAM, and backup jobs touch shadow legitimately \u2014 allowlist those binaries/paths and alert on ad-hoc reads.",
+    "production_log_sources": "Linux `auditd` (file-watch on `/etc/shadow`: `open`/`openat`/`read` syscalls with the path), `auditd` `execve` for the reading command, EDR file-access telemetry, `/var/log/audit/audit.log`.",
+    "risk_level": 2,
+    "tags": [
+      "credential-dumping-canary",
+      "linux-endpoint"
+    ],
+    "technique_id": "T1003.008",
+    "title": "Linux /etc/shadow access canary"
+  },
+  "sim-t1016-network-config-discovery": {
+    "adversary_activity": "Enumerating local network configuration to orient \u2014 `ipconfig /all`, `netsh interface show`, `route print`, `arp -a`, `Get-NetIPConfiguration`. The fixture records process telemetry without querying networking.",
+    "detection_logic": "Alert on `ipconfig`/`netsh`/`route`/`arp` executed by service/web accounts, spawned by Office/script hosts, or as part of a discovery burst alongside `whoami`/`systeminfo`.",
+    "discriminators_tuning": "Helpdesk, logon scripts, and troubleshooting run these \u2014 single executions by interactive admins are noise; context and clustering are the signal.",
+    "production_log_sources": "Sysmon EID 1 (`Image`, `CommandLine`, `User`, `ParentImage`), Security `4688`; `auditd execve` on Linux for `ip`/`ifconfig`/`route`.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1016",
+    "title": "System network configuration discovery"
+  },
+  "sim-t1018-remote-system-discovery": {
+    "adversary_activity": "Mapping other hosts/domain controllers for lateral movement \u2014 `net view`, `nltest /dclist`, `dsquery computer`, ping sweeps, `arp`. The fixture records process telemetry without querying the network.",
+    "detection_logic": "Alert on `net view /domain`, `nltest /dclist`/`/domain_trusts`, `dsquery` enumeration, and scripted ping sweeps \u2014 particularly by non-admin/service contexts or in a recon burst.",
+    "discriminators_tuning": "Admin and inventory tooling enumerate hosts \u2014 weight on unusual user context and co-occurrence with other discovery/lateral activity.",
+    "production_log_sources": "Sysmon EID 1 (`net.exe view`, `nltest.exe`, `dsquery.exe`), Security `4688`; on DCs, `4661`/`4662` directory-object access.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1018",
+    "title": "Remote system discovery"
+  },
+  "sim-t1021-001-atomic-rdp-network-logon": {
+    "adversary_activity": "An actor moves laterally via RDP using valid/stolen credentials, getting an interactive desktop on a remote host. The fixture emits a Security `4624 SuccessfulLogon`.",
+    "detection_logic": "Alert on `4624` Type 10 from an unusual source workstation/IP, to a host the account never RDPs to, off-hours, or chained host-to-host (RDP pivoting). New `4778` sessions from internal hosts that don't normally originate RDP are a strong lateral signal.",
+    "discriminators_tuning": "Admins and jump-host workflows use RDP heavily \u2014 baseline normal source\u2192destination RDP pairs per account and alert on new pairs and internal lateral chains.",
+    "production_log_sources": "Security `4624` LogonType **10** (RemoteInteractive) and **7** (reconnect), `4778`/`4779` (session connect/disconnect), TerminalServices-RemoteConnectionManager/Operational `1149`, TerminalServices-LocalSessionManager `21`/`25`, network firewall logs for 3389.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1021.001",
+    "title": "Atomic event: Remote Desktop Protocol logon"
+  },
+  "sim-t1021-002-atomic-smb-admin-share-access": {
+    "adversary_activity": "Lateral movement and remote execution use the hidden admin shares (`C$`, `ADMIN$`, `IPC$`) to copy tools and run payloads (PsExec, `copy \\\\host\\C$`). The fixture emits a Security `5140 NetworkShareAccess`.",
+    "detection_logic": "Alert on access to `\\\\*\\ADMIN$`/`\\\\*\\C$`/`\\\\*\\IPC$` from workstations (peer-to-peer admin-share access is abnormal), on a single source touching admin shares on many hosts, and on `5145` showing executable/tool writes to admin shares. Pairs with `7045`/`4624` Type 3 for PsExec-style movement.",
+    "discriminators_tuning": "SCCM, backup, and admin tooling legitimately use admin shares from management servers \u2014 allowlist those servers and alert on workstation-originated and fan-out access. --- # Collection",
+    "production_log_sources": "Security `5140` (share access) and `5145` (detailed file-share access with filename), `4624` Type 3 (the network logon enabling it), Sysmon EID 3, file-server audit logs.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1021.002",
+    "title": "Atomic event: SMB admin share access"
+  },
+  "sim-t1027-atomic-encoded-powershell-scriptblock": {
+    "adversary_activity": "Payloads are obfuscated to evade signatures and analysts \u2014 base64/compressed/encoded script blocks, string concatenation, char-code arrays, and reflection. The fixture emits a PowerShell `4104 ScriptBlockLogging` event.",
+    "detection_logic": "Alert on `4104` blocks with high entropy, large base64 strings, `FromBase64String`, `[char[]]`/`-join` reconstruction, `IEX`/`Invoke-Expression`, gzip/deflate stream creation, or backtick/case obfuscation. AMSI-deobfuscated script blocks reveal the true content for matching.",
+    "discriminators_tuning": "Some legitimate tooling encodes scripts \u2014 allowlist by hash/signer and weight on multiple obfuscation indicators co-occurring.",
+    "production_log_sources": "PowerShell Script Block Logging `4104`, Module Logging `4103`, Sysmon EID 1 command line, AMSI telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1027",
+    "title": "Atomic event: Obfuscated PowerShell script block"
+  },
+  "sim-t1033-user-discovery": {
+    "adversary_activity": "Determining who is logged on / current privileges \u2014 `whoami`, `whoami /priv /groups`, `query user`, `$env:USERNAME`. The fixture records process telemetry without running commands.",
+    "detection_logic": "Alert on `whoami` (especially `/priv`/`/groups`/`/all`) run by a **service account, web-service process, or right after exploitation** \u2014 that combination is far more suspicious than an admin typing `whoami`. Office/web-server parents are a strong tell.",
+    "discriminators_tuning": "Interactive users and scripts run `whoami` constantly \u2014 the parent process and account context carry the signal.",
+    "production_log_sources": "Sysmon EID 1 (`Image=whoami.exe`, `CommandLine`), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1033",
+    "title": "System owner and user discovery"
+  },
+  "sim-t1036-atomic-masqueraded-svchost-user-path": {
+    "adversary_activity": "Malware names itself after a trusted system process (`svchost.exe`, `lsass.exe`, `services.exe`) but runs from the wrong location or with the wrong parent to blend in. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert when a system-process name runs from a non-system path (e.g., `svchost.exe` not in `System32`/`SysWOW64`), when `Image` filename \u2260 `OriginalFileName` (metadata mismatch), when `svchost.exe`'s parent is not `services.exe`, or when a \"system\" binary is unsigned. These are reliable masquerading tells.",
+    "discriminators_tuning": "Very few benign processes mimic system names from user paths \u2014 path/parent/signature checks make this clean. Watch for portable apps reusing generic names.",
+    "production_log_sources": "Sysmon EID 1 (`Image`, `OriginalFileName`, `ParentImage`, `Company`/`Description`, `Hashes`), EDR process telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1036",
+    "title": "Atomic event: Masqueraded system process from user-writable path"
+  },
+  "sim-t1039-atomic-network-share-data-access": {
+    "adversary_activity": "Bulk-reading files from network shares to collect data for exfiltration. The fixture emits a Security `4663 ObjectAccess`.",
+    "detection_logic": "Alert on a single account/host reading an unusually high volume of files across share directories in a short window, on access to sensitive shares the account doesn't normally use, and on staging (many reads followed by a local copy/archive). Volume + breadth anomaly is the signal.",
+    "discriminators_tuning": "Normal file-server use generates constant `4663`/`5145` \u2014 this requires UEBA-style volume baselining per user; raw object access is not alertable. Note `4663` needs SACLs configured to fire at all.",
+    "production_log_sources": "Security `4663` (object access \u2014 requires SACLs on the share), `5145` (file-share detailed access), file-server/NAS audit logs, EDR file-read telemetry, DLP.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1039",
+    "title": "Atomic event: Data from network shared drive"
+  },
+  "sim-t1041-web-exfil-canary": {
+    "adversary_activity": "Data is exfiltrated over the existing C2 channel \u2014 typically large/encoded POST bodies to a collection endpoint. The simulation POSTs small benign JSON/text bodies and records body metadata without storing content.",
+    "detection_logic": "Alert on anomalously large or multi-line POST bodies to export/collection endpoints, on outbound byte volumes that exceed the host's baseline, and on encoded/compressed bodies leaving to a single destination. Upload-volume anomaly to a rare destination is the signal.",
+    "discriminators_tuning": "Legitimate uploads (backups, file-sharing) are large too \u2014 baseline per-host outbound volume and weight on destination rarity and beacon correlation.",
+    "production_log_sources": "Web proxy logs (outbound bytes, POST sizes), web access logs, NDR/flow (upload volume), DLP.",
+    "risk_level": 2,
+    "tags": [
+      "exfiltration-canary",
+      "web"
+    ],
+    "technique_id": "T1041",
+    "title": "Web exfiltration-shaped upload canary"
+  },
+  "sim-t1047-atomic-wmic-process-call-create": {
+    "adversary_activity": "Windows Management Instrumentation executes commands locally or remotely (`wmic process call create`, `Invoke-WmiMethod Win32_Process`), used for execution and lateral movement. Remotely-invoked WMI spawns children under `WmiPrvSE.exe`. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `wmic.exe ... process call create`, on `WmiPrvSE.exe` spawning `cmd.exe`/`powershell.exe` (strong remote-WMI-execution signal), and on `Invoke-WmiMethod`/`Invoke-CimMethod` with process creation. Remote WMI execution typically pairs with a `4624` network logon from the source host.",
+    "discriminators_tuning": "Management/monitoring tooling uses WMI \u2014 `WmiPrvSE.exe` spawning interactive shells is rare and high-value; baseline legitimate WMI consumers.",
+    "production_log_sources": "Sysmon EID 1 (`Image=wmic.exe` or `ParentImage=WmiPrvSE.exe`), Security `4688`, **WMI-Activity/Operational** log (`5857`\u2013`5861`) for provider/consumer activity.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1047",
+    "title": "Atomic event: WMI process creation"
+  },
+  "sim-t1048-atomic-exfiltration-over-alternative-protocol": {
+    "adversary_activity": "Data leaves over a protocol separate from C2 \u2014 DNS tunneling, FTP/SFTP, ICMP, or raw sockets to non-standard ports \u2014 to evade web-centric controls. The fixture emits a structured firewall `NETFLOW`/`OutboundTransfer` event.",
+    "detection_logic": "Alert on high-volume outbound to non-standard ports/protocols, on DNS exfil signatures (long high-entropy subdomains, abnormal query volume to one domain, TXT/NULL record abuse), and on FTP/ICMP carrying unusual data volumes. Egress that bypasses the proxy is itself suspicious.",
+    "discriminators_tuning": "Some apps use non-HTTP protocols legitimately \u2014 baseline normal egress ports/protocols per host and alert on deviations, especially DNS volume/entropy anomalies.",
+    "production_log_sources": "Firewall/NetFlow logs (bytes out, ports, protocols), DNS logs (query length/volume/entropy for DNS tunneling), NDR, proxy bypass detection.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1048",
+    "title": "Atomic event: Exfiltration over alternative protocol"
+  },
+  "sim-t1049-atomic-netstat-network-connections": {
+    "adversary_activity": "Listing active connections/listeners to find lateral targets and understand the host's role \u2014 `netstat -ano`, `Get-NetTCPConnection`, `ss`/`netstat` on Linux. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `netstat`/`Get-NetTCPConnection` by service/web accounts or in a discovery burst. On its own it's low-signal; valuable as part of a recon cluster.",
+    "discriminators_tuning": "Extremely common in legitimate troubleshooting \u2014 only meaningful with anomalous context.",
+    "production_log_sources": "Sysmon EID 1 (`Image=netstat.exe`, `CommandLine`), Security `4688`, `auditd execve`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1049",
+    "title": "Atomic event: System network connection discovery"
+  },
+  "sim-t1053-scheduled-task": {
+    "adversary_activity": "A scheduled task re-launches a payload on a trigger (logon, time, idle) for persistence or runs it as SYSTEM for privilege escalation (`schtasks /create`, `Register-ScheduledTask`). The fixture records task-creation command lines without creating a task.",
+    "detection_logic": "Alert on `schtasks /create` or `Register-ScheduledTask` whose action is a script host/LOLBin/binary in a user-writable path, on tasks running as `SYSTEM` created by a non-admin context, and on hidden tasks. Inspect the task's `Command`/`Arguments` in `4698` XML.",
+    "discriminators_tuning": "Installers and management agents create tasks constantly \u2014 the action target (what runs) and its path are the discriminators; benign tasks point at signed binaries in Program Files.",
+    "production_log_sources": "Security `4698` (task created), `4702` (task updated), Sysmon EID 1 (`Image=schtasks.exe` / PowerShell), **Task Scheduler/Operational** log (`106` registered, `140` updated, `200`/`201` action run).",
+    "risk_level": 2,
+    "tags": [
+      "persistence-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1053.005",
+    "title": "Scheduled task creation"
+  },
+  "sim-t1055-atomic-remote-thread-injection": {
+    "adversary_activity": "Process injection writes code into a victim process and runs it via a remote thread (`CreateRemoteThread`, APC, thread hijacking), hiding malicious execution inside a trusted process. The fixture emits a Sysmon `8 CreateRemoteThread`.",
+    "detection_logic": "Alert on cross-process remote thread creation where source and target are unrelated, on injections targeting sensitive processes (`lsass.exe`, `explorer.exe`, browsers), and on `StartAddress` pointing to unbacked/private memory. `ProcessAccess` masks like `0x1F3FFF`/`0x1FFFFF` to sensitive targets are flags.",
+    "discriminators_tuning": "AV/EDR, debuggers, and some accessibility tools inject legitimately \u2014 allowlist known injectors and weight on target sensitivity and memory backing.",
+    "production_log_sources": "Sysmon EID 8 (CreateRemoteThread: `SourceImage`, `TargetImage`, `StartAddress`), EID 10 (ProcessAccess with `GrantedAccess` granting `VM_WRITE`/`CREATE_THREAD`), EDR injection telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1055",
+    "title": "Atomic event: Remote thread creation into another process"
+  },
+  "sim-t1056-001-atomic-keylogger-driver-or-hook": {
+    "adversary_activity": "A keylogger captures keystrokes via a global keyboard hook (`SetWindowsHookEx WH_KEYBOARD_LL`), `GetAsyncKeyState` polling, raw-input registration, or a filter driver. The fixture emits a structured EDR `INPUT_CAPTURE`/`KeyboardHookRegistered` event.",
+    "detection_logic": "Alert on global low-level keyboard hook registration by non-UI/background processes, on tight `GetAsyncKeyState` polling loops, and on raw-input device registration by unexpected binaries. Pair with a file being written (the keystroke log) for confirmation.",
+    "discriminators_tuning": "Accessibility tools, macro/hotkey utilities, IMEs, and some games register keyboard hooks legitimately \u2014 allowlist those and weight on background processes with no UI registering global hooks.",
+    "production_log_sources": "EDR API/behavioral telemetry (hook registration, raw-input, key-state polling) \u2014 **not in Sysmon/Windows event logs**; driver-load events for kernel keyloggers.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1056.001",
+    "title": "Atomic event: Keylogging hook artifact"
+  },
+  "sim-t1057-process-discovery": {
+    "adversary_activity": "Listing running processes to find security tooling, targets for injection, or valuable apps \u2014 `tasklist`, `Get-Process`, `ps aux`, `wmic process`. The fixture records process telemetry without enumerating the host.",
+    "detection_logic": "Alert on `tasklist`/`Get-Process` piped to `findstr`/`Select-String` for AV/EDR names (overlaps T1518.001), and on process discovery in a recon burst or by service accounts.",
+    "discriminators_tuning": "Ubiquitous benign use \u2014 the AV-name filtering variant and burst context are the useful slices.",
+    "production_log_sources": "Sysmon EID 1 (`tasklist.exe`, PowerShell `Get-Process`), Security `4688`, `auditd execve`.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1057",
+    "title": "Process discovery"
+  },
+  "sim-t1059-005-atomic-visual-basic-script-execution": {
+    "adversary_activity": "Malicious `.vbs`/`.vbe` scripts run via `wscript.exe`/`cscript.exe`, commonly as the payload of a phishing attachment or as a persistence/launcher. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `wscript.exe`/`cscript.exe` executing scripts from `\\AppData\\`, `\\Temp\\`, `\\Downloads\\`, or removable media, and on Office/archive/email-client parents launching them. Long obfuscated VBS arguments are a flag.",
+    "discriminators_tuning": "Some enterprises rely on legacy VBS logon scripts and vendor installers \u2014 allowlist by path/hash and prioritize user-writable source directories and document parents.",
+    "production_log_sources": "Sysmon EID 1 (`Image=wscript.exe`/`cscript.exe`, `CommandLine`, `ParentImage`), Security `4688`, Windows Script Host telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1059.005",
+    "title": "Atomic event: Visual Basic script execution"
+  },
+  "sim-t1059-006-atomic-python-execution": {
+    "adversary_activity": "Cross-platform actors and offensive frameworks use Python for payloads and tooling (`python -c \"<one-liner>\"`, scripts from temp dirs, embedded interpreters). The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `python`/`python3` with inline `-c` one-liners (especially containing `socket`, `base64`, `exec`, `os.system`, `subprocess`), execution from `\\Temp\\`/`/tmp/`, or a Python interpreter shipped inside a user-app directory. Reverse-shell one-liners are a high-fidelity pattern.",
+    "discriminators_tuning": "Developer and data-science hosts run Python constantly \u2014 scope by host role; on servers and standard user endpoints the signal is far cleaner than on engineering laptops.",
+    "production_log_sources": "Sysmon EID 1 (Windows) / `auditd` `execve` (Linux/macOS) capturing `python`/`python3` with arguments, EDR process telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1059.006",
+    "title": "Atomic event: Python script execution"
+  },
+  "sim-t1059-cmd-shell-execution": {
+    "adversary_activity": "`cmd.exe /c` chains discovery, download, and execution commands, often spawned by a document, web service, or script. The fixture records command-line-shaped telemetry without creating a shell.",
+    "detection_logic": "Alert on `cmd.exe /c` chains combining discovery/download/exec (`whoami & net user & ...`), on `cmd.exe` spawned by Office/web-service/script parents, and on obfuscated cmd (caret `^`, env-var substitution, excessive quoting). Sequenced discovery in one command line is a strong recon-after-access signal.",
+    "discriminators_tuning": "`cmd.exe` is ubiquitous in legitimate scripts and installers \u2014 the parent process and command content carry all the signal; raw `cmd.exe` launches are not alertable.",
+    "production_log_sources": "Sysmon EID 1 (`Image=cmd.exe`, `CommandLine`, `ParentImage`), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "execution-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1059.003",
+    "title": "Windows command shell execution"
+  },
+  "sim-t1059-powershell-encoded-command": {
+    "adversary_activity": "PowerShell is the dominant Windows attack interpreter. Adversaries hide intent with `-EncodedCommand` (base64), `-WindowStyle Hidden`, `-NoProfile`, `-ExecutionPolicy Bypass`, and download-cradles (`IEX (New-Object Net.WebClient).DownloadString(...)`). The fixture emits Sysmon-style process-create events only.",
+    "detection_logic": "Alert on `powershell.exe`/`pwsh.exe` with `-enc`/`-EncodedCommand`, `-w hidden`, `-nop`, `-ep bypass`, and on `4104` script blocks containing `FromBase64String`, `IEX`, `DownloadString`, `Invoke-Expression`, `[char]` concatenation, or gzip/deflate decompression. High base64 entropy in the command line is a strong flag.",
+    "discriminators_tuning": "Legitimate management tooling (SCCM, RMM, installers) uses encoded commands \u2014 allowlist known-good encoded blobs by hash/parent, and weight on hidden+nop+bypass combinations.",
+    "production_log_sources": "Sysmon EID 1 (`CommandLine`), PowerShell Script Block Logging (`4104`), Module Logging (`4103`), engine events (`400`/`600`), Security `4688` with command line auditing.",
+    "risk_level": 2,
+    "tags": [
+      "execution-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1059.001",
+    "title": "PowerShell encoded command execution"
+  },
+  "sim-t1059-web-command-canary": {
+    "adversary_activity": "Command injection passes OS-shell metacharacters through a vulnerable web parameter so the server executes attacker commands (`; id`, `| whoami`, `$(...)`, backticks). The simulation sends command-shaped parameters and records body length/hash without ever executing them.",
+    "detection_logic": "Alert on shell metacharacters and command keywords in parameters/bodies (`;`, `|`, `&&`, `$(`, `` ` ``, `whoami`, `cat /etc/passwd`, `ping -c`). The decisive production signal is the **web server process becoming the parent of `cmd.exe`/`/bin/sh`/`bash`**.",
+    "discriminators_tuning": "Free-text fields can contain these characters \u2014 bind to parameters that reach a shell/exec sink and prioritize the parent-child process signal on the server.",
+    "production_log_sources": "Web access logs and request bodies, WAF logs, app logs, and \u2014 for confirmation \u2014 endpoint Sysmon EID 1 showing the web service process (`w3wp.exe`, `php-fpm`, `node`, `httpd`) spawning a shell.",
+    "risk_level": 1,
+    "tags": [
+      "execution-canary",
+      "web"
+    ],
+    "technique_id": "T1059",
+    "title": "Web command execution canary validation"
+  },
+  "sim-t1068-atomic-privilege-escalation-exploit-child-shell": {
+    "adversary_activity": "Exploiting a vulnerability in a privileged process or driver yields code execution at higher integrity \u2014 typically observed as a privileged/SYSTEM service unexpectedly spawning a shell after a crash- or exploit-like event. The fixture emits a structured EDR `PRIV_ESC` event.",
+    "detection_logic": "Alert when a service/host process running as `SYSTEM`/high integrity spawns `cmd.exe`/`powershell.exe`/`/bin/sh` unexpectedly, especially right after a crash of the same parent, and on a child process whose integrity level is higher than the parent's user context implies.",
+    "discriminators_tuning": "Some legitimate service workflows spawn shells \u2014 baseline per-service child processes; an unexpected SYSTEM shell from a network-facing service is the high-value slice.",
+    "production_log_sources": "EDR exploit/behavioral telemetry, Sysmon EID 1 (`ParentImage` = a service running as SYSTEM, `Image` = shell, integrity-level rise), Application/`WER` crash events preceding the child, Defender exploit-guard events.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1068",
+    "title": "Atomic event: Privileged service spawned shell after exploit-like event"
+  },
+  "sim-t1070-001-atomic-windows-event-log-cleared": {
+    "adversary_activity": "Clearing event logs destroys evidence of intrusion (`wevtutil cl`, `Clear-EventLog`, `Remove-EventLog`, or direct API). The fixture emits a Security `1102 AuditLogCleared`.",
+    "detection_logic": "Alert on **any** `1102` or `104` \u2014 log clearing is rare and high-fidelity, and the event survives because it is written as the log is cleared. Correlate the clearing account/host and look for what activity preceded it.",
+    "discriminators_tuning": "Reimaging and some maintenance clear logs \u2014 confirm against change records; on production servers, treat `1102` as incident-worthy by default.",
+    "production_log_sources": "Security `1102` (Security log cleared \u2014 generated *by the act of clearing*), System `104` (other logs cleared), Sysmon EID 1 (`wevtutil.exe cl`).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1070.001",
+    "title": "Atomic event: Windows event log cleared"
+  },
+  "sim-t1070-004-atomic-suspicious-file-delete": {
+    "adversary_activity": "Deleting payloads, tools, and artifacts removes forensic evidence (`del`, `sdelete`, `Remove-Item -Force`, secure wipe). The fixture emits a Sysmon `23 FileDelete`.",
+    "detection_logic": "Alert on deletion of recently-created executables/scripts from `\\Temp\\`/`\\Downloads\\`, on `sdelete`/secure-wipe usage, on a process deleting its own image, and on deletion of forensic artifacts (prefetch, logs). The self-delete-after-execution pattern is high-value.",
+    "discriminators_tuning": "File deletion is extremely high-volume and benign by default \u2014 this is only useful when tightly scoped (self-delete, wipe tools, deletion of just-dropped payloads). Do not alert on deletion broadly.",
+    "production_log_sources": "Sysmon EID 23 (FileDelete \u2014 can archive the deleted file), EID 26 (FileDeleteDetected), Security `4663`/`4660` (delete access), EDR file telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1070.004",
+    "title": "Atomic event: Suspicious file deletion"
+  },
+  "sim-t1071-controlled-beacon": {
+    "adversary_activity": "C2 over standard application protocols (HTTP/HTTPS/DNS) blends malicious traffic into normal web/DNS flows. This plan prepares a fixed benign callback from a lab agent to a controlled domain.",
+    "detection_logic": "Hunt for beaconing behavior: regular call-home intervals (low jitter), consistent small request/response sizes, connections to rare/young domains, uncommon User-Agents, and high-entropy DNS subdomains. No single packet is malicious \u2014 periodicity and rarity are the signal.",
+    "discriminators_tuning": "Software-update checks, telemetry, and CDNs beacon legitimately \u2014 baseline known callback destinations and weight on domain rarity/age plus regularity.",
+    "production_log_sources": "DNS resolver logs, web proxy logs, NDR/flow metadata, EDR network-connection events, TLS metadata (JA3/JA4, SNI).",
+    "risk_level": 2,
+    "tags": [
+      "c2-emulation",
+      "lab-agent"
+    ],
+    "technique_id": "T1071",
+    "title": "Controlled HTTP/DNS beacon validation plan"
+  },
+  "sim-t1071-web-beacon": {
+    "adversary_activity": "A web-based implant beacons over HTTP(S) with periodic GET/POST check-ins to retrieve tasks and return results. The simulation sends a short fixed sequence of beacon-shaped requests and records timing/sequence.",
+    "detection_logic": "Alert on regular periodic requests to the same URI/host with consistent sizing and uncommon User-Agent, on a sequence parameter incrementing across check-ins, and on small POST bodies returning small responses at a fixed cadence. Beacon periodicity + destination rarity is the core detection.",
+    "discriminators_tuning": "Polling apps, dashboards, and telemetry beacon legitimately \u2014 baseline destinations/cadence and weight on rare destinations with default tooling fingerprints.",
+    "production_log_sources": "Web proxy logs, NGINX/web access logs (`uri`, `user-agent`, request/response sizes, timing), NDR.",
+    "risk_level": 2,
+    "tags": [
+      "c2-emulation",
+      "web"
+    ],
+    "technique_id": "T1071.001",
+    "title": "HTTP web beacon canary"
+  },
+  "sim-t1078-atomic-valid-account-remote-logon": {
+    "adversary_activity": "Using legitimate (often stolen) credentials, an actor logs on like a real user, blending into normal authentication. The fixture emits a Windows `4624 SuccessfulLogon`.",
+    "detection_logic": "Valid-account abuse is detected by *anomaly*, not by the event itself: impossible travel, first-seen source IP/host for the account, off-hours logon, dormant-account reactivation, privileged logon from a workstation that account never uses, or a successful `4624` immediately after a `4625` burst (post-spray). Focus on `LogonType` 10 (RemoteInteractive) and 3 (Network).",
+    "discriminators_tuning": "This is the hardest technique to alert on cleanly \u2014 `4624` is one of the highest-volume events. Use behavioral/UEBA baselining per account; do not alert on raw logons.",
+    "production_log_sources": "Windows Security log `4624` (with `LogonType`, `IpAddress`, `WorkstationName`, `LogonProcessName`), IdP/SSO sign-in logs, VPN logs. Pair with `4768`/`4769` (Kerberos) and `4625` (failures) for context.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1078",
+    "title": "Atomic event: Valid account remote interactive logon"
+  },
+  "sim-t1082-system-discovery": {
+    "adversary_activity": "Profiling the host \u2014 OS, patch level, hardware, domain \u2014 via `systeminfo`, `hostname`, `ver`, `wmic os get`, `wmic qfe`. The fixture records process telemetry for the common discovery sequence.",
+    "detection_logic": "Alert on the **discovery sequence** \u2014 `whoami` + `systeminfo` + `ipconfig` in rapid succession is a classic post-access recon fingerprint \u2014 and on `systeminfo` by service/web accounts.",
+    "discriminators_tuning": "Inventory/asset agents run `systeminfo`/`wmic` \u2014 baseline those agents and weight on sequenced multi-command recon.",
+    "production_log_sources": "Sysmon EID 1 (`systeminfo.exe`, `wmic.exe`, `hostname.exe`), Security `4688`, `auditd execve` (`uname`, `/etc/os-release`).",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1082",
+    "title": "System information discovery"
+  },
+  "sim-t1083-file-discovery": {
+    "adversary_activity": "Enumerating the filesystem to find data to steal \u2014 `dir /s`, `Get-ChildItem -Recurse`, `tree`, `find` \u2014 often searching for documents, keys, or credential files. The fixture records telemetry without touching real files.",
+    "detection_logic": "Alert on recursive enumeration with content filters (`dir /s *.docx`, `Get-ChildItem -Recurse -Include *.kdbx,*.pem`, `find / -name id_rsa`), and on broad filesystem walks by service accounts. Searching for credential/key extensions is high-value.",
+    "discriminators_tuning": "Backup, indexing, and AV scan the filesystem \u2014 allowlist those and weight on targeted extension searches and unusual accounts.",
+    "production_log_sources": "Sysmon EID 1 (recursive `dir`/`Get-ChildItem`), Security `4688`, `auditd execve` (`find`/`ls -R`); high-volume `4663`/Sysmon-11 reads for the actual traversal.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1083",
+    "title": "File and directory discovery"
+  },
+  "sim-t1090-atomic-proxy-tool-network-connection": {
+    "adversary_activity": "Traffic is relayed through a proxy/tunnel to obscure its true source/destination \u2014 Tor, `plink` SSH tunnels, `chisel`, `ngrok`, `socat`, SOCKS proxies. The fixture emits a Sysmon `3 NetworkConnection`.",
+    "detection_logic": "Alert on network connections from known tunneling/proxy tool images (`plink.exe`, `chisel`, `ngrok`, `socat`, Tor), on connections to known Tor/ngrok infrastructure, and on local listeners opened on SOCKS-style ports by unexpected processes.",
+    "discriminators_tuning": "Corporate proxies and some dev tools tunnel legitimately \u2014 allowlist sanctioned proxy infrastructure and alert on unsanctioned tunneling binaries and destinations.",
+    "production_log_sources": "Sysmon EID 3 (NetworkConnection: `Image`, `DestinationIp`/`Port`, `DestinationHostname`), EID 1 (the tool launching), firewall/proxy logs, NDR.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1090",
+    "title": "Atomic event: Proxy tool network connection"
+  },
+  "sim-t1098-atomic-account-added-to-admin-group": {
+    "adversary_activity": "Adding a controlled account to a privileged group (Domain Admins, Enterprise Admins, local Administrators) grants durable elevated access. The fixture emits a Windows Security `4728 MemberAddedToSecurityEnabledGlobalGroup`.",
+    "detection_logic": "Alert on additions to high-value groups \u2014 `Domain Admins`, `Enterprise Admins`, `Administrators`, `Schema Admins`, `Backup Operators`, `Account Operators` \u2014 and especially on additions performed outside change windows, by non-PIM/non-IAM accounts, or immediately after a fresh logon.",
+    "discriminators_tuning": "Legitimate onboarding adds members to groups \u2014 scope alerting to the most sensitive groups and correlate with a ticket/PIM activation. Sensitive-group changes are inherently low-volume and high-value.",
+    "production_log_sources": "Security `4728` (added to global group), `4732` (added to local group), `4756` (added to universal group), `4733`/`4729` (removals for context); Azure AD/Entra audit logs for cloud role assignments.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1098",
+    "title": "Atomic event: Account added to privileged group"
+  },
+  "sim-t1102-atomic-web-service-c2-user-agent": {
+    "adversary_activity": "C2 is tunneled through a legitimate web service (GitHub, Pastebin, Google Drive, Telegram, Discord, Slack) so traffic goes to a trusted, allowlisted domain. The fixture emits a structured proxy `HTTP_REQUEST`/`ProxyWebRequest` event.",
+    "detection_logic": "Alert on programmatic access patterns to web services \u2014 non-browser User-Agents hitting `raw.githubusercontent.com`/`pastebin.com`/`api.telegram.org`/Discord webhooks, regular polling of a specific gist/paste/channel, and unusual upload/download volumes to consumer cloud APIs from server hosts.",
+    "discriminators_tuning": "These services are heavily used legitimately \u2014 this is genuinely hard; weight on host role (a server beaconing to Pastebin is suspicious), non-browser UAs, and periodicity rather than the destination alone.",
+    "production_log_sources": "Web proxy logs (destination domain, URL, User-Agent, bytes), NDR, DNS logs, TLS SNI/JA3.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1102",
+    "title": "Atomic event: Web service used as C2 channel"
+  },
+  "sim-t1105-certutil-transfer": {
+    "adversary_activity": "LOLBins download additional tooling to evade allowlisting \u2014 `certutil -urlcache -f http://...`, `bitsadmin /transfer`, `Start-BitsTransfer`, PowerShell `DownloadFile`/`Invoke-WebRequest`. The fixture records command lines without downloading anything.",
+    "detection_logic": "Alert on `certutil` with `-urlcache`/`-f`/`-split` plus an http(s) URL, on `bitsadmin /transfer` or `Start-BitsTransfer` pulling from external URLs, and on these LOLBins making outbound connections + writing executables. Certutil with a URL is almost never legitimate.",
+    "discriminators_tuning": "Certutil's normal certificate operations don't use URLs; BITS is used by Windows Update/legitimate updaters \u2014 allowlist update services and alert on URL-bearing certutil and ad-hoc BITS transfers to non-update destinations.",
+    "production_log_sources": "Sysmon EID 1 (`certutil.exe`/`bitsadmin.exe` with URL), EID 3 (their network connection), EID 11 (downloaded file), BITS-Client/Operational (`59`/`60`), Security `4688`.",
+    "risk_level": 2,
+    "tags": [
+      "transfer-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1105",
+    "title": "Certutil and BITS ingress tool transfer"
+  },
+  "sim-t1105-web-upload-download": {
+    "adversary_activity": "Tooling is staged via plain HTTP upload/download. The simulation requests a fixed benign download path and POSTs a small benign body to an upload endpoint.",
+    "detection_logic": "Alert on downloads of executable/script content from uncommon paths, on uploads of executable content to web endpoints, and on raw-HTTP-client User-Agents transferring binaries. Pair the download with subsequent execution on the endpoint.",
+    "discriminators_tuning": "Legitimate software distribution transfers binaries \u2014 weight on tool User-Agents, executable content types, and execution follow-through.",
+    "production_log_sources": "Web access logs (download path, upload endpoint, body length, User-Agent), proxy logs, NDR, EID 11 on the receiving host.",
+    "risk_level": 1,
+    "tags": [
+      "transfer-canary",
+      "web"
+    ],
+    "technique_id": "T1105",
+    "title": "Ingress tool transfer upload/download canary"
+  },
+  "sim-t1106-atomic-suspicious-native-api-call": {
+    "adversary_activity": "Malware invokes the Windows Native API (`Nt*`/`Zw*`) or direct syscalls to allocate, write, and execute memory while bypassing higher-level (often hooked) Win32 APIs \u2014 e.g., `NtAllocateVirtualMemory` \u2192 `NtWriteVirtualMemory` \u2192 `NtCreateThreadEx`. The fixture emits a structured EDR `API_CALL` event.",
+    "detection_logic": "Alert on the classic injection API triad in one process within a short window, on execution from unbacked/private RWX memory, and on direct syscall stubs that bypass `ntdll` hooks. This detection lives entirely in your EDR's behavioral engine.",
+    "discriminators_tuning": "Legitimate runtimes (JIT compilers, .NET, debuggers, AV) allocate executable memory \u2014 weight on unbacked memory + remote-thread combinations and process reputation.",
+    "production_log_sources": "EDR/kernel telemetry (this is **not** visible in Sysmon or Windows event logs) \u2014 API/syscall tracing, memory-region telemetry, ETW Threat Intelligence provider.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1106",
+    "title": "Atomic event: Suspicious Native API sequence"
+  },
+  "sim-t1110-basic-auth-bruteforce": {
+    "adversary_activity": "Brute forcing HTTP Basic auth sends many `Authorization: Basic` headers until one succeeds. The simulation sends two failed and one known-good lab request; the stored `Authorization` header is redacted.",
+    "detection_logic": "Alert on a cluster of `401`s carrying `Authorization: Basic` from one source followed by a `200`, on the same source rotating credentials against a Basic-protected path, and on Basic auth over plaintext HTTP. The 401-burst-then-200 shape is the signature.",
+    "discriminators_tuning": "Misconfigured clients retry Basic auth \u2014 threshold the failure count and require the success transition for higher confidence.",
+    "production_log_sources": "Web access logs (presence of `Authorization` header, `401` then `200`), auth logs, WAF logs.",
+    "risk_level": 2,
+    "tags": [
+      "credential-attack",
+      "web"
+    ],
+    "technique_id": "T1110.001",
+    "title": "HTTP Basic authentication brute-force sequence"
+  },
+  "sim-t1110-lab-login-sequence": {
+    "adversary_activity": "Brute forcing tries many passwords against an identity/SSO target. This plan validates telemetry for a low-rate failed-login sequence against a lab test account.",
+    "detection_logic": "Alert on a high count of authentication failures for a single account or from a single source within a window, on failures followed by a success, and on MFA-fatigue patterns (many push denials). Track failures per-account and per-source independently.",
+    "discriminators_tuning": "Expired passwords and misconfigured clients cause failure bursts \u2014 set thresholds above normal app retry noise and weight on the failure-then-success transition.",
+    "production_log_sources": "IdP/SSO sign-in logs, MFA logs, VPN logs, Security `4625` (failed logon), `4771` (Kerberos pre-auth failed), SIEM identity alerts.",
+    "risk_level": 2,
+    "tags": [
+      "credential-access",
+      "identity-lab"
+    ],
+    "technique_id": "T1110",
+    "title": "Lab-only failed-login sequence plan"
+  },
+  "sim-t1110-web-bruteforce": {
+    "adversary_activity": "Many passwords are tried against one account at a form-based login until success. The simulation sends a fixed sequence of failed passwords plus one final known-good lab password.",
+    "detection_logic": "Alert on N+ failed authentications for the same username from one source within a window, followed by a success \u2014 the classic single-account brute-force curve. Use the auth log's per-attempt outcome.",
+    "discriminators_tuning": "Lock-out policies blunt real brute force, so attackers go low-and-slow \u2014 combine short-window thresholds with longer-window cumulative counts per account.",
+    "production_log_sources": "Application auth logs (same username, repeated failures, final success), web access logs, WAF brute-force alerts.",
+    "risk_level": 2,
+    "tags": [
+      "credential-attack",
+      "web"
+    ],
+    "technique_id": "T1110.001",
+    "title": "Web login brute-force sequence"
+  },
+  "sim-t1110-web-login-failures": {
+    "adversary_activity": "Repeated failed logins against a web login endpoint, the web-app form of brute force. The simulation sends three fixed failed-login canaries without authenticating.",
+    "detection_logic": "Alert on repeated failed POSTs to the login endpoint from one source/for one user, on a tight failure cadence, and on the failure-to-success transition. The catalog's `outcome` and `failure reason` fields drive this.",
+    "discriminators_tuning": "Forgotten passwords produce small bursts \u2014 threshold above human-retry levels and correlate by source IP and User-Agent.",
+    "production_log_sources": "Application auth logs (username, outcome, failure reason), web access logs (POST to login, `401`/`403`/`200`), WAF logs.",
+    "risk_level": 2,
+    "tags": [
+      "credential-access",
+      "web"
+    ],
+    "technique_id": "T1110",
+    "title": "Web failed-login sequence canary"
+  },
+  "sim-t1110-web-password-spray": {
+    "adversary_activity": "Password spraying tries one or a few common passwords across **many** accounts to avoid lockout \u2014 the inverse shape of brute force. The simulation POSTs the same wrong password across a fixed list of lab users; the cleartext password is not logged.",
+    "detection_logic": "Alert when one source attempts authentication against many distinct accounts with few attempts per account in a window \u2014 high *username cardinality* per source is the spray signature (distinct from brute force's high attempts-per-user). A single success amid the spray is critical.",
+    "discriminators_tuning": "Shared service hosts and misconfigured SSO can fan out across accounts \u2014 baseline normal per-source account diversity and weight on the breadth + low-per-user pattern.",
+    "production_log_sources": "Application auth logs (many distinct usernames, ~1 attempt each, shared timing/source), web access logs, IdP sign-in logs for the cloud equivalent.",
+    "risk_level": 2,
+    "tags": [
+      "credential-attack",
+      "web"
+    ],
+    "technique_id": "T1110.003",
+    "title": "Web password spraying sequence"
+  },
+  "sim-t1112-atomic-registry-security-setting-modified": {
+    "adversary_activity": "Editing security-relevant registry values weakens defenses or enables an attack \u2014 disabling UAC (`EnableLUA=0`), disabling Defender keys, weakening LSA protections, enabling WDigest credential caching (`UseLogonCredential=1`). The fixture emits a Sysmon `13 RegistryValueSet`.",
+    "detection_logic": "Alert on writes to a curated list of security-sensitive values: `...\\Policies\\System\\EnableLUA`, `...\\WDigest\\UseLogonCredential=1`, `...\\Lsa\\RunAsPPL` cleared, Defender `DisableAntiSpyware`/`DisableRealtimeMonitoring`, `...\\Policies\\Microsoft\\Windows Defender`. Each maps to a specific weakening.",
+    "discriminators_tuning": "GPO and legitimate hardening change these \u2014 correlate with GPO deployment and alert on the *weakening* direction (e.g., enabling WDigest cleartext) specifically.",
+    "production_log_sources": "Sysmon EID 13 (RegistryValueSet: `TargetObject`, `Details`), Security `4657` (registry value modified, with auditing).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1112",
+    "title": "Atomic event: Security-sensitive registry modification"
+  },
+  "sim-t1113-atomic-screen-capture-api": {
+    "adversary_activity": "Capturing the screen to collect on-screen data (`BitBlt`, `PrintWindow`, `GetDC`, DirectX capture), often periodically. The fixture emits a structured EDR `SCREEN_CAPTURE` event.",
+    "detection_logic": "Alert on screen-capture API use by background/non-GUI processes, on periodic capture loops, and on capture by a process that also has network/staging behavior. Image files written to temp by a non-imaging app reinforce it.",
+    "discriminators_tuning": "Conferencing (Teams/Zoom), screenshot tools, and RMM legitimately capture screens \u2014 allowlist those and weight on headless/background processes.",
+    "production_log_sources": "EDR API/behavioral telemetry (screen-capture API calls) \u2014 **not in Sysmon/Windows logs**; EID 11 for written screenshot files.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1113",
+    "title": "Atomic event: Screen capture API use"
+  },
+  "sim-t1115-atomic-clipboard-read": {
+    "adversary_activity": "Reading or monitoring the clipboard captures copied passwords, crypto addresses, and sensitive text (`GetClipboardData`, clipboard-change monitoring, `Get-Clipboard`). Clipper malware also swaps copied crypto addresses. The fixture emits a structured EDR `CLIPBOARD_READ` event.",
+    "detection_logic": "Alert on clipboard reads/monitoring by background processes, on tight clipboard-polling loops, and on processes that read the clipboard then modify it (clipper behavior). Combine with network behavior for exfil context.",
+    "discriminators_tuning": "Clipboard managers, password managers, RDP/VDI, and office apps access the clipboard \u2014 allowlist and weight on background/no-UI processes and polling loops.",
+    "production_log_sources": "EDR API/behavioral telemetry (clipboard access/monitoring), Sysmon EID 1 (`Get-Clipboard`/`pbpaste`).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1115",
+    "title": "Atomic event: Clipboard data access"
+  },
+  "sim-t1123-atomic-audio-capture-api": {
+    "adversary_activity": "Recording the microphone for surveillance (`waveIn*`, WASAPI capture, `winmm`). The fixture emits a structured EDR `AUDIO_CAPTURE`/`MicrophoneAccess` event.",
+    "detection_logic": "Alert on microphone access by a process that is not a known conferencing/recording app, and on capture by a background/headless process. Audio capture paired with file-write + network is the spyware chain.",
+    "discriminators_tuning": "Teams/Zoom/voice tools and OS assistants use the mic \u2014 allowlist them and weight on unexpected apps.",
+    "production_log_sources": "EDR API/behavioral telemetry (microphone capture), OS privacy/capability logs where available.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1123",
+    "title": "Atomic event: Audio capture API use"
+  },
+  "sim-t1125-atomic-video-capture-api": {
+    "adversary_activity": "Accessing the webcam to record video/images for surveillance. The fixture emits a structured EDR `VIDEO_CAPTURE`/`CameraAccess` event.",
+    "detection_logic": "Alert on camera access by non-conferencing/non-camera apps, by background processes, or right after a suspicious download. Webcam access by an unknown binary is high-value spyware signal.",
+    "discriminators_tuning": "Video-conferencing and camera utilities use the webcam \u2014 allowlist them; the noise is otherwise low.",
+    "production_log_sources": "EDR API/behavioral telemetry (camera access), OS camera-privacy logs where available.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1125",
+    "title": "Atomic event: Video capture API use"
+  },
+  "sim-t1133-remote-service-reachability": {
+    "adversary_activity": "Adversaries gain initial access through exposed remote-access services \u2014 VPN, RDP, SSH, Citrix \u2014 using valid or stolen credentials. This plan validates telemetry for a single, credential-less reachability check against an approved service/port.",
+    "detection_logic": "Alert on successful external authentications to remote-access services from new geolocations/ASNs, on impossible-travel, on logins to dormant accounts, and on external sources reaching internal-only services. Connection attempts without credentials map to reachability probing.",
+    "discriminators_tuning": "Legitimate remote workers and third-party vendors connect externally \u2014 baseline normal source geos/ASNs per account and alert on deviation, not on remote access itself.",
+    "production_log_sources": "VPN/gateway logs, firewall allow/deny logs, RDP (`4624` LogonType 10), SSH (`/var/log/auth.log`, `sshd`), Citrix/VDI logs, IdP sign-in logs.",
+    "risk_level": 1,
+    "tags": [
+      "remote-access",
+      "vpn",
+      "ssh",
+      "rdp"
+    ],
+    "technique_id": "T1190",
+    "title": "Web shell URI and POST canary validation\n\n(see also T1505.003)\n\n---\n\n## [T1133](http://localhost:3000/navigator?technique=T1133) - External remote service reachability plan"
+  },
+  "sim-t1134-atomic-token-impersonation": {
+    "adversary_activity": "An actor duplicates or impersonates another account's access token (`DuplicateTokenEx` + `ImpersonateLoggedOnUser`, `runas /netonly`, \"potato\" SeImpersonate abuse) to act in a different security context \u2014 frequently to reach SYSTEM. The fixture emits a structured EDR `TOKEN_IMPERSONATION` event.",
+    "detection_logic": "Alert on `4624` LogonType 9 from unusual processes, on token-duplication API sequences targeting SYSTEM/admin tokens, and on a service account with `SeImpersonatePrivilege` spawning a SYSTEM process (potato pattern). Correlate token impersonation with a subsequent high-integrity action.",
+    "discriminators_tuning": "IIS/SQL service accounts legitimately hold `SeImpersonate` \u2014 weight on the resulting SYSTEM shell or anomalous child rather than the privilege itself.",
+    "production_log_sources": "EDR token-operation telemetry, Security `4624` LogonType **9** (NewCredentials, the `runas /netonly` signature), `4672` (special privileges assigned), `4673`/`4674` (privileged service/operation).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1134",
+    "title": "Atomic event: Access token impersonation"
+  },
+  "sim-t1135-atomic-network-share-discovery": {
+    "adversary_activity": "Enumerating SMB shares to find data and lateral footholds \u2014 `net view \\\\host`, `net share`, `Get-SmbShare`, `Get-SmbConnection`. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `net view \\\\<host>` against multiple hosts, on `net share`/`Get-SmbShare` by service accounts, and on share enumeration in a discovery burst preceding share access.",
+    "discriminators_tuning": "Admin and backup tooling enumerate shares \u2014 context and breadth are the discriminators.",
+    "production_log_sources": "Sysmon EID 1 (`net.exe view`/`share`, PowerShell `Get-Smb*`), Security `4688`; on file servers, `5140`/`5145` for the resulting access.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1135",
+    "title": "Atomic event: Network share discovery"
+  },
+  "sim-t1140-atomic-certutil-decode": {
+    "adversary_activity": "`certutil -decode`/`-decodehex` is abused to turn a base64/hex-encoded dropped file back into an executable payload (a LOLBin deobfuscation step). The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `certutil.exe` with `-decode`/`-decodehex`/`-urlcache` arguments, particularly writing output to `\\Temp\\`/`\\Users\\` or producing an executable. Pair the decode with a subsequent execution of the output file.",
+    "discriminators_tuning": "Legitimate certutil use centers on certificate operations and rarely uses `-decode` against arbitrary files \u2014 the decode/encode verbs are the discriminator.",
+    "production_log_sources": "Sysmon EID 1 (`Image=certutil.exe`, `CommandLine`), Security `4688`, EID 11 (the decoded output file created).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1140",
+    "title": "Atomic event: File deobfuscation with certutil decode"
+  },
+  "sim-t1190-sqli-xss-canary": {
+    "adversary_activity": "SQL injection manipulates query parameters to alter backend SQL (`' OR 1=1--`, `UNION SELECT`, `; DROP`); cross-site scripting injects markup/script (`<script>`, `onerror=`, `javascript:`) to run in victims' browsers. The simulation sends one SQLi-shaped and one XSS-shaped request to benign endpoints with no DB or browser execution.",
+    "detection_logic": "Alert on SQL meta-syntax in parameters (`UNION SELECT`, `OR 1=1`, `--`, `/*`, `xp_cmdshell`, `SLEEP(`), and on HTML/JS injection markers (`<script`, `onerror=`, `onload=`, `%3Cscript`). Database errors or `500`s following a SQLi-shaped request indicate impact. URL-decode before matching.",
+    "discriminators_tuning": "Search boxes, code-snippet fields, and security forums legitimately contain these strings \u2014 bind the rule to parameters that reach a database/render context, and weight on response anomalies (DB errors, reflected payload).",
+    "production_log_sources": "Web access logs and query strings, WAF logs, app/DB error logs, structured web JSON.",
+    "risk_level": 1,
+    "tags": [
+      "web-exploit-canary",
+      "web"
+    ],
+    "technique_id": "T1190",
+    "title": "SQL injection and XSS canary validation"
+  },
+  "sim-t1190-ssrf-canary": {
+    "adversary_activity": "Server-Side Request Forgery tricks the server into making outbound requests the attacker controls \u2014 classically to the cloud metadata service (`169.254.169.254`) to steal instance credentials, or to internal/loopback addresses to reach services behind the perimeter. The simulation records SSRF-shaped URL parameters but the server never fetches them.",
+    "detection_logic": "Alert on URL-valued parameters pointing at `169.254.169.254`, `metadata.google.internal`, `localhost`/`127.0.0.1`, `0.0.0.0`, `[::1]`, RFC1918 ranges, or `file://`/`gopher://` schemes. The strongest signal in production is the **server making an unexpected outbound request to the metadata IP** \u2014 monitor egress from app servers.",
+    "discriminators_tuning": "Webhook, image-fetch, and link-preview features legitimately fetch user-supplied URLs \u2014 allowlist their destinations and alert on internal/metadata targets specifically.",
+    "production_log_sources": "Web access logs (URL parameters), WAF logs, app logs, and crucially **egress/proxy/firewall logs from the server itself** (to see the forged outbound request).",
+    "risk_level": 1,
+    "tags": [
+      "web-exploit-canary",
+      "web"
+    ],
+    "technique_id": "T1190",
+    "title": "SSRF metadata and loopback canary validation"
+  },
+  "sim-t1190-traversal-canary": {
+    "adversary_activity": "Directory/path traversal abuses unsanitized path parameters (`../../etc/passwd`, `..%2f`, `....//`) to read files outside the web root \u2014 credentials, configs, source. The simulation sends traversal-shaped strings with explicit canary markers and never resolves them.",
+    "detection_logic": "Alert on encoded/decoded traversal sequences in URI or query \u2014 `../`, `..\\`, `%2e%2e%2f`, `%252e`, `....//` \u2014 and on requests targeting sensitive filenames (`/etc/passwd`, `web.config`, `.env`). A `200` to a traversal-shaped request is high-severity (likely successful read).",
+    "discriminators_tuning": "Some apps legitimately use `..` in non-filesystem contexts; decode before matching to catch double-encoding, and prioritize requests that combine traversal syntax with known sensitive filenames.",
+    "production_log_sources": "Web access logs (`uri`, query string, `status`), WAF logs, app logs.",
+    "risk_level": 1,
+    "tags": [
+      "web-exploit-canary",
+      "web"
+    ],
+    "technique_id": "T1190",
+    "title": "Path traversal canary validation"
+  },
+  "sim-t1190-web-exposure": {
+    "adversary_activity": "Initial access against internet-facing apps starts with confirming exposure and reachable paths. This plan entry reviews target tech and allowed paths and starts the local telemetry server \u2014 no exploit payload is sent.",
+    "detection_logic": "No standalone alert. Use as baseline visibility: ensure every externally reachable path is logged with method, status, and source. Hunt for first-seen external sources hitting sensitive endpoints.",
+    "discriminators_tuning": "Pure visibility validation; benign by design.",
+    "production_log_sources": "Web access logs, WAF logs, app logs, perimeter firewall/netflow.",
+    "risk_level": 1,
+    "tags": [
+      "initial-access-surface",
+      "web"
+    ],
+    "technique_id": "T1190",
+    "title": "Public web exposure validation plan"
+  },
+  "sim-t1203-atomic-office-spawned-script-host": {
+    "adversary_activity": "A malicious document or web content exploits the client application (Office, browser, PDF reader) so the application process spawns a script host or shell \u2014 e.g., `winword.exe` \u2192 `cmd.exe`/`powershell.exe`/`wscript.exe`. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "This is one of the cleanest endpoint detections: alert when an Office app, PDF reader, or browser (`winword.exe`, `excel.exe`, `powerpnt.exe`, `outlook.exe`, `acrord32.exe`, browser renderers) is the **parent** of `cmd.exe`, `powershell.exe`, `wscript.exe`, `cscript.exe`, `mshta.exe`, `rundll32.exe`, or `regsvr32.exe`. Microsoft's ASR \"block Office child process\" rule covers the same logic.",
+    "discriminators_tuning": "A handful of legitimate add-ins and document-automation workflows spawn children \u2014 baseline and allowlist specific signed add-in chains; the noise is low.",
+    "production_log_sources": "Sysmon EID 1 (`ParentImage`, `Image`, `CommandLine`), EDR process-lineage telemetry, Defender ASR events.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1203",
+    "title": "Atomic event: Exploitation for client execution artifact"
+  },
+  "sim-t1204-002-atomic-user-executed-downloaded-file": {
+    "adversary_activity": "A user is socially engineered into running a downloaded executable/script. The file carries Mark-of-the-Web and its parent process is a browser, email client, or Explorer. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert when a process executes from a download/Temp path with a `ParentImage` of a browser (`chrome.exe`, `msedge.exe`, `firefox.exe`), email client (`outlook.exe`), or archive tool, **and** the file carries a MOTW zone of 3 (Internet). High-risk patterns: `.exe`/`.scr`/`.js`/`.hta` run from `\\Downloads\\` or `\\AppData\\Local\\Temp\\`.",
+    "discriminators_tuning": "Users legitimately run installers from Downloads \u2014 weight on file type, signing status, MOTW, and whether the binary is known-good. Newly-seen unsigned binaries from email-client parents are the highest-fidelity slice.",
+    "production_log_sources": "Sysmon EID 1 (ProcessCreate: `Image`, `ParentImage`, `User`), Sysmon EID 11 (FileCreate in Downloads), Sysmon EID 15 (FileCreateStreamHash \u2014 MOTW `Zone.Identifier`), EDR process tree, browser download logs.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1204.002",
+    "title": "Atomic event: User execution of downloaded file"
+  },
+  "sim-t1218-regsvr32-proxy": {
+    "adversary_activity": "`regsvr32.exe` (a trusted Microsoft binary) is abused to execute a remote scriptlet via the \"Squiblydoo\" technique (`regsvr32 /s /n /u /i:http://.../file.sct scrobj.dll`), bypassing application allowlisting. The fixture records command lines without registering DLLs or fetching scriptlets.",
+    "detection_logic": "Alert on `regsvr32.exe` with `/i:` referencing an **http(s)/URL** or a `.sct` scriptlet, with `scrobj.dll`, or making an outbound network connection (regsvr32 normally never touches the network). The `/s /n /u /i:` combination is the Squiblydoo signature.",
+    "discriminators_tuning": "Legitimate COM registration uses local DLL paths with no URL and no network \u2014 URL/scriptlet/network usage cleanly isolates the abuse.",
+    "production_log_sources": "Sysmon EID 1 (`Image=regsvr32.exe`, `CommandLine`), EID 3 (NetworkConnection from regsvr32), Security `4688`.",
+    "risk_level": 2,
+    "tags": [
+      "defense-evasion-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1218.010",
+    "title": "Regsvr32 signed binary proxy execution"
+  },
+  "sim-t1218-rundll32-proxy": {
+    "adversary_activity": "`rundll32.exe` proxies execution of arbitrary DLLs/exports or inline script (`rundll32 javascript:...`, `rundll32 <dll>,<export>`, suspicious ordinals) to evade allowlisting. The fixture records command lines without loading anything.",
+    "detection_logic": "Alert on `rundll32.exe` with `javascript:`/`vbscript:`/`mshtml`, with a DLL in a user-writable path, with no/odd arguments, calling exports by ordinal, or making network connections. `rundll32` spawned by Office or with a URL is high-value.",
+    "discriminators_tuning": "`rundll32` is used heavily by legitimate Windows components \u2014 baseline normal DLL/export pairs; the inline-script and user-path-DLL variants are the cleanest signals.",
+    "production_log_sources": "Sysmon EID 1 (`Image=rundll32.exe`, `CommandLine`, `ParentImage`), EID 7 (DLL loaded), EID 3 (network), Security `4688`.",
+    "risk_level": 2,
+    "tags": [
+      "defense-evasion-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1218.011",
+    "title": "Rundll32 signed binary proxy execution"
+  },
+  "sim-t1219-atomic-remote-access-software-started": {
+    "adversary_activity": "Attackers (and ransomware affiliates) install legitimate remote-access/RMM software for hands-on-keyboard control \u2014 AnyDesk, TeamViewer, ScreenConnect/ConnectWise, Atera, Splashtop, RemoteUtilities. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on execution of RMM binaries that are **not your sanctioned tool**, on RMM software running from temp/user paths, and on connections to RMM vendor domains from hosts that shouldn't have that tool. Unsanctioned-RMM is a leading ransomware-precursor signal.",
+    "discriminators_tuning": "Your approved RMM is legitimate everywhere \u2014 maintain a strict allowlist of the one(s) you sanction and alert on every other RMM family. --- # Exfiltration",
+    "production_log_sources": "Sysmon EID 1 (RMM binary names/paths), EID 3 (connections to RMM cloud domains), Security `4688`, proxy/DNS logs for RMM infrastructure.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1219",
+    "title": "Atomic event: Remote access software execution"
+  },
+  "sim-t1222-001-atomic-icacls-permission-change": {
+    "adversary_activity": "Modifying file/folder ACLs grants the attacker access or hides changes (`icacls /grant Everyone:F`, `takeown /f`, `cacls`), often to enable persistence or tamper with protected files. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `icacls`/`cacls` granting `Everyone`/`Users` full control (`:F`) or `takeown` over system/protected paths, and on permission grants targeting startup, service, or security-relevant locations.",
+    "discriminators_tuning": "Installers and admin scripts adjust ACLs \u2014 weight on overly-permissive grants (`Everyone:F`) and on protected-path targets.",
+    "production_log_sources": "Sysmon EID 1 (`Image=icacls.exe`/`takeown.exe`/`cacls.exe`, `CommandLine`), Security `4670` (permissions changed), `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1222.001",
+    "title": "Atomic event: Windows file permission modification"
+  },
+  "sim-t1482-atomic-domain-trust-discovery": {
+    "adversary_activity": "Mapping Active Directory trust relationships to plan cross-domain movement \u2014 `nltest /domain_trusts`, `Get-ADTrust`, `dsquery * -filter trust`, BloodHound collection. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `nltest /domain_trusts`/`/all_trusts`, `Get-ADTrust`, and LDAP queries for `trustedDomain` objects \u2014 especially from non-admin hosts/accounts. Trust enumeration is a strong pre-lateral-movement signal.",
+    "discriminators_tuning": "AD admins run these occasionally \u2014 scope to non-admin contexts and correlate with broader recon (BloodHound-style LDAP bursts).",
+    "production_log_sources": "Sysmon EID 1 (`nltest.exe /domain_trusts`, PowerShell AD cmdlets), Security `4688`; on DCs, `4662` (directory access to trust objects).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1482",
+    "title": "Atomic event: Domain trust discovery"
+  },
+  "sim-t1486-atomic-ransomware-file-rename": {
+    "adversary_activity": "Ransomware encrypts files at scale and renames them (new extension), then drops ransom notes \u2014 a high-velocity mass-modification of files. The fixture emits a structured EDR `RANSOMWARE_CANARY`/`MassFileRename` event.",
+    "detection_logic": "Alert on a single process modifying/renaming a large number of files across directories in a very short window, on a flood of files gaining the same new extension, on ransom-note filenames appearing in many folders, and on access to honeypot/canary files. Often co-occurs with shadow-copy deletion (T1490) \u2014 correlate them.",
+    "discriminators_tuning": "Bulk legitimate operations (mass rename, backup, encryption tools) exist but rarely at ransomware velocity across user data \u2014 rate + breadth + new-extension uniformity make this high-fidelity. Canary files give near-zero-FP early warning.",
+    "production_log_sources": "EDR mass-file-operation/behavioral telemetry, Sysmon EID 11/23 (rapid file create/delete), Security `4663` bursts, file-server audit logs, canary/honeypot file triggers.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1486",
+    "title": "Atomic event: Ransomware-like file encryption artifact"
+  },
+  "sim-t1490-atomic-shadow-copy-deletion": {
+    "adversary_activity": "To prevent recovery before/after encryption, ransomware deletes Volume Shadow Copies and disables recovery \u2014 `vssadmin delete shadows /all /quiet`, `wmic shadowcopy delete`, `wbadmin delete catalog`, `bcdedit /set recoveryenabled no`, `Delete-Backup`. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `vssadmin delete shadows`, `wmic shadowcopy delete`, `wbadmin delete catalog/systemstatebackup`, and `bcdedit /set {default} recoveryenabled no` / `bootstatuspolicy ignoreallfailures`. These are extremely high-fidelity ransomware indicators and rarely benign.",
+    "discriminators_tuning": "Legitimate backup management occasionally deletes shadow copies \u2014 but `bcdedit` recovery-disable and `vssadmin delete /all /quiet` are near-certain malicious; treat as critical and correlate with mass-file activity (T1486). --- # Appendix: coverage and detection-engineering notes **Telemetry-source dependencies.** These detections only work if the underlying source is collected in production. Confirm you have: Sysmon (with a tuned config covering EIDs 1, 3, 7, 8, 10, 11, 13, 19\u201321, 23), PowerShell Script Block + Module logging, Windows Security auditing (`4624`/`4625`/`4663`/`4688`/`4697`/`4698`/`4728`/`5140`/`5145`/`1102`), Defender Operational, web/proxy logs, DNS logs, firewall/NetFlow, email gateway, and Linux `auditd`. `4663`/`4660` require SACLs to fire; `4688` command-line auditing must be explicitly enabled. **The Sysmon EID 1 caveat (repeated because it matters).** ~20 techniques here resolve to ProcessCreate. For all of them, your detection differentiates entirely on `CommandLine`, `Image`, `OriginalFileName`, and `ParentImage`. Verify clean parsing and consider command-line obfuscation (caret/quote/env-var tricks) when writing matches. **What these simulations validate \u2014 and don't.** A pass confirms your SIEM **parses the event schema and your rule logic fires**. It does **not** confirm that a real OS would emit that event, that the detection survives obfuscation/evasion variants, that it won't generate excessive false positives at production volume, or that prevention/blocking controls work \u2014 nothing executes on a real system. Treat green results as \"rule matches a correctly-shaped event,\" then validate the remaining three dimensions separately. **Highest-fidelity, lowest-tuning detections** (good first deployments): event-log cleared (`1102`), WMI consumer creation (Sysmon `20`), accessibility-IFEO debugger, password-filter DLL registration, shadow-copy deletion / `bcdedit` recovery-disable, LSASS access by non-allowlisted process, Office-spawns-script-host, and unsanctioned RMM execution. **Coverage gaps to be aware of** (techniques this catalog does not exercise): Impact beyond ransomware (data destruction T1485, disk wipe T1561, service stop T1489, resource hijacking T1496); genuine cloud control-plane and IdP telemetry (the `cloud`/`identity-lab` tags sit on Windows-endpoint fixtures, so CloudTrail/Entra/GCP-audit detections aren't tested); and Resource Development (largely adversary-side, little victim telemetry).",
+    "production_log_sources": "Sysmon EID 1 (`vssadmin.exe`/`wmic.exe`/`wbadmin.exe`/`bcdedit.exe` with delete/disable args), Security `4688`, System events for VSS.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1490",
+    "title": "Atomic event: Inhibit system recovery command"
+  },
+  "sim-t1497-atomic-sandbox-evasion-check": {
+    "adversary_activity": "Malware checks whether it is running in a VM/sandbox before detonating \u2014 querying CPU/MAC/firmware artifacts, VM-specific processes/registry, low core/RAM counts, or using timing/sleep delays. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on queries for VM artifacts \u2014 `wmic computersystem get model`, `wmic bios`, registry reads for `VMware`/`VBox`/`QEMU`, checks of MAC OUI prefixes, enumeration of VM processes (`vmtoolsd`, `vboxservice`) \u2014 especially clustered together shortly after a file's first execution.",
+    "discriminators_tuning": "Inventory/asset tools query hardware legitimately \u2014 the *clustering* of multiple VM-artifact checks right after execution distinguishes evasion from inventory.",
+    "production_log_sources": "Sysmon EID 1 (discovery command lines), EDR API telemetry (timing/anti-analysis), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1497",
+    "title": "Atomic event: Virtualization and sandbox evasion check"
+  },
+  "sim-t1505-suspicious-extension-upload": {
+    "adversary_activity": "The delivery half of a web shell: uploading a server-executable file (`.php`/`.aspx`/`.jsp`) to an upload endpoint so it can later be invoked. The simulation POSTs benign bodies to such paths; no file is persisted.",
+    "detection_logic": "Alert on POSTs that result in a server-executable extension being written to a web-served directory, on uploads whose declared content-type mismatches a script extension, and on FIM events creating `.php`/`.aspx`/`.jsp`/`.jspx` files in the webroot. A new script file in the webroot followed by a GET to it is the kill chain.",
+    "discriminators_tuning": "CMS plugin/theme uploads and dev deployments write scripts legitimately \u2014 scope to user-upload directories and unexpected webroot writes outside deployment windows.",
+    "production_log_sources": "Web access logs (POST to upload paths, `status`), structured web JSON (body length/hash), file-integrity monitoring on web directories, Sysmon EID 11 (FileCreate in webroot).",
+    "risk_level": 1,
+    "tags": [
+      "persistence-canary",
+      "web"
+    ],
+    "technique_id": "T1505.003",
+    "title": "Suspicious web extension upload"
+  },
+  "sim-t1505-webshell-canary": {
+    "adversary_activity": "A web shell is a server-side script (`.php`/`.aspx`/`.jsp`) planted in a web-accessible directory that executes attacker commands passed as parameters (`?cmd=`, `?action=`), giving persistent remote control of the server. The simulation sends web-shell-shaped URIs/POSTs; the server returns benign responses.",
+    "detection_logic": "Alert on requests to script files with command-like parameters (`cmd`, `exec`, `c`, `pass`), on POSTs to recently-created script files, on a script file requested by a single source with no referrer, and \u2014 the gold-standard signal \u2014 **the web server worker process becoming the parent of a shell**.",
+    "discriminators_tuning": "Legitimate apps execute server-side scripts constantly \u2014 the web-server-spawns-shell parent/child relationship and newly-created scripts in the webroot are the discriminators, not script access itself.",
+    "production_log_sources": "Web access logs (`uri`, `method`, `status`, `user-agent`), structured web JSON (body hash/length), and \u2014 most decisively \u2014 endpoint Sysmon EID 1 showing the web server process (`w3wp.exe`, `httpd`, `php-fpm`, `nginx`, `java`) spawning `cmd.exe`/`/bin/sh`.",
+    "risk_level": 1,
+    "tags": [
+      "persistence-canary",
+      "web"
+    ],
+    "technique_id": "T1505.003",
+    "title": "Web shell URI and POST canary validation"
+  },
+  "sim-t1518-001-atomic-security-software-discovery": {
+    "adversary_activity": "Specifically identifying AV/EDR/security tooling before acting \u2014 `tasklist | findstr` for AV process names, `Get-Service` filtered for security products, `wmic` queries for AntiVirusProduct. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on process/service enumeration filtered for security-vendor names (`CrowdStrike`, `SentinelOne`, `Defender`/`MsMpEng`, `Carbon`, `cylance`, `sophos`, `wazuh`), and on `wmic /namespace:\\\\root\\SecurityCenter2`. Filtering specifically *for* security tools is a much stronger signal than generic process discovery.",
+    "discriminators_tuning": "Rarely benign to grep running processes for EDR names \u2014 this is one of the cleaner discovery detections.",
+    "production_log_sources": "Sysmon EID 1 (`CommandLine` containing AV/EDR product/process names), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1518.001",
+    "title": "Atomic event: Security software discovery"
+  },
+  "sim-t1518-software-discovery": {
+    "adversary_activity": "Inventorying installed software to find exploitable apps or valuable targets \u2014 `wmic product get`, `Get-ItemProperty ...\\Uninstall\\*`, `reg query` of uninstall keys. The fixture records process telemetry without querying installed software.",
+    "detection_logic": "Alert on enumeration of installed-software registry paths and `wmic product get` by service/web accounts or in a recon burst.",
+    "discriminators_tuning": "Patch/inventory agents do exactly this \u2014 allowlist them and weight on unusual account context.",
+    "production_log_sources": "Sysmon EID 1 (`wmic product`, PowerShell uninstall-key reads, `reg query`), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "discovery-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1518",
+    "title": "Software discovery"
+  },
+  "sim-t1539-atomic-browser-cookie-access": {
+    "adversary_activity": "Stealing browser cookies (the `Cookies` SQLite DB) lets an attacker hijack authenticated sessions and bypass MFA via session tokens. The fixture emits a Sysmon `11 FileCreate`.",
+    "detection_logic": "Alert when a non-browser process reads/copies the `Cookies` database for Chrome/Edge/Firefox, especially copying it to a staging/temp path. Cookie theft + outbound transfer chains into session hijacking.",
+    "discriminators_tuning": "Same as the credential store \u2014 allowlist browsers and sync agents; alert on foreign processes touching the cookie DB.",
+    "production_log_sources": "Sysmon EID 11 (access/copy of `...\\Network\\Cookies` or `Cookies`), EID 1 (the accessing process), EDR file telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1539",
+    "title": "Atomic event: Browser cookie database access"
+  },
+  "sim-t1543-service-creation": {
+    "adversary_activity": "A new Windows service provides SYSTEM-level persistence and auto-start (`sc create`, `New-Service`, direct registry write under `Services\\`). The fixture records service-creation command lines without creating a service.",
+    "detection_logic": "Alert on `sc.exe create`/`New-Service` with a `binPath` pointing to a script host, `cmd /c`, PowerShell, or a binary in `\\Temp\\`/`\\Users\\`. Services with auto-start + suspicious binpath + non-standard name are high-value.",
+    "discriminators_tuning": "Software installs legitimately create services \u2014 discriminate on binpath location and content (LOLBins/temp paths) rather than on creation.",
+    "production_log_sources": "System `7045` (ServiceInstalled), Security `4697`, Sysmon EID 1 (`sc.exe create`) and EID 13 (registry write to `HKLM\\SYSTEM\\CurrentControlSet\\Services\\`).",
+    "risk_level": 2,
+    "tags": [
+      "persistence-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1543.003",
+    "title": "Windows service creation"
+  },
+  "sim-t1546-003-atomic-wmi-event-subscription": {
+    "adversary_activity": "A permanent WMI event subscription (an `__EventFilter` + `__EventConsumer` + `FilterToConsumerBinding`) triggers a payload on a system event (boot, time, logon) \u2014 a stealthy, fileless, SYSTEM-level persistence. The fixture emits a Sysmon `19 WmiEventFilter`.",
+    "detection_logic": "Alert on any creation of a `CommandLineEventConsumer` or `ActiveScriptEventConsumer` (Sysmon EID 20) \u2014 these are rare and high-fidelity. Pair filter+consumer+binding to confirm a persistence subscription; inspect the consumer's command/script for payload content.",
+    "discriminators_tuning": "Very few legitimate products use permanent WMI subscriptions (some SCCM/monitoring) \u2014 baseline those and treat everything else as suspicious. One of the highest-fidelity persistence detections available.",
+    "production_log_sources": "Sysmon EID 19 (WmiEventFilter), EID 20 (WmiEventConsumer), EID 21 (WmiEventConsumerToFilter binding) \u2014 the three together are the full signal; **WMI-Activity/Operational** log.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1546.003",
+    "title": "Atomic event: WMI event subscription persistence"
+  },
+  "sim-t1546-008-atomic-accessibility-feature-backdoor": {
+    "adversary_activity": "The \"sticky keys\" class of backdoor either replaces an accessibility binary (`sethc.exe`, `utilman.exe`, `osk.exe`, `Magnify.exe`) with `cmd.exe`, or sets an Image File Execution Options debugger so the accessibility key combo launches a SYSTEM shell from the logon screen. The fixture emits a Sysmon `13 RegistryValueSet`.",
+    "detection_logic": "Alert on any `Debugger` value set under `...\\Image File Execution Options\\sethc.exe|utilman.exe|osk.exe|magnify.exe|narrator.exe|displayswitch.exe`, and on modification of those binaries in `System32`. Both are extremely rare legitimately.",
+    "discriminators_tuning": "Almost no benign cause \u2014 IFEO Debugger on accessibility binaries is a near-certain backdoor.",
+    "production_log_sources": "Sysmon EID 13 (RegistryValueSet on `Image File Execution Options\\<binary>\\Debugger`), EID 11/2 (replacement of the accessibility binary), EDR file-integrity telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1546.008",
+    "title": "Atomic event: Accessibility feature persistence"
+  },
+  "sim-t1547-009-atomic-shortcut-modification": {
+    "adversary_activity": "A `.lnk` shortcut is created or modified \u2014 often in the Startup folder, or a common shortcut repointed \u2014 so a malicious target runs when the user clicks or at logon. The fixture emits a Sysmon `11 FileCreate`.",
+    "detection_logic": "Alert on `.lnk` files created/modified in `\\Start Menu\\Programs\\Startup\\` or `\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\`, and on shortcuts whose target is `cmd`/`powershell`/`wscript`/a user-writable binary. LNK target parsing (where available) reveals the payload.",
+    "discriminators_tuning": "Installers create Startup shortcuts to signed binaries \u2014 alert on script-host/LOLBin targets and user-writable target paths.",
+    "production_log_sources": "Sysmon EID 11 (FileCreate of `.lnk`, `TargetFilename`), EID 2 (file creation time changed), EDR file telemetry, Startup-folder monitoring.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1547.009",
+    "title": "Atomic event: Shortcut modification persistence"
+  },
+  "sim-t1547-run-key-persistence": {
+    "adversary_activity": "Writing a value under a Run/RunOnce key launches a payload at user logon or boot (`HKCU\\...\\Run`, `HKLM\\...\\Run`, `RunOnce`). The fixture records registry-set-shaped telemetry with the Run key path, without writing the registry.",
+    "detection_logic": "Alert on `RegistryValueSet` to `\\CurrentVersion\\Run`, `\\RunOnce`, `\\Policies\\Explorer\\Run`, `\\Winlogon\\Shell`/`Userinit` where `Details` references a script host, a path in `\\Temp\\`/`\\AppData\\`/`\\Users\\Public\\`, an encoded command, or a freshly-dropped binary.",
+    "discriminators_tuning": "Legitimate apps add Run keys at install \u2014 this key is high-volume. Weight on the value's target path and content; pointing at user-writable/temp locations or script hosts is the signal.",
+    "production_log_sources": "Sysmon EID 13 (RegistryValueSet: `TargetObject`, `Details`), EDR autostart telemetry, Autoruns baselining.",
+    "risk_level": 2,
+    "tags": [
+      "persistence-canary",
+      "windows-endpoint"
+    ],
+    "technique_id": "T1547.001",
+    "title": "Registry Run key persistence"
+  },
+  "sim-t1550-002-atomic-pass-the-hash-logon": {
+    "adversary_activity": "Pass-the-Hash authenticates with a stolen NTLM hash instead of a password, enabling lateral movement without cracking credentials. It surfaces as an NTLM network logon. The fixture emits a Security `4624 SuccessfulLogon`.",
+    "detection_logic": "Alert on `4624` Type 3 NTLM logons for accounts/hosts that normally authenticate via Kerberos, on the PtH signature (`LogonType 3` + `NTLM` + `LogonProcessName=NtLmSsp` + `KeyLength=0`), and on the same account performing NTLM network logons across many hosts in a short window.",
+    "discriminators_tuning": "Legacy apps and non-domain access legitimately use NTLM \u2014 baseline which accounts/hosts use NTLM and alert on Kerberos-normal accounts suddenly using NTLM across multiple targets.",
+    "production_log_sources": "Security `4624` LogonType **3** with `AuthenticationPackageName=NTLM` and specific `LogonProcessName`/key-length characteristics, `4776` (NTLM credential validation), `4672` for the session.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1550.002",
+    "title": "Atomic event: Pass-the-Hash style network logon"
+  },
+  "sim-t1552-002-atomic-credentials-in-registry": {
+    "adversary_activity": "Querying the registry for stored credentials \u2014 autologon `DefaultPassword`, VNC/PuTTY/SNMP secrets, saved RDP/credential-manager material. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `reg query` against known credential-bearing keys \u2014 `...\\Winlogon\\DefaultPassword`, `...\\RealVNC\\`, `...\\SimonTatham\\PuTTY\\Sessions`, `...\\SNMP\\`, `...\\TermServices` \u2014 and on broad recursive `reg query /s` searching for `password`.",
+    "discriminators_tuning": "Admin scripts query the registry \u2014 scope to credential-specific value paths and to `findstr password`-style searches.",
+    "production_log_sources": "Sysmon EID 1 (`reg.exe query` command lines), EID 13 reads where audited, Security `4688`, `4663` on credential registry hives.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1552.002",
+    "title": "Atomic event: Credentials read from registry"
+  },
+  "sim-t1552-006-atomic-cloud-credential-file-access": {
+    "adversary_activity": "Reading credential files for cloud/IaC tooling or Group Policy Preferences yields reusable secrets \u2014 `~/.aws/credentials`, `~/.azure/`, `~/.config/gcloud/`, `.kube/config`, and SYSVOL `Groups.xml` (GPP `cpassword`). The fixture emits a structured EDR `FILE_READ` event.",
+    "detection_logic": "Alert on reads of `*/.aws/credentials`, `*/.azure/*`, `*/.config/gcloud/*`, `*/.kube/config`, `*/.ssh/id_*`, and SYSVOL `*\\Groups.xml` by an unexpected process or user. GPP `cpassword` retrieval (`Get-GPPPassword`) is a classic AD credential path.",
+    "discriminators_tuning": "The owning CLI tools (`aws`, `az`, `gcloud`, `kubectl`) read these legitimately \u2014 alert on access by *other* processes/users, and on SYSVOL `Groups.xml` reads by non-DC hosts.",
+    "production_log_sources": "EDR file-read telemetry (`SensitiveFileAccess`), Sysmon EID 11/`auditd` file watches on those paths, Security `4663` (with SACLs), SYSVOL access logs for `Groups.xml`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1552.006",
+    "title": "Atomic event: Cloud credential file access"
+  },
+  "sim-t1552-web-secret-exposure-canary": {
+    "adversary_activity": "Attackers request well-known sensitive paths hoping for misconfigured exposure of secrets \u2014 `/.env`, `/.git/config`, `/config.php.bak`, `/id_rsa`, `/.aws/credentials`, backup archives. The simulation requests these fixed paths; the server returns benign/404 responses and never serves secrets.",
+    "detection_logic": "Alert on requests to secret/config/key/backup paths (`.env`, `.git/`, `.svn/`, `*.bak`, `*.old`, `id_rsa`, `*.pem`, `*.sql`, `wp-config.php~`), and treat any **`200`** to such a path as critical \u2014 it means a real secret may be exposed. A burst of such 404s indicates targeted hunting.",
+    "discriminators_tuning": "Scanners generate these as 404s \u2014 the severity pivot is the response code; 404s are recon, 200s are exposure.",
+    "production_log_sources": "Web access logs (`uri`, `status`), WAF logs, structured web JSON.",
+    "risk_level": 1,
+    "tags": [
+      "credential-exposure-canary",
+      "web"
+    ],
+    "technique_id": "T1552.001",
+    "title": "Web-exposed secret and backup file canary"
+  },
+  "sim-t1555-003-atomic-browser-login-data-access": {
+    "adversary_activity": "Infostealers read the browser's saved-password store (`Login Data` SQLite + `Local State` DPAPI key for Chrome/Edge, `logins.json`/`key4.db` for Firefox) to harvest credentials. The fixture emits a Sysmon `11 FileCreate`.",
+    "detection_logic": "Alert when a **non-browser process** opens/copies `...\\User Data\\*\\Login Data`, `Local State`, `Cookies`, or Firefox `logins.json`/`key4.db`. The decisive signal is a process other than the browser itself touching these files.",
+    "discriminators_tuning": "Backup/sync tools and the browser's own processes access these \u2014 allowlist the browser executables and known sync agents; everything else reading the password DB is high-value.",
+    "production_log_sources": "Sysmon EID 11 (FileCreate/copy of `Login Data`), EID 1 (process accessing the path), EID 10 (access to the browser process for in-memory key), EDR file telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1555.003",
+    "title": "Atomic event: Browser credential store access"
+  },
+  "sim-t1556-002-atomic-password-filter-dll-registered": {
+    "adversary_activity": "Registering a custom DLL in the LSA `Notification Packages` list installs a password filter that receives every password change in plaintext \u2014 a stealthy credential-harvesting persistence. The fixture emits a Sysmon `13 RegistryValueSet`.",
+    "detection_logic": "Alert on any modification of `Lsa\\Notification Packages` adding a non-default DLL, and on a non-Microsoft DLL loaded by `lsass.exe`. Default entries are `rassfm`, `scecli`, etc. \u2014 additions are suspect.",
+    "discriminators_tuning": "A few enterprise password-policy products add legitimate filters \u2014 allowlist those specific signed DLLs; everything else is high-severity.",
+    "production_log_sources": "Sysmon EID 13 (RegistryValueSet on `HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\Notification Packages`), EID 7 (the DLL loaded into `lsass.exe`), Security `4614` (notification package loaded).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1556.002",
+    "title": "Atomic event: Password filter DLL registration"
+  },
+  "sim-t1560-001-atomic-archive-with-rar": {
+    "adversary_activity": "Staged data is compressed (often password-protected/split) before exfiltration \u2014 `rar a -p`, `7z a -p`, `Compress-Archive`, `tar czf`. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on archiving utilities with **password flags** (`-p`, `-hp`), on archives created in staging/temp directories, on `rar`/`7z` present where it isn't normally installed, and on large archives created shortly before an outbound transfer. Password-protected archives of collected data are a strong pre-exfil signal.",
+    "discriminators_tuning": "Backup and legitimate compression are common \u2014 weight on password protection, staging locations, unusual tools, and proximity to exfil/network activity.",
+    "production_log_sources": "Sysmon EID 1 (`rar.exe`/`7z.exe`/`Compress-Archive`/`tar`, `CommandLine`), EID 11 (the archive file created), Security `4688`.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1560.001",
+    "title": "Atomic event: Archive collected data with utility"
+  },
+  "sim-t1562-001-atomic-disable-defender-realtime": {
+    "adversary_activity": "Disabling Microsoft Defender (real-time protection, AMSI, cloud submission) removes a primary defensive control (`Set-MpPreference -DisableRealtimeMonitoring $true`, registry `DisableAntiSpyware`, `Add-MpPreference -ExclusionPath`). The fixture emits a Defender `5007 ConfigurationChanged`.",
+    "detection_logic": "Alert on `5001`/`5007` indicating real-time protection or tamper-protection disabled, on `Add-MpPreference -ExclusionPath`/`-ExclusionExtension`/`-ExclusionProcess` (attackers carve out exclusions), and on registry writes disabling Defender. Exclusion additions are a frequently-missed, high-value signal.",
+    "discriminators_tuning": "IT and AV-migration legitimately change Defender config \u2014 correlate with change tickets; exclusion additions and tamper-protection-off events warrant scrutiny regardless.",
+    "production_log_sources": "Microsoft-Windows-Windows Defender/Operational: `5007` (config changed), `5001` (real-time protection disabled), `5010`/`5012` (scanning disabled); Sysmon EID 1 (`Set-MpPreference`); registry EID 13 on Defender keys.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1562.001",
+    "title": "Atomic event: Impair defenses by disabling Defender"
+  },
+  "sim-t1562-004-atomic-disable-windows-firewall": {
+    "adversary_activity": "Disabling the host firewall removes egress/ingress controls to enable C2 or lateral movement (`netsh advfirewall set allprofiles state off`, `Set-NetFirewallProfile -Enabled False`, registry). The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `netsh advfirewall set ... state off`, `Set-NetFirewallProfile -Enabled False`, and rule deletions/additions opening broad inbound access, especially on servers and outside change windows.",
+    "discriminators_tuning": "Admins toggle firewall settings during troubleshooting \u2014 scope to \"disable all profiles\" and broad allow-rule creation, and correlate with change records.",
+    "production_log_sources": "Sysmon EID 1 (`netsh.exe`/PowerShell command lines), Microsoft-Windows-Windows Firewall/Operational `2003`/`2004` (settings changed), registry EID 13 on firewall policy keys.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1562.004",
+    "title": "Atomic event: Disable host firewall"
+  },
+  "sim-t1564-001-atomic-hidden-file-attribute": {
+    "adversary_activity": "Marking files hidden/system (`attrib +h +s`), using leading-dot names, or hiding data in Alternate Data Streams conceals payloads from casual inspection. The fixture emits a Sysmon `1 ProcessCreate`.",
+    "detection_logic": "Alert on `attrib +h +s` applied to files in user/temp/startup paths, on creation of ADS (`file.txt:hidden.exe`), and on hidden executables in user-writable directories. ADS execution is a strong evasion signal.",
+    "discriminators_tuning": "Installers set hidden/system attributes legitimately \u2014 weight on hidden *executables/scripts* in user paths and on ADS containing executable content.",
+    "production_log_sources": "Sysmon EID 1 (`Image=attrib.exe`, `CommandLine`), EID 11/15 (file/ADS creation), EDR file telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1564.001",
+    "title": "Atomic event: Hidden file attribute set"
+  },
+  "sim-t1566-001-atomic-email-attachment-delivery": {
+    "adversary_activity": "A targeted email delivers a weaponized attachment (macro-enabled Office doc, ISO/IMG, LNK, OneNote, password-protected archive) that executes on open. The fixture emits an email-gateway `MESSAGE_DELIVERED` event.",
+    "detection_logic": "Alert on delivered attachments of high-risk types (`.docm`, `.xlsm`, `.iso`, `.img`, `.lnk`, `.one`, `.hta`, double-extension, password-protected zip), on auth failures (SPF/DKIM/DMARC) from external senders impersonating internal domains, and on attachment hashes matching threat intel. The decisive follow-on signal is **Office/PDF reader spawning a script host or LOLBin** (chains into T1203/T1204.002).",
+    "discriminators_tuning": "Macro-enabled docs and archives are common in legitimate business mail \u2014 weight on sender reputation, auth results, and especially on post-delivery execution behavior rather than attachment type alone.",
+    "production_log_sources": "Email gateway/secure-email logs (sender, attachment name/type/hash, SPF/DKIM/DMARC, detonation verdict), O365/Exchange message trace, and \u2014 for execution follow-through \u2014 endpoint Sysmon EID 1/11 (Office spawning child processes, files written to Temp).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1566.001",
+    "title": "Atomic event: Spearphishing attachment delivery"
+  },
+  "sim-t1567-002-atomic-exfil-to-cloud-storage": {
+    "adversary_activity": "Data is uploaded to consumer cloud storage (Dropbox, Google Drive, MEGA, OneDrive personal, pCloud) to blend with normal web traffic. The fixture emits a structured proxy `HTTP_UPLOAD`/`LargeUpload` event.",
+    "detection_logic": "Alert on large `PUT`/`POST` uploads to consumer cloud-storage domains from hosts/users that don't normally use them, on upload-volume spikes to a single cloud destination, and on uploads to **personal** cloud accounts from corporate endpoints. Volume + unsanctioned-destination is the signal.",
+    "discriminators_tuning": "Sanctioned cloud storage (corporate OneDrive/Drive) is normal \u2014 distinguish sanctioned tenants from personal accounts and baseline per-user upload volume; CASB tenant-awareness sharpens this greatly. --- # Impact",
+    "production_log_sources": "Web proxy logs (destination domain, upload bytes, method), CASB/DLP, NDR/flow, DNS logs.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1567.002",
+    "title": "Atomic event: Exfiltration to cloud storage"
+  },
+  "sim-t1569-002-atomic-service-execution": {
+    "adversary_activity": "Tools like PsExec execute payloads by installing and starting a Windows service (PSEXESVC and clones), a hallmark of lateral movement and remote execution. The fixture emits a Windows System `7045 ServiceInstalled`.",
+    "detection_logic": "Alert on `7045` with random/temporary service names, `ImagePath` pointing to `\\Temp\\`/`\\ADMIN$\\`/a randomly-named binary, `PSEXESVC` or known remote-exec service names, and on `services.exe` spawning `cmd.exe`/`powershell.exe`. Pair with a preceding `4624` network logon to attribute the source host.",
+    "discriminators_tuning": "IT admins legitimately use PsExec and software installs create services \u2014 alert on suspicious binpaths and ephemeral service names rather than service creation broadly.",
+    "production_log_sources": "Windows System log `7045` (ServiceInstalled: `ServiceName`, `ImagePath`), Security `4697` (service installed, audited), `7036`/`7040` (service state/start), Sysmon EID 1 (`ParentImage=services.exe`).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1569.002",
+    "title": "Atomic event: Service execution"
+  },
+  "sim-t1574-002-atomic-dll-side-loading": {
+    "adversary_activity": "A legitimate, signed executable is placed alongside a malicious DLL of a name it searches for; when run, the trusted process loads the attacker's DLL \u2014 executing malicious code under a trusted parent. The fixture emits a Sysmon `7 ImageLoaded`.",
+    "detection_logic": "Alert when a signed/trusted executable loads an **unsigned or invalidly-signed DLL** from the same user-writable directory, when a known-good system binary runs from a non-standard path with a co-located DLL, or when a DLL name matches a system DLL but loads from a user path.",
+    "discriminators_tuning": "Many legitimate apps load their own unsigned DLLs \u2014 baseline known image\u2192DLL pairs and alert on trusted binaries loading DLLs from unexpected, user-writable locations.",
+    "production_log_sources": "Sysmon EID 7 (ImageLoaded: `Image`, `ImageLoaded`, `Signed`, `SignatureStatus`), EID 1 (the host exe launching from an unusual path), EDR module-load telemetry.",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1574.002",
+    "title": "Atomic event: DLL side-loading artifact"
+  },
+  "sim-t1574-011-atomic-services-registry-permissions-weakness": {
+    "adversary_activity": "A weakly-ACL'd service registry key lets a low-privileged user rewrite the service's `ImagePath` to point at a malicious binary, which then runs at the service's (often SYSTEM) privilege. The fixture emits a Sysmon `13 RegistryValueSet`.",
+    "detection_logic": "Alert on modification of a service's `ImagePath`/`FailureCommand`/`ServiceDll` to a user-writable path or LOLBin, especially when the modifying user is not an administrator. Pair with a subsequent service restart.",
+    "discriminators_tuning": "Legitimate reconfiguration and patching change ImagePath \u2014 weight on non-admin modifiers and suspicious target paths.",
+    "production_log_sources": "Sysmon EID 13 (RegistryValueSet on `HKLM\\SYSTEM\\CurrentControlSet\\Services\\<svc>\\ImagePath` or `FailureCommand`), Security `4657` (registry value modified), System `7040` (service config changed).",
+    "risk_level": 1,
+    "tags": [
+      "atomic-event-artifact"
+    ],
+    "technique_id": "T1574.011",
+    "title": "Atomic event: Service registry permissions weakness artifact"
+  },
+  "sim-t1589-web-user-enumeration": {
+    "adversary_activity": "The attacker probes login, registration, or password-reset endpoints to learn which usernames/emails exist, exploiting differences in response (message text, status code, or timing) between valid and invalid users. The harvested list feeds password spraying.",
+    "detection_logic": "Alert on many distinct username probes from one source with few or zero password attempts per user, and on response-differential patterns (e.g., consistent 200-vs-404 or fast-vs-slow keyed to user existence). The catalog's `user-exists` flag is the key field.",
+    "discriminators_tuning": "Self-service signup that checks username availability looks similar \u2014 scope to login/reset endpoints, or require a volume threshold and single-source correlation.",
+    "production_log_sources": "Application auth logs (username, user-exists flag, outcome), web access logs, WAF logs.",
+    "risk_level": 1,
+    "tags": [
+      "reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1589.002",
+    "title": "Web user enumeration sequence"
+  },
+  "sim-t1595-http-fingerprint": {
+    "adversary_activity": "Before any attack, an actor fingerprints a public web/TLS endpoint \u2014 server banner, header order, TLS/JA3/JA4 signature, supported methods \u2014 to identify the platform and pick an exploit. This plan entry is a tabletop dry-run that only confirms authorization and starts the local telemetry server; it emits no attack traffic.",
+    "detection_logic": "Fingerprinting alone is low-signal; treat it as context, not an alert. Hunt for a single source touching many distinct endpoints with minimal request bodies, default tool TLS fingerprints, and HEAD/OPTIONS-heavy traffic. Correlate the source IP forward into later stages.",
+    "discriminators_tuning": "Search-engine crawlers, uptime/security monitors, and CDN health checks dominate the benign side. Maintain an allowlist of known scanners and your own monitoring infrastructure.",
+    "production_log_sources": "Web server access logs (NGINX/Apache/IIS), reverse-proxy/CDN/WAF logs, TLS-inspection or NDR metadata (JA3/JA4), netflow at the perimeter.",
+    "risk_level": 0,
+    "tags": [
+      "reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1595",
+    "title": "HTTP/TLS service fingerprint plan"
+  },
+  "sim-t1595-http-method-probing": {
+    "adversary_activity": "Actors send uncommon HTTP verbs (`OPTIONS`, `TRACE`, `PUT`, `DELETE`, `CONNECT`) and method-override headers (`X-HTTP-Method-Override`) to map allowed methods, find write-enabled endpoints, or trigger TRACE-based XST.",
+    "detection_logic": "Alert on `TRACE`/`TRACK` requests (almost never legitimate in modern apps), on `PUT`/`DELETE` to non-API paths, and on the presence of `X-HTTP-Method-Override` / `X-Method-Override`. A burst of `405 Method Not Allowed` from one source is a strong scanning signal.",
+    "discriminators_tuning": "REST APIs legitimately use `PUT`/`DELETE`/`PATCH`; `OPTIONS` preflight is normal for CORS. Baseline allowed methods per route and alert on deviations rather than on the verbs globally.",
+    "production_log_sources": "Web access logs (`method`, `status`), WAF logs, structured web JSON.",
+    "risk_level": 1,
+    "tags": [
+      "web-reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1595",
+    "title": "HTTP method and override probing"
+  },
+  "sim-t1595-tool-user-agent-fingerprint": {
+    "adversary_activity": "Reconnaissance and exploitation tools advertise themselves in the User-Agent header (`curl`, `python-requests`, `sqlmap`, `Nmap NSE`, `nikto`, `gobuster`). Seeing these against an app server usually means automated probing rather than a human browser.",
+    "detection_logic": "Alert on requests whose User-Agent matches a known offensive-tool or raw-HTTP-client pattern, especially `sqlmap`, `nikto`, `nmap`, `masscan`, `dirbuster`/`gobuster`, `feroxbuster`. Raise severity when paired with 4xx/5xx bursts or injection-shaped parameters.",
+    "discriminators_tuning": "`curl` and `python-requests` are heavily used by legitimate internal automation, API clients, and health checks \u2014 scope those to externally-facing hosts or require a second signal. UA strings are trivially spoofed, so absence of a tool UA does not mean absence of scanning.",
+    "production_log_sources": "Web access logs and structured web JSON (`user-agent` field), WAF logs.",
+    "risk_level": 1,
+    "tags": [
+      "reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1595",
+    "title": "Scanner and tool user-agent fingerprinting"
+  },
+  "sim-t1595-web-404-burst": {
+    "adversary_activity": "Content/path discovery requests a list of common admin, CMS, and technology paths (`/admin`, `/wp-login.php`, `/phpmyadmin`, `/.git/`) looking for anything that returns 200. Most requests 404; the hits are the prize.",
+    "detection_logic": "Alert when one source IP generates a high count of `404`s across distinct paths within a short window, especially against admin/CMS/known-tech paths. Critically, alert on any `200`/`301`/`403` *interleaved* in the 404 burst \u2014 that is a discovered resource.",
+    "discriminators_tuning": "Broken links, misconfigured clients, and vulnerability scanners you run yourself produce 404 bursts. Tune the threshold to your traffic volume and exclude authorized scanner source IPs.",
+    "production_log_sources": "Web access logs (`uri`, `status`, `client IP`, `user-agent`), WAF logs.",
+    "risk_level": 1,
+    "tags": [
+      "web-reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1595",
+    "title": "Web 404 discovery burst"
+  },
+  "sim-t1595-web-content-discovery": {
+    "adversary_activity": "Directory/file brute-forcing probes for admin consoles, API routes, backup files, and exposed source repositories to expand attack surface (`/api/v1/`, `/backup.zip`, `/.env`, `/.git/config`).",
+    "detection_logic": "Alert on a single source requesting many sensitive/uncommon paths in sequence, on dictionary-style path distributions, and on any successful retrieval of backup/config/repo paths. Combine path-diversity-per-source with a tool User-Agent for higher confidence.",
+    "discriminators_tuning": "Legitimate crawlers and link-checkers enumerate paths; scope to sensitive path lists and require either volume anomaly or a successful hit on a should-never-be-public resource.",
+    "production_log_sources": "Web access logs, WAF logs, structured web JSON (path distribution).",
+    "risk_level": 1,
+    "tags": [
+      "web-reconnaissance",
+      "web"
+    ],
+    "technique_id": "T1595",
+    "title": "Web content discovery and path enumeration"
+  }
+}
