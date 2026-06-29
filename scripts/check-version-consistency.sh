@@ -21,12 +21,13 @@ include_paths=(
 
 stale_pattern='Current release: v4|Current release: v4\.0\.0|Current release: v4\.1\.0|Recently Shipped \(v0\.7\.0\)|current v4|Current v4|currently pre-v1|pre-v1\.0|pre 1\.0|AdversaryGraph v4\.1\.0'
 
-if rg -n "$stale_pattern" "${include_paths[@]}" \
-  --glob '!docs/release-notes/**' \
-  --glob '!docs/release-summary-v4*.md' \
-  --glob '!docs/assets/**' \
-  --glob '!**/*.png' \
-  --glob '!**/*.json'; then
+if grep -RInE \
+  --exclude-dir=release-notes \
+  --exclude-dir=assets \
+  --exclude='release-summary-v4*.md' \
+  --exclude='*.png' \
+  --exclude='*.json' \
+  "$stale_pattern" "${include_paths[@]}"; then
   echo "Found stale current-version wording. Update it before release." >&2
   exit 1
 fi
@@ -50,8 +51,13 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-if ! rg -q "Current release: \\*\\*v5\\.0\\.0\\*\\*" README.md ROADMAP.md; then
-  echo "README.md and ROADMAP.md must state the current release as v5.0.0." >&2
+if ! grep -Eq "Current release: \\*\\*v5\\.0\\.0\\*\\*" README.md; then
+  echo "README.md must state the current release as v5.0.0." >&2
+  exit 1
+fi
+
+if ! grep -Eq "Current release: \\*\\*v5\\.0\\.0\\*\\*" ROADMAP.md; then
+  echo "ROADMAP.md must state the current release as v5.0.0." >&2
   exit 1
 fi
 
