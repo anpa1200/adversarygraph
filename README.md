@@ -66,6 +66,10 @@ The default Compose deployment binds the public UI and reference docs to localho
 
 | Need | Link |
 |---|---|
+| Commercial trust package | [Commercial Trust](https://1200km.com/adversarygraph-docs/commercial-trust/) |
+| Architecture diagrams | [Architecture Diagrams](https://1200km.com/adversarygraph-docs/architecture/) |
+| Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
+| Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |

@@ -13,6 +13,10 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Security policy | [SECURITY.md](../SECURITY.md) |
 | Known limitations | [docs/limitations.md](limitations.md) |
 | Observability and security validation | [docs/observability-security-validation.md](observability-security-validation.md) |
+| Commercial trust package | [Commercial Trust](https://1200km.com/adversarygraph-docs/commercial-trust/) |
+| Architecture diagrams | [Architecture Diagrams](https://1200km.com/adversarygraph-docs/architecture/) |
+| Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
+| Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Deployment boundary | [SECURITY.md — Deployment Boundary](../SECURITY.md#deployment-boundary) |
 | Attack Simulation safety model | [docs/attack-simulation.md — Safety Model](attack-simulation.md#safety-model) |
 
