@@ -307,7 +307,11 @@ maliciousness, IOC confidence, or likelihood of compromise.
 The default Compose deployment is not a hardened public SaaS. If exposing AdversaryGraph:
 
 - Put the frontend and API behind TLS.
-- Use an authenticating reverse proxy or identity-aware gateway.
+- Enable native authentication with `AUTH_ENABLED=true`, or use an
+  authenticating reverse proxy or identity-aware gateway.
+- Use the local auth guide at <http://localhost:3000/auth-guide> during setup.
+- Create permanent named admin accounts, then clear
+  `AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
 - Do not expose PostgreSQL or Redis publicly.
 - Rotate default secrets.
 - Restrict allowed upload size.

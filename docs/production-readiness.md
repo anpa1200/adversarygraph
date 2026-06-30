@@ -37,6 +37,7 @@ handling policy.
 | Required database secret | Implemented | `DB_PASS` is required at startup |
 | Redis authentication | Implemented | `REDIS_PASSWORD` / authenticated `REDIS_URL` |
 | Configurable CORS | Implemented | `CORS_ALLOWED_ORIGINS`, wildcard rejection |
+| Native user authentication | Implemented | Username/password login, session cookie, roles, Admin Panel, and `/auth-guide` |
 | Trusted-header auth guard | Implemented | `PROXY_SECRET` and `X-Internal-Proxy-Secret` |
 | SSRF-safe feed fetches | Implemented | `backend/app/core/safe_http.py` |
 | XML parser hardening | Implemented | `defusedxml` for RSS parsing |
@@ -64,7 +65,8 @@ Use the default Docker Compose deployment only in controlled environments. For
 internet-facing use, place AdversaryGraph behind:
 
 - TLS
-- an authenticating reverse proxy
+- native authentication with named users and roles
+- an authenticating reverse proxy or identity-aware gateway when externally exposed
 - restricted network access to PostgreSQL and Redis
 - managed secrets
 - backups and retention controls

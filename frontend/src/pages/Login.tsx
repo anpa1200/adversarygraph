@@ -54,6 +54,9 @@ export function Login({ status }: { status?: AuthStatus }) {
           <p className="text-xs leading-5 text-gray-500">
             Native username/password auth can run alone or beside trusted reverse-proxy header auth.
           </p>
+          <a className="block text-center text-xs font-semibold text-mitre-accent hover:text-mitre-accent/80" href="/auth-guide">
+            Open authentication setup guide
+          </a>
         </form>
       </div>
     </div>

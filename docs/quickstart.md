@@ -42,6 +42,21 @@ MINIMAX_BASE_URL=https://api.minimax.io/v1
 
 For private analysis, use an operator-controlled LLM gateway and review the provider's data-retention terms.
 
+Optional native authentication:
+
+```env
+AUTH_ENABLED=true
+AUTH_DEFAULT_ROLE=viewer
+AUTH_SESSION_MINUTES=720
+AUTH_BOOTSTRAP_ADMIN_USERNAME=admin
+AUTH_BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-temporary-password
+```
+
+After startup, open <http://localhost:3000/auth-guide> for the local
+authentication setup guide. Sign in with the bootstrap admin, create permanent
+named admin users from **Admin Panel**, then clear
+`AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
+
 Optional IOC enrichment providers:
 
 ```env

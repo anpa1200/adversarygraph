@@ -36,6 +36,7 @@ import { RoleGate } from '@/components/RoleGate';
 import { UIProvider } from '@/components/ui/provider';
 import { Login } from '@/pages/Login';
 import { AdminUsers } from '@/pages/AdminUsers';
+import { AuthGuide } from '@/pages/AuthGuide';
 
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
@@ -63,6 +64,14 @@ function AppShell() {
     return <div className="flex h-screen items-center justify-center bg-mitre-dark text-sm text-gray-500">Loading workspace...</div>;
   }
 
+  if (window.location.pathname === '/auth-guide') {
+    return (
+      <BrowserRouter>
+        <AuthGuide />
+      </BrowserRouter>
+    );
+  }
+
   if (status.data?.auth_enabled && me.isError) {
     return <Login status={status.data} />;
   }
@@ -85,6 +94,7 @@ function AppShell() {
               <Route path="/operations" element={<RoleGate require="analyst"><Operations /></RoleGate>} />
               <Route path="/pipeline" element={<RoleGate require="analyst"><Pipeline /></RoleGate>} />
               <Route path="/admin" element={<RoleGate require="admin"><AdminUsers /></RoleGate>} />
+              <Route path="/auth-guide" element={<AuthGuide />} />
               <Route path="/examples" element={<Examples />} />
               <Route path="/sector-intel" element={<SectorIntel />} />
               <Route path="/asset-surface" element={<AssetSurface />} />

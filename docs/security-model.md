@@ -49,10 +49,11 @@ For private analysis:
 - Use non-default database credentials.
 - Use private LLM infrastructure if provider transmission is not acceptable.
 - Restrict access through a reverse proxy.
-- Configure `AUTH_ENABLED=true` and `PROXY_SECRET` when using trusted-header
-  authentication. The proxy must strip client-supplied `X-Auth-User`,
-  `X-Auth-Roles`, and `X-Internal-Proxy-Secret` headers before setting trusted
-  identity headers.
+- Configure `AUTH_ENABLED=true` for native username/password access control.
+  The local setup guide is available at <http://localhost:3000/auth-guide>.
+- For trusted-header authentication, configure `PROXY_SECRET`. The proxy must
+  strip client-supplied `X-Auth-User`, `X-Auth-Roles`, and
+  `X-Internal-Proxy-Secret` headers before setting trusted identity headers.
 - Set explicit `CORS_ALLOWED_ORIGINS`; wildcard origins are rejected when
   credentialed API access is enabled.
 - Back up and purge data according to local policy.
