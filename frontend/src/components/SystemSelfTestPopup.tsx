@@ -52,14 +52,14 @@ function summarize(result?: SelfTestResult, error?: Error | null) {
   if (!result) {
     return {
       title: 'Running startup self-test',
-      body: 'Checking API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE/CVSS feed sync state.',
+      body: 'Checking API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE Library feed sync state.',
       tone: 'pending' as const,
     };
   }
   if (result.status === 'ok') {
     return {
       title: 'AdversaryGraph self-test passed',
-      body: `API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE/CVSS feed sync state are ready. Checked in ${result.duration_ms} ms.`,
+      body: `API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE Library feed sync state are ready. Checked in ${result.duration_ms} ms.`,
       tone: 'ok' as const,
     };
   }
@@ -203,7 +203,7 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
 
       <div className="rounded border border-white/10 bg-black/15 p-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-semibold">CVE / CVSS sync status</p>
+          <p className="font-semibold">CVE Library sync status</p>
           <span className="opacity-80">
             {String(cveSyncDetails.cve_count ?? 0)} CVEs · {String(cveSyncDetails.known_exploited_count ?? 0)} KEV
           </span>

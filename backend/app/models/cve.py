@@ -8,7 +8,7 @@ from app.core.database import Base
 
 
 class CVESource(Base):
-    """External vulnerability feed used to collect CVE/CVSS context."""
+    """External vulnerability feed used to collect CVE Library context."""
 
     __tablename__ = "cve_sources"
 
@@ -23,7 +23,7 @@ class CVESource(Base):
 
 
 class CVERecord(Base):
-    """Normalized CVE/CVSS record with raw source payload retained for review."""
+    """Normalized CVE record with CVSS score fields and raw source payload retained for review."""
 
     __tablename__ = "cve_records"
     __table_args__ = (UniqueConstraint("cve_id", name="uq_cve_id"),)

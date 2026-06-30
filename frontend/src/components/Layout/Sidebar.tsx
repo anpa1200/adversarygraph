@@ -22,7 +22,7 @@ const nav = [
   { to: '/knowledge',     label: 'Knowledge Library', icon: '◎' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
   { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬' },
-  { to: '/cve',           label: 'CVE / CVSS', icon: '▨' },
+  { to: '/cve',           label: 'CVE Library', icon: '▨' },
   { to: '/feeds',         label: 'Feeds Management', icon: '≋' },
   { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧' },
   { to: '/virustotal',    label: 'VirusTotal Lookup', icon: '◇' },

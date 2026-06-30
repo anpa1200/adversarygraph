@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -108,8 +109,16 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
                     continue
                 if key == "known_exploited":
                     value = bool(existing.known_exploited or value)
+                if key in {"kev_due_date", "kev_required_action"} and not value and getattr(existing, key):
+                    value = getattr(existing, key)
+                if key in {"cvss_version", "cvss_score", "cvss_severity", "cvss_vector", "vuln_status"} and not value and getattr(existing, key):
+                    value = getattr(existing, key)
+                if key in {"cwe_ids", "cpe_matches"} and not value and getattr(existing, key):
+                    value = getattr(existing, key)
                 if key == "tags":
                     value = sorted(set([*(existing.tags or []), *value]))
+                if key == "references":
+                    value = _merge_references(existing.references or [], value)
                 setattr(existing, key, value)
             updated += 1
         else:
@@ -153,6 +162,73 @@ async def sync_nvd_recent(session: AsyncSession, *, days: int = 7, limit: int = 
             source.sync_error = str(exc)[:500]
             await session.commit()
         raise
+
+
+async def sync_nvd_cve_ids(session: AsyncSession, cve_ids: list[str], *, limit: int = 100) -> dict[str, Any]:
+    """Enrich specific CVE IDs from NVD, primarily to fill CVSS for KEV records."""
+    await ensure_cve_sources(session)
+    normalized = []
+    seen = set()
+    for cve_id in cve_ids:
+        cve_id = cve_id.upper().strip()
+        if CVE_ID_RE.fullmatch(cve_id) and cve_id not in seen:
+            normalized.append(cve_id)
+            seen.add(cve_id)
+    normalized = normalized[: max(1, min(limit, 500))]
+    source = await session.get(CVESource, NVD_SOURCE_ID)
+    headers = {"User-Agent": APP_USER_AGENT}
+    if settings.nvd_api_key:
+        headers["apiKey"] = settings.nvd_api_key
+
+    fetched = 0
+    inserted = 0
+    updated = 0
+    errors: list[str] = []
+    request_delay = 0.65 if settings.nvd_api_key else 6.2
+    for index, cve_id in enumerate(normalized):
+        if index:
+            await asyncio.sleep(request_delay)
+        try:
+            response = safe_get(NVD_API_URL, params={"cveId": cve_id}, headers=headers, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            items = [_parse_nvd_vulnerability(item) for item in payload.get("vulnerabilities", []) if isinstance(item, dict)]
+            parsed = [item for item in items if item is not None]
+            fetched += len(parsed)
+            result = await upsert_cves(session, parsed)
+            inserted += int(result.get("inserted", 0) or 0)
+            updated += int(result.get("updated", 0) or 0)
+        except Exception as exc:
+            errors.append(f"{cve_id}: {exc}")
+
+    if source:
+        source.last_synced_at = datetime.now(timezone.utc)
+        source.sync_status = "ok" if not errors else "degraded"
+        source.sync_error = "; ".join(errors[:5])[:500]
+    await session.commit()
+    return {
+        "source": NVD_SOURCE_ID,
+        "mode": "cve-id-enrichment",
+        "requested": len(normalized),
+        "fetched": fetched,
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors[:20],
+    }
+
+
+async def enrich_missing_cvss(session: AsyncSession, *, limit: int = 100) -> dict[str, Any]:
+    limit = max(1, min(limit, 500))
+    rows = await session.execute(
+        select(CVERecord.cve_id)
+        .where(or_(CVERecord.cvss_score.is_(None), CVERecord.cvss_score == ""))
+        .order_by(CVERecord.known_exploited.desc(), CVERecord.last_modified.desc().nulls_last())
+        .limit(limit)
+    )
+    cve_ids = list(rows.scalars().all())
+    result = await sync_nvd_cve_ids(session, cve_ids, limit=limit)
+    result["missing_selected"] = len(cve_ids)
+    return result
 
 
 async def sync_cisa_kev(session: AsyncSession) -> dict[str, Any]:
@@ -438,6 +514,20 @@ def _extract_cpes(configurations: list[dict[str, Any]]) -> list[str]:
                 if criteria:
                     cpes.append(criteria)
     return cpes[:500]
+
+
+def _merge_references(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen = set()
+    for ref in [*existing, *incoming]:
+        if not isinstance(ref, dict):
+            continue
+        key = (str(ref.get("url", "")), str(ref.get("source", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(ref)
+    return merged[:200]
 
 
 async def _upsert_cve_technique_link(session: AsyncSession, cve_id: str, attack_id: str, source_id: str, evidence: str, confidence: int) -> int:

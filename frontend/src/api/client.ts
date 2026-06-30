@@ -222,7 +222,7 @@ export interface IOCSummary {
   techniques: Record<string, number>;
 }
 
-// ── CVE / CVSS Intelligence ─────────────────────────────────────────────────
+// ── CVE Library ──────────────────────────────────────────────────────────────
 
 export interface CVESourceStatus {
   source_id: string;
@@ -278,6 +278,10 @@ export const cveApi = {
     http.post('/cve/sync/all', null, { params: { days } }).then(r => r.data),
   syncNvd: (days = 7, limit = 2000): Promise<Record<string, unknown>> =>
     http.post('/cve/sync/nvd', null, { params: { days, limit } }).then(r => r.data),
+  syncNvdCveIds: (cveIds: string[], limit = 100): Promise<Record<string, unknown>> =>
+    http.post('/cve/sync/nvd/cve-ids', { cve_ids: cveIds }, { params: { limit } }).then(r => r.data),
+  enrichMissingCvss: (limit = 100): Promise<Record<string, unknown>> =>
+    http.post('/cve/sync/nvd/missing-cvss', null, { params: { limit } }).then(r => r.data),
   syncKev: (): Promise<Record<string, unknown>> =>
     http.post('/cve/sync/kev').then(r => r.data),
   correlate: (): Promise<Record<string, number>> =>

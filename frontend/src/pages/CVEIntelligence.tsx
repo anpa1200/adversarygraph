@@ -36,6 +36,7 @@ export function CVEIntelligence() {
   };
   const syncAll = useMutation({ mutationFn: () => cveApi.syncAll(7), onSuccess: invalidate });
   const syncNvd = useMutation({ mutationFn: () => cveApi.syncNvd(7), onSuccess: invalidate });
+  const enrichMissingCvss = useMutation({ mutationFn: () => cveApi.enrichMissingCvss(20), onSuccess: invalidate });
   const syncKev = useMutation({ mutationFn: cveApi.syncKev, onSuccess: invalidate });
   const correlate = useMutation({ mutationFn: cveApi.correlate, onSuccess: invalidate });
 
@@ -48,6 +49,11 @@ export function CVEIntelligence() {
     const high = rows.filter(item => item.cvss.severity === 'HIGH').length;
     return { kev, critical, high };
   }, [rows]);
+  const missingCvssOnPage = useMemo(
+    () => rows.filter(item => !item.cvss.score).map(item => item.cve_id).slice(0, 10),
+    [rows]
+  );
+  const enrichPageCvss = useMutation({ mutationFn: () => cveApi.syncNvdCveIds(missingCvssOnPage, missingCvssOnPage.length || 1), onSuccess: invalidate });
 
   const runSearch = () => {
     setSearch(searchDraft.trim());
@@ -56,11 +62,11 @@ export function CVEIntelligence() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="CVE / CVSS Intelligence" />
+      <Header title="CVE Library" />
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-7xl space-y-5">
           <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <Panel title="Search vulnerability intelligence">
+            <Panel title="Search CVE Library">
               <div className="space-y-4 p-4">
                 <div className="flex flex-wrap gap-3">
                   <input
@@ -88,16 +94,28 @@ export function CVEIntelligence() {
               </div>
             </Panel>
 
-            <Panel title="Feed controls">
+            <Panel title="Library controls">
               <div className="space-y-3 p-4 text-sm">
                 <div className="grid grid-cols-2 gap-2">
                   <button className="primary-action" disabled={syncAll.isPending} onClick={() => syncAll.mutate()}>{syncAll.isPending ? 'Syncing...' : 'Sync NVD + KEV'}</button>
                   <button className="secondary-action" disabled={correlate.isPending} onClick={() => correlate.mutate()}>{correlate.isPending ? 'Correlating...' : 'Refresh correlations'}</button>
                   <button className="secondary-action" disabled={syncNvd.isPending} onClick={() => syncNvd.mutate()}>NVD recent</button>
                   <button className="secondary-action" disabled={syncKev.isPending} onClick={() => syncKev.mutate()}>CISA KEV</button>
+                  <button className="secondary-action" disabled={enrichPageCvss.isPending || missingCvssOnPage.length === 0} onClick={() => enrichPageCvss.mutate()}>
+                    {enrichPageCvss.isPending ? 'Enriching page...' : 'Enrich visible CVSS'}
+                  </button>
+                  <button className="secondary-action" disabled={enrichMissingCvss.isPending} onClick={() => enrichMissingCvss.mutate()}>
+                    {enrichMissingCvss.isPending ? 'Enriching batch...' : 'Enrich next missing batch'}
+                  </button>
                 </div>
+                {(enrichMissingCvss.data || enrichPageCvss.data) && (
+                  <div className="rounded border border-blue-500/40 bg-blue-950/20 p-3 text-xs text-blue-100">
+                    NVD enrichment checked {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.missing_selected ?? (enrichPageCvss.data?.requested || 0))} records, fetched {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.fetched ?? 0)}, updated {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.updated ?? 0)}.
+                  </div>
+                )}
                 <div className="rounded border border-amber-500/50 bg-amber-950/20 p-3 text-xs leading-relaxed text-amber-100">
                   Strong links are stored only when source text, imported IOC fields, or analyst data explicitly contain CVE, ATT&CK, IOC, or actor evidence.
+                  CVSS is a score field inside the CVE record; KEV entries can have no score until enriched from NVD by CVE ID. Without an NVD API key, enrichment is throttled to avoid 429 rate-limit errors.
                 </div>
                 <div className="space-y-2">
                   {(sources.data ?? []).map(source => (
@@ -167,7 +185,7 @@ function CVERow({ item, selected, onSelect }: { item: CVEItem; selected: boolean
 
 function CveDetailPanel({ detail, loading }: { detail: CVEDetail | null; loading: boolean }) {
   if (loading) return <Panel title="CVE detail"><div className="p-4 text-sm text-gray-500">Loading detail...</div></Panel>;
-  if (!detail) return <Panel title="CVE detail"><div className="p-4 text-sm text-gray-500">Select a CVE to review CVSS, references, and strict APT-TTP-IOC-CVE links.</div></Panel>;
+  if (!detail) return <Panel title="CVE detail"><div className="p-4 text-sm text-gray-500">Select a CVE to review score, references, and strict APT-TTP-IOC-CVE links.</div></Panel>;
   return (
     <Panel title={detail.cve_id}>
       <div className="space-y-4 p-4 text-sm">
@@ -215,7 +233,7 @@ function CveDetailPanel({ detail, loading }: { detail: CVEDetail | null; loading
 
 function SeverityBadge({ severity, score }: { severity: string; score: string }) {
   const tone = severity === 'CRITICAL' ? 'bg-red-900/60 text-red-100' : severity === 'HIGH' ? 'bg-orange-900/60 text-orange-100' : severity === 'MEDIUM' ? 'bg-amber-900/50 text-amber-100' : 'bg-gray-800 text-gray-300';
-  return <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${tone}`}>{severity || 'UNKNOWN'} {score || ''}</span>;
+  return <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${tone}`}>{score ? `${severity || 'SCORED'} ${score}` : 'NO NVD SCORE'}</span>;
 }
 
 function Metric({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'bad' | 'warn' }) {

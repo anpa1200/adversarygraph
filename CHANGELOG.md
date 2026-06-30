@@ -10,12 +10,12 @@
   as telemetry gaps instead of generic fake logs.
 - Added raw STIX preservation tables for every ingested STIX object and
   relationship while keeping the existing normalized ATT&CK query tables.
-- Added CVE/CVSS Intelligence with NVD CVE API 2.0 and CISA KEV source sync,
-  normalized CVE/CVSS/CWE/CPE storage, strict evidence-backed
+- Added CVE Library with NVD CVE API 2.0 and CISA KEV source sync,
+  normalized CVE/CVSS score/CWE/CPE storage, strict evidence-backed
   CVE-to-technique/IOC/actor correlation tables, API routes, and a frontend
   CVE review page.
 - Documented the Attack Simulation telemetry architecture rule for detection
-  engineering and SIEM validation review, plus the ATT&CK/STIX and CVE/CVSS
+  engineering and SIEM validation review, plus the ATT&CK/STIX and CVE Library
   data models.
 
 ## v4.1.0 - 2026-06-27

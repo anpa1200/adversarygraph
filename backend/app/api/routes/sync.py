@@ -109,7 +109,7 @@ IOC_CONTENT = [
     "IOC freshness and confidence metadata",
 ]
 CVE_CONTENT = [
-    "NVD CVE API 2.0 recent CVE/CVSS/CWE/CPE sync",
+    "NVD CVE API 2.0 recent CVE/CVSS score/CWE/CPE sync",
     "CISA Known Exploited Vulnerabilities sync",
     "evidence-backed CVE-to-TTP links",
     "evidence-backed CVE-to-IOC links",
@@ -130,7 +130,7 @@ SUPPORTED_SOURCES = {
         "schedule": "manual, ThreatFox recent API supports 1-7 days",
     },
     "cve-intelligence": {
-        "label": "CVE/CVSS Intelligence",
+        "label": "CVE Library",
         "status": "active",
         "content": CVE_CONTENT,
         "schedule": "manual or dynamic DB sync; NVD recent window supports 1-120 days",

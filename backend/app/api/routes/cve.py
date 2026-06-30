@@ -11,11 +11,13 @@ from app.core.database import get_session
 from app.services.auth import TeamUser, analyst, audit, current_user
 from app.services.cve_intel import (
     correlate_cves,
+    enrich_missing_cvss,
     get_cve_detail,
     list_cve_library,
     list_cve_sources,
     sync_all_cve_sources,
     sync_cisa_kev,
+    sync_nvd_cve_ids,
     sync_nvd_recent,
 )
 
@@ -103,10 +105,18 @@ class CVESyncOut(BaseModel):
     sources: list[dict[str, Any]] | None = None
     correlations: dict[str, int] | None = None
     source: str | None = None
+    mode: str | None = None
     days: int | None = None
     fetched: int | None = None
+    requested: int | None = None
+    missing_selected: int | None = None
     inserted: int | None = None
     updated: int | None = None
+    errors: list[str] | None = None
+
+
+class CVEIdSyncIn(BaseModel):
+    cve_ids: list[str] = Field(default_factory=list)
 
 
 @router.get("/sources", response_model=list[CVESourceOut])
@@ -172,6 +182,39 @@ async def sync_nvd(
         return result
     except Exception as exc:
         logger.error("NVD sync failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+
+@router.post("/sync/nvd/cve-ids", response_model=CVESyncOut)
+async def sync_nvd_by_cve_ids(
+    payload: CVEIdSyncIn,
+    limit: int = Query(100, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    try:
+        result = await sync_nvd_cve_ids(session, payload.cve_ids, limit=limit)
+        await audit(session, user, "sync.cve.nvd.cve_ids", "cve_source", details={"count": len(payload.cve_ids), "limit": limit})
+        await session.commit()
+        return result
+    except Exception as exc:
+        logger.error("NVD CVE-ID enrichment failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+
+@router.post("/sync/nvd/missing-cvss", response_model=CVESyncOut)
+async def sync_missing_cvss(
+    limit: int = Query(100, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    try:
+        result = await enrich_missing_cvss(session, limit=limit)
+        await audit(session, user, "sync.cve.nvd.missing_cvss", "cve_source", details={"limit": limit})
+        await session.commit()
+        return result
+    except Exception as exc:
+        logger.error("NVD missing-CVSS enrichment failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
 
