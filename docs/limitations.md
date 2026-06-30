@@ -37,6 +37,18 @@ Before production use:
 - Add triage guidance.
 - Review with detection engineering owners.
 
+## Evidence-to-Detection Graph
+
+- Graph nodes and edges preserve analyst reasoning, but they do not prove that a
+  detection is complete or production-ready.
+- AI-generated graph items are drafts until analyst-reviewed.
+- Detection Readiness Score is an operational completeness score, not scientific
+  coverage proof.
+- A static malware finding, IOC, or actor name does not prove behavior unless the
+  supporting evidence is reviewed.
+- Evidence Pack exports may contain sensitive report excerpts and analyst
+  conclusions; handle them as investigation artifacts.
+
 ## Privacy
 
 Docker mode sends report content to the configured LLM provider. Use a private provider or local gateway if report content cannot leave the environment.

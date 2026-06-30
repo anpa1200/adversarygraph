@@ -11,6 +11,7 @@ AdversaryGraph is a self-hosted analyst workbench for controlled environments. T
 | IOC feeds and enrichment results | May include restricted source data or private indicators |
 | Malware-analysis artifacts | Potentially hostile files, strings, unpacked outputs, and debugger notes |
 | Attack Simulation SIEM targets | May identify internal collectors or validation systems |
+| Evidence Graph exports | May include sensitive report excerpts, analyst decisions, and validation results |
 | API keys and provider tokens | Enable external LLM, CTI, IOC, and enrichment calls |
 
 ## Trust Boundaries
@@ -38,6 +39,8 @@ AdversaryGraph is a self-hosted analyst workbench for controlled environments. T
 | Malware execution in app containers | Not allowed by default; runtime debugging requires isolated disposable MalwareGraph profiles |
 | Internet-exposed default stack | Default Compose binds UI/docs/PostgreSQL to localhost and leaves API/Redis/internal services unexposed |
 | Overclaiming synthetic telemetry | Docs separate real lab telemetry from synthetic AI-generated telemetry |
+| Overclaiming Evidence Graph paths | Node/edge review states, AI draft markers, readiness-score limitations, and analyst-decision requirements |
+| Sensitive graph export leakage | Secret-like metadata keys are redacted; malware binaries and SIEM destination secrets are not included in Evidence Pack exports |
 
 ## Required Operator Hardening
 
@@ -50,7 +53,8 @@ Before exposing AdversaryGraph beyond a trusted local network:
 - Restrict PostgreSQL, Redis, MalwareGraph, and lab fixtures to internal networks.
 - Configure backups, retention policy, monitoring, and audit log retention.
 - Decide which data may be sent to cloud LLM and enrichment providers.
+- Treat Evidence Graph exports as sensitive investigation artifacts and store them under the same controls as incident reports.
 
 ## Residual Risk
 
-AdversaryGraph remains an analyst-assistance tool. AI-generated mappings, generated detections, malware-analysis summaries, synthetic attack telemetry, and similarity scores can be wrong. Treat them as review material, not authoritative output.
+AdversaryGraph remains an analyst-assistance tool. AI-generated mappings, Evidence Graph suggestions, generated detections, malware-analysis summaries, synthetic attack telemetry, and similarity scores can be wrong. Treat them as review material, not authoritative output.

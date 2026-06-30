@@ -28,7 +28,7 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
-export function GroupCompare() {
+export function GroupCompare({ embedded = false }: { embedded?: boolean }) {
   const { domain, version, setOverlayGroup } = useAppStore();
   const navigate = useNavigate();
 
@@ -116,7 +116,7 @@ export function GroupCompare() {
   return (
     <div className="flex flex-col h-full">
       <TechniqueModal attackId={techModalId} onClose={() => setTechModalId(null)} />
-      <Header title="Group vs Group" />
+      {!embedded && <Header title="Group vs Group" />}
 
       <div className="flex flex-1 overflow-hidden">
 

@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.sql import operators as sa_operators
 
 
 os.environ.setdefault("DB_PASS", "test-db-password")
@@ -98,6 +99,12 @@ class _MockSession:
                     rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) > expected]
                 elif op is operator.lt:
                     rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) < expected]
+                elif op is operator.ne:
+                    rows = [row for row in rows if getattr(row, column_name, None) != expected]
+                elif op is sa_operators.in_op:
+                    rows = [row for row in rows if getattr(row, column_name, None) in set(expected or [])]
+                elif op is sa_operators.not_in_op:
+                    rows = [row for row in rows if getattr(row, column_name, None) not in set(expected or [])]
                 else:
                     rows = [row for row in rows if getattr(row, column_name, None) == expected]
             elif column_name and " IS NULL" in str(criterion).upper():

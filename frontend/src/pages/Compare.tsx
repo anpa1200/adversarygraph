@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '@/store';
 import { aptApi, analyzeApi, reportsApi, exportApi } from '@/api/client';
 import { useAttackMatrix } from '@/hooks/useAttackMatrix';
@@ -8,21 +8,33 @@ import { MatrixDiff } from '@/components/Compare/MatrixDiff';
 import { TacticBreakdown } from '@/components/Compare/TacticBreakdown';
 import { Header } from '@/components/Layout/Header';
 import { TechniqueModal } from '@/components/TechniqueModal';
+import { GroupCompare } from '@/pages/GroupCompare';
 import type { CampaignResult, CompareResult, OverlapExplanationRequest, ReportSession, TechniqueUsage } from '@/types/attack';
 import { TtpLink } from '@/utils/ctiLinks';
 
-type CompareMode = 'groups' | 'campaigns' | 'reports';
+type CompareMode = 'groups' | 'campaigns' | 'reports' | 'group-vs-group';
 type DetailTab   = 'overview' | 'tactic' | 'matrix' | 'gap' | 'explain';
 
 export function Compare() {
   const { domain, version, selectedTechniques, setOverlayGroup } = useAppStore();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   const [techModalId, setTechModalId] = useState<string | null>(null);
 
   // ── Mode switcher ───────────────────────────────────────────────────────────
   const [mode, setMode] = useState<CompareMode>('groups');
+  useEffect(() => {
+    const next = params.get('mode');
+    if (next === 'groups' || next === 'campaigns' || next === 'reports' || next === 'group-vs-group') {
+      setMode(next);
+    }
+  }, [params]);
+  const selectMode = (next: CompareMode) => {
+    setMode(next);
+    setParams(next === 'groups' ? {} : { mode: next }, { replace: true });
+  };
 
   // ── Groups mode state ───────────────────────────────────────────────────────
   const [groupResults,  setGroupResults]  = useState<CompareResult[]>([]);
@@ -250,26 +262,35 @@ export function Compare() {
   return (
     <div className="flex flex-col h-full">
       <TechniqueModal attackId={techModalId} onClose={() => setTechModalId(null)} />
-      <Header title="Group & Campaign Similarity" />
+      <Header title="Compare" />
 
       {/* ── My TTPs summary + mode switcher bar ────────────────────────────── */}
       <div className="flex items-center gap-4 px-6 py-3 bg-gray-900 border-b border-gray-700 shrink-0 flex-wrap gap-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl font-bold text-white">{selectedTechniques.size}</span>
-          <span className="text-sm text-gray-400">
-            {selectedTechniques.size === 1 ? 'technique' : 'techniques'} selected
-          </span>
-        </div>
-
-        {selectedTechniques.size > 0 && (
-          <div className="flex flex-wrap gap-1 flex-1 overflow-hidden max-h-8 min-w-0">
-            {Array.from(selectedTechniques).slice(0, 18).map(id => (
-              <TtpLink key={id} id={id} className="text-[10px] font-mono bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded hover:text-mitre-accent" />
-            ))}
-            {selectedTechniques.size > 18 && (
-              <span className="text-[10px] text-gray-600">+{selectedTechniques.size - 18} more</span>
-            )}
+        {mode === 'group-vs-group' ? (
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-white">Group vs Group comparison</div>
+            <div className="text-xs text-gray-500">Select 2-6 ATT&CK groups and compare actor-to-actor overlap, shared techniques, and combined matrix coverage.</div>
           </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-white">{selectedTechniques.size}</span>
+              <span className="text-sm text-gray-400">
+                {selectedTechniques.size === 1 ? 'technique' : 'techniques'} selected
+              </span>
+            </div>
+
+            {selectedTechniques.size > 0 && (
+              <div className="flex flex-wrap gap-1 flex-1 overflow-hidden max-h-8 min-w-0">
+                {Array.from(selectedTechniques).slice(0, 18).map(id => (
+                  <TtpLink key={id} id={id} className="text-[10px] font-mono bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded hover:text-mitre-accent" />
+                ))}
+                {selectedTechniques.size > 18 && (
+                  <span className="text-[10px] text-gray-600">+{selectedTechniques.size - 18} more</span>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Mode switcher */}
@@ -278,10 +299,11 @@ export function Compare() {
             ['groups',    'Groups (DB 1)'],
             ['campaigns', 'Campaigns (DB 1)'],
             ['reports',   'Reports (DB 2)'],
+            ['group-vs-group', 'Group vs Group'],
           ] as [CompareMode, string][]).map(([m, label]) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => selectMode(m)}
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 mode === m ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
               }`}
@@ -292,7 +314,7 @@ export function Compare() {
         </div>
 
         {/* Run button */}
-        {mode !== 'reports' && (
+        {mode !== 'reports' && mode !== 'group-vs-group' && (
           <div className="flex items-center gap-2 shrink-0">
             {!canRun && (
               <button
@@ -317,6 +339,12 @@ export function Compare() {
           </div>
         )}
       </div>
+
+      {mode === 'group-vs-group' && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <GroupCompare embedded />
+        </div>
+      )}
 
       {/* ── Mode: Groups ──────────────────────────────────────────────────── */}
       {mode === 'groups' && (

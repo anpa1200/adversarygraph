@@ -10,7 +10,7 @@
  *   - all click / keyboard events
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import type { Tactic, TechniqueListItem } from '@/types/attack';
 import type { MatrixData } from '@/hooks/useAttackMatrix';
@@ -214,6 +214,19 @@ function TacticColumn({
   const selectedCount = techniques.filter((t) => selectedTechniques.has(t.attack_id)).length;
   const overlayIds = new Set([...overlayTechniques, ...comparisonLayers.flatMap(layer => layer.techniqueIds)]);
   const overlayCount  = techniques.filter((t) => overlayIds.has(t.attack_id)).length;
+  const expandableParents = useMemo(
+    () => techniques.filter((tech) => parentsWithSubs.has(tech.attack_id)).map((tech) => tech.attack_id),
+    [parentsWithSubs, techniques],
+  );
+  const expandedCount = expandableParents.filter((id) => expandedTechniques.has(id)).length;
+  const allExpanded = expandableParents.length > 0 && expandedCount === expandableParents.length;
+  const handleColumnExpansion = useCallback(() => {
+    if (!expandableParents.length) return;
+    const targetIds = allExpanded
+      ? expandableParents.filter((id) => expandedTechniques.has(id))
+      : expandableParents.filter((id) => !expandedTechniques.has(id));
+    targetIds.forEach(onToggleExpanded);
+  }, [allExpanded, expandableParents, expandedTechniques, onToggleExpanded]);
 
   return (
     <div style={{ width: COL_WIDTH, flexShrink: 0 }}>
@@ -238,6 +251,17 @@ function TacticColumn({
             </span>
           )}
         </div>
+        {expandableParents.length > 0 && (
+          <button
+            type="button"
+            data-matrix-cell
+            onClick={handleColumnExpansion}
+            className="mt-1 rounded border border-red-400/20 bg-black/20 px-1.5 py-0.5 text-[8px] text-red-100 hover:border-red-300/60 hover:bg-black/35"
+            title={allExpanded ? `Collapse ${expandableParents.length} technique group${expandableParents.length === 1 ? '' : 's'} in ${tactic.name}` : `Expand ${expandableParents.length} technique group${expandableParents.length === 1 ? '' : 's'} in ${tactic.name}`}
+          >
+            {allExpanded ? 'Minimize' : 'Extend'} subs {expandedCount}/{expandableParents.length}
+          </button>
+        )}
       </div>
 
       {/* Technique cells */}

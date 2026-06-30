@@ -54,6 +54,7 @@ export function LayerControls({
   const { parentsWithSubs } = matrixData;
   const comparisonIds = new Set([...overlayTechniques, ...comparisonLayers.flatMap(layer => layer.techniqueIds)]);
   const sharedCount = [...selectedTechniques].filter((id) => comparisonIds.has(id)).length;
+  const expandedParentCount = [...expandedTechniques].filter((id) => parentsWithSubs.has(id)).length;
 
   const handleExpandAll = useCallback(() => {
     onExpandAll();
@@ -86,14 +87,15 @@ export function LayerControls({
             className="text-gray-400 hover:text-white transition-colors shrink-0"
             title="Expand all sub-techniques"
           >
-            Expand all ▶
+            Extend all sub-techniques
           </button>
-          {expandedTechniques.size > 0 && (
+          {expandedParentCount > 0 && (
             <button
               onClick={onCollapseAll}
               className="text-gray-400 hover:text-white transition-colors shrink-0"
+              title="Minimize all expanded sub-techniques"
             >
-              Collapse all ▲
+              Minimize all ({expandedParentCount}/{parentsWithSubs.size})
             </button>
           )}
           <div className="w-px h-4 bg-gray-700 shrink-0" />

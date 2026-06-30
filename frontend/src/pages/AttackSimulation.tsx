@@ -85,6 +85,8 @@ export function AttackSimulation() {
   const [liveLogSource, setLiveLogSource] = useState<AttackSimulationLogSource>('access');
   const [siemSource, setSiemSource] = useState<AttackSimulationLogSource>('access');
   const [siemHistory, setSiemHistory] = useState<SiemDestinationHistoryItem[]>(() => loadSiemHistory());
+  const [simulationExpandedParents, setSimulationExpandedParents] = useState<Set<string>>(new Set());
+  const [simulationExpansionTouched, setSimulationExpansionTouched] = useState(false);
 
   const catalogQuery = useQuery({ queryKey: ['simulation-catalog'], queryFn: simulationApi.catalog });
   const targetsQuery = useQuery({ queryKey: ['simulation-targets'], queryFn: simulationApi.targets });
@@ -104,13 +106,37 @@ export function AttackSimulation() {
     return map;
   }, [catalog]);
   const simulationTechniqueIds = useMemo(() => new Set(simulationByTechnique.keys()), [simulationByTechnique]);
-  const simulationExpandedParents = useMemo(() => {
+  const runnableSubtechParents = useMemo(() => {
     const parents = new Set<string>();
     for (const [parent, subs] of matrixData.subtechsByParent) {
       if (subs.some(sub => simulationTechniqueIds.has(sub.attack_id))) parents.add(parent);
     }
     return parents;
   }, [matrixData.subtechsByParent, simulationTechniqueIds]);
+
+  useEffect(() => {
+    if (simulationExpansionTouched) return;
+    setSimulationExpandedParents(new Set(runnableSubtechParents));
+  }, [runnableSubtechParents, simulationExpansionTouched]);
+
+  const toggleSimulationExpanded = (id: string) => {
+    setSimulationExpansionTouched(true);
+    setSimulationExpandedParents(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const expandSimulationParents = (ids: Iterable<string>) => {
+    setSimulationExpansionTouched(true);
+    setSimulationExpandedParents(new Set(ids));
+  };
+
+  const collapseSimulationParents = () => {
+    setSimulationExpansionTouched(true);
+    setSimulationExpandedParents(new Set());
+  };
 
   useEffect(() => {
     setSimulationId(routeSimulationId ?? '');
@@ -378,6 +404,35 @@ export function AttackSimulation() {
               <div className="rounded border border-green-900 bg-green-950/30 px-3 py-2 text-xs text-green-200">
                 {simulationTechniqueIds.size} simulation TTPs
               </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => expandSimulationParents(matrixData.parentsWithSubs)}
+                  className="secondary-action"
+                  disabled={!matrixData.parentsWithSubs.size}
+                  title="Expand every technique group with sub-techniques"
+                >
+                  Extend all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => expandSimulationParents(runnableSubtechParents)}
+                  className="secondary-action"
+                  disabled={!runnableSubtechParents.size}
+                  title="Expand only parent techniques that contain runnable simulation sub-techniques"
+                >
+                  Extend runnable
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseSimulationParents}
+                  className="secondary-action"
+                  disabled={!simulationExpandedParents.size}
+                  title="Minimize all sub-technique groups"
+                >
+                  Minimize all
+                </button>
+              </div>
               <button
                 type="button"
                 disabled={!catalog.length}
@@ -407,7 +462,7 @@ export function AttackSimulation() {
                   const simulation = simulationByTechnique.get(id);
                   if (simulation) navigate(`/attack-simulation/${simulation.id}`);
                 }}
-                onToggleExpanded={() => {}}
+                onToggleExpanded={toggleSimulationExpanded}
               />
             )}
           </div>

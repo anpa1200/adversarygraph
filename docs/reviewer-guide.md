@@ -9,6 +9,7 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Project overview | [README.md](../README.md) |
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
+| Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 | Security policy | [SECURITY.md](../SECURITY.md) |
 | Known limitations | [docs/limitations.md](limitations.md) |
@@ -27,6 +28,7 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 - Uploading threat reports and extracting ATT&CK-mapped techniques with AI assistance
 - Reviewing, accepting, and rejecting extracted mappings as an analyst
 - Building detection coverage plans tied to specific TTPs
+- Preserving evidence-to-detection reasoning chains from raw evidence through claims, behavior, ATT&CK mapping, required telemetry, detection logic, validation, SIEM result, and analyst decision
 - Running Attack Simulation scenarios against authorized lab targets, reviewing real lab-target telemetry, and forwarding either real lab logs or synthetic source-shaped telemetry to a SIEM for rule validation
 - Generating AI-assisted kill-chain scenarios for detection engineering exercises
 - Reviewing platform health through self-test, API request metrics, recent traces, redacted log tails, and Prometheus-compatible metrics
@@ -49,6 +51,7 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 - All services have resource limits and `cap_drop: ALL` in Docker Compose
 - API keys are passed via environment variables, not embedded in code
 - LLM outputs are treated as untrusted and require analyst review
+- Evidence Graph AI-generated nodes and edges are drafts until analyst-reviewed
 - Generated detection logic (Sigma/KQL/SPL/EQL) is a draft and must be reviewed before deployment
 - SIEM forwarding secret values (bearer tokens, passwords) are not stored server-side
 - Real lab telemetry and synthetic AI telemetry are labeled separately in documentation and UI copy

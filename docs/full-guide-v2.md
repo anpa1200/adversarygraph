@@ -898,6 +898,16 @@ POST /api/ioc/import/taxii
 POST /api/ioc/investigate
 POST /api/ioc/virustotal/lookup
 GET  /api/ioc/actors/{actor_id}
+GET  /api/evidence-graph/summary
+GET  /api/evidence-graph
+POST /api/evidence-graph/nodes
+PATCH /api/evidence-graph/nodes/{node_id}
+POST /api/evidence-graph/edges
+GET  /api/evidence-graph/paths
+GET  /api/evidence-graph/gaps
+POST /api/evidence-graph/from-report/{report_id}
+POST /api/evidence-graph/from-simulation/{simulation_run_id}
+GET  /api/evidence-graph/export
 ```
 
 ![API terminal output and health checks](assets/adversarygraph-v2/09-z711T5SOrORpjITlM2IY9A.webp)

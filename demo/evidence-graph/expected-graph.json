@@ -1,0 +1,90 @@
+{
+  "nodes": [
+    {
+      "node_type": "evidence",
+      "title": "Fictional report excerpt: PowerShell encoded command",
+      "source_type": "report_text",
+      "source_ref": "demo/evidence-graph/sample-report.md",
+      "raw_excerpt": "Endpoint telemetry later showed powershell.exe launching with encoded command arguments.",
+      "confidence": 70,
+      "review_status": "draft"
+    },
+    {
+      "node_type": "claim",
+      "title": "PowerShell encoded command observed",
+      "statement": "PowerShell launched with encoded command arguments on WS-DEMO-01.",
+      "claim_type": "observed_fact",
+      "confidence": 70,
+      "review_status": "draft"
+    },
+    {
+      "node_type": "behavior",
+      "title": "Command and scripting interpreter execution",
+      "behavior_description": "PowerShell command execution with encoded arguments.",
+      "confidence": 65,
+      "review_status": "draft"
+    },
+    {
+      "node_type": "attack_technique",
+      "title": "T1059.001 PowerShell",
+      "framework": "attack_enterprise",
+      "technique_id": "T1059.001",
+      "technique_name": "PowerShell",
+      "confidence": 65,
+      "review_status": "draft"
+    },
+    {
+      "node_type": "required_telemetry",
+      "title": "PowerShell process and script telemetry",
+      "data_source": "Process Creation, Script Block Logging",
+      "data_component": "Process Creation",
+      "required_fields": ["timestamp", "host", "user", "Image", "CommandLine"],
+      "availability_status": "partial",
+      "gap_description": "Sysmon Event ID 1 is available; PowerShell 4104 is missing."
+    },
+    {
+      "node_type": "detection_candidate",
+      "title": "Encoded PowerShell command detection",
+      "detection_hypothesis": "Alert when powershell.exe uses encoded command flags.",
+      "detection_type": "signature",
+      "status": "testable"
+    },
+    {
+      "node_type": "detection_rule",
+      "title": "Sigma: Suspicious PowerShell Encoded Command",
+      "rule_format": "sigma",
+      "test_status": "pass",
+      "deployment_status": "staged"
+    },
+    {
+      "node_type": "validation_scenario",
+      "title": "Replay synthetic Sysmon process event",
+      "scenario_type": "replay",
+      "expected_detection_outcome": "Rule matches the encoded command event."
+    },
+    {
+      "node_type": "siem_result",
+      "title": "SIEM matched demo rule",
+      "destination_type": "local_collector",
+      "forwarding_status": "sent",
+      "detection_matched": true
+    },
+    {
+      "node_type": "analyst_decision",
+      "title": "Accept demo detection path",
+      "decision": "accepted",
+      "rationale": "The sample telemetry is sufficient for a demo validation path; production requires Script Block Logging gap review."
+    }
+  ],
+  "edges": [
+    ["SUPPORTS", "evidence", "claim"],
+    ["DESCRIBES", "claim", "behavior"],
+    ["MAPS_TO", "behavior", "attack_technique"],
+    ["REQUIRES_TELEMETRY", "attack_technique", "required_telemetry"],
+    ["ENABLES_DETECTION", "required_telemetry", "detection_candidate"],
+    ["IMPLEMENTED_AS", "detection_candidate", "detection_rule"],
+    ["VALIDATED_BY", "detection_rule", "validation_scenario"],
+    ["PRODUCED_RESULT", "validation_scenario", "siem_result"],
+    ["REVIEWED_AS", "siem_result", "analyst_decision"]
+  ]
+}

@@ -1,0 +1,4 @@
+value,type,description,confidence
+update.example.com,domain,Fictional download domain,60
+203.0.113.44,ip,Fictional outbound destination using RFC5737 documentation range,60
+invoice-check.ps1,file_name,Fictional script name from sample report,50

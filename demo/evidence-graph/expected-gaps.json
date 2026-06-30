@@ -1,0 +1,16 @@
+{
+  "gaps": [
+    {
+      "technique": "T1059.001",
+      "missing_step": "telemetry_not_validated",
+      "required_telemetry": "PowerShell Script Block Logging",
+      "recommended_next_action": "Enable PowerShell 4104 Script Block Logging or document why process telemetry is sufficient for this detection."
+    },
+    {
+      "technique": "T1105",
+      "missing_step": "detection_candidate_missing",
+      "required_telemetry": "Proxy or firewall logs with URL, destination IP, user, and user-agent",
+      "recommended_next_action": "Create a detection candidate for unusual outbound download behavior before rule work."
+    }
+  ]
+}

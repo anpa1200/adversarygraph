@@ -4,9 +4,18 @@ Current release: **v5.5.0** — enterprise access controls, RBAC, MFA workflow s
 
 For the full history from v0.2.0 through v5.5.0 see [CHANGELOG.md](CHANGELOG.md).
 
-## v5.x — Hardening Sprint (in progress)
+## v5.6 — Evidence-to-Detection Graph
 
-The current sprint focuses on security hardening, test coverage, and reviewer readiness. No new product features until this sprint closes.
+- [x] Add relational Evidence Graph node and edge model for evidence-backed reasoning paths
+- [x] Add CRUD, summary, path, gap, generation, and export APIs
+- [x] Add frontend Evidence Graph page with overview, interactive graph, path view, gap view, review queue, and node detail actions
+- [x] Add safe synthetic demo dataset for evidence-to-detection review
+- [x] Document AI draft boundaries, readiness scoring, exports, gaps, and limitations
+- [ ] Add typed foreign-key relationship tables for every external entity link
+- [ ] Add deeper ATT&CK data-component import and ECS/OCSF/Splunk CIM/Sentinel ASIM field mapping
+- [ ] Add SIEM-specific rule compilers and detection regression tests
+
+## v5.x — Hardening Sprint
 
 - [x] Migrate the legacy Gemini SDK package to `google-genai` (SDK renamed by Google)
 - [x] Expand CI: add ruff lint, pip-audit, npm audit, Docker build checks, container scan (Trivy), secret scan (gitleaks)

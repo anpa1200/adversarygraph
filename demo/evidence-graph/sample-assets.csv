@@ -1,0 +1,3 @@
+asset_id,hostname,owner,criticality,os,log_sources
+asset-demo-001,WS-DEMO-01,Security Lab,medium,Windows,"Sysmon Event ID 1,Proxy"
+asset-demo-002,SIEM-DEMO-01,Security Lab,high,Linux,"SIEM correlation results"

@@ -16,7 +16,8 @@ import app.models.asset_surface  # noqa: F401 — registers AssetSurfaceCase wit
 import app.models.simulation     # noqa: F401 — registers simulation persistence tables
 import app.models.cve            # noqa: F401 — registers CVE intelligence tables
 import app.models.auth           # noqa: F401 — registers native user/session tables
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, system, knowledge
+import app.models.evidence_graph  # noqa: F401 — registers evidence-to-detection graph tables
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, system, knowledge
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -156,6 +157,7 @@ app.include_router(sync.router,    prefix="/api", dependencies=_auth_required)
 app.include_router(export.router,  prefix="/api", dependencies=_auth_required)
 app.include_router(ioc.router, prefix="/api", dependencies=_auth_required)
 app.include_router(cve.router, prefix="/api", dependencies=_auth_required)
+app.include_router(evidence_graph.router, prefix="/api", dependencies=_auth_required)
 app.include_router(layers.router,  prefix="/api", dependencies=_auth_required)
 app.include_router(malwaregraph.router, prefix="/api", dependencies=_auth_required)
 app.include_router(operations.router, prefix="/api", dependencies=_auth_required)

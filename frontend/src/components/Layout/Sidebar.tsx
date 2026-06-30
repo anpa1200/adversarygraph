@@ -15,10 +15,10 @@ const nav = [
   { to: '/apt',           label: 'ATT&CK Group Library', icon: '◈' },
   { to: '/analyze',       label: 'AI Analysis',   icon: '⬢' },
   { to: '/compare',       label: 'Compare',       icon: '⬡' },
-  { to: '/group-compare', label: 'Group vs Group', icon: '◉' },
   { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
   { to: '/asset-surface', label: 'Asset Surface', icon: '▥' },
   { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎' },
+  { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡' },
   { to: '/retrohunt',     label: 'RetroHunt', icon: '⌖' },
   { to: '/knowledge',     label: 'Knowledge Library', icon: '◎' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
@@ -112,6 +112,7 @@ export function Sidebar() {
         {[
           { href: 'https://1200km.com/threat-matrix/', label: '◈ Web Tool (no Docker)' },
           { href: 'https://1200km.com/cti.html',      label: '↗ CTI Knowledge Base' },
+          { href: 'https://1200km.com/adversarygraph/#feedback', label: '↗ Bug / Feature / Feedback' },
           { href: 'https://1200km.com',               label: '↗ 1200km.com' },
         ].map(({ href, label }) => (
           <a

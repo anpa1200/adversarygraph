@@ -2321,3 +2321,133 @@ export const simulationApi = {
   }): Promise<AttackSimulationManualResult> =>
     http.post('/simulation/manual-result', payload).then(r => r.data),
 };
+
+export type EvidenceGraphNodeType =
+  | 'evidence'
+  | 'claim'
+  | 'behavior'
+  | 'attack_technique'
+  | 'required_telemetry'
+  | 'detection_candidate'
+  | 'detection_rule'
+  | 'validation_scenario'
+  | 'siem_result'
+  | 'analyst_decision';
+
+export interface EvidenceGraphNode {
+  id: string;
+  node_type: EvidenceGraphNodeType;
+  title: string;
+  description: string;
+  source_type: string;
+  source_ref: string;
+  raw_excerpt: string;
+  normalized_summary: string;
+  statement: string;
+  claim_type: string;
+  behavior_description: string;
+  framework: string;
+  technique_id: string;
+  technique_name: string;
+  tactic: string;
+  mapping_rationale: string;
+  data_source: string;
+  data_component: string;
+  required_fields: unknown[];
+  example_sources: unknown[];
+  availability_status: string;
+  gap_description: string;
+  detection_hypothesis: string;
+  detection_type: string;
+  severity: string;
+  status: string;
+  rule_format: string;
+  rule_body: string;
+  test_status: string;
+  deployment_status: string;
+  scenario_type: string;
+  forwarding_status: string;
+  detection_matched: boolean;
+  decision: string;
+  rationale: string;
+  confidence: number;
+  review_status: string;
+  ai_generated: boolean;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidenceGraphEdge {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  edge_type: string;
+  rationale: string;
+  confidence: number;
+  review_status: string;
+  ai_generated: boolean;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EvidenceGraphSummary {
+  node_counts: Record<string, number>;
+  edge_counts: Record<string, number>;
+  detection_readiness_score: number;
+  unresolved_gaps: number;
+  unreviewed_ai_suggestions: number;
+  validation_coverage: { validation_scenarios: number; siem_results: number; coverage_percent: number };
+  top_techniques_by_detection_gap: Array<{ technique: string; name: string; gap_count: number }>;
+  latest_analyst_decisions: EvidenceGraphNode[];
+}
+
+export interface EvidenceGraphQuery {
+  nodes: EvidenceGraphNode[];
+  edges: EvidenceGraphEdge[];
+  grouped_paths: Array<{ label: string; steps: EvidenceGraphNode[]; edge_count: number }>;
+  warnings: string[];
+}
+
+export interface EvidenceGraphGap {
+  technique: string;
+  evidence: string;
+  missing_step: string;
+  required_telemetry: string;
+  detection_candidate: string;
+  rule_status: string;
+  validation_status: string;
+  analyst_decision: string;
+  recommended_next_action: string;
+  node_id?: string;
+}
+
+export const evidenceGraphApi = {
+  summary: (): Promise<EvidenceGraphSummary> => http.get('/evidence-graph/summary').then(r => r.data),
+  query: (params?: {
+    node_type?: string;
+    technique_id?: string;
+    review_status?: string;
+    validation_status?: string;
+    search?: string;
+    include_ai_suggestions?: boolean;
+    include_rejected?: boolean;
+    max_depth?: number;
+  }): Promise<EvidenceGraphQuery> => http.get('/evidence-graph', { params }).then(r => r.data),
+  gaps: (): Promise<{ gaps: EvidenceGraphGap[] }> => http.get('/evidence-graph/gaps').then(r => r.data),
+  paths: (params?: { from_node_id?: string; to_node_type?: string; technique_id?: string; max_depth?: number }): Promise<{ paths: EvidenceGraphNode[][]; warnings: string[] }> =>
+    http.get('/evidence-graph/paths', { params }).then(r => r.data),
+  createNode: (body: Partial<EvidenceGraphNode> & { node_type: string; title: string }): Promise<EvidenceGraphNode> =>
+    http.post('/evidence-graph/nodes', body).then(r => r.data),
+  updateNode: (id: string, body: Partial<EvidenceGraphNode>): Promise<EvidenceGraphNode> =>
+    http.patch(`/evidence-graph/nodes/${id}`, body).then(r => r.data),
+  createEdge: (body: { source_node_id: string; target_node_id: string; edge_type: string; rationale?: string; confidence?: number; review_status?: string; ai_generated?: boolean; metadata_json?: Record<string, unknown> }): Promise<EvidenceGraphEdge> =>
+    http.post('/evidence-graph/edges', body).then(r => r.data),
+  updateEdge: (id: string, body: Partial<EvidenceGraphEdge>): Promise<EvidenceGraphEdge> =>
+    http.patch(`/evidence-graph/edges/${id}`, body).then(r => r.data),
+  fromReport: (reportId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-report/${reportId}`).then(r => r.data),
+  fromSimulation: (runId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-simulation/${runId}`).then(r => r.data),
+  fromIoc: (iocId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-ioc/${iocId}`).then(r => r.data),
+  fromAsset: (assetId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-asset/${assetId}`).then(r => r.data),
+  exportUrl: (format: 'json' | 'markdown' | 'csv' | 'evidence-pack') => `/api/evidence-graph/export?fmt=${encodeURIComponent(format)}`,
+};

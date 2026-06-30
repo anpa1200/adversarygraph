@@ -2,7 +2,7 @@
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
-**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
+**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v5.5.0-blue)](VERSION)
@@ -25,6 +25,7 @@ Core capabilities:
 - Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories.
 - Malware Analysis workflow backed by the isolated MalwareGraph service for static triage, strings, unpacking/deobfuscation support, debugger-style review, and AI summaries.
 - Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
+- Evidence-to-Detection Graph for preserving the full reasoning chain from evidence to claims, behavior, ATT&CK, required telemetry, detection candidates, rules, validation scenarios, SIEM results, and analyst decisions.
 - Observability dashboard with API request metrics, recent traces, redacted log tails, Prometheus-compatible metrics, and health/self-test views.
 - Operations, Pipeline, detection backlog, investigation reports, exports, and API workflows.
 
@@ -38,6 +39,22 @@ Attack Simulation has two different telemetry modes:
 - **Synthetic AI telemetry:** source-shaped events generated for SIEM parser/rule exercises. This validates field handling and correlation logic, not real exploit behavior.
 
 See [Validation and Limitations](docs/validation-and-limitations.md), [Attack Simulation](docs/attack-simulation.md), and [SIEM forwarding security](docs/attack-simulation-siem-forwarding-security.md).
+
+## Evidence-to-Detection Graph
+
+AdversaryGraph preserves the full reasoning chain from raw evidence to validated
+detection outcome:
+
+```text
+Evidence -> Claim -> Behavior -> ATT&CK Technique -> Required Telemetry
+  -> Detection Candidate -> Detection Rule -> Validation Scenario
+  -> SIEM Result -> Analyst Decision
+```
+
+This helps analysts see what is proven, what is inferred, what telemetry is
+required, which detections exist, what has been validated, and what still needs
+review. AI-generated graph nodes and edges are drafts until analyst-reviewed.
+See [docs/evidence-to-detection-graph.md](docs/evidence-to-detection-graph.md).
 
 ## Quick Start
 
@@ -74,6 +91,7 @@ The default Compose deployment binds the public UI and reference docs to localho
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | CVE Library | [docs/cve-cvss-intelligence.md](docs/cve-cvss-intelligence.md) |
+| Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](docs/evidence-to-detection-graph.md) |
 | Security policy | [SECURITY.md](SECURITY.md) |
 | Security threat model | [docs/security-threat-model.md](docs/security-threat-model.md) |
 | Production readiness | [docs/production-readiness.md](docs/production-readiness.md) |

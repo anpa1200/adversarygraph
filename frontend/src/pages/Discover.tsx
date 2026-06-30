@@ -101,6 +101,7 @@ export function Discover() {
                 <Start title="Analyze malware" text="Create cases, upload samples, extract IOCs, strings, TTPs, and AI summaries." onClick={() => navigate('/malware-analysis')} />
                 <Start title="Map asset surface" text="Upload CMDB, scanner, or cloud inventory and map exposed assets to ATT&CK." onClick={() => navigate('/asset-surface')} />
                 <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />
+                <Start title="Evidence graph" text="Trace evidence to claims, behavior, ATT&CK, telemetry, detections, validation, and decisions." onClick={() => navigate('/evidence-graph')} />
                 <Start title="Compare behavior" text="Rank group, campaign, and stored-report overlap." onClick={() => navigate('/compare')} />
                 <Start title="Review coverage" text="Prioritize selected techniques without coverage." onClick={() => navigate('/navigator')} />
                 <Start title="Debug malware" text="Open the decompilation/debug IDE for function stepping and AI explanations." onClick={() => navigate('/malware-debug')} />
@@ -148,12 +149,13 @@ export function Discover() {
                 <ActionLink label="Sector intelligence" detail="Filter relevant actors by sector, region, technology, and recency." onClick={() => navigate('/sector-intel')} />
                 <ActionLink label="Asset attack surface" detail="Normalize inventories, score exposure, map entry points to ATT&CK, and save TTP layers." onClick={() => navigate('/asset-surface')} />
                 <ActionLink label="Attack Simulation" detail="Choose a TTP first, then configure target validation and evidence capture." onClick={() => navigate('/attack-simulation')} />
+                <ActionLink label="Evidence-to-Detection Graph" detail="Preserve the full reasoning path from evidence through SIEM result and analyst decision." onClick={() => navigate('/evidence-graph')} />
                 <ActionLink label="Malware Analysis" detail="Upload malware safely, review first analysis, hashes, files, strings, IOCs, TTPs, and family leads." onClick={() => navigate('/malware-analysis')} />
                 <ActionLink label="String Analyzer" detail="Extract strings, commands, URLs, registry keys, APIs, and IOC/TTP leads from samples." onClick={() => navigate('/string-analyzer')} />
                 <ActionLink label="Decompilation & Debug IDE" detail="Step through functions, inspect pseudocode/disassembly, and get AI explanations per function." onClick={() => navigate('/malware-debug')} />
                 <ActionLink label="Malware Unpacker" detail="Analyze packers, unpack layers, deobfuscate strings/code, and continue into debugger tools." onClick={() => navigate('/malware-unpacker')} />
                 <ActionLink label="Dynamic analysis" detail="Review safe runtime workflow output, process/file/registry/network/API events, and AI summaries." onClick={() => navigate('/dynamic-analysis')} />
-                <ActionLink label="Group vs Group" detail="Compare two adversaries and their overlapping behavior." onClick={() => navigate('/group-compare')} />
+                <ActionLink label="Group vs Group" detail="Compare two adversaries and their overlapping behavior inside Compare." onClick={() => navigate('/compare?mode=group-vs-group')} />
                 <ActionLink label="Detection pipeline" detail="Connect Sigma, YARA, YARA-L, sandbox behavior, and AI rule generation." onClick={() => navigate('/pipeline')} />
                 <ActionLink label="DFIR examples" detail="Open downloaded public report examples and mapped TTPs." onClick={() => navigate('/examples')} />
                 <ActionLink label="Build report" detail="Create investigation output from selected TTPs and evidence." onClick={() => navigate('/report')} />

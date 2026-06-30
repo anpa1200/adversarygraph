@@ -13,8 +13,9 @@
 4. [Module Walkthrough](#module-walkthrough)
 5. [Asset Attack Surface Mapping](#asset-attack-surface-mapping)
 6. [Attack Simulation](#attack-simulation)
-7. [Malware Analysis Extension](#malware-analysis-extension)
-8. [Operating Notes](#operating-notes)
+7. [Evidence-to-Detection Graph](#evidence-to-detection-graph)
+8. [Malware Analysis Extension](#malware-analysis-extension)
+9. [Operating Notes](#operating-notes)
 
 ## Visual Evidence
 
@@ -56,6 +57,7 @@ report / IOC / malware sample / feed source
   -> analyst validation
   -> actor, campaign, sector, and IOC pivots
   -> comparison and detection-gap review
+  -> evidence-to-detection reasoning graph
   -> investigation report, exports, and operational handoff
 ```
 
@@ -76,6 +78,7 @@ AI assistant should remain traceable back to evidence.
 | Sector Intel | Rank actors by sector, geography, technology, recency, campaign evidence, and MISP Galaxy context. |
 | Asset Surface | Upload or paste asset inventories; normalize assets, exposure, ports, technologies, and owners; create saved attack-surface cases; build an AI-assisted matrix with risk levels, entry points, ATT&CK candidates, priority actions, validation gaps, and cross-asset findings. |
 | Attack Simulation | Select ATT&CK TTPs, run safe lab simulations, view real-time attacked-server logs, forward telemetry to SIEM collectors, save recent destinations, generate AI-assisted multi-phase attack stories, review attack-chain graphs, and explain validation logic. |
+| Evidence Graph | Preserve evidence-to-detection reasoning paths: Evidence, Claim, Behavior, ATT&CK Technique, Required Telemetry, Detection Candidate, Detection Rule, Validation Scenario, SIEM Result, and Analyst Decision. |
 | RetroHunt | Search historical local intelligence, reports, indicators, techniques, and evidence for repeated patterns. |
 | Knowledge Library | Browse stored reports, references, entities, and investigation source material. |
 | IOC Library | Search observables, source attribution, freshness, enrichment fields, mapped TTPs, and actor links. |
@@ -90,6 +93,27 @@ AI assistant should remain traceable back to evidence.
 | Sector Packs | Package sector-specific threat context, actors, techniques, and reusable intelligence bundles. |
 | IOC Node Detail | Inspect one observable as a graph node with enrichment, linked TTPs, relationship context, and actions. |
 | Malware Analysis | Analyze Windows samples in the isolated MalwareGraph workflow: static triage, hashes, strings, unpacking, decompilation, debug workspaces, AI summaries, and gated dynamic analysis. |
+
+## Evidence-to-Detection Graph
+
+The Evidence Graph page connects AdversaryGraph modules into one operational
+reasoning model:
+
+```text
+Evidence -> Claim -> Behavior -> ATT&CK Technique -> Required Telemetry
+  -> Detection Candidate -> Detection Rule -> Validation Scenario
+  -> SIEM Result -> Analyst Decision
+```
+
+Use it when a report, IOC, malware finding, asset exposure, attack simulation,
+or SIEM result needs to become a reviewed detection-engineering outcome. The
+graph separates confirmed evidence, analyst claims, inferred behavior, ATT&CK
+mapping, detection hypothesis, validation result, and final analyst decision.
+
+AI-generated nodes and edges are saved as drafts. Analysts can approve, reject,
+request more evidence, create next-step nodes, review gaps, and export JSON,
+Markdown, CSV, or an Evidence Pack. See
+[`docs/evidence-to-detection-graph.md`](evidence-to-detection-graph.md).
 
 ## Module Walkthrough
 
