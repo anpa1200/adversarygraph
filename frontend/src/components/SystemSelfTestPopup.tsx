@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { PointerEvent, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { systemApi, type SelfTestCheck, type SelfTestResult } from '@/api/client';
 
@@ -232,6 +232,8 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
 
 export function SystemSelfTestPopup() {
   const [popupState, setPopupState] = useState<PopupState>('visible');
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const dragOffset = useRef<{ x: number; y: number } | null>(null);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['system-selftest'],
@@ -285,40 +287,106 @@ export function SystemSelfTestPopup() {
     );
   }
 
+  const panelWidth = typeof window === 'undefined' ? 440 : Math.min(520, window.innerWidth - 24);
+  const panelHeight = typeof window === 'undefined' ? 720 : Math.min(720, window.innerHeight - 24);
+  const currentPosition = position ?? {
+    x: typeof window === 'undefined' ? 16 : Math.max(12, window.innerWidth - panelWidth - 16),
+    y: 56,
+  };
+
+  function clampPosition(next: { x: number; y: number }) {
+    if (typeof window === 'undefined') return next;
+    return {
+      x: Math.max(8, Math.min(next.x, window.innerWidth - panelWidth - 8)),
+      y: Math.max(8, Math.min(next.y, window.innerHeight - 96)),
+    };
+  }
+
+  function startDrag(event: PointerEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest('button,a')) return;
+    dragOffset.current = {
+      x: event.clientX - currentPosition.x,
+      y: event.clientY - currentPosition.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!dragOffset.current) return;
+    setPosition(clampPosition({
+      x: event.clientX - dragOffset.current.x,
+      y: event.clientY - dragOffset.current.y,
+    }));
+  }
+
+  function stopDrag(event: PointerEvent<HTMLDivElement>) {
+    dragOffset.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   return (
-    <div className={`fixed bottom-4 right-4 z-50 w-[min(440px,calc(100vw-2rem))] rounded-lg border p-4 shadow-2xl ${color}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">{summary.title}</p>
-          <p className="mt-1 text-xs leading-5 opacity-90">{summary.body}</p>
+    <div
+      className={`fixed z-50 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border shadow-2xl ${color}`}
+      style={{
+        left: currentPosition.x,
+        top: currentPosition.y,
+        width: panelWidth,
+        maxHeight: panelHeight,
+      }}
+    >
+      <div
+        className="flex cursor-move items-start justify-between gap-3 border-b border-white/10 bg-black/20 p-3"
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={stopDrag}
+        onPointerCancel={stopDrag}
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{summary.title}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 opacity-90">{summary.body}</p>
         </div>
-        <button
-          type="button"
-          className="shrink-0 rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
-          onClick={() => setPopupState('dismissed')}
-          aria-label="Dismiss self-test popup"
-        >
-          Close
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+            onClick={() => setPopupState('collapsed')}
+            aria-label="Minimize self-test popup"
+          >
+            Minimize
+          </button>
+          <button
+            type="button"
+            className="rounded border border-white/20 px-2 py-1 text-xs font-semibold hover:bg-white/10"
+            onClick={() => setPopupState('dismissed')}
+            aria-label="Dismiss self-test popup"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
-      {query.data && (
-        <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
-          <SelfTestDetails result={query.data} />
-          {query.data.checks.map(check => (
-            <div key={check.name} className="flex gap-2 text-xs">
-              <span className={checkStatusClass(check.status)}>
-                {checkStatusLabel(check.status)}
-              </span>
-              <span className="font-mono">{check.name}</span>
-              <span className="opacity-80">{check.message}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {query.data && (
+          <div className="space-y-3">
+            <SelfTestDetails result={query.data} />
+            {query.data.checks.map(check => (
+              <div key={check.name} className="flex gap-2 text-xs">
+                <span className={checkStatusClass(check.status)}>
+                  {checkStatusLabel(check.status)}
+                </span>
+                <span className="font-mono">{check.name}</span>
+                <span className="opacity-80">{check.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {summary.tone !== 'ok' && (
-        <div className="mt-3 flex gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2 border-t border-white/10 bg-black/20 p-3">
           <button
             type="button"
             className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"
