@@ -72,7 +72,7 @@ See [SECURITY.md](../SECURITY.md) for the full policy and known limitations.
 
 ## Demo dataset
 
-A deterministic demo dataset is available in [`docs/demo-dataset/`](demo-dataset/) for evaluation without private data.
+A deterministic demo dataset is available in [`demo/`](../demo/) for evaluation without private data.
 
 ## Known open items
 

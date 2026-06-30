@@ -20,21 +20,25 @@
 
 Platform screenshots are stored in
 [`docs/assets/adversarygraph-v4-platform`](assets/adversarygraph-v4-platform/manifest.md).
-The Asset Surface and Discover addendum is stored in
+That folder name is historical; the screenshots remain representative of the
+current v5 platform surfaces unless a newer v5-specific screenshot set is listed
+below. The Asset Surface and Discover addendum is stored in
 [`docs/assets/adversarygraph-v4.1-platform`](assets/adversarygraph-v4.1-platform/manifest.md).
 The malware-analysis screenshot set is stored in
 [`docs/assets/malware-analysis-v4`](assets/malware-analysis-v4/manifest.md).
+Those v4 malware screenshots remain representative for the current v5 Malware
+Analysis workflow.
 The v5 Attack Simulation screenshot set is stored in
 [`docs/assets/attack-simulation-v5`](assets/attack-simulation-v5/manifest.md).
 
-Both screenshot packs include validation metadata. The platform set records
+The screenshot packs include validation metadata. The platform set records
 route load, expected page text, `1920x1200` dimensions, byte size, mean RGB, and
 nonblank image checks in
 [`validation.json`](assets/adversarygraph-v4-platform/validation.json).
 
-The v4.1 addendum validates the current Discover launcher layout, Asset Surface
-analysis output, saved analysis history, and the white Navigator layer created
-from asset-inventory TTP candidates.
+The v4.1 addendum validates the representative Discover launcher layout, Asset
+Surface analysis output, saved analysis history, and the white Navigator layer
+created from asset-inventory TTP candidates.
 
 The v5 Attack Simulation set validates the TTP-first simulation matrix, per-TTP
 configuration page, SIEM forwarding controls, AI scenario library, generated

@@ -30,7 +30,7 @@ handling policy.
 | Evidence binding | Partial | best-effort character offsets for quoted source evidence |
 | Security model | Implemented | `docs/security-model.md` |
 | Limitations | Implemented | `docs/limitations.md` |
-| Demo data and sample outputs | Implemented | `docs/demo-dataset/`, `docs/sample-outputs/` |
+| Demo data and sample outputs | Implemented | `demo/`, `docs/sample-outputs/` |
 | Release notes | Implemented | `docs/release-notes/` |
 | Sector relevance workflow | Implemented | Sector Intel page and `/api/sector/*` |
 | IOC enrichment workflow | Implemented | Actor IOC tabs and `/api/ioc/*` |
