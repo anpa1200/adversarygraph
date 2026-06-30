@@ -43,8 +43,8 @@ AdversaryGraph is a self-hosted analyst workbench for controlled environments. T
 
 Before exposing AdversaryGraph beyond a trusted local network:
 
-- Put the frontend/API behind TLS and an authenticating reverse proxy.
-- Enable trusted-header authentication with `AUTH_ENABLED=true` and a strong `PROXY_SECRET`.
+- Put the frontend/API behind TLS.
+- Enable native authentication with `AUTH_ENABLED=true`; use trusted-header authentication with a strong `PROXY_SECRET` only behind an identity-aware reverse proxy.
 - Set `CORS_ALLOWED_ORIGINS` to the exact production origin.
 - Rotate `DB_PASS`, `REDIS_PASSWORD`, LLM keys, and CTI provider tokens.
 - Restrict PostgreSQL, Redis, MalwareGraph, and lab fixtures to internal networks.

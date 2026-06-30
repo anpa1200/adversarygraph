@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
+import operator
 from uuid import uuid4
 from unittest.mock import MagicMock
 
@@ -65,6 +66,12 @@ class _MockSession:
         self._objects = {}
 
     async def execute(self, statement=None, *args, **kwargs):
+        statement_text = str(statement)
+        statement_lower = statement_text.lower()
+        if ("count(" in statement_lower or "count_" in statement_lower) and "user_accounts" in statement_lower:
+            from app.models.auth import UserAccount
+            count = sum(1 for (obj_model, _), obj in self._objects.items() if obj_model is UserAccount)
+            return _MockScalarResult(value=count)
         try:
             model = statement.column_descriptions[0].get("entity")
         except (AttributeError, IndexError, TypeError):
@@ -83,10 +90,24 @@ class _MockSession:
             right = getattr(criterion, "right", None)
             column_name = getattr(left, "name", None)
             bind_key = getattr(right, "key", None)
-            if column_name and bind_key in params:
-                rows = [row for row in rows if getattr(row, column_name, None) == params[bind_key]]
+            literal_value = getattr(right, "value", None)
+            if column_name and (bind_key in params or literal_value is not None):
+                expected = params[bind_key] if bind_key in params else literal_value
+                op = getattr(criterion, "operator", None)
+                if op is operator.gt:
+                    rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) > expected]
+                elif op is operator.lt:
+                    rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) < expected]
+                else:
+                    rows = [row for row in rows if getattr(row, column_name, None) == expected]
+            elif column_name and " IS NULL" in str(criterion).upper():
+                rows = [row for row in rows if getattr(row, column_name, None) is None]
 
         return _MockScalarResult(value=rows[0] if rows else None, rows=rows)
+
+    async def scalar(self, statement=None, *args, **kwargs):
+        result = await self.execute(statement, *args, **kwargs)
+        return result.scalar_one_or_none()
 
     async def get(self, model, item_id, *args, **kwargs):
         return self._objects.get((model, item_id))
@@ -154,3 +175,10 @@ async def client(app):
         base_url="http://test",
     ) as ac:
         yield ac
+
+
+@pytest.fixture(autouse=True)
+def _reset_mock_session():
+    _mock_session._objects.clear()
+    yield
+    _mock_session._objects.clear()

@@ -17,6 +17,7 @@ import type {
 const http = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
 http.interceptors.response.use(
@@ -45,6 +46,49 @@ http.interceptors.response.use(
 );
 
 // ── ATT&CK ───────────────────────────────────────────────────────────────────
+
+export interface CurrentUser {
+  name: string;
+  roles: string[];
+  auth_enabled: boolean;
+  user_id?: string;
+  auth_source?: string;
+}
+
+export interface AuthStatus {
+  auth_enabled: boolean;
+  native_login_enabled: boolean;
+  user_count: number;
+  bootstrap_configured: boolean;
+  bootstrap_required: boolean;
+}
+
+export interface ManagedUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: 'viewer' | 'analyst' | 'admin';
+  enabled: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const authApi = {
+  status: (): Promise<AuthStatus> => http.get('/auth/status', { skipGlobalError: true } as any).then(r => r.data),
+  me: (): Promise<CurrentUser> => http.get('/auth/me', { skipGlobalError: true } as any).then(r => r.data),
+  login: (body: { username: string; password: string }): Promise<{ token: string; user: ManagedUser; expires_at: string }> =>
+    http.post('/auth/login', body, { skipGlobalError: true } as any).then(r => r.data),
+  logout: (): Promise<{ status: string }> => http.post('/auth/logout').then(r => r.data),
+  users: (): Promise<ManagedUser[]> => http.get('/auth/users').then(r => r.data),
+  createUser: (body: { username: string; password: string; display_name?: string; role: string; enabled: boolean }): Promise<ManagedUser> =>
+    http.post('/auth/users', body).then(r => r.data),
+  updateUser: (id: string, body: { display_name?: string; role?: string; enabled?: boolean }): Promise<ManagedUser> =>
+    http.patch(`/auth/users/${id}`, body).then(r => r.data),
+  setPassword: (id: string, password: string): Promise<{ status: string }> =>
+    http.post(`/auth/users/${id}/password`, { password }).then(r => r.data),
+  disableUser: (id: string): Promise<void> => http.delete(`/auth/users/${id}`).then(() => {}),
+};
 
 export const attackApi = {
   versions: (): Promise<AttackVersion[]> =>
@@ -957,7 +1001,7 @@ export interface SandboxBehavior {
 }
 const pipeline = '/pipeline';
 export const pipelineApi = {
-  me: (): Promise<{name: string; roles: string[]; auth_enabled: boolean}> => http.get(`${pipeline}/me`).then(r => r.data),
+  me: (): Promise<CurrentUser> => authApi.me(),
   sources: (): Promise<CollectionSource[]> => http.get(`${pipeline}/sources`).then(r => r.data),
   createSource: (body: Omit<CollectionSource, 'id'|'last_run_at'|'created_at'|'updated_at'>): Promise<CollectionSource> => http.post(`${pipeline}/sources`, body).then(r => r.data),
   createDefaultRuleFeeds: (): Promise<CollectionSource[]> => http.post(`${pipeline}/rule-feeds/defaults`).then(r => r.data),

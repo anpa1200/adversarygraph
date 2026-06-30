@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # Optional trusted-proxy team authentication. Keep disabled for local use.
     auth_enabled: bool = False
     auth_default_role: str = "viewer"
+    auth_session_minutes: int = 720
+    auth_bootstrap_admin_username: str = "admin"
+    auth_bootstrap_admin_password: str = ""
     # Secret shared between the reverse proxy and the API. When non-empty, every
     # request that carries X-Auth-User / X-Auth-Roles headers MUST also carry
     # X-Internal-Proxy-Secret with this value; requests that fail the check are

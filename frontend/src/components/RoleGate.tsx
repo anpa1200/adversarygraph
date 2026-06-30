@@ -33,6 +33,10 @@ export function RoleGate({ require, children, fallback }: RoleGateProps) {
   // While loading, render children optimistically — the backend is authoritative.
   if (isLoading) return <>{children}</>;
 
+  if (user?.auth_enabled === false) {
+    return <>{children}</>;
+  }
+
   if (!hasRole(user, require)) {
     return <>{fallback ?? <DefaultFallback />}</>;
   }

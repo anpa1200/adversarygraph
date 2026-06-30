@@ -30,8 +30,8 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 | Claim | Status |
 |---|---|
 | Production SaaS | Not claimed. Default deployment is for local or controlled self-hosted use. |
-| Multi-tenant cloud product | Not implemented. No built-in authentication or tenant isolation. |
-| Hardened internet-facing service | Not the default. Requires TLS, auth proxy, and network restrictions — documented in [SECURITY.md](../SECURITY.md). |
+| Multi-tenant cloud product | Not implemented. Native user auth is project-level access control, not tenant isolation. |
+| Hardened internet-facing service | Not the default. Requires TLS, auth enabled, network restrictions, and operator hardening — documented in [SECURITY.md](../SECURITY.md) and [Authentication and User Management](authentication-and-users.md). |
 | Automated threat actor attribution | Not claimed. TTP overlap is an investigation lead, not attribution proof. |
 | Replacement for analyst judgment | Not claimed. All AI outputs require analyst review before operational use. |
 | Live attack framework | Not claimed. Attack Simulation uses approved lab fixtures and benign canaries; it is not a general exploit runner and does not target arbitrary systems. |

@@ -111,6 +111,7 @@ The main platform stores structured CTI and workflow data. Malware samples are h
 - Do not upload confidential data to public demos.
 - Do not expose the default Compose stack directly to the internet.
 - Use TLS, authentication, restricted networks, backups, monitoring, and secret rotation for controlled production deployments.
+- Native username/password login, role-based access, user management, and trusted reverse-proxy auth are documented in [Authentication and User Management](docs/authentication-and-users.md).
 - Treat LLM output and generated detections as untrusted until reviewed.
 - Use only approved lab targets for Attack Simulation.
 - Keep malware runtime execution in disposable isolated profiles only.

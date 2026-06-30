@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { syncApi } from '@/api/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { authApi, syncApi } from '@/api/client';
 import { REFERENCE_BASE_URL } from '@/config/references';
 import clsx from 'clsx';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { useAppStore } from '@/store';
 import { useState } from 'react';
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
+import { useCurrentUser, hasRole } from '@/hooks/useCurrentUser';
 
 const nav = [
   { to: '/discover',      label: 'Discover',      icon: '⌕' },
@@ -29,13 +30,23 @@ const nav = [
   { to: '/report',        label: 'Investigation', icon: '▤' },
   { to: '/operations',    label: 'Operations', icon: '◆' },
   { to: '/pipeline',      label: 'Pipeline', icon: '⇄' },
+  { to: '/admin',         label: 'Admin Panel', icon: '⚙' },
   { to: '/examples',      label: 'DFIR Examples', icon: '▦' },
   { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
 ];
 
 export function Sidebar() {
+  const qc = useQueryClient();
   const { workspaces, saveWorkspace, loadWorkspace, deleteWorkspace } = useAppStore();
   const [showWorkspaces, setShowWorkspaces] = useState(false);
+  const { data: user } = useCurrentUser();
+  const logout = useMutation({
+    mutationFn: authApi.logout,
+    onSuccess: async () => {
+      await qc.clear();
+      window.location.assign('/');
+    },
+  });
   const { data: syncStatus } = useQuery({
     queryKey: ['sync-status'],
     queryFn: syncApi.status,
@@ -60,7 +71,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 pr-2">
         <div className="sticky top-0 z-10 -mx-3 -mt-4 bg-mitre-navy px-3 pb-3 pt-4"><GlobalSearch /></div>
-        {nav.map(({ to, label, icon }) => (
+        {nav.filter(item => item.to !== '/admin' || hasRole(user, 'admin')).map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -128,6 +139,17 @@ export function Sidebar() {
           </div>
         )}
         <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v5.2.0</div>
+        {user?.auth_enabled && (
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-800 pt-2">
+            <div className="min-w-0">
+              <div className="truncate text-[10px] text-gray-400">{user.name}</div>
+              <div className="truncate text-[10px] text-gray-600">{user.roles.join(', ')}</div>
+            </div>
+            <button className="text-[10px] text-gray-500 hover:text-red-300" onClick={() => logout.mutate()}>
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

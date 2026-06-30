@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { pipelineApi } from '@/api/client';
+import { authApi, type CurrentUser } from '@/api/client';
 
-export type CurrentUser = { name: string; roles: string[]; auth_enabled: boolean };
 
 export function useCurrentUser() {
   return useQuery<CurrentUser>({
-    queryKey: ['pipeline-me'],
-    queryFn: pipelineApi.me,
+    queryKey: ['current-user'],
+    queryFn: authApi.me,
     staleTime: 5 * 60 * 1000,
     retry: false,
   });

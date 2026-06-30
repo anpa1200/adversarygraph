@@ -4,7 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.rate_limit import RateLimitMiddleware
@@ -15,11 +15,13 @@ import app.models.knowledge      # noqa: F401 — registers KnowledgeArticle wit
 import app.models.asset_surface  # noqa: F401 — registers AssetSurfaceCase with Base metadata
 import app.models.simulation     # noqa: F401 — registers simulation persistence tables
 import app.models.cve            # noqa: F401 — registers CVE intelligence tables
-from app.api.routes import asset_surface, attack, apt, analyze, sync, export, ioc, cve, layers, malwaregraph, operations, pipeline, retrohunt, sector, simulation, system, knowledge
+import app.models.auth           # noqa: F401 — registers native user/session tables
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, layers, malwaregraph, operations, pipeline, retrohunt, sector, simulation, system, knowledge
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
+from app.services.auth import bootstrap_admin_if_configured, current_user
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -51,6 +53,9 @@ async def lifespan(app: FastAPI):
 
     await create_tables()
     logger.info("Database tables ready")
+    async with async_session_factory() as session:
+        if await bootstrap_admin_if_configured(session):
+            logger.info("Bootstrapped native admin user from AUTH_BOOTSTRAP_ADMIN_* settings")
 
     loop = asyncio.get_event_loop()
     try:
@@ -121,23 +126,26 @@ app.add_middleware(
 )
 app.add_middleware(RateLimitMiddleware)
 
-app.include_router(attack.router,  prefix="/api")
-app.include_router(apt.router,     prefix="/api")
-app.include_router(analyze.router, prefix="/api")
-app.include_router(asset_surface.router, prefix="/api")
-app.include_router(sync.router,    prefix="/api")
-app.include_router(export.router,  prefix="/api")
-app.include_router(ioc.router, prefix="/api")
-app.include_router(cve.router, prefix="/api")
-app.include_router(layers.router,  prefix="/api")
-app.include_router(malwaregraph.router, prefix="/api")
-app.include_router(operations.router, prefix="/api")
-app.include_router(pipeline.router, prefix="/api")
-app.include_router(retrohunt.router, prefix="/api")
-app.include_router(knowledge.router, prefix="/api")
-app.include_router(sector.router, prefix="/api")
-app.include_router(simulation.router, prefix="/api")
-app.include_router(system.router, prefix="/api")
+_auth_required = [Depends(current_user)]
+
+app.include_router(auth.router, prefix="/api")
+app.include_router(attack.router,  prefix="/api", dependencies=_auth_required)
+app.include_router(apt.router,     prefix="/api", dependencies=_auth_required)
+app.include_router(analyze.router, prefix="/api", dependencies=_auth_required)
+app.include_router(asset_surface.router, prefix="/api", dependencies=_auth_required)
+app.include_router(sync.router,    prefix="/api", dependencies=_auth_required)
+app.include_router(export.router,  prefix="/api", dependencies=_auth_required)
+app.include_router(ioc.router, prefix="/api", dependencies=_auth_required)
+app.include_router(cve.router, prefix="/api", dependencies=_auth_required)
+app.include_router(layers.router,  prefix="/api", dependencies=_auth_required)
+app.include_router(malwaregraph.router, prefix="/api", dependencies=_auth_required)
+app.include_router(operations.router, prefix="/api", dependencies=_auth_required)
+app.include_router(pipeline.router, prefix="/api", dependencies=_auth_required)
+app.include_router(retrohunt.router, prefix="/api", dependencies=_auth_required)
+app.include_router(knowledge.router, prefix="/api", dependencies=_auth_required)
+app.include_router(sector.router, prefix="/api", dependencies=_auth_required)
+app.include_router(simulation.router, prefix="/api", dependencies=_auth_required)
+app.include_router(system.router, prefix="/api", dependencies=_auth_required)
 
 
 @app.get("/api/health")

@@ -28,7 +28,7 @@ This document records what AdversaryGraph can validate today and where analyst r
 ## Current Limitations
 
 - The default deployment is not a hardened multi-tenant SaaS.
-- Built-in authentication is intended for trusted reverse-proxy deployments, not direct internet exposure.
+- Native username/password authentication provides project-level access control, but the default deployment is still not a hardened internet-facing SaaS.
 - AI provider behavior can vary between model versions.
 - Generated detections are drafts.
 - Synthetic telemetry may match a vendor structure but is still generated data.
