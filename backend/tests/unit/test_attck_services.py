@@ -207,6 +207,100 @@ def test_parse_bundle_supports_atlas_ids_and_subtech_parent(tmp_path):
     assert child["tactic_shortnames"] == ["resource-development"]
 
 
+def test_parse_bundle_preserves_raw_stix_objects_and_relationships(tmp_path):
+    bundle = tmp_path / "enterprise-test.json"
+    bundle.write_text(
+        """
+        {
+          "type": "bundle",
+          "objects": [
+            {
+              "type": "intrusion-set",
+              "id": "intrusion-set--group",
+              "name": "Example Actor",
+              "description": "Actor profile.",
+              "external_references": [
+                {"source_name": "mitre-attack", "external_id": "G9999", "url": "https://attack.mitre.org/groups/G9999/"}
+              ]
+            },
+            {
+              "type": "attack-pattern",
+              "id": "attack-pattern--tech",
+              "name": "Example Technique",
+              "description": "Technique profile.",
+              "kill_chain_phases": [{"kill_chain_name": "mitre-attack", "phase_name": "execution"}],
+              "external_references": [
+                {"source_name": "mitre-attack", "external_id": "T9999", "url": "https://attack.mitre.org/techniques/T9999/"}
+              ]
+            },
+            {
+              "type": "attack-pattern",
+              "id": "attack-pattern--revoked",
+              "name": "Revoked Technique",
+              "revoked": true,
+              "external_references": [
+                {"source_name": "mitre-attack", "external_id": "T0000"}
+              ]
+            },
+            {
+              "type": "relationship",
+              "id": "relationship--uses",
+              "relationship_type": "uses",
+              "source_ref": "intrusion-set--group",
+              "target_ref": "attack-pattern--tech",
+              "description": "Example Actor uses Example Technique.",
+              "external_references": [
+                {"source_name": "example-report", "url": "https://example.test/report"}
+              ]
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(bundle, "enterprise-attack")
+
+    assert [group["attack_id"] for group in parsed["groups"]] == ["G9999"]
+    assert [technique["attack_id"] for technique in parsed["techniques"]] == ["T9999"]
+    assert len(parsed["usages"]) == 1
+    assert {obj["stix_id"] for obj in parsed["stix_objects"]} == {
+        "intrusion-set--group",
+        "attack-pattern--tech",
+        "attack-pattern--revoked",
+    }
+    revoked = next(obj for obj in parsed["stix_objects"] if obj["stix_id"] == "attack-pattern--revoked")
+    assert revoked["is_revoked"] is True
+    assert revoked["raw"]["revoked"] is True
+    assert parsed["stix_relationships"] == [
+        {
+            "stix_id": "relationship--uses",
+            "relationship_type": "uses",
+            "source_stix_id": "intrusion-set--group",
+            "target_stix_id": "attack-pattern--tech",
+            "description": "Example Actor uses Example Technique.",
+            "references": [
+                {
+                    "source_name": "example-report",
+                    "url": "https://example.test/report",
+                    "description": "",
+                }
+            ],
+            "raw": {
+                "type": "relationship",
+                "id": "relationship--uses",
+                "relationship_type": "uses",
+                "source_ref": "intrusion-set--group",
+                "target_ref": "attack-pattern--tech",
+                "description": "Example Actor uses Example Technique.",
+                "external_references": [
+                    {"source_name": "example-report", "url": "https://example.test/report"}
+                ],
+            },
+        }
+    ]
+
+
 def test_sync_outdated_domains_updates_only_domains_that_need_it(monkeypatch, tmp_path):
     actions_seen = []
     bundle_path = tmp_path / "enterprise-attack-15.1.json"

@@ -67,6 +67,26 @@ async def test_technique_detail_not_found(client: AsyncClient):
     assert resp.status_code == 404
 
 
+# ── /api/attack/stix ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_stix_object_no_data_returns_404(client: AsyncClient):
+    resp = await client.get(
+        "/api/attack/stix/objects/attack-pattern--missing",
+        params={"domain": "enterprise-attack"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stix_relationships_no_data_returns_404(client: AsyncClient):
+    resp = await client.get(
+        "/api/attack/stix/relationships",
+        params={"domain": "enterprise-attack", "relationship_type": "uses"},
+    )
+    assert resp.status_code == 404
+
+
 # ── /api/apt/groups ───────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

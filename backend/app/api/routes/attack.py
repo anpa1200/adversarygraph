@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_session
-from app.models.attack import AttackVersion, Tactic, Technique
+from app.models.attack import AttackVersion, StixObject, StixRelationship, Tactic, Technique
 from app.services.auth import TeamUser, current_user
 from app.services.telemetry_readiness import build_telemetry_readiness
 
@@ -138,6 +138,34 @@ class TechniqueDetail(TechniqueListItem):
     data_sources: list[str]
     detection: str
     telemetry_readiness: TelemetryReadinessOut
+
+
+class StixObjectOut(BaseModel):
+    stix_id: str
+    stix_type: str
+    attack_id: str | None
+    name: str
+    domain: str
+    is_deprecated: bool
+    is_revoked: bool
+    raw: dict
+
+
+class StixRelationshipOut(BaseModel):
+    stix_id: str
+    relationship_type: str
+    source_stix_id: str
+    target_stix_id: str
+    description: str
+    references: list[dict]
+    domain: str
+    raw: dict
+
+
+class StixGraphOut(BaseModel):
+    object: StixObjectOut
+    incoming: list[StixRelationshipOut]
+    outgoing: list[StixRelationshipOut]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -286,6 +314,97 @@ async def get_technique(
     )
 
 
+@router.get("/stix/objects/{stix_id}", response_model=StixObjectOut)
+async def get_stix_object(
+    stix_id: str,
+    domain: str = Query("enterprise-attack"),
+    version: str | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    ver_id = await _resolve_version_id(session, domain, version)
+    row = await session.execute(
+        select(StixObject).where(
+            StixObject.stix_id == stix_id,
+            StixObject.version_id == ver_id,
+        )
+    )
+    obj = row.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, f"STIX object {stix_id} not found")
+    return _stix_object_out(obj)
+
+
+@router.get("/stix/objects/{stix_id}/graph", response_model=StixGraphOut)
+async def get_stix_object_graph(
+    stix_id: str,
+    domain: str = Query("enterprise-attack"),
+    version: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    ver_id = await _resolve_version_id(session, domain, version)
+    row = await session.execute(
+        select(StixObject).where(
+            StixObject.stix_id == stix_id,
+            StixObject.version_id == ver_id,
+        )
+    )
+    obj = row.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, f"STIX object {stix_id} not found")
+
+    incoming_rows = await session.execute(
+        select(StixRelationship)
+        .where(
+            StixRelationship.target_stix_id == stix_id,
+            StixRelationship.version_id == ver_id,
+        )
+        .order_by(StixRelationship.relationship_type, StixRelationship.stix_id)
+        .limit(limit)
+    )
+    outgoing_rows = await session.execute(
+        select(StixRelationship)
+        .where(
+            StixRelationship.source_stix_id == stix_id,
+            StixRelationship.version_id == ver_id,
+        )
+        .order_by(StixRelationship.relationship_type, StixRelationship.stix_id)
+        .limit(limit)
+    )
+    return StixGraphOut(
+        object=_stix_object_out(obj),
+        incoming=[_stix_relationship_out(rel) for rel in incoming_rows.scalars()],
+        outgoing=[_stix_relationship_out(rel) for rel in outgoing_rows.scalars()],
+    )
+
+
+@router.get("/stix/relationships", response_model=list[StixRelationshipOut])
+async def list_stix_relationships(
+    domain: str = Query("enterprise-attack"),
+    version: str | None = Query(None),
+    source_stix_id: str | None = Query(None),
+    target_stix_id: str | None = Query(None),
+    relationship_type: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    ver_id = await _resolve_version_id(session, domain, version)
+    stmt = select(StixRelationship).where(StixRelationship.version_id == ver_id)
+    if source_stix_id:
+        stmt = stmt.where(StixRelationship.source_stix_id == source_stix_id)
+    if target_stix_id:
+        stmt = stmt.where(StixRelationship.target_stix_id == target_stix_id)
+    if relationship_type:
+        stmt = stmt.where(StixRelationship.relationship_type == relationship_type)
+    rows = await session.execute(
+        stmt.order_by(StixRelationship.relationship_type, StixRelationship.stix_id).limit(limit)
+    )
+    return [_stix_relationship_out(rel) for rel in rows.scalars()]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _resolve_version_id(
@@ -320,4 +439,30 @@ def _technique_to_list_item(t: Technique) -> TechniqueListItem:
         tactics=[tc.shortname for tc in t.tactics],
         platforms=t.platforms or [],
         domain=t.domain,
+    )
+
+
+def _stix_object_out(obj: StixObject) -> StixObjectOut:
+    return StixObjectOut(
+        stix_id=obj.stix_id,
+        stix_type=obj.stix_type,
+        attack_id=obj.attack_id,
+        name=obj.name,
+        domain=obj.domain,
+        is_deprecated=obj.is_deprecated,
+        is_revoked=obj.is_revoked,
+        raw=obj.raw or {},
+    )
+
+
+def _stix_relationship_out(rel: StixRelationship) -> StixRelationshipOut:
+    return StixRelationshipOut(
+        stix_id=rel.stix_id,
+        relationship_type=rel.relationship_type,
+        source_stix_id=rel.source_stix_id,
+        target_stix_id=rel.target_stix_id,
+        description=rel.description or "",
+        references=rel.references or [],
+        domain=rel.domain,
+        raw=rel.raw or {},
     )

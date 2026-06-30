@@ -91,6 +91,46 @@ class TechniqueTactic(Base):
     )
 
 
+class StixObject(Base):
+    """Raw STIX object preserved beside the normalized ATT&CK query tables."""
+
+    __tablename__ = "stix_objects"
+    __table_args__ = (
+        UniqueConstraint("stix_id", "version_id", name="uq_stix_object_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stix_id: Mapped[str] = mapped_column(String(100), index=True)
+    stix_type: Mapped[str] = mapped_column(String(80), index=True)
+    attack_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(500), default="")
+    domain: Mapped[str] = mapped_column(String(50), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("attack_versions.id", ondelete="CASCADE"))
+    is_deprecated: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    raw: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class StixRelationship(Base):
+    """Raw STIX relationship preserved for full graph-fidelity review."""
+
+    __tablename__ = "stix_relationships"
+    __table_args__ = (
+        UniqueConstraint("stix_id", "version_id", name="uq_stix_relationship_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stix_id: Mapped[str] = mapped_column(String(100), index=True)
+    relationship_type: Mapped[str] = mapped_column(String(100), index=True)
+    source_stix_id: Mapped[str] = mapped_column(String(100), index=True)
+    target_stix_id: Mapped[str] = mapped_column(String(100), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    references: Mapped[list] = mapped_column(JSONB, default=list)
+    domain: Mapped[str] = mapped_column(String(50), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("attack_versions.id", ondelete="CASCADE"))
+    raw: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
 class AptGroup(Base):
     __tablename__ = "apt_groups"
     __table_args__ = (UniqueConstraint("attack_id", "version_id", name="uq_group_version"),)

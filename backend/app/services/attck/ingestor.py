@@ -21,6 +21,8 @@ from app.models.attack import (
     AttackVersion,
     Campaign,
     CampaignTechnique,
+    StixObject,
+    StixRelationship,
     Tactic,
     Technique,
     TechniqueTactic,
@@ -97,8 +99,18 @@ def parse_bundle(bundle_path: Path, domain: str = "enterprise-attack") -> dict:
     techniques: list[dict] = []
     groups:     list[dict] = []
     campaigns:  list[dict] = []
+    stix_objects: list[dict] = []
 
     for obj in by_id.values():
+        stix_objects.append({
+            "stix_id": obj["id"],
+            "stix_type": obj.get("type", ""),
+            "attack_id": _attack_id(obj, source_name),
+            "name": obj.get("name", ""),
+            "is_deprecated": bool(obj.get("x_mitre_deprecated")),
+            "is_revoked": bool(obj.get("revoked")),
+            "raw": obj,
+        })
         if _is_stale(obj):
             continue
         t = obj.get("type", "")
@@ -214,9 +226,10 @@ def parse_bundle(bundle_path: Path, domain: str = "enterprise-attack") -> dict:
 
     logger.info(
         "  Parsed: %d tactics, %d techniques, %d groups, %d usages, "
-        "%d campaigns, %d campaign-tech, %d campaign-group",
+        "%d campaigns, %d campaign-tech, %d campaign-group, %d STIX objects, %d STIX relationships",
         len(tactics), len(techniques), len(groups), len(usages),
         len(campaigns), len(campaign_tech_usages), len(campaign_group_links),
+        len(stix_objects), len(relationships),
     )
     return {
         "tactics":              tactics,
@@ -226,6 +239,20 @@ def parse_bundle(bundle_path: Path, domain: str = "enterprise-attack") -> dict:
         "campaigns":            campaigns,
         "campaign_tech_usages": campaign_tech_usages,
         "campaign_group_links": campaign_group_links,
+        "stix_objects":         stix_objects,
+        "stix_relationships":   [
+            {
+                "stix_id": rel["id"],
+                "relationship_type": rel.get("relationship_type", ""),
+                "source_stix_id": rel.get("source_ref", ""),
+                "target_stix_id": rel.get("target_ref", ""),
+                "description": rel.get("description", "") or "",
+                "references": _ext_refs(rel),
+                "raw": rel,
+            }
+            for rel in relationships
+            if rel.get("id")
+        ],
     }
 
 
@@ -257,6 +284,73 @@ def ingest_domain(domain: str, bundle_path: Path, version: str) -> None:
             update(AttackVersion)
             .where(AttackVersion.domain == domain, AttackVersion.id != version_id)
             .values(is_latest=False)
+        )
+
+        # ── Raw STIX preservation ─────────────────────────────────────────────
+        stix_object_count = 0
+        for obj in data["stix_objects"]:
+            session.execute(
+                insert(StixObject)
+                .values(
+                    stix_id=obj["stix_id"],
+                    stix_type=obj["stix_type"],
+                    attack_id=obj["attack_id"],
+                    name=obj["name"],
+                    domain=domain,
+                    version_id=version_id,
+                    is_deprecated=obj["is_deprecated"],
+                    is_revoked=obj["is_revoked"],
+                    raw=obj["raw"],
+                )
+                .on_conflict_do_update(
+                    constraint="uq_stix_object_version",
+                    set_={
+                        "stix_type": obj["stix_type"],
+                        "attack_id": obj["attack_id"],
+                        "name": obj["name"],
+                        "domain": domain,
+                        "is_deprecated": obj["is_deprecated"],
+                        "is_revoked": obj["is_revoked"],
+                        "raw": obj["raw"],
+                    },
+                )
+            )
+            stix_object_count += 1
+
+        stix_relationship_count = 0
+        for rel in data["stix_relationships"]:
+            session.execute(
+                insert(StixRelationship)
+                .values(
+                    stix_id=rel["stix_id"],
+                    relationship_type=rel["relationship_type"],
+                    source_stix_id=rel["source_stix_id"],
+                    target_stix_id=rel["target_stix_id"],
+                    description=rel["description"],
+                    references=rel["references"],
+                    domain=domain,
+                    version_id=version_id,
+                    raw=rel["raw"],
+                )
+                .on_conflict_do_update(
+                    constraint="uq_stix_relationship_version",
+                    set_={
+                        "relationship_type": rel["relationship_type"],
+                        "source_stix_id": rel["source_stix_id"],
+                        "target_stix_id": rel["target_stix_id"],
+                        "description": rel["description"],
+                        "references": rel["references"],
+                        "domain": domain,
+                        "raw": rel["raw"],
+                    },
+                )
+            )
+            stix_relationship_count += 1
+
+        logger.info(
+            "  Preserved %d raw STIX objects and %d raw STIX relationships",
+            stix_object_count,
+            stix_relationship_count,
         )
 
         # ── Tactics ───────────────────────────────────────────────────────────

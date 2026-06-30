@@ -8,8 +8,10 @@
   AI-assisted simulations must use source-correct telemetry and
   vendor/source-shaped event structures, and unsupported TTPs must be reported
   as telemetry gaps instead of generic fake logs.
+- Added raw STIX preservation tables for every ingested STIX object and
+  relationship while keeping the existing normalized ATT&CK query tables.
 - Documented the Attack Simulation telemetry architecture rule for detection
-  engineering and SIEM validation review.
+  engineering and SIEM validation review, plus the ATT&CK/STIX data model.
 
 ## v4.1.0 - 2026-06-27
 

@@ -66,6 +66,7 @@ The default Compose deployment binds the public UI and reference docs to localho
 |---|---|
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
+| ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Security policy | [SECURITY.md](SECURITY.md) |
 | Security threat model | [docs/security-threat-model.md](docs/security-threat-model.md) |
 | Production readiness | [docs/production-readiness.md](docs/production-readiness.md) |

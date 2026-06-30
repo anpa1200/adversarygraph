@@ -11,7 +11,7 @@ from sqlalchemy import func, select, text
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.version import APP_VERSION
-from app.models.attack import AptGroup, AttackVersion, Tactic, Technique
+from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelationship, Tactic, Technique
 from app.models.ioc import IOCIndicator, IOCSource
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -364,15 +364,25 @@ async def selftest() -> SelfTestResult:
                 )
                 version_id = row.scalar_one_or_none()
                 if not version_id:
-                    domain_counts[domain] = {"tactics": 0, "techniques": 0, "groups": 0}
+                    domain_counts[domain] = {
+                        "tactics": 0,
+                        "techniques": 0,
+                        "groups": 0,
+                        "stix_objects": 0,
+                        "stix_relationships": 0,
+                    }
                     continue
                 tactics = await session.scalar(select(func.count()).select_from(Tactic).where(Tactic.version_id == version_id))
                 techniques = await session.scalar(select(func.count()).select_from(Technique).where(Technique.version_id == version_id))
                 groups = await session.scalar(select(func.count()).select_from(AptGroup).where(AptGroup.version_id == version_id))
+                stix_objects = await session.scalar(select(func.count()).select_from(StixObject).where(StixObject.version_id == version_id))
+                stix_relationships = await session.scalar(select(func.count()).select_from(StixRelationship).where(StixRelationship.version_id == version_id))
                 domain_counts[domain] = {
                     "tactics": int(tactics or 0),
                     "techniques": int(techniques or 0),
                     "groups": int(groups or 0),
+                    "stix_objects": int(stix_objects or 0),
+                    "stix_relationships": int(stix_relationships or 0),
                 }
 
             empty_domains = [
