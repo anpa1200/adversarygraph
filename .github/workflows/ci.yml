@@ -148,7 +148,6 @@ jobs:
   container-scan:
     name: Container scan (Trivy)
     runs-on: ubuntu-latest
-    needs: docker-build
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
