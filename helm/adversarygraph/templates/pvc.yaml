@@ -1,0 +1,54 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-postgres
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.postgresql.storageClassName }}
+  storageClassName: {{ .Values.postgresql.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.postgresql.storageSize | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-attck-data
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.attckDataSize | quote }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-logs
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.logsSize | quote }}
+{{- if .Values.malwaregraph.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-malwaregraph
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.malwaregraph.storageSize | quote }}
+{{- end }}

@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-worker
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["sh", "-lc", "celery -A app.tasks.celery_app worker --loglevel=info --concurrency={{ .Values.worker.concurrency }}"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "adversarygraph.fullname" . }}-config
+            - secretRef:
+                name: {{ include "adversarygraph.secretName" . }}
+          env:
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "adversarygraph.fullname" . }}-redis:6379/0"
+          volumeMounts:
+            - name: attck-data
+              mountPath: /app/data/attck
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: attck-data
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-attck-data
+{{- if .Values.beat.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-beat
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: beat
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: beat
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: beat
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["celery", "-A", "app.tasks.celery_app", "beat", "--loglevel=info"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "adversarygraph.fullname" . }}-config
+            - secretRef:
+                name: {{ include "adversarygraph.secretName" . }}
+          env:
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "adversarygraph.fullname" . }}-redis:6379/0"
+          volumeMounts:
+            - name: attck-data
+              mountPath: /app/data/attck
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: attck-data
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-attck-data
+{{- end }}

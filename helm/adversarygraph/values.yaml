@@ -1,0 +1,144 @@
+global:
+  imagePullPolicy: IfNotPresent
+
+image:
+  repository: ghcr.io/anpa1200/adversarygraph-api
+  tag: "5.4.0"
+
+frontend:
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-frontend
+    tag: "5.4.0"
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+api:
+  replicas: 1
+  service:
+    port: 8000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+worker:
+  replicas: 1
+  concurrency: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+beat:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  storageClassName: ""
+  storageSize: 50Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+malwaregraph:
+  enabled: true
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-malwaregraph
+    tag: "5.4.0"
+  storageSize: 20Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+attackLab:
+  enabled: false
+
+persistence:
+  attckDataSize: 10Gi
+  logsSize: 20Gi
+
+ingress:
+  enabled: false
+  className: ""
+  host: adversarygraph.example.com
+  tlsSecretName: ""
+
+secrets:
+  existingSecret: ""
+  dbName: adversarygraph
+  dbUser: ag_user
+  dbPassword: "CHANGE_ME"
+  redisPassword: "CHANGE_ME"
+  authBootstrapAdminPassword: ""
+  anthropicApiKey: ""
+  openaiApiKey: ""
+  geminiApiKey: ""
+  minimaxApiKey: ""
+  nvdApiKey: ""
+  threatfoxAuthKey: ""
+  otxApiKey: ""
+  virustotalApiKey: ""
+  urlscanApiKey: ""
+  shodanApiKey: ""
+  abuseipdbApiKey: ""
+  censysApiKey: ""
+  openctiUrl: ""
+  openctiToken: ""
+  malwaregraphApiKey: ""
+
+config:
+  authEnabled: true
+  authDefaultRole: viewer
+  authSessionMinutes: "720"
+  corsAllowedOrigins: "https://adversarygraph.example.com"
+  attckDomains: "enterprise-attack,mobile-attack,ics-attack,atlas"
+  autoIocFullSyncOnStartup: "false"
+  autoThreatfoxSyncDays: "7"
+  logLevel: info
+  openaiModel: gpt-4.1
+  minimaxModel: MiniMax-M3
+  minimaxBaseUrl: https://api.minimax.io/v1
+  localLlmBaseUrl: http://host.docker.internal:11434/v1
+  localLlmModel: llama3.1:8b

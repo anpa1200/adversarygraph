@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-api
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "adversarygraph.fullname" . }}-config
+            - secretRef:
+                name: {{ include "adversarygraph.secretName" . }}
+          env:
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "adversarygraph.fullname" . }}-redis:6379/0"
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          volumeMounts:
+            - name: attck-data
+              mountPath: /app/data/attck
+            - name: logs
+              mountPath: /app/logs
+            - name: malwaregraph
+              mountPath: /malwaregraph-storage
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: attck-data
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-attck-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-logs
+        - name: malwaregraph
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-malwaregraph
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-api
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "adversarygraph.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http

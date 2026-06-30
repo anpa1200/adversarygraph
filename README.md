@@ -77,6 +77,11 @@ The default Compose deployment binds the public UI and reference docs to localho
 | Security policy | [SECURITY.md](SECURITY.md) |
 | Security threat model | [docs/security-threat-model.md](docs/security-threat-model.md) |
 | Production readiness | [docs/production-readiness.md](docs/production-readiness.md) |
+| Hardened Docker Compose profile | [docker-compose.prod.yml](docker-compose.prod.yml) |
+| Kubernetes Helm chart | [helm/adversarygraph/README.md](helm/adversarygraph/README.md) |
+| Deployment sizing | [docs/deployment-sizing.md](docs/deployment-sizing.md) |
+| Backup and restore | [docs/backup-restore.md](docs/backup-restore.md) |
+| Upgrade guide | [docs/upgrade-guide.md](docs/upgrade-guide.md) |
 | Validation and limitations | [docs/validation-and-limitations.md](docs/validation-and-limitations.md) |
 | Public demo privacy | [docs/public-demo-privacy.md](docs/public-demo-privacy.md) |
 | Platform guide | [docs/adversarygraph-platform-guide.md](docs/adversarygraph-platform-guide.md) |

@@ -1,0 +1,163 @@
+# Hardened production overlay.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# This overlay keeps the default local-only public ports, enables native auth by
+# default, disables startup feed sync noise, tightens restart/security defaults,
+# and adds a profile-gated backup helper.
+services:
+  postgres:
+    restart: always
+    shm_size: 256m
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-2g}
+          cpus: '${POSTGRES_CPU_LIMIT:-2.0}'
+        reservations:
+          memory: ${POSTGRES_MEMORY_RESERVATION:-1g}
+          cpus: '${POSTGRES_CPU_RESERVATION:-0.5}'
+
+  redis:
+    restart: always
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /data:size=128m,nosuid,nodev
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-512m}
+          cpus: '${REDIS_CPU_LIMIT:-1.0}'
+
+  api:
+    restart: always
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
+          cpus: '${API_CPU_LIMIT:-2.0}'
+        reservations:
+          memory: ${API_MEMORY_RESERVATION:-1g}
+          cpus: '${API_CPU_RESERVATION:-0.5}'
+
+  worker:
+    restart: always
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-false}
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-3g}
+          cpus: '${WORKER_CPU_LIMIT:-2.0}'
+        reservations:
+          memory: ${WORKER_MEMORY_RESERVATION:-1g}
+          cpus: '${WORKER_CPU_RESERVATION:-0.5}'
+
+  beat:
+    restart: always
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+    deploy:
+      resources:
+        limits:
+          memory: ${BEAT_MEMORY_LIMIT:-512m}
+          cpus: '${BEAT_CPU_LIMIT:-0.5}'
+
+  frontend:
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256m}
+          cpus: '${FRONTEND_CPU_LIMIT:-0.5}'
+
+  malwaregraph:
+    restart: always
+
+  attack-lab-web:
+    restart: unless-stopped
+
+  attack-lab-endpoint:
+    restart: unless-stopped
+
+  atlas-builder:
+    restart: unless-stopped
+    profiles: ["docs"]
+
+  atlas-docs:
+    restart: unless-stopped
+    profiles: ["docs"]
+
+  backup:
+    image: postgres:16-alpine
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-adversarygraph}
+      POSTGRES_USER: ${DB_USER:-ag_user}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required}
+      BACKUP_DIR: /backups
+    volumes:
+      - pg_socket:/var/run/postgresql-shared
+      - ${ADVERSARYGRAPH_BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        set -eu
+        stamp="$$(date -u +%Y%m%dT%H%M%SZ)"
+        out="$$BACKUP_DIR/adversarygraph-$${POSTGRES_DB}-$$stamp.dump"
+        pg_dump -h /var/run/postgresql-shared -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
+          --format=custom --compress=9 --no-owner --no-privileges --file="$$out"
+        sha256sum "$$out" > "$$out.sha256"
+        echo "Backup written: $$out"

@@ -1,7 +1,10 @@
-.PHONY: up down build logs shell-api shell-db ingest reset sync-atlas security-scan
+.PHONY: up prod down build logs shell-api shell-db ingest reset sync-atlas security-scan backup
 
 up:
 	docker compose up
+
+prod:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 build:
 	docker compose build --no-cache
@@ -30,3 +33,6 @@ sync-atlas:
 
 security-scan:
 	./scripts/security-scan.sh
+
+backup:
+	./scripts/backup.sh

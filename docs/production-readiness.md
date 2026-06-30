@@ -43,6 +43,11 @@ handling policy.
 | XML parser hardening | Implemented | `defusedxml` for RSS parsing |
 | Frontend URL scheme guard | Implemented | `frontend/src/utils/url.ts` |
 | Production frontend build | Implemented | default compose uses built frontend image; dev override is separate |
+| Hardened Compose overlay | Implemented | `docker-compose.prod.yml` |
+| Kubernetes Helm scaffold | Implemented (initial) | `helm/adversarygraph/` |
+| Sizing guide | Implemented | `docs/deployment-sizing.md` |
+| Backup/restore scripts | Implemented | `scripts/backup.sh`, `scripts/restore.sh` |
+| Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 
 ## Remaining Production Blockers
 
@@ -58,6 +63,7 @@ handling policy.
 - Add body-size and schema-depth guards for STIX/MISP import routes.
 - Add digest-pinned base images to every container image.
 - Add signed/tag-pinned external repository sync for optional Atlas docs import.
+- Add formal Alembic migration chain and migration tests.
 
 ## Deployment Position
 
@@ -71,6 +77,18 @@ internet-facing use, place AdversaryGraph behind:
 - managed secrets
 - backups and retention controls
 - logging and monitoring
+
+For production-like Compose deployments, use the hardened overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+For Kubernetes planning, review the initial Helm chart in
+`helm/adversarygraph/`. The chart is a scaffold for controlled internal
+deployments and should be reviewed against your ingress, secret-management,
+storage, and backup standards before use.
 
 ## Data Handling
 

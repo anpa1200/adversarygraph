@@ -15,6 +15,7 @@ frontend/.vite/
 *.log
 logs/
 backend/logs/
+backups/
 .DS_Store
 .claude/
 SECURITY_FIX_PROMPT.md

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-config
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+data:
+  AUTH_ENABLED: {{ .Values.config.authEnabled | quote }}
+  AUTH_DEFAULT_ROLE: {{ .Values.config.authDefaultRole | quote }}
+  AUTH_SESSION_MINUTES: {{ .Values.config.authSessionMinutes | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.config.corsAllowedOrigins | quote }}
+  ATTCK_DOMAINS: {{ .Values.config.attckDomains | quote }}
+  AUTO_IOC_FULL_SYNC_ON_STARTUP: {{ .Values.config.autoIocFullSyncOnStartup | quote }}
+  AUTO_THREATFOX_SYNC_DAYS: {{ .Values.config.autoThreatfoxSyncDays | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
+  MINIMAX_MODEL: {{ .Values.config.minimaxModel | quote }}
+  MINIMAX_BASE_URL: {{ .Values.config.minimaxBaseUrl | quote }}
+  LOCAL_LLM_BASE_URL: {{ .Values.config.localLlmBaseUrl | quote }}
+  LOCAL_LLM_MODEL: {{ .Values.config.localLlmModel | quote }}
+  ATTCK_DATA_DIR: /app/data/attck
+  LOG_DIR: /app/logs
+  MALWAREGRAPH_URL: http://{{ include "adversarygraph.fullname" . }}-malwaregraph:8100
+  MALWAREGRAPH_STORAGE_DIR: /malwaregraph-storage
+  REDIS_URL: redis://:$(REDIS_PASSWORD)@{{ include "adversarygraph.fullname" . }}-redis:6379/0
+  DB_HOST: {{ include "adversarygraph.fullname" . }}-postgres
+  DB_PORT: "5432"

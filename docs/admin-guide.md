@@ -71,10 +71,18 @@ Back up PostgreSQL regularly. The default data directory is external to the
 containers at `./data/postgres`, but logical backups are still recommended:
 
 ```bash
-docker compose exec postgres pg_dump -U "$DB_USER" "$DB_NAME" > adversarygraph-backup.sql
+./scripts/backup.sh
 ```
 
-Test restore procedures before relying on backups.
+Backups are written to `${ADVERSARYGRAPH_BACKUP_DIR:-./backups}` in compressed
+custom PostgreSQL format with a `.sha256` checksum. Test restore procedures
+before relying on backups:
+
+```bash
+CONFIRM_RESTORE=yes ./scripts/restore.sh ./backups/adversarygraph-adversarygraph-YYYYMMDDTHHMMSSZ.dump
+```
+
+See [`backup-restore.md`](backup-restore.md) for the full procedure.
 
 ## PostgreSQL Credential Rotation
 
@@ -155,8 +163,17 @@ docker compose up -d --build
 
 Review `CHANGELOG.md` before upgrading tagged releases.
 
+For production-like upgrades:
+
+```bash
+./scripts/backup.sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+./scripts/selftest.sh
+```
+
 For the current feature scope, review
-[`docs/release-summary-v5.0.0.md`](release-summary-v5.0.0.md).
+[`docs/release-summary-v5.4.0.md`](release-summary-v5.4.0.md).
 
 ## Feeds Management
 
