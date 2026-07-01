@@ -804,8 +804,52 @@ function EmptyState({
 }) {
   const navigate = useNavigate();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
-      <div className="text-5xl mb-5">◈</div>
+    <div className="flex-1 overflow-y-auto px-6 py-10">
+      <div className="mx-auto flex max-w-5xl flex-col items-center text-center text-gray-600">
+        <div className="text-5xl mb-5">◈</div>
+        <div className="mb-8 max-w-3xl">
+          <h2 className="text-xl font-semibold text-white">Compare CTI behavior, campaigns, reports, and actor profiles</h2>
+          <p className="mt-3 text-sm leading-6 text-gray-400">
+            This module turns selected ATT&CK techniques into evidence for comparison. Use it to rank likely actor overlap,
+            compare campaigns, match AI-extracted report TTPs against known groups, inspect tactic-level gaps, and generate
+            analyst explanations without treating similarity as attribution proof.
+          </p>
+        </div>
+
+        <div className="mb-8 grid w-full gap-3 text-left md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded border border-gray-800 bg-gray-950/50 p-4">
+            <p className="text-sm font-semibold text-white">Groups</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">Rank ATT&CK group profiles by shared TTPs, missing techniques, and tactic overlap.</p>
+          </div>
+          <div className="rounded border border-gray-800 bg-gray-950/50 p-4">
+            <p className="text-sm font-semibold text-white">Campaigns</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">Compare your selected behavior to named operations and campaign technique sets.</p>
+          </div>
+          <div className="rounded border border-gray-800 bg-gray-950/50 p-4">
+            <p className="text-sm font-semibold text-white">Reports</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">Use stored AI report analyses as a second database and match extracted TTPs to actors.</p>
+          </div>
+          <div className="rounded border border-gray-800 bg-gray-950/50 p-4">
+            <p className="text-sm font-semibold text-white">Group vs Group</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">Compare 2-6 groups directly to review shared behavior, divergence, and combined coverage.</p>
+          </div>
+        </div>
+
+        <div className="mb-8 grid w-full max-w-3xl gap-3 text-left sm:grid-cols-3">
+          <div className="rounded border border-gray-800 bg-gray-900/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Outputs</p>
+            <p className="mt-2 text-xs leading-5 text-gray-400">Similarity ranking, shared TTPs, diff matrix, gap view, and PDF-ready analysis.</p>
+          </div>
+          <div className="rounded border border-gray-800 bg-gray-900/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Validation Use</p>
+            <p className="mt-2 text-xs leading-5 text-gray-400">Prioritize hypotheses, detection gaps, and follow-up evidence collection.</p>
+          </div>
+          <div className="rounded border border-gray-800 bg-gray-900/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Boundary</p>
+            <p className="mt-2 text-xs leading-5 text-gray-400">Overlap is an investigative lead. It is not attribution by itself.</p>
+          </div>
+        </div>
+
       {canRun ? (
         <>
           <p className="text-gray-400 mb-4">{label ?? 'Run comparison to rank group profiles against your TTP selection.'}</p>
@@ -825,6 +869,7 @@ function EmptyState({
           </button>
         </>
       )}
+      </div>
     </div>
   );
 }
