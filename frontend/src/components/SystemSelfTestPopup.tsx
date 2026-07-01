@@ -52,14 +52,14 @@ function summarize(result?: SelfTestResult, error?: Error | null) {
   if (!result) {
     return {
       title: 'Running startup self-test',
-      body: 'Checking API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE Library feed sync state.',
+      body: 'Checking API, database, Redis, storage, ATT&CK data, MalwareGraph, attack labs, API keys, IOC feeds, and CVE Library feed sync state.',
       tone: 'pending' as const,
     };
   }
   if (result.status === 'ok') {
     return {
       title: 'AdversaryGraph self-test passed',
-      body: `API, database, Redis, ATT&CK data, API keys, IOC feeds, and CVE Library feed sync state are ready. Checked in ${result.duration_ms} ms.`,
+      body: `API, database, Redis, storage, ATT&CK data, MalwareGraph, attack labs, API keys, IOC feeds, and CVE Library feed sync state are ready. Checked in ${result.duration_ms} ms.`,
       tone: 'ok' as const,
     };
   }

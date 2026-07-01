@@ -4,6 +4,7 @@ from pathlib import Path
 from time import perf_counter, sleep
 from typing import Any
 
+import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.version import APP_VERSION
 from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelationship, Tactic, Technique
+from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
 from app.services.cve_intel import ensure_cve_sources
@@ -173,6 +175,120 @@ def _api_key_check() -> SelfTestCheck:
             "secrets_exposed": False,
         },
     )
+
+
+def _auth_readiness_check(total_users: int, enabled_users: int) -> SelfTestCheck:
+    details = {
+        "auth_enabled": settings.auth_enabled,
+        "sso_mode": settings.auth_sso_mode,
+        "native_login_enabled": True,
+        "bootstrap_configured": bool(settings.auth_bootstrap_admin_username and settings.auth_bootstrap_admin_password),
+        "total_users": total_users,
+        "enabled_users": enabled_users,
+        "session_minutes": settings.auth_session_minutes,
+        "mfa_available": settings.auth_mfa_enabled,
+    }
+    if not settings.auth_enabled:
+        details["production_recommendation"] = "Enable AUTH_ENABLED before exposing the platform to untrusted networks."
+        return _check_status(
+            "auth_readiness",
+            "ok",
+            "AUTH_ENABLED=false; local development mode is active.",
+            details,
+        )
+    if enabled_users <= 0 and not details["bootstrap_configured"]:
+        return _check_status(
+            "auth_readiness",
+            "error",
+            "Authentication is enabled but no enabled user or bootstrap admin is configured.",
+            details,
+        )
+    return _check_status(
+        "auth_readiness",
+        "ok",
+        f"Authentication is enabled with {enabled_users} enabled user account{'s' if enabled_users != 1 else ''}.",
+        details,
+    )
+
+
+def _storage_writable_check(path: str | Path, name: str = "storage_writable") -> SelfTestCheck:
+    target = Path(path)
+    probe = target / ".adversarygraph-selftest"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return _check(
+            name,
+            True,
+            f"{target} is writable.",
+            {"path": str(target), "writable": True},
+        )
+    except Exception as exc:
+        return _check(
+            name,
+            False,
+            f"{target} is not writable: {type(exc).__name__}: {exc}",
+            {"path": str(target), "writable": False},
+        )
+
+
+async def _service_health_check(name: str, base_url: str, *, timeout_seconds: float = 3.0) -> SelfTestCheck:
+    url = base_url.rstrip("/") + "/health"
+    started = perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.get(url)
+        duration_ms = int((perf_counter() - started) * 1000)
+        ok = 200 <= response.status_code < 300
+        return _check(
+            name,
+            ok,
+            f"{name} health endpoint returned HTTP {response.status_code} in {duration_ms} ms.",
+            {
+                "url": url,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "response_preview": response.text[:120],
+            },
+        )
+    except Exception as exc:
+        duration_ms = int((perf_counter() - started) * 1000)
+        return _check(
+            name,
+            False,
+            f"{name} health endpoint failed after {duration_ms} ms: {type(exc).__name__}: {exc}",
+            {"url": url, "duration_ms": duration_ms},
+        )
+
+
+async def _malwaregraph_health_check() -> SelfTestCheck:
+    url = settings.malwaregraph_url.rstrip("/") + "/api/health"
+    started = perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.get(url, headers={"X-API-Key": settings.malwaregraph_api_key} if settings.malwaregraph_api_key else None)
+        duration_ms = int((perf_counter() - started) * 1000)
+        ok = 200 <= response.status_code < 300
+        return _check(
+            "malwaregraph_health",
+            ok,
+            f"MalwareGraph health endpoint returned HTTP {response.status_code} in {duration_ms} ms.",
+            {
+                "url": url,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "response_preview": response.text[:160],
+            },
+        )
+    except Exception as exc:
+        duration_ms = int((perf_counter() - started) * 1000)
+        return _check(
+            "malwaregraph_health",
+            False,
+            f"MalwareGraph health endpoint failed after {duration_ms} ms: {type(exc).__name__}: {exc}",
+            {"url": url, "duration_ms": duration_ms},
+        )
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -340,6 +456,10 @@ async def selftest() -> SelfTestResult:
                     },
                 )
             )
+
+            total_users = int(await session.scalar(select(func.count()).select_from(UserAccount)) or 0)
+            enabled_users = int(await session.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.enabled.is_(True))) or 0)
+            checks.append(_auth_readiness_check(total_users, enabled_users))
 
             versions = (await session.execute(select(AttackVersion))).scalars().all()
             version_map = {version.domain: version.version for version in versions if version.is_latest}
@@ -526,6 +646,21 @@ async def selftest() -> SelfTestResult:
         checks.append(_check("memory_usage", False, f"Memory usage self-test failed: {type(exc).__name__}: {exc}"))
 
     checks.append(_api_key_check())
+    checks.append(_storage_writable_check(settings.log_dir, "log_storage_writable"))
+    checks.append(_storage_writable_check(settings.attck_data_dir, "attck_storage_writable"))
+    checks.append(
+        await _service_health_check(
+            "attack_lab_web_health",
+            os.environ.get("ATTACK_LAB_WEB_URL", "http://attack-lab-web:8080"),
+        )
+    )
+    checks.append(
+        await _service_health_check(
+            "attack_lab_endpoint_health",
+            os.environ.get("ATTACK_LAB_ENDPOINT_URL", "http://attack-lab-endpoint:8090"),
+        )
+    )
+    checks.append(await _malwaregraph_health_check())
 
     status = _overall_selftest_status(checks)
     return SelfTestResult(

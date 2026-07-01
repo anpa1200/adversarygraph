@@ -54,7 +54,14 @@ const queryClient = new QueryClient({
 });
 
 function AppShell() {
-  const status = useQuery({ queryKey: ['auth-status'], queryFn: authApi.status, retry: false, staleTime: 5 * 60 * 1000 });
+  const status = useQuery({
+    queryKey: ['auth-status'],
+    queryFn: authApi.status,
+    retry: 30,
+    retryDelay: attempt => Math.min(1000 + attempt * 1000, 5000),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
   const me = useQuery({
     queryKey: ['current-user'],
     queryFn: authApi.me,
@@ -62,16 +69,16 @@ function AppShell() {
     enabled: status.data?.auth_enabled === true,
   });
 
-  if (status.isLoading) {
-    return <div className="flex h-screen items-center justify-center bg-mitre-dark text-sm text-gray-500">Loading workspace...</div>;
-  }
-
   if (window.location.pathname === '/auth-guide') {
     return (
       <BrowserRouter>
         <AuthGuide />
       </BrowserRouter>
     );
+  }
+
+  if (status.isLoading || status.isError) {
+    return <StartupSplash error={status.error instanceof Error ? status.error : null} onRetry={() => status.refetch()} />;
   }
 
   if (status.data?.auth_enabled && me.isError) {
@@ -134,6 +141,54 @@ function AppShell() {
         <SystemSelfTestPopup />
       </div>
     </BrowserRouter>
+  );
+}
+
+function StartupSplash({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
+  const steps = error
+    ? ['Waiting for API container', 'Checking reverse proxy route', 'Retrying auth readiness']
+    : ['Starting containers', 'Preparing database and Redis', 'Loading ATT&CK data', 'Checking platform health'];
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-mitre-dark px-6 text-gray-200">
+      <div className="w-full max-w-xl rounded-lg border border-gray-800 bg-gray-950/70 p-8 shadow-2xl">
+        <div className="flex items-center gap-4">
+          <div className="relative h-14 w-14 shrink-0">
+            <div className="absolute inset-0 rounded-full border-2 border-mitre-accent/20" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-mitre-accent" />
+            <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-mitre-accent shadow-[0_0_24px_rgba(255,55,95,0.65)]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-semibold text-white">AdversaryGraph is starting</p>
+            <p className="mt-1 text-sm text-gray-400">
+              Waiting for Docker health checks and API readiness before opening the workspace.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-2">
+          {steps.map((step, index) => (
+            <div key={step} className="flex items-center gap-3 rounded border border-gray-800 bg-gray-900/50 px-3 py-2 text-sm">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-mitre-accent opacity-60" style={{ animationDelay: `${index * 180}ms` }} />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-mitre-accent" />
+              </span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div className="mt-5 rounded border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-100">
+            <p className="font-semibold">API is not ready yet.</p>
+            <p className="mt-1 break-words opacity-90">{error.message}</p>
+            <button type="button" onClick={onRetry} className="mt-3 rounded border border-amber-300/40 px-3 py-1.5 text-xs font-semibold hover:bg-amber-300/10">
+              Retry now
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

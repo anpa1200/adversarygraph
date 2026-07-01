@@ -2,8 +2,10 @@ from app.api.routes.system import (
     _cpu_percent_from_totals,
     _format_bytes,
     _memory_usage_details,
+    _auth_readiness_check,
     _check_status,
     _overall_selftest_status,
+    _storage_writable_check,
 )
 
 
@@ -69,3 +71,42 @@ def test_overall_selftest_status_distinguishes_degraded_from_error():
             _check_status("ioc_sync", "degraded", "feed degraded"),
         ]
     ) == "error"
+
+
+def test_auth_readiness_passes_with_local_auth_disabled_warning(monkeypatch):
+    monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", False)
+
+    check = _auth_readiness_check(total_users=0, enabled_users=0)
+
+    assert check.name == "auth_readiness"
+    assert check.status == "ok"
+    assert check.details["auth_enabled"] is False
+    assert "production_recommendation" in check.details
+
+
+def test_auth_readiness_fails_when_enabled_without_users_or_bootstrap(monkeypatch):
+    monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", True)
+    monkeypatch.setattr("app.api.routes.system.settings.auth_bootstrap_admin_password", "")
+
+    check = _auth_readiness_check(total_users=0, enabled_users=0)
+
+    assert check.status == "error"
+    assert "no enabled user" in check.message
+
+
+def test_auth_readiness_passes_with_enabled_user(monkeypatch):
+    monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", True)
+    monkeypatch.setattr("app.api.routes.system.settings.auth_bootstrap_admin_password", "")
+
+    check = _auth_readiness_check(total_users=2, enabled_users=1)
+
+    assert check.status == "ok"
+    assert check.details["enabled_users"] == 1
+
+
+def test_storage_writable_check_creates_and_removes_probe(tmp_path):
+    check = _storage_writable_check(tmp_path, "tmp_storage")
+
+    assert check.status == "ok"
+    assert check.details["writable"] is True
+    assert not (tmp_path / ".adversarygraph-selftest").exists()
