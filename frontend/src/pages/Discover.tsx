@@ -86,7 +86,7 @@ export function Discover() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Header title="Discover Intelligence" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-8">
+      <div data-testid="discover-scroll-region" className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-8">
         <div className="mx-auto max-w-7xl space-y-7">
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div>

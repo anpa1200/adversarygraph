@@ -70,7 +70,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-4">
+      <nav data-testid="sidebar-primary-nav" className="sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-4">
         <div className="sticky top-0 z-10 -mx-3 -mt-4 bg-mitre-navy px-3 pb-3 pt-4"><GlobalSearch /></div>
         {nav.filter(item => item.to !== '/admin' || hasRole(user, 'admin')).map(({ to, label, icon }) => (
           <NavLink
@@ -78,30 +78,32 @@ export function Sidebar() {
             to={to}
             className={({ isActive }) =>
               clsx(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                'flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-mitre-accent/20 text-mitre-accent'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
               )
             }
+            title={label}
           >
-            <span className="text-base">{icon}</span>
-            {label}
+            <span className="shrink-0 text-base">{icon}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </NavLink>
         ))}
         <a
           href={`${REFERENCE_BASE_URL}/`}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors"
+          className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-white"
+          title="Reference Book"
         >
-          <span className="text-base">▤</span>
-          Reference Book
+          <span className="shrink-0 text-base">▤</span>
+          <span className="min-w-0 truncate">Reference Book</span>
         </a>
       </nav>
 
       {/* Ecosystem links */}
-      <div className="sidebar-scroll max-h-[30vh] shrink-0 space-y-1 overflow-y-auto overscroll-contain border-t border-gray-800 px-3 py-3">
+      <div className="sidebar-scroll max-h-[22vh] shrink-0 space-y-1 overflow-y-auto overscroll-contain border-t border-gray-800 px-3 py-3">
         <button onClick={() => setShowWorkspaces(value => !value)} className="w-full flex items-center px-3 py-1.5 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 hover:bg-gray-700/40">
           Workspaces ({workspaces.length})
         </button>
@@ -120,9 +122,10 @@ export function Sidebar() {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center px-3 py-1.5 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 hover:bg-gray-700/40 transition-colors"
+            className="flex min-w-0 items-center rounded-lg px-3 py-1.5 text-[11px] text-gray-500 transition-colors hover:bg-gray-700/40 hover:text-gray-300"
+            title={label.replace(/^[^A-Za-z0-9]+/, '')}
           >
-            {label}
+            <span className="min-w-0 truncate">{label}</span>
           </a>
         ))}
       </div>

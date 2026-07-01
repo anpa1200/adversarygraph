@@ -15,10 +15,21 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('discover workspace renders with mocked platform health', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/discover');
   await expect(page.getByRole('heading', { name: 'Discover Intelligence' })).toBeVisible();
   await expect(page.getByText('Attack Simulation').first()).toBeVisible();
   await expect(page.getByText('CVE Library').first()).toBeVisible();
+
+  const discoverScroll = page.getByTestId('discover-scroll-region');
+  await expect(discoverScroll).toBeVisible();
+  await expect.poll(async () => discoverScroll.evaluate(node => node.scrollHeight > node.clientHeight)).toBeTruthy();
+  await discoverScroll.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect.poll(async () => discoverScroll.evaluate(node => node.scrollTop > 0)).toBeTruthy();
+
+  const sidebarScroll = page.getByTestId('sidebar-primary-nav');
+  await expect(sidebarScroll).toBeVisible();
+  await expect.poll(async () => sidebarScroll.evaluate(node => node.scrollHeight > node.clientHeight)).toBeTruthy();
 });
 
 test('attack simulation matrix and saved-flow history render', async ({ page }) => {

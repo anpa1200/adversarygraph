@@ -38,14 +38,19 @@ export function GlobalSearch() {
   }, [groups, query, reports, techniques]);
 
   return <>
-    <button onClick={() => setOpen(true)} className="w-full flex items-center justify-between px-3 py-2 rounded border border-gray-700 bg-gray-800/60 text-xs text-gray-400 hover:text-white">
-      <span>Search intelligence</span><span className="text-gray-600">Ctrl K</span>
+    <button
+      onClick={() => setOpen(true)}
+      className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs text-gray-400 hover:text-white"
+      title="Search intelligence"
+    >
+      <span className="min-w-0 truncate">Search intelligence</span>
+      <kbd className="shrink-0 font-sans text-[10px] text-gray-600">Ctrl K</kbd>
     </button>
-    {open && <div className="fixed inset-0 z-[80] bg-black/70 p-8" onClick={() => setOpen(false)}>
-      <div className="max-w-3xl mx-auto rounded-lg border border-gray-700 bg-gray-900 shadow-2xl overflow-hidden" onClick={event => event.stopPropagation()}>
+    {open && <div className="fixed inset-0 z-[80] bg-black/70 p-4 sm:p-8" onClick={() => setOpen(false)}>
+      <div className="mx-auto max-h-[calc(100vh-2rem)] max-w-3xl overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-2xl sm:max-h-[calc(100vh-4rem)]" onClick={event => event.stopPropagation()}>
         <input ref={input} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search actor, alias, TTP, report, publisher, or evidence..."
           className="w-full bg-gray-950 border-b border-gray-700 px-5 py-4 text-base text-white outline-none focus:border-mitre-accent" />
-        <div className="max-h-[70vh] overflow-y-auto p-4 space-y-5">
+        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-4 space-y-5 sm:max-h-[70vh]">
           <Results title="Threat actors">{results.groups.map(item => <button key={item.attack_id} onClick={() => { navigate(`/apt?group=${item.attack_id}`); setOpen(false); }} className="result"><b>{item.name}</b><small>{item.attack_id} · {item.aliases.slice(0, 3).join(', ')}</small></button>)}</Results>
           <Results title="Techniques">{results.techniques.map(item => <button key={item.attack_id} onClick={() => { navigate(`/navigator?technique=${item.attack_id}`); setOpen(false); }} className="result"><b>{item.name}</b><small>{item.attack_id} · {item.tactics.join(', ')}</small></button>)}</Results>
           <Results title="CTI / IR reports">{results.reports.map(item => <a key={item.url} href={item.url} target="_blank" rel="noreferrer" className="result"><b>{item.title}</b><small>{item.publisher} · {item.match_basis}</small></a>)}</Results>
@@ -59,4 +64,3 @@ export function GlobalSearch() {
 function Results({ title, children }: { title: string; children: React.ReactNode }) {
   return <section><h2 className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">{title}</h2><div className="space-y-1">{children}</div></section>;
 }
-

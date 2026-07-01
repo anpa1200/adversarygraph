@@ -82,8 +82,8 @@ function AppShell() {
     <BrowserRouter>
       <div className="flex h-screen overflow-hidden bg-mitre-dark">
         <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-hidden">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading workspace...</div>}>
               <Routes>
                 <Route path="/" element={<Navigate to="/discover" replace />} />
