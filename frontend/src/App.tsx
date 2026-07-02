@@ -40,6 +40,7 @@ import { AuthGuide } from '@/pages/AuthGuide';
 import { Observability } from '@/pages/Observability';
 import { EvidenceGraph } from '@/pages/EvidenceGraph';
 import { HelpGuide } from '@/pages/HelpGuide';
+import { Statistics } from '@/pages/Statistics';
 
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
@@ -106,6 +107,7 @@ function AppShell() {
                   <Route path="/operations" element={<RoleGate require="analyst"><Operations /></RoleGate>} />
                   <Route path="/pipeline" element={<RoleGate require="analyst"><Pipeline /></RoleGate>} />
                   <Route path="/observability" element={<RoleGate require="analyst"><Observability /></RoleGate>} />
+                  <Route path="/statistics" element={<RoleGate require="analyst"><Statistics /></RoleGate>} />
                   <Route path="/evidence-graph" element={<RoleGate require="analyst"><EvidenceGraph /></RoleGate>} />
                   <Route path="/admin" element={<RoleGate require="admin"><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />

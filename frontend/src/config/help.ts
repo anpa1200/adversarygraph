@@ -205,6 +205,16 @@ export const helpTopics: HelpTopic[] = [
     tips: ['Use source kind validation to avoid mixing incompatible data types.'],
   },
   {
+    id: 'statistics',
+    title: 'Statistics',
+    route: '/statistics',
+    summary: 'Statistical analysis workspace for comparing actors, reports, sectors, TTP usage, CVE usage, IOC coverage, and cross-dataset technique pressure.',
+    whenToUse: ['Compare behavior frequency across groups and reports', 'Measure which TTPs, CVEs, sectors, and IOC sources dominate the knowledge base', 'Select specific datasets with checkboxes for focused statistical analysis'],
+    workflow: ['Choose datasets to include with the checkboxes', 'Set row limit for each widget', 'Review totals, charts, and ranked tables', 'Click TTP, actor, CVE, or CWE rows to pivot into the relevant module'],
+    outputs: ['Actor and campaign TTP coverage statistics', 'Report-extracted TTP frequency', 'CVE severity, KEV, weakness, and TTP linkage statistics', 'IOC type/source/TTP statistics', 'Sector confidence and actor mention statistics'],
+    tips: ['Statistics show coverage and frequency in your local data. They do not prove attribution or exploitation without source evidence.'],
+  },
+  {
     id: 'observability',
     title: 'Observability',
     route: '/observability',

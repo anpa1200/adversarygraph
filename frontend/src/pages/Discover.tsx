@@ -103,6 +103,7 @@ export function Discover() {
                 <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />
                 <Start title="Evidence graph" text="Trace evidence to claims, behavior, ATT&CK, telemetry, detections, validation, and decisions." onClick={() => navigate('/evidence-graph')} />
                 <Start title="Compare behavior" text="Rank group, campaign, and stored-report overlap." onClick={() => navigate('/compare')} />
+                <Start title="Statistics" text="Compare actors, reports, sectors, TTP usage, CVEs, and IOC datasets." onClick={() => navigate('/statistics')} />
                 <Start title="Review coverage" text="Prioritize selected techniques without coverage." onClick={() => navigate('/navigator')} />
                 <Start title="Debug malware" text="Open the decompilation/debug IDE for function stepping and AI explanations." onClick={() => navigate('/malware-debug')} />
                 <Start title="Unpack sample" text="Plan static/runtime unpacking and continue into strings, debug, and analysis." onClick={() => navigate('/malware-unpacker')} />
@@ -156,6 +157,7 @@ export function Discover() {
                 <ActionLink label="Malware Unpacker" detail="Analyze packers, unpack layers, deobfuscate strings/code, and continue into debugger tools." onClick={() => navigate('/malware-unpacker')} />
                 <ActionLink label="Dynamic analysis" detail="Review safe runtime workflow output, process/file/registry/network/API events, and AI summaries." onClick={() => navigate('/dynamic-analysis')} />
                 <ActionLink label="Group vs Group" detail="Compare two adversaries and their overlapping behavior inside Compare." onClick={() => navigate('/compare?mode=group-vs-group')} />
+                <ActionLink label="Statistics" detail="Build statistical views from actors, reports, sectors, TTP usage, CVE usage, and IOC coverage." onClick={() => navigate('/statistics')} />
                 <ActionLink label="Detection pipeline" detail="Connect Sigma, YARA, YARA-L, sandbox behavior, and AI rule generation." onClick={() => navigate('/pipeline')} />
                 <ActionLink label="DFIR examples" detail="Open downloaded public report examples and mapped TTPs." onClick={() => navigate('/examples')} />
                 <ActionLink label="Build report" detail="Create investigation output from selected TTPs and evidence." onClick={() => navigate('/report')} />

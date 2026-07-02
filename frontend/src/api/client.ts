@@ -175,6 +175,42 @@ export const observabilityApi = {
     http.get('/observability/metrics', { responseType: 'text' }).then(r => r.data),
 };
 
+export interface StatPoint {
+  label: string;
+  value: number;
+  id: string;
+  secondary: string;
+  category: string;
+  detail: string;
+}
+
+export interface StatWidget {
+  id: string;
+  title: string;
+  description: string;
+  dataset: string;
+  kind: 'bar' | 'pie' | 'table' | 'score';
+  points: StatPoint[];
+}
+
+export interface StatisticsOverview {
+  generated_at: string;
+  domain: string;
+  included: string[];
+  totals: StatPoint[];
+  widgets: StatWidget[];
+}
+
+export const statisticsApi = {
+  overview: (params: { domain: string; include: string[]; limit?: number }): Promise<StatisticsOverview> => {
+    const query = new URLSearchParams();
+    query.set('domain', params.domain);
+    query.set('limit', String(params.limit ?? 15));
+    params.include.forEach(item => query.append('include', item));
+    return http.get(`/statistics/overview?${query.toString()}`).then(r => r.data);
+  },
+};
+
 export const attackApi = {
   versions: (): Promise<AttackVersion[]> =>
     http.get('/attack/versions').then(r => r.data),

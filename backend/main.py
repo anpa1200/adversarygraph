@@ -17,7 +17,7 @@ import app.models.simulation     # noqa: F401 — registers simulation persisten
 import app.models.cve            # noqa: F401 — registers CVE intelligence tables
 import app.models.auth           # noqa: F401 — registers native user/session tables
 import app.models.evidence_graph  # noqa: F401 — registers evidence-to-detection graph tables
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, system, knowledge
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -166,6 +166,7 @@ app.include_router(retrohunt.router, prefix="/api", dependencies=_auth_required)
 app.include_router(knowledge.router, prefix="/api", dependencies=_auth_required)
 app.include_router(sector.router, prefix="/api", dependencies=_auth_required)
 app.include_router(simulation.router, prefix="/api", dependencies=_auth_required)
+app.include_router(statistics.router, prefix="/api", dependencies=_auth_required)
 app.include_router(system.router, prefix="/api", dependencies=_auth_required)
 app.include_router(observability.router, prefix="/api", dependencies=_auth_required)
 
