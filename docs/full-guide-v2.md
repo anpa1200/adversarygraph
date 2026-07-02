@@ -131,14 +131,14 @@ Open:
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| API docs | http://localhost:8000/docs |
-| Health | http://localhost:8000/api/health |
+| API docs | http://localhost:3000/docs |
+| Health | http://localhost:3000/api/health |
 | Reference book | http://localhost:3001/anomaly-detection-atlas/ |
 
 Health should return:
 
 ```json
-{"status":"ok","version":"3.2.0"}
+{"status":"ok","version":"5.6.0"}
 ```
 
 Run the built-in deployment self-test after Docker startup:

@@ -74,10 +74,11 @@ docker compose up -d --build
 Open:
 
 - Frontend: `http://localhost:3000`
-- API health: `http://localhost:8000/api/health`
-- API docs: `http://localhost:8000/docs`
+- API health: `http://localhost:3000/api/health`
+- API docs: `http://localhost:3000/docs`
 
 The default Compose deployment binds the public UI and reference docs to localhost and keeps the API, Redis, malware-analysis service, and lab fixtures on the internal Compose network.
+Local configuration is stored in `.env`; the default persistent database is `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}`. See [local storage and permissions](docs/local-storage-and-permissions.md) before deleting data directories or Docker volumes.
 
 ## Documentation
 
@@ -95,6 +96,7 @@ The default Compose deployment binds the public UI and reference docs to localho
 | Security policy | [SECURITY.md](SECURITY.md) |
 | Security threat model | [docs/security-threat-model.md](docs/security-threat-model.md) |
 | Production readiness | [docs/production-readiness.md](docs/production-readiness.md) |
+| Local storage and permissions | [docs/local-storage-and-permissions.md](docs/local-storage-and-permissions.md) |
 | Hardened Docker Compose profile | [docker-compose.prod.yml](docker-compose.prod.yml) |
 | Kubernetes Helm chart | [helm/adversarygraph/README.md](helm/adversarygraph/README.md) |
 | Deployment sizing | [docs/deployment-sizing.md](docs/deployment-sizing.md) |

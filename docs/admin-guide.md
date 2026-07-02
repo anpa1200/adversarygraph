@@ -65,6 +65,9 @@ Important settings:
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
 
+See [`local-storage-and-permissions.md`](local-storage-and-permissions.md) for
+the exact local database, cache, log, and artifact storage locations.
+
 ## Backups
 
 Back up PostgreSQL regularly. The default data directory is external to the
@@ -186,7 +189,7 @@ Automatic sync runs daily at 03:00 UTC. Manual sync is available from the
 Feeds Management page or through the API:
 
 ```bash
-curl -X POST http://localhost:8000/api/sync/trigger \
+curl -X POST http://localhost:3000/api/sync/trigger \
   -H 'Content-Type: application/json' \
   -d '{"source":"mitre-attack","domains":["enterprise-attack"],"force":false}'
 ```
@@ -199,7 +202,7 @@ It refreshes ATT&CK/ATLAS, MISP Galaxy actor metadata, and IOC enrichment source
 while preserving private/custom records in the external DB directory:
 
 ```bash
-curl -X POST 'http://localhost:8000/api/sync/dynamic-db?days=7&force_attack=false'
+curl -X POST 'http://localhost:3000/api/sync/dynamic-db?days=7&force_attack=false'
 ```
 
 ## IOC Source Synchronization
@@ -286,7 +289,7 @@ enrichment store. Add a pipeline source with `kind: sandbox` from the Pipeline
 Sandbox tab or API:
 
 ```bash
-curl -X POST http://localhost:8000/api/pipeline/sources \
+curl -X POST http://localhost:3000/api/pipeline/sources \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Private CAPE Export",
@@ -301,7 +304,7 @@ curl -X POST http://localhost:8000/api/pipeline/sources \
 Run the feed:
 
 ```bash
-curl -X POST http://localhost:8000/api/pipeline/sources/{source_id}/run
+curl -X POST http://localhost:3000/api/pipeline/sources/{source_id}/run
 ```
 
 The feed URL should return JSON containing a report object, an array of reports,
@@ -350,8 +353,8 @@ Useful checks:
 docker compose ps
 docker compose logs -f api
 docker compose logs -f worker
-curl http://localhost:8000/api/health
-curl http://localhost:8000/api/system/selftest | jq
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/system/selftest | jq
 ```
 
 Open **Observability** in the sidebar, or browse directly to:

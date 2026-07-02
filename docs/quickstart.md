@@ -136,21 +136,21 @@ data into PostgreSQL. This can take several minutes.
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| API docs | http://localhost:8000/docs |
-| Health | http://localhost:8000/api/health |
+| API docs | http://localhost:3000/docs |
+| Health | http://localhost:3000/api/health |
 | Anomaly Detection Atlas | http://localhost:3001/anomaly-detection-atlas/ |
 
 ## 5. Smoke Test
 
 ```bash
-curl http://localhost:8000/api/health
-curl "http://localhost:8000/api/attack/versions"
+curl http://localhost:3000/api/health
+curl "http://localhost:3000/api/attack/versions"
 ```
 
 Expected health response:
 
 ```json
-{"status":"ok","version":"3.2.0"}
+{"status":"ok","version":"5.6.0"}
 ```
 
 Run the deployment self-test:
@@ -167,6 +167,10 @@ secret values. The same check is available in the UI through error-popup
 ```text
 http://localhost:3000/troubleshooting
 ```
+
+The API service is intentionally not published as `localhost:8000` by the
+default Compose file. Use the frontend proxy at `localhost:3000/api/...` unless
+you deliberately add a development override.
 
 ## Troubleshooting: PostgreSQL Password Mismatch
 

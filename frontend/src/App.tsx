@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
@@ -150,6 +150,7 @@ function AppShell() {
 }
 
 function StartupIngestionIndicator() {
+  const [dismissedKey, setDismissedKey] = useState('');
   const query = useQuery({
     queryKey: ['startup-health'],
     queryFn: healthApi.check,
@@ -163,7 +164,10 @@ function StartupIngestionIndicator() {
   if (!startup || !ingestion) return null;
 
   const completedAt = ingestion.completed_at ? new Date(ingestion.completed_at).getTime() : 0;
-  const showCompleted = ingestion.status === 'complete' && Number.isFinite(completedAt) && Date.now() - completedAt < 60_000;
+  const bannerKey = `${ingestion.status}:${ingestion.phase}:${ingestion.started_at ?? ''}:${ingestion.completed_at ?? ''}`;
+  if (dismissedKey === bannerKey) return null;
+
+  const showCompleted = ingestion.status === 'complete' && Number.isFinite(completedAt) && Date.now() - completedAt < 30_000;
   if (ingestion.status === 'complete' && !showCompleted) return null;
 
   const tone = startupIndicatorTone(startup);
@@ -186,7 +190,17 @@ function StartupIngestionIndicator() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold text-white">{title}</p>
-            <span className="rounded bg-black/30 px-2 py-0.5 font-mono uppercase tracking-wide">{ingestion.phase}</span>
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-black/30 px-2 py-0.5 font-mono uppercase tracking-wide">{ingestion.phase}</span>
+              <button
+                type="button"
+                aria-label="Close startup status banner"
+                onClick={() => setDismissedKey(bannerKey)}
+                className="rounded border border-white/15 px-1.5 py-0.5 text-[11px] font-semibold text-white/80 hover:border-white/40 hover:bg-white/10 hover:text-white"
+              >
+                X
+              </button>
+            </div>
           </div>
           <p className="mt-1 leading-relaxed text-gray-200">{body}</p>
           {ingestion.started_at && ingestion.status === 'running' && (

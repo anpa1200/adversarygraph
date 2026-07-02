@@ -73,7 +73,16 @@ services:
             echo "AdversaryGraph self-test passed."
             exit 0
           fi
-          echo "Waiting for AdversaryGraph self-test ($$elapsed/$$max seconds): $$(cat /tmp/selftest.err 2>/dev/null || true)"
+          err="$$(cat /tmp/selftest.err 2>/dev/null || true)"
+          if echo "$$err" | grep -Eq '401|403'; then
+            if health="$$(curl -fsS http://api:8000/api/health 2>/tmp/selftest.err)"; then
+              echo "$$health"
+              echo "$$health" | grep -q '"status":"ok"'
+              echo "AdversaryGraph health check passed. Full self-test is auth-protected."
+              exit 0
+            fi
+          fi
+          echo "Waiting for AdversaryGraph self-test ($$elapsed/$$max seconds): $$err"
           sleep 3
           elapsed=$$((elapsed + 3))
         done

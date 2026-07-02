@@ -12,12 +12,12 @@ const checks = [
   },
   {
     title: 'Check the API directly',
-    body: 'A healthy deployment returns status ok and per-service check results.',
-    command: 'curl http://localhost:8000/api/system/selftest | jq',
+    body: 'A healthy deployment returns status ok and per-service check results through the frontend proxy.',
+    command: 'curl http://localhost:3000/api/system/selftest | jq',
   },
   {
     title: 'Check the frontend proxy',
-    body: 'If this fails but port 8000 works, the frontend container or Vite proxy is the problem.',
+    body: 'The default Compose deployment keeps the API internal and exposes API routes through localhost:3000.',
     command: 'curl http://localhost:3000/api/system/selftest | jq',
   },
   {
@@ -48,7 +48,7 @@ const commonIssues = [
   },
   {
     title: 'Frontend works but API calls fail',
-    body: 'Check whether localhost:8000 works. If port 8000 works but localhost:3000/api fails, inspect frontend logs and Vite proxy configuration.',
+    body: 'Check frontend and API container logs. In the default Compose deployment, the browser should call localhost:3000/api, while the API container stays internal.',
   },
   {
     title: 'Database password mismatch after changing .env',
