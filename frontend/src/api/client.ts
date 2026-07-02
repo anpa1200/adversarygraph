@@ -927,9 +927,33 @@ export const layersApi = {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
+export interface StartupJobStatus {
+  status: 'pending' | 'running' | 'complete' | 'failed';
+  phase: string;
+  message: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export interface StartupStatus {
+  status: 'starting' | 'ready' | 'degraded';
+  ready: boolean;
+  started_at: string;
+  message: string;
+  reference_ingestion: StartupJobStatus;
+  jobs: Record<string, StartupJobStatus>;
+}
+
+export interface HealthStatus {
+  status: string;
+  version: string;
+  startup?: StartupStatus;
+}
+
 export const healthApi = {
-  check: (): Promise<{ status: string }> =>
-    http.get('/health').then(r => r.data),
+  check: (): Promise<HealthStatus> =>
+    http.get('/health', { skipGlobalError: true } as any).then(r => r.data),
 };
 
 export interface SelfTestCheck {
@@ -975,6 +999,8 @@ export interface TroubleshootingAssistantResponse {
 export const systemApi = {
   selftest: (): Promise<SelfTestResult> =>
     http.get('/system/selftest').then(r => r.data),
+  startup: (): Promise<StartupStatus> =>
+    http.get('/system/startup').then(r => r.data),
   troubleshootingAssistant: (payload: TroubleshootingAssistantRequest): Promise<TroubleshootingAssistantResponse> =>
     http.post('/troubleshooting/assistant', payload, { skipGlobalError: true } as any).then(r => r.data),
 };

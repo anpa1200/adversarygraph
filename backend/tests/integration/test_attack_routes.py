@@ -20,6 +20,8 @@ async def test_health(client: AsyncClient):
     body = resp.json()
     assert body["status"] == "ok"
     assert body["version"] == app.version
+    assert body["startup"]["status"] in {"starting", "ready", "degraded"}
+    assert body["startup"]["reference_ingestion"]["status"] in {"pending", "running", "complete", "failed"}
 
 
 @pytest.mark.asyncio

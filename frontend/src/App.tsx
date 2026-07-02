@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
-import { authApi } from '@/api/client';
+import { authApi, healthApi, type StartupStatus } from '@/api/client';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { AppFooter } from '@/components/Layout/AppFooter';
 import { Navigator } from '@/pages/Navigator';
@@ -141,6 +141,7 @@ function AppShell() {
             <AppFooter />
           </div>
         </main>
+        <StartupIngestionIndicator />
         <GlobalErrorPopup />
         <SystemSelfTestPopup />
       </div>
@@ -148,10 +149,83 @@ function AppShell() {
   );
 }
 
+function StartupIngestionIndicator() {
+  const query = useQuery({
+    queryKey: ['startup-health'],
+    queryFn: healthApi.check,
+    retry: false,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+  });
+  const startup = query.data?.startup;
+  const ingestion = startup?.reference_ingestion;
+  if (!startup || !ingestion) return null;
+
+  const completedAt = ingestion.completed_at ? new Date(ingestion.completed_at).getTime() : 0;
+  const showCompleted = ingestion.status === 'complete' && Number.isFinite(completedAt) && Date.now() - completedAt < 60_000;
+  if (ingestion.status === 'complete' && !showCompleted) return null;
+
+  const tone = startupIndicatorTone(startup);
+  const title = ingestion.status === 'complete'
+    ? 'Reference ingestion complete'
+    : ingestion.status === 'failed'
+      ? 'Reference ingestion failed'
+      : 'Reference ingestion running';
+  const body = ingestion.error || ingestion.message || startup.message;
+  return (
+    <div
+      className={`fixed bottom-10 right-4 z-50 w-[min(26rem,calc(100vw-2rem))] rounded border px-4 py-3 text-xs shadow-2xl backdrop-blur ${tone.container}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${tone.dot}`}>
+          {ingestion.status === 'running' && <span className={`block h-2.5 w-2.5 animate-ping rounded-full ${tone.dot}`} />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold text-white">{title}</p>
+            <span className="rounded bg-black/30 px-2 py-0.5 font-mono uppercase tracking-wide">{ingestion.phase}</span>
+          </div>
+          <p className="mt-1 leading-relaxed text-gray-200">{body}</p>
+          {ingestion.started_at && ingestion.status === 'running' && (
+            <p className="mt-1 text-gray-400">Started {new Date(ingestion.started_at).toLocaleTimeString()} · matrix data may still be incomplete.</p>
+          )}
+          {ingestion.status === 'failed' && (
+            <a href="/troubleshooting" className="mt-2 inline-flex rounded border border-red-300/40 px-2 py-1 font-semibold text-red-100 hover:bg-red-500/10">
+              Open troubleshooting
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function startupIndicatorTone(startup: StartupStatus) {
+  if (startup.reference_ingestion.status === 'failed') {
+    return {
+      container: 'border-red-500/60 bg-red-950/90 text-red-100',
+      dot: 'bg-red-400',
+    };
+  }
+  if (startup.reference_ingestion.status === 'complete') {
+    return {
+      container: 'border-emerald-500/50 bg-emerald-950/90 text-emerald-100',
+      dot: 'bg-emerald-400',
+    };
+  }
+  return {
+    container: 'border-amber-500/50 bg-amber-950/90 text-amber-100',
+    dot: 'bg-amber-300',
+  };
+}
+
 function StartupSplash({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
   const steps = error
     ? ['Waiting for API container', 'Checking reverse proxy route', 'Retrying auth readiness']
-    : ['Starting containers', 'Preparing database and Redis', 'Loading ATT&CK data', 'Checking platform health'];
+    : ['Starting containers', 'Preparing database and Redis', 'Starting ATT&CK/ATLAS ingestion', 'Checking platform health'];
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-mitre-dark px-6 text-gray-200">

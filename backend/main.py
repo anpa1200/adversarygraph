@@ -24,6 +24,7 @@ from app.core.logging_config import configure_logging
 from app.core.observability import monotonic_ms_since, observability_state
 from app.core.version import APP_VERSION
 from app.services.auth import bootstrap_admin_if_configured, current_user
+from app.services.startup_status import startup_status
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -45,8 +46,42 @@ async def _startup_ioc_sync() -> None:
         logger.warning("Startup IOC full sync failed: %s", exc, exc_info=True)
 
 
+async def _startup_attck_ingestion() -> None:
+    startup_status.mark_job_running(
+        "reference_ingestion",
+        phase="attck_ingestion",
+        message="ATT&CK/ATLAS reference ingestion is running. The API is available, but matrix pages may be incomplete until this finishes.",
+    )
+    loop = asyncio.get_running_loop()
+    try:
+        from app.services.attck.ingestor import run_ingest
+
+        logger.info("Starting ATT&CK ingestion in background …")
+        await loop.run_in_executor(None, run_ingest)
+        logger.info("ATT&CK ingestion complete")
+        startup_status.mark_job_complete(
+            "reference_ingestion",
+            phase="complete",
+            message="ATT&CK/ATLAS reference ingestion is complete.",
+        )
+    except Exception as exc:
+        logger.error("Ingestion failed (non-fatal): %s", exc, exc_info=True)
+        startup_status.mark_job_failed(
+            "reference_ingestion",
+            phase="failed",
+            message="ATT&CK/ATLAS reference ingestion failed. Open Troubleshooting or self-test for details.",
+            error=exc,
+        )
+
+
+async def _startup_reference_jobs() -> None:
+    await _startup_attck_ingestion()
+    await _startup_ioc_sync()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    startup_status.set_platform_message("Preparing API, database tables, and authentication bootstrap.")
     if not settings.auth_enabled:
         logger.warning(
             "AUTH_ENABLED=false — all requests are treated as authenticated. "
@@ -59,16 +94,8 @@ async def lifespan(app: FastAPI):
         if await bootstrap_admin_if_configured(session):
             logger.info("Bootstrapped native admin user from AUTH_BOOTSTRAP_ADMIN_* settings")
 
-    loop = asyncio.get_event_loop()
-    try:
-        from app.services.attck.ingestor import run_ingest
-        logger.info("Starting ATT&CK ingestion …")
-        await loop.run_in_executor(None, run_ingest)
-        logger.info("ATT&CK ingestion complete")
-    except Exception as exc:
-        logger.error("Ingestion failed (non-fatal): %s", exc, exc_info=True)
-
-    asyncio.create_task(_startup_ioc_sync())
+    startup_status.set_platform_message("API is serving requests while reference ingestion completes in the background.")
+    asyncio.create_task(_startup_reference_jobs())
 
     yield
 
@@ -174,4 +201,4 @@ app.include_router(troubleshooting.router, prefix="/api", dependencies=_auth_req
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok", "version": app.version, "startup": startup_status.snapshot()}

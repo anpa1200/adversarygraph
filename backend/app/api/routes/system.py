@@ -17,6 +17,7 @@ from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
 from app.services.cve_intel import ensure_cve_sources
+from app.services.startup_status import startup_status
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -34,6 +35,11 @@ class SelfTestResult(BaseModel):
     checked_at: str
     duration_ms: int
     checks: list[SelfTestCheck]
+
+
+@router.get("/startup")
+async def startup() -> dict[str, Any]:
+    return startup_status.snapshot()
 
 
 def _check(name: str, ok: bool, message: str, details: dict[str, Any] | None = None) -> SelfTestCheck:
