@@ -1,8 +1,8 @@
 # Roadmap
 
-Current release: **v5.5.0** — enterprise access controls, RBAC, MFA workflow support, session administration, and audit history (2026-06-30)
+Current release: **v5.6.0** — statistics tag analytics, Evidence-to-Detection Graph workflows, and cross-dataset detection-engineering views (2026-07-02)
 
-For the full history from v0.2.0 through v5.5.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v5.6.0 see [CHANGELOG.md](CHANGELOG.md).
 
 ## v5.6 — Evidence-to-Detection Graph
 
@@ -11,6 +11,8 @@ For the full history from v0.2.0 through v5.5.0 see [CHANGELOG.md](CHANGELOG.md)
 - [x] Add frontend Evidence Graph page with overview, interactive graph, path view, gap view, review queue, and node detail actions
 - [x] Add safe synthetic demo dataset for evidence-to-detection review
 - [x] Document AI draft boundaries, readiness scoring, exports, gaps, and limitations
+- [x] Add Statistics tag analytics across IOC, CVE, TTP, actor/group, report, sector, and cross-dataset views
+- [x] Add risk, confidence, region, sector, type, source, telemetry, TLP, attack-vector, malware-family, and relationship-confidence tag widgets
 - [ ] Add typed foreign-key relationship tables for every external entity link
 - [ ] Add deeper ATT&CK data-component import and ECS/OCSF/Splunk CIM/Sentinel ASIM field mapping
 - [ ] Add SIEM-specific rule compilers and detection regression tests

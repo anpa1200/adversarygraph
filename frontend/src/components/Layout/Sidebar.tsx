@@ -145,7 +145,7 @@ export function Sidebar() {
             <NavLink to="/feeds" className="text-[10px] text-gray-500 hover:text-gray-300">ATT&CK up to date</NavLink>
           </div>
         )}
-        <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v5.5.0</div>
+        <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v5.6.0</div>
         {user?.auth_enabled && (
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-800 pt-2">
             <div className="min-w-0">

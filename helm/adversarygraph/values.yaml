@@ -3,12 +3,12 @@ global:
 
 image:
   repository: ghcr.io/anpa1200/adversarygraph-api
-  tag: "5.5.0"
+  tag: "5.6.0"
 
 frontend:
   image:
     repository: ghcr.io/anpa1200/adversarygraph-frontend
-    tag: "5.5.0"
+    tag: "5.6.0"
   replicas: 1
   service:
     type: ClusterIP
@@ -82,7 +82,7 @@ malwaregraph:
   enabled: true
   image:
     repository: ghcr.io/anpa1200/adversarygraph-malwaregraph
-    tag: "5.5.0"
+    tag: "5.6.0"
   storageSize: 20Gi
   resources:
     requests:

@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.6.0 - 2026-07-02
+
+- Promoted active release markers to v5.6.0 across backend, frontend, README,
+  roadmap, security policy, Helm metadata, and release consistency checks.
+- Expanded the Statistics module with tag analytics across IOC, CVE, TTP,
+  actor/group, report, sector, and cross-dataset views.
+- Added risk, confidence, region, sector, type, source, telemetry source, TLP,
+  attack-vector, malware-family, freeform IOC tag, and relationship-confidence
+  statistics widgets.
+- Hardened statistics query execution so one failed widget query rolls back
+  cleanly and does not suppress later widgets.
+- Added regression coverage for the new Statistics tag widget catalog.
+
 ## v5.5.0 - 2026-06-30
 
 - Promoted active release markers to v5.5.0 across backend, frontend, README,

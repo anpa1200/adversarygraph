@@ -5,12 +5,12 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v5.5.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v5.6.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v5.5.0**. This release adds enterprise access controls: expanded RBAC permissions, session administration, MFA workflow support, trusted proxy SSO metadata, audit history, and hardened authentication documentation. See the [version matrix](docs/version-matrix.md), [v5.5 release summary](docs/release-summary-v5.5.0.md), [v5.4 release summary](docs/release-summary-v5.4.0.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
+Current release: **v5.6.0**. This release expands the Statistics module with tag analytics across IOC, CVE, TTP, actor/group, report, sector, and cross-dataset views, including risk, confidence, region, sector, type, source, telemetry, TLP, attack vector, and relationship tags. See the [version matrix](docs/version-matrix.md), [v5.6 release summary](docs/release-summary-v5.6.0.md), [v5.5 release summary](docs/release-summary-v5.5.0.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
 
 ## What It Does
 
