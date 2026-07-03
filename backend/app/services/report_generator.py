@@ -322,7 +322,7 @@ def _table(pdf: _Report, rows: list[list[str]], col_widths: list[int]) -> None:
     pdf.set_fill_color(*_NAVY)
     pdf.set_text_color(*_WHITE)
     pdf.set_font("Helvetica", "B", 8)
-    for text, w in zip(header, col_widths):
+    for text, w in zip(header, col_widths, strict=False):
         pdf.cell(w, 7, text, border=0, fill=True)
     pdf.ln()
 
@@ -335,14 +335,14 @@ def _table(pdf: _Report, rows: list[list[str]], col_widths: list[int]) -> None:
             pdf.set_fill_color(*_NAVY)
             pdf.set_text_color(*_WHITE)
             pdf.set_font("Helvetica", "B", 8)
-            for text, w in zip(header, col_widths):
+            for text, w in zip(header, col_widths, strict=False):
                 pdf.cell(w, 7, text, border=0, fill=True)
             pdf.ln()
             pdf.set_text_color(0, 0, 0)
 
         pdf.set_fill_color(*(_LIGHT if i % 2 == 0 else _WHITE))
         pdf.set_font("Helvetica", "", 8)
-        for text, w in zip(row, col_widths):
+        for text, w in zip(row, col_widths, strict=False):
             pdf.cell(w, 6, str(text)[:60], border=0, fill=True)
         pdf.ln()
 

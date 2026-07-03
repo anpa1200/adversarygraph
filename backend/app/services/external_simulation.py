@@ -3045,7 +3045,7 @@ def _assistant_templates_for_ttp(technique_id: str) -> list[dict[str, Any]]:
     if technique_id.startswith("T1110") or technique_id == "T1110":
         users = ["admin", "administrator", "svc-backup", "svc-deploy", "jsmith", "mcohen", "orlevy", "backup", "root", "helpdesk"]
         events = []
-        for round_id, password_name in enumerate(["Summer2026!", "Password1!", "Welcome2026!"]):
+        for round_id, _password_name in enumerate(["Summer2026!", "Password1!", "Welcome2026!"]):
             for user_index, target_user in enumerate(users):
                 events.append(
                     {

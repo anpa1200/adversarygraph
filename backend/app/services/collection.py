@@ -35,9 +35,9 @@ async def fetch_rss(url: str) -> list[dict]:
     entries = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
     output = []
     for entry in entries[:100]:
-        def value(names: list[str]) -> str:
+        def value(names: list[str], current_entry=entry) -> str:
             for name in names:
-                node = entry.find(name)
+                node = current_entry.find(name)
                 if node is not None:
                     return (node.text or node.attrib.get("href") or "").strip()
             return ""

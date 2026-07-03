@@ -46,7 +46,7 @@ def configure_logging() -> None:
         handler.setLevel(level)
         handler.setFormatter(formatter)
         handler.addFilter(RequestIdFilter())
-        setattr(handler, "_adversarygraph_handler", True)
+        handler._adversarygraph_handler = True
         root.addHandler(handler)
 
     setattr(root, _CONFIGURED_ATTR, True)

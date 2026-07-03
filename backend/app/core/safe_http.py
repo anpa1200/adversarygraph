@@ -82,7 +82,7 @@ def require_body_size(max_bytes: int = 10 * 1024 * 1024):
     return _check
 
 
-async def async_safe_get(url: str, *, timeout: int = 30, **kwargs: Any) -> httpx.Response:
+async def async_safe_get(url: str, *, timeout: int = 30, **kwargs: Any) -> httpx.Response:  # noqa: ASYNC109
     """Async version of safe_get using httpx.AsyncClient.
 
     Raises ValueError for disallowed schemes or private/reserved addresses.

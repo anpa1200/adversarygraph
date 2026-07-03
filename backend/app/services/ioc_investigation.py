@@ -690,7 +690,7 @@ async def _censys_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     }
 
 
-async def _get_json(url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, timeout: int = 25) -> dict[str, Any]:
+async def _get_json(url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, timeout: int = 25) -> dict[str, Any]:  # noqa: ASYNC109
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         response = await client.get(url, params=params, headers=headers or {})
         if response.status_code in {401, 403}:

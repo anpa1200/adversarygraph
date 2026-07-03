@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-import requests
+import httpx
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -167,7 +167,10 @@ async def sync_misp_galaxy(session: AsyncSession) -> dict[str, int | str]:
     """Fetch MISP Galaxy threat actors and store sector/region observations locally."""
     await ensure_sources(session)
     try:
-        payload = requests.get(MISP_THREAT_ACTOR_URL, timeout=60).json()
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(MISP_THREAT_ACTOR_URL)
+            response.raise_for_status()
+            payload = response.json()
     except Exception as exc:
         await _mark_source(session, "misp-galaxy-threat-actors", "error", str(exc))
         raise
