@@ -5,12 +5,12 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v5.6.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v5.7.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v5.6.0**. This release expands the Statistics module with tag analytics across IOC, CVE, TTP, actor/group, report, sector, and cross-dataset views, including risk, confidence, region, sector, type, source, telemetry, TLP, attack vector, and relationship tags. See the [version matrix](docs/version-matrix.md), [v5.6 release summary](docs/release-summary-v5.6.0.md), [v5.5 release summary](docs/release-summary-v5.5.0.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
+Current release: **v5.7.0**. This release adds the Reports / Research collection workflow with linked report review, source-text preservation, deterministic tags, and a research upload control that can either store research or parse it with AI. See the [version matrix](docs/version-matrix.md), [v5.7 release notes](docs/release-notes/v5.7.0.md), [research analysis guide](docs/research-analysis-guide.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
 
 ## What It Does
 
@@ -106,6 +106,7 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | Public demo privacy | [docs/public-demo-privacy.md](docs/public-demo-privacy.md) |
 | Platform guide | [docs/adversarygraph-platform-guide.md](docs/adversarygraph-platform-guide.md) |
 | User guide | [docs/user-guide.md](docs/user-guide.md) |
+| Research analysis guide | [docs/research-analysis-guide.md](docs/research-analysis-guide.md) |
 | Admin guide | [docs/admin-guide.md](docs/admin-guide.md) |
 | Authentication and user management | [docs/authentication-and-users.md](docs/authentication-and-users.md) |
 | Observability and security validation | [docs/observability-security-validation.md](docs/observability-security-validation.md) |

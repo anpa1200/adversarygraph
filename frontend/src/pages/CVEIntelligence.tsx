@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { Edge, Node } from '@xyflow/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { cveApi, type CVEDetail, type CVEItem } from '@/api/client';
 import { safeHref } from '@/utils/url';
@@ -14,6 +14,7 @@ const severities = ['', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 export function CVEIntelligence() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState('');
@@ -21,6 +22,17 @@ export function CVEIntelligence() {
   const [selectedCve, setSelectedCve] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 100;
+
+  useEffect(() => {
+    const linkedCve = searchParams.get('cve')?.trim().toUpperCase() || '';
+    const linkedSearch = searchParams.get('search')?.trim() || '';
+    const nextSearch = linkedCve || linkedSearch;
+    if (!nextSearch) return;
+    setSearchDraft(nextSearch);
+    setSearch(nextSearch);
+    setOffset(0);
+    if (linkedCve) setSelectedCve(linkedCve);
+  }, [searchParams]);
 
   const sources = useQuery({ queryKey: ['cve-sources'], queryFn: cveApi.sources });
   const library = useQuery({
@@ -179,7 +191,14 @@ export function CVEIntelligence() {
                 data={rows}
                 columns={cveColumns}
                 empty={library.isLoading ? 'Loading CVEs...' : 'No CVEs match this filter.'}
-                onRowClick={item => setSelectedCve(item.cve_id)}
+                onRowClick={item => {
+                  setSelectedCve(item.cve_id);
+                  setSearchParams(current => {
+                    const next = new URLSearchParams(current);
+                    next.set('cve', item.cve_id);
+                    return next;
+                  });
+                }}
                 rowClassName={item => selectedCve === item.cve_id ? 'bg-mitre-accent/10' : ''}
               />
               <div className="flex items-center justify-between border-t border-gray-800 p-3 text-xs text-gray-400">

@@ -780,6 +780,75 @@ export interface LogPcapAnalysisResult {
   apt_matches: AnalysisResult['apt_matches'];
 }
 
+export interface LinkedReportEntity {
+  type: 'technique' | 'ioc' | 'cve' | 'group' | string;
+  id: string;
+  label: string;
+  value: string;
+  route: string;
+  aliases: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface LinkedAnalysisReport {
+  session_id: string;
+  name: string | null;
+  provider: string;
+  model: string;
+  domain: string;
+  created_at: string;
+  source_text: string;
+  source_text_available: boolean;
+  source_note: string;
+  summary: string;
+  techniques: AnalysisResult['techniques'];
+  apt_matches: AnalysisResult['apt_matches'];
+  entities: LinkedReportEntity[];
+  report_intake: Record<string, unknown> | null;
+}
+
+export interface ReportCollectionTag {
+  type: string;
+  label: string;
+  value: string;
+  route: string;
+  confidence: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ReportCollectionItem {
+  session_id: string;
+  title: string;
+  source_url: string;
+  publisher: string;
+  status: string;
+  provider: string;
+  model: string;
+  domain: string;
+  created_at: string;
+  updated_at: string;
+  summary: string;
+  source_text_available: boolean;
+  counts: Record<string, number>;
+  tags: Record<string, ReportCollectionTag[]>;
+}
+
+export interface ReportCollectionResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: ReportCollectionItem[];
+}
+
+export interface StoredResearchResult {
+  session_id: string;
+  status: string;
+  title: string;
+  filename: string | null;
+  source_text_available: boolean;
+  summary: string;
+}
+
 export const analyzeApi = {
   /** Non-streaming: returns full result */
   submit: (formData: FormData): Promise<AnalysisResult> =>
@@ -799,6 +868,15 @@ export const analyzeApi = {
 
   getResult: (sessionId: string): Promise<AnalysisResult> =>
     http.get(`/analyze/${sessionId}`).then(r => r.data),
+
+  linkedReport: (sessionId: string): Promise<LinkedAnalysisReport> =>
+    http.get(`/analyze/sessions/${sessionId}/linked-report`).then(r => r.data),
+
+  reportCollection: (limit = 100, offset = 0): Promise<ReportCollectionResult> =>
+    http.get('/analyze/sessions/collection', { params: { limit, offset } }).then(r => r.data),
+
+  storeResearch: (formData: FormData): Promise<StoredResearchResult> =>
+    http.post('/analyze/sessions/research', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
 
   logPcap: (formData: FormData): Promise<LogPcapAnalysisResult> =>
     http.post('/analyze/log-pcap', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),

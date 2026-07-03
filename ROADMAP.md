@@ -1,8 +1,19 @@
 # Roadmap
 
-Current release: **v5.6.0** — statistics tag analytics, Evidence-to-Detection Graph workflows, and cross-dataset detection-engineering views (2026-07-02)
+Current release: **v5.7.0** — research collection upload, linked report review, source-preserving AI parsing, and report-to-platform entity links (2026-07-03)
 
-For the full history from v0.2.0 through v5.6.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v5.7.0 see [CHANGELOG.md](CHANGELOG.md).
+
+## v5.7 — Research Collection and Linked Report Review
+
+- [x] Add Reports / Research collection page with TTP, IOC, CVE, threat actor, sector, and infrastructure tag buckets
+- [x] Add linked report review pages with inline links back to Navigator, IOC Library, CVE Library, and ATT&CK Group Library
+- [x] Preserve source text for new AI analysis sessions so report evidence remains reviewable
+- [x] Add Upload Research control with optional Parse with AI workflow
+- [x] Add store-only research upload path for analyst staging before LLM parsing
+- [x] Add AdversaryGraph research analysis guide based on embedded/hardware/firmware research workflow
+- [ ] Add bulk research import queue with per-report parsing status
+- [ ] Add reviewed tag editing and analyst confidence overrides
 
 ## v5.6 — Evidence-to-Detection Graph
 

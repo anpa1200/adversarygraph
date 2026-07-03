@@ -243,6 +243,16 @@ export function Analyze() {
             )}
           </div>
 
+          <div className="border-b border-gray-800 p-3">
+            <button
+              type="button"
+              onClick={() => navigate('/reports-research')}
+              className="secondary-action w-full"
+            >
+              Open Reports / Research Collection
+            </button>
+          </div>
+
           {mode === 'log-pcap' ? (
             <PreviousLogPcapAnalysisList
               items={logPcapHistory}
@@ -615,6 +625,12 @@ function PreviousAnalysisList({
                 >
                   STIX
                 </a>
+                <a
+                  href={`/analyze/${report.session_id}/report`}
+                  className="text-[10px] text-mitre-accent hover:text-red-300"
+                >
+                  Linked report
+                </a>
                 <button
                   type="button"
                   onClick={() => onDelete(report.session_id)}
@@ -843,6 +859,14 @@ function ResultsView({
             >
               ↓ STIX/OpenCTI
             </a>
+            {canReview && (
+              <a
+                href={`/analyze/${displayResult.session_id}/report`}
+                className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
+              >
+                ↗ Linked report
+              </a>
+            )}
             <button
               type="button"
               onClick={injectAsMyTtps}

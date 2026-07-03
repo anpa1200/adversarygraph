@@ -6,15 +6,16 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v5.6.0 |
-| Release date | 2026-07-02 |
-| Theme | Statistics tag analytics, Evidence-to-Detection Graph workflows, and cross-dataset detection-engineering views |
+| Version | v5.7.0 |
+| Release date | 2026-07-03 |
+| Theme | Research collection upload, linked report review, source-preserving AI parsing, and report-to-platform entity links |
 | Status | Stable — hardening sprint in progress |
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v5.7.0 | Research Collection and Linked Report Review | Reports / Research collection page, linked report review with inline entity links, source-text preservation for AI analysis, store-only research upload, Parse with AI upload workflow, and research analysis guide |
 | v5.6.0 | Statistics Tag Analytics | Expanded Statistics module with IOC/CVE/TTP/actor/report/sector/global tag widgets for risk, confidence, region, sector, type, source, telemetry, TLP, attack vector, malware family, and relationship-confidence analysis |
 | v5.5.0 | Enterprise Access Controls | Expanded RBAC roles, per-user permissions, password policy settings, MFA workflow support, trusted proxy SSO metadata, session inventory and revocation, authentication audit history, Admin Panel updates, and deployment configuration coverage |
 | v5.4.0 | Observability and Validation Evidence | Authenticated Observability dashboard, request metrics, recent traces, redacted API log tail, Prometheus-compatible metrics endpoint, backend SAST CI coverage, security scan helper, and screenshot-backed validation examples |
@@ -31,7 +32,7 @@ This file is the canonical reference for AdversaryGraph release history and feat
 | v0.2.0–v1.x | Foundation | Initial FastAPI backend, React frontend, PostgreSQL, Redis, Celery, Docker Compose |
 
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
-For the current release narrative, see [v5.6.0 release summary](release-summary-v5.6.0.md).
+For the current release narrative, see [v5.7.0 release notes](release-notes/v5.7.0.md).
 
 ## Feature Gate Legend
 

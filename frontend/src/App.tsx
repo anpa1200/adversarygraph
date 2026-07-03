@@ -41,6 +41,8 @@ import { Observability } from '@/pages/Observability';
 import { EvidenceGraph } from '@/pages/EvidenceGraph';
 import { HelpGuide } from '@/pages/HelpGuide';
 import { Statistics } from '@/pages/Statistics';
+import { LinkedReport } from '@/pages/LinkedReport';
+import { ReportsResearch } from '@/pages/ReportsResearch';
 
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
@@ -101,6 +103,8 @@ function AppShell() {
                   <Route path="/navigator" element={<Navigator />} />
                   <Route path="/apt" element={<APTLibrary />} />
                   <Route path="/analyze" element={<Analyze />} />
+                  <Route path="/analyze/:sessionId/report" element={<LinkedReport />} />
+                  <Route path="/reports-research" element={<ReportsResearch />} />
                   <Route path="/compare" element={<Compare />} />
                   <Route path="/group-compare" element={<Navigate to="/compare?mode=group-vs-group" replace />} />
                   <Route path="/report" element={<InvestigationReport />} />

@@ -98,6 +98,7 @@ export function Discover() {
               <div className="grid gap-3 md:grid-cols-4">
                 <Start title="Investigate actor" text="Profiles, campaigns, reports, aliases, behavior, and IOCs." onClick={() => navigate('/apt')} />
                 <Start title="Analyze report with AI" text="Extract ATT&CK evidence using your configured LLM." onClick={() => navigate('/analyze')} />
+                <Start title="Reports / research" text="Open analyzed reports tagged by TTP, IOC, CVE, actor, sector, and infrastructure." onClick={() => navigate('/reports-research')} />
                 <Start title="Analyze malware" text="Create cases, upload samples, extract IOCs, strings, TTPs, and AI summaries." onClick={() => navigate('/malware-analysis')} />
                 <Start title="Map asset surface" text="Upload CMDB, scanner, or cloud inventory and map exposed assets to ATT&CK." onClick={() => navigate('/asset-surface')} />
                 <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />
@@ -148,6 +149,7 @@ export function Discover() {
             <Panel title="Action launcher">
               <div className="grid gap-2 p-2 md:grid-cols-2 xl:grid-cols-3">
                 <ActionLink label="Sector intelligence" detail="Filter relevant actors by sector, region, technology, and recency." onClick={() => navigate('/sector-intel')} />
+                <ActionLink label="Reports / research collection" detail="Browse analyzed reports with tags for TTPs, IOCs, CVEs, actors, sectors, and infrastructure." onClick={() => navigate('/reports-research')} />
                 <ActionLink label="Asset attack surface" detail="Normalize inventories, score exposure, map entry points to ATT&CK, and save TTP layers." onClick={() => navigate('/asset-surface')} />
                 <ActionLink label="Attack Simulation" detail="Choose a TTP first, then configure target validation and evidence capture." onClick={() => navigate('/attack-simulation')} />
                 <ActionLink label="Evidence-to-Detection Graph" detail="Preserve the full reasoning path from evidence through SIEM result and analyst decision." onClick={() => navigate('/evidence-graph')} />

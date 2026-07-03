@@ -1,5 +1,20 @@
 # Changelog
 
+## v5.7.0 - 2026-07-03
+
+- Promoted active release markers to v5.7.0 across backend, frontend, README,
+  roadmap, security policy, Helm metadata, and release consistency checks.
+- Added Reports / Research collection workflow with deterministic TTP, IOC,
+  CVE, threat actor, sector, and infrastructure tag buckets.
+- Added linked report review pages that preserve source text and link report
+  entities back to Navigator, IOC Library, CVE Library, and ATT&CK Group
+  Library.
+- Added research upload from the collection page with a `Parse with AI`
+  checkbox for either direct LLM extraction or source-only staging.
+- Added a research analysis guide for turning strategic hardware, firmware,
+  embedded, and edge-device research into AdversaryGraph CTI, CVE, telemetry,
+  and detection-validation workflows.
+
 ## v5.6.0 - 2026-07-02
 
 - Promoted active release markers to v5.6.0 across backend, frontend, README,

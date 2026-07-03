@@ -12,7 +12,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, AsyncIterator
+from typing import Annotated, Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -24,6 +24,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
+from app.models.ioc import IOCIndicator
+from app.models.operations import ReportIntake
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
 from app.services.auth import TeamUser, analyst, audit, current_user
@@ -71,7 +73,78 @@ class AnalysisOut(BaseModel):
     raw_response: str = ""
 
 
+class LinkedReportEntity(BaseModel):
+    type: str
+    id: str
+    label: str
+    value: str = ""
+    route: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class LinkedReportOut(BaseModel):
+    session_id: str
+    name: str | None
+    provider: str
+    model: str
+    domain: str
+    created_at: str
+    source_text: str
+    source_text_available: bool
+    source_note: str = ""
+    summary: str
+    techniques: list[TechniqueHit]
+    apt_matches: list[AptMatch]
+    entities: list[LinkedReportEntity]
+    report_intake: dict[str, Any] | None = None
+
+
+class ReportCollectionTag(BaseModel):
+    type: str
+    label: str
+    value: str
+    route: str = ""
+    confidence: int = 50
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportCollectionItem(BaseModel):
+    session_id: str
+    title: str
+    source_url: str = ""
+    publisher: str = ""
+    status: str = ""
+    provider: str
+    model: str
+    domain: str
+    created_at: str
+    updated_at: str
+    summary: str
+    source_text_available: bool
+    counts: dict[str, int]
+    tags: dict[str, list[ReportCollectionTag]]
+
+
+class ReportCollectionOut(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[ReportCollectionItem]
+
+
+class StoredResearchOut(BaseModel):
+    session_id: str
+    status: str
+    title: str
+    filename: str | None = None
+    source_text_available: bool
+    summary: str
+
+
 _MODEL_RE = re.compile(r'^[\w./:@-]{1,100}$')
+_MAX_STORED_REPORT_TEXT = 120_000
+_CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
 
 
 class SessionListItem(BaseModel):
@@ -152,6 +225,7 @@ async def analyze(
         llm_provider=provider,
         model=adapter.model,
         domain=domain,
+        source_text=body[:_MAX_STORED_REPORT_TEXT],
     )
     session.add(db_session)
     await session.flush()
@@ -204,6 +278,7 @@ async def analyze_stream(
         llm_provider=provider,
         model=adapter.model,
         domain=domain,
+        source_text=body[:_MAX_STORED_REPORT_TEXT],
     )
 
     session.add(db_session)
@@ -315,6 +390,63 @@ async def analyze_log_pcap(
     )
 
 
+@router.post("/sessions/research", response_model=StoredResearchOut)
+async def store_research(
+    domain:   Annotated[str, Form()] = "enterprise-attack",
+    name:     Annotated[str | None, Form()] = None,
+    text:     Annotated[str | None, Form()] = None,
+    file:     UploadFile | None = File(default=None),
+    session:  AsyncSession = Depends(get_session),
+    user:     TeamUser = Depends(analyst),
+):
+    """
+    Store a research/report document without LLM parsing.
+
+    This keeps the source available in Reports / Research and the linked report
+    page while making it explicit that no ATT&CK extraction has been performed.
+    """
+    body, filename = await _read_input(text, file)
+    title = (name or filename or "Unparsed research").strip()[:255]
+    source_text = body[:_MAX_STORED_REPORT_TEXT]
+    summary = _research_storage_summary(body, filename)
+
+    db_session = AnalysisSession(
+        status="completed",
+        name=title,
+        input_type="file" if file else "text",
+        filename=filename,
+        llm_provider="none",
+        model="not-parsed",
+        domain=domain,
+        source_text=source_text,
+    )
+    session.add(db_session)
+    await session.flush()
+
+    session.add(AnalysisResult(
+        session_id=db_session.id,
+        extracted_techniques=[],
+        apt_matches=[],
+        summary=summary,
+        raw_response="Research stored without AI parsing. Use Parse with AI to extract ATT&CK mappings.",
+    ))
+    await audit(session, user, "analyze.store_research", "analysis_session", str(db_session.id), {
+        "domain": domain,
+        "filename": filename,
+        "source_text_bytes": len(source_text.encode("utf-8", errors="ignore")),
+    })
+    await session.commit()
+
+    return StoredResearchOut(
+        session_id=str(db_session.id),
+        status="completed",
+        title=title,
+        filename=filename,
+        source_text_available=bool(source_text.strip()),
+        summary=summary,
+    )
+
+
 # ── List stored report sessions (DB 2) ───────────────────────────────────────
 # NOTE: must be defined BEFORE GET /{session_id} to avoid route shadowing
 
@@ -352,6 +484,62 @@ async def list_sessions(
             technique_count=technique_count,
         ))
     return items
+
+
+@router.get("/sessions/collection", response_model=ReportCollectionOut)
+async def report_collection(
+    db: AsyncSession = Depends(get_session),
+    limit: int = 100,
+    offset: int = 0,
+    _: TeamUser = Depends(current_user),
+):
+    """
+    Return analyzed report/research sessions with deterministic tag buckets.
+
+    Each item includes TTP, IOC, CVE, threat actor, sector, and infrastructure
+    tags so analysts can browse the research collection without opening every
+    individual linked report.
+    """
+    safe_limit = min(max(limit, 1), 250)
+    safe_offset = max(offset, 0)
+    rows = await db.execute(
+        select(AnalysisSession, AnalysisResult)
+        .join(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.status == "completed")
+        .order_by(AnalysisSession.created_at.desc())
+        .limit(safe_limit)
+        .offset(safe_offset)
+    )
+    pairs = rows.all()
+    items: list[ReportCollectionItem] = []
+    for sess, res in pairs:
+        intake = await _find_report_intake_for_session(db, str(sess.id))
+        source_text = (sess.source_text or "").strip()
+        source_text_available = bool(source_text)
+        if not source_text:
+            source_text = _fallback_report_text(sess, res, intake)
+        techniques = [TechniqueHit(**item) for item in res.extracted_techniques]
+        apt_matches = [AptMatch(**item) for item in res.apt_matches]
+        entities = await _linked_report_entities(db, sess, res, intake, source_text, techniques, apt_matches)
+        tags = _report_collection_tags(sess, res, intake, source_text, entities)
+        items.append(ReportCollectionItem(
+            session_id=str(sess.id),
+            title=sess.name or sess.filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
+            source_url=intake.url if intake else "",
+            publisher=intake.publisher if intake else "",
+            status=intake.status if intake else sess.status,
+            provider=sess.llm_provider,
+            model=sess.model,
+            domain=sess.domain,
+            created_at=sess.created_at.isoformat(),
+            updated_at=sess.updated_at.isoformat() if sess.updated_at else sess.created_at.isoformat(),
+            summary=res.summary,
+            source_text_available=source_text_available,
+            counts={key: len(value) for key, value in tags.items()},
+            tags=tags,
+        ))
+
+    return ReportCollectionOut(total=safe_offset + len(items), limit=safe_limit, offset=safe_offset, items=items)
 
 
 # ── Compare a stored report against MITRE actors ──────────────────────────────
@@ -392,6 +580,68 @@ async def compare_session(
     )
     apt_matches = await _rank_apt_groups(ext, sess.domain, db, top_n=top_n)
     return [m.model_dump() for m in apt_matches]
+
+
+# ── Linked report review page ─────────────────────────────────────────────────
+# NOTE: must be defined BEFORE GET /{session_id} to avoid route shadowing
+
+@router.get("/sessions/{session_id}/linked-report", response_model=LinkedReportOut)
+async def linked_report(
+    session_id: str,
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    """
+    Return a stored report analysis with linkable platform entities.
+
+    The frontend renders source text as React text nodes and overlays links to
+    ATT&CK techniques, CVEs, IOC library searches, and ATT&CK group pages.
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session ID")
+
+    row = await db.execute(
+        select(AnalysisSession, AnalysisResult)
+        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.id == sid, AnalysisSession.status == "completed")
+    )
+    pair = row.first()
+    if not pair:
+        raise HTTPException(404, "Completed session not found")
+    sess, res = pair
+    if not res:
+        raise HTTPException(404, "Result not found")
+
+    intake = await _find_report_intake_for_session(db, session_id)
+    source_text = (sess.source_text or "").strip()
+    source_text_available = bool(source_text)
+    source_note = ""
+    if not source_text:
+        source_text = _fallback_report_text(sess, res, intake)
+        source_note = "Original report text was not stored for this older analysis; showing stored summary and report metadata."
+
+    techniques = [TechniqueHit(**t) for t in res.extracted_techniques]
+    apt_matches = [AptMatch(**m) for m in res.apt_matches]
+    entities = await _linked_report_entities(db, sess, res, intake, source_text, techniques, apt_matches)
+
+    return LinkedReportOut(
+        session_id=session_id,
+        name=sess.name,
+        provider=sess.llm_provider,
+        model=sess.model,
+        domain=sess.domain,
+        created_at=sess.created_at.isoformat(),
+        source_text=source_text[:_MAX_STORED_REPORT_TEXT],
+        source_text_available=source_text_available,
+        source_note=source_note,
+        summary=res.summary,
+        techniques=techniques,
+        apt_matches=apt_matches,
+        entities=entities,
+        report_intake=_report_intake_dict(intake) if intake else None,
+    )
 
 
 # ── Delete a stored session ───────────────────────────────────────────────────
@@ -538,6 +788,408 @@ async def chat(req: ChatRequest, _: TeamUser = Depends(analyst)):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _find_report_intake_for_session(db: AsyncSession, session_id: str) -> ReportIntake | None:
+    rows = await db.execute(
+        select(ReportIntake)
+        .where(ReportIntake.analyst_notes.ilike(f"%{session_id}%"))
+        .order_by(ReportIntake.updated_at.desc())
+        .limit(1)
+    )
+    return rows.scalar_one_or_none()
+
+
+def _fallback_report_text(sess: AnalysisSession, res: AnalysisResult, intake: ReportIntake | None) -> str:
+    lines = [
+        sess.name or sess.filename or f"Analysis {sess.id}",
+        "",
+    ]
+    if intake:
+        lines.extend([
+            f"Source URL: {intake.url or 'not provided'}",
+            f"Publisher: {intake.publisher or 'unknown'}",
+            f"Reliability: {intake.source_reliability or 'unknown'}",
+            "",
+            "Stored report intake summary",
+            intake.summary or "No report intake summary is stored.",
+            "",
+            "Stored report intake metadata",
+            intake.analyst_notes or "No analyst metadata is stored.",
+            "",
+        ])
+    lines.extend([
+        "AI analysis summary",
+        res.summary or "No summary is stored.",
+        "",
+        "Mapped ATT&CK techniques",
+    ])
+    for item in res.extracted_techniques[:200]:
+        lines.append(f"- {item.get('attack_id', '')} {item.get('name', '')}: {item.get('evidence', '')}")
+    if res.apt_matches:
+        lines.extend(["", "Possible actor overlap"])
+        for item in res.apt_matches[:20]:
+            lines.append(f"- {item.get('group_attack_id', '')} {item.get('group_name', '')}")
+    return "\n".join(lines)
+
+
+def _research_storage_summary(text: str, filename: str | None) -> str:
+    clean = re.sub(r"\s+", " ", text).strip()
+    if not clean:
+        return f"{filename or 'Research document'} was stored without AI parsing. No source text was extracted."
+    preview = clean[:700].rstrip()
+    suffix = "" if len(clean) <= 700 else "..."
+    return (
+        f"Stored research document {filename or ''} without AI parsing. "
+        f"No ATT&CK mappings have been extracted yet. Preview: {preview}{suffix}"
+    ).strip()
+
+
+def _report_intake_dict(intake: ReportIntake) -> dict[str, Any]:
+    return {
+        "id": str(intake.id),
+        "title": intake.title,
+        "url": intake.url,
+        "publisher": intake.publisher,
+        "status": intake.status,
+        "source_reliability": intake.source_reliability,
+        "actor_ids": intake.actor_ids or [],
+        "technique_ids": intake.technique_ids or [],
+        "indicator_count": len(intake.indicators or []),
+        "created_at": intake.created_at.isoformat() if intake.created_at else "",
+        "updated_at": intake.updated_at.isoformat() if intake.updated_at else "",
+    }
+
+
+def _report_collection_tags(
+    sess: AnalysisSession,
+    res: AnalysisResult,
+    intake: ReportIntake | None,
+    source_text: str,
+    entities: list[LinkedReportEntity],
+) -> dict[str, list[ReportCollectionTag]]:
+    tags: dict[str, list[ReportCollectionTag]] = {
+        "ttps": [],
+        "iocs": [],
+        "cves": [],
+        "threat_actors": [],
+        "sectors": [],
+        "infrastructure": [],
+    }
+    for entity in entities:
+        if entity.type == "technique":
+            tags["ttps"].append(_collection_tag("ttp", entity.label, entity.id, entity.route, 90, entity.metadata))
+        elif entity.type == "ioc":
+            ioc_type = str(entity.metadata.get("ioc_type") or "indicator")
+            tags["iocs"].append(_collection_tag("ioc", entity.label, entity.value or entity.id, entity.route, int(entity.metadata.get("confidence") or 70), {"ioc_type": ioc_type}))
+            if _is_infrastructure_ioc_type(ioc_type):
+                tags["infrastructure"].append(_collection_tag("infrastructure", entity.label, entity.value or entity.id, entity.route, 80, {"source": "ioc", "ioc_type": ioc_type}))
+        elif entity.type == "cve":
+            tags["cves"].append(_collection_tag("cve", entity.label, entity.id, entity.route, 90, entity.metadata))
+        elif entity.type == "group":
+            tags["threat_actors"].append(_collection_tag("threat_actor", entity.label, entity.id, entity.route, 75, entity.metadata))
+
+    if intake:
+        notes = _safe_json_obj(intake.analyst_notes)
+        for sector in _extract_metadata_list(notes, "sectors", "sector", "target_sectors", "industries"):
+            tags["sectors"].append(_collection_tag("sector", sector, sector, "/sector-intel", 85, {"source": "report-intake"}))
+        for infra in _extract_metadata_list(notes, "infrastructure", "infra", "platforms", "technologies"):
+            tags["infrastructure"].append(_collection_tag("infrastructure", infra, infra, "", 75, {"source": "report-intake"}))
+
+    context = "\n".join([
+        sess.name or "",
+        sess.filename or "",
+        res.summary or "",
+        res.raw_response or "",
+        intake.summary if intake else "",
+        intake.analyst_notes if intake else "",
+        source_text[:25_000],
+    ])
+    for sector in _extract_sector_tags(context):
+        tags["sectors"].append(_collection_tag("sector", sector, sector, "/sector-intel", 60, {"source": "keyword"}))
+    for infra in _extract_infrastructure_tags(context):
+        tags["infrastructure"].append(_collection_tag("infrastructure", infra, infra, "", 60, {"source": "keyword"}))
+
+    return {key: _dedupe_collection_tags(value, limit=_tag_bucket_limit(key)) for key, value in tags.items()}
+
+
+def _collection_tag(
+    tag_type: str,
+    label: str,
+    value: str,
+    route: str = "",
+    confidence: int = 50,
+    metadata: dict[str, Any] | None = None,
+) -> ReportCollectionTag:
+    return ReportCollectionTag(
+        type=tag_type,
+        label=str(label or value).strip(),
+        value=str(value or label).strip(),
+        route=route,
+        confidence=max(0, min(100, int(confidence))),
+        metadata=metadata or {},
+    )
+
+
+def _tag_bucket_limit(key: str) -> int:
+    return {
+        "ttps": 80,
+        "iocs": 120,
+        "cves": 80,
+        "threat_actors": 30,
+        "sectors": 30,
+        "infrastructure": 80,
+    }.get(key, 50)
+
+
+def _dedupe_collection_tags(tags: list[ReportCollectionTag], limit: int) -> list[ReportCollectionTag]:
+    seen: set[tuple[str, str]] = set()
+    result: list[ReportCollectionTag] = []
+    for tag in tags:
+        if not tag.value:
+            continue
+        key = (tag.type, tag.value.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(tag)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _extract_metadata_list(data: dict[str, Any], *keys: str) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        raw = data.get(key)
+        if isinstance(raw, str):
+            values.extend(part.strip() for part in re.split(r"[,;|]", raw) if part.strip())
+        elif isinstance(raw, list):
+            values.extend(str(item).strip() for item in raw if str(item).strip())
+    return values[:50]
+
+
+def _is_infrastructure_ioc_type(ioc_type: str) -> bool:
+    normalized = ioc_type.lower().replace("-", "_")
+    return normalized in {
+        "ip", "ipv4", "ipv6", "domain", "hostname", "url", "uri", "asn", "cidr",
+        "email", "email_address", "mutex", "registry_key", "x509", "certificate",
+    }
+
+
+def _extract_sector_tags(text: str) -> list[str]:
+    sector_patterns = {
+        "Government": r"\b(government|ministry|public sector|municipal|embassy|diplomatic)\b",
+        "Defense": r"\b(defen[cs]e|military|aerospace|army|navy|air force)\b",
+        "Energy": r"\b(energy|electric|power grid|oil|gas|utility|utilities)\b",
+        "Finance": r"\b(finance|financial|bank|banking|payment|insurance)\b",
+        "Telecommunications": r"\b(telecom|telecommunications|mobile operator|isp)\b",
+        "Healthcare": r"\b(healthcare|hospital|medical|pharmaceutical|pharma)\b",
+        "Technology": r"\b(technology|software|saas|cloud provider|it services)\b",
+        "Education": r"\b(education|university|college|research institute)\b",
+        "Manufacturing": r"\b(manufacturing|factory|industrial|supply chain)\b",
+        "Transportation": r"\b(transport|transportation|aviation|airport|rail|shipping|logistics)\b",
+        "Media": r"\b(media|journalist|news|broadcast)\b",
+        "Critical Infrastructure": r"\b(critical infrastructure|water treatment|ics|scada|ot environment)\b",
+    }
+    return [label for label, pattern in sector_patterns.items() if re.search(pattern, text, re.IGNORECASE)]
+
+
+def _extract_infrastructure_tags(text: str) -> list[str]:
+    infrastructure_patterns = {
+        "VPN": r"\b(vpn|ssl vpn|globalprotect|forticlient|pulse secure)\b",
+        "Firewall": r"\b(firewall|fortigate|palo alto|checkpoint|asa)\b",
+        "Email Gateway": r"\b(email gateway|mail gateway|exchange|o365|microsoft 365|outlook web access|owa)\b",
+        "Identity Provider": r"\b(adfs|okta|azure ad|entra id|identity provider|sso)\b",
+        "Cloud": r"\b(aws|azure|gcp|cloud storage|s3 bucket|blob storage)\b",
+        "Web Server": r"\b(nginx|apache|iis|web server|tomcat|jboss)\b",
+        "Database": r"\b(sql server|mysql|postgres|oracle database|mongodb|redis)\b",
+        "Remote Access": r"\b(rdp|ssh|winrm|vnc|citrix|anydesk|teamviewer)\b",
+        "Active Directory": r"\b(active directory|domain controller|kerberos|ldap)\b",
+        "Endpoint": r"\b(endpoint|workstation|laptop|windows host|linux host|server)\b",
+        "C2 Infrastructure": r"\b(command and control|c2|c&c|beacon|redirector)\b",
+        "Proxy": r"\b(proxy|reverse proxy|cdn|cloudflare|akamai)\b",
+    }
+    return [label for label, pattern in infrastructure_patterns.items() if re.search(pattern, text, re.IGNORECASE)]
+
+
+async def _linked_report_entities(
+    db: AsyncSession,
+    sess: AnalysisSession,
+    res: AnalysisResult,
+    intake: ReportIntake | None,
+    source_text: str,
+    techniques: list[TechniqueHit],
+    apt_matches: list[AptMatch],
+) -> list[LinkedReportEntity]:
+    entities: list[LinkedReportEntity] = []
+
+    for technique in techniques:
+        entities.append(LinkedReportEntity(
+            type="technique",
+            id=technique.attack_id.upper(),
+            label=f"{technique.attack_id.upper()} {technique.name}".strip(),
+            value=technique.attack_id.upper(),
+            route=f"/navigator?technique={technique.attack_id.upper()}",
+            metadata={
+                "tactic": technique.tactic,
+                "confidence": technique.confidence,
+                "review_status": technique.review_status,
+                "source": "analysis",
+            },
+        ))
+
+    if intake:
+        for attack_id in intake.technique_ids or []:
+            value = str(attack_id).upper()
+            if re.match(r"^T\d{4}(?:\.\d{3})?$", value):
+                entities.append(LinkedReportEntity(
+                    type="technique",
+                    id=value,
+                    label=value,
+                    value=value,
+                    route=f"/navigator?technique={value}",
+                    metadata={"source": "report-intake"},
+                ))
+
+    group_ids = {match.group_attack_id for match in apt_matches if match.group_attack_id}
+    if intake:
+        group_ids.update(str(item) for item in (intake.actor_ids or []) if str(item).startswith("G"))
+    if group_ids:
+        group_rows = await db.execute(
+            select(AptGroup).where(
+                AptGroup.domain == sess.domain,
+                AptGroup.attack_id.in_(sorted(group_ids)),
+            )
+        )
+        group_lookup = {group.attack_id: group for group in group_rows.scalars().all()}
+        for group_id in sorted(group_ids):
+            group = group_lookup.get(group_id)
+            match = next((item for item in apt_matches if item.group_attack_id == group_id), None)
+            entities.append(LinkedReportEntity(
+                type="group",
+                id=group_id,
+                label=group.name if group else (match.group_name if match else group_id),
+                value=group_id,
+                route=f"/apt?group={group_id}",
+                aliases=[str(alias) for alias in ((group.aliases if group else []) or []) if alias],
+                metadata={
+                    "source": "analysis-overlap" if match else "report-intake",
+                    "similarity": match.similarity if match else None,
+                    "shared_count": match.shared_count if match else None,
+                },
+            ))
+
+    text_blobs = [
+        source_text,
+        res.summary or "",
+        res.raw_response or "",
+        intake.analyst_notes if intake else "",
+        json.dumps(intake.indicators, ensure_ascii=False) if intake and intake.indicators else "",
+    ]
+    for cve_id in _extract_cve_ids(*text_blobs):
+        entities.append(LinkedReportEntity(
+            type="cve",
+            id=cve_id,
+            label=cve_id,
+            value=cve_id,
+            route=f"/cve?cve={cve_id}",
+            metadata={"source": "source-text"},
+        ))
+
+    for item in extract_iocs_from_text(source_text, source_id="linked-report-preview", confidence=70)[:300]:
+        entities.append(LinkedReportEntity(
+            type="ioc",
+            id=item.value,
+            label=item.value,
+            value=item.value,
+            route=f"/ioc-library?search={item.value}",
+            metadata={
+                "ioc_type": item.indicator_type,
+                "confidence": item.confidence,
+                "source": "source-text",
+            },
+        ))
+
+    if intake:
+        for item in (intake.indicators or [])[:300]:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("value") or item.get("indicator") or item.get("observable") or "").strip()
+            if not value:
+                continue
+            entities.append(LinkedReportEntity(
+                type="ioc",
+                id=value,
+                label=value,
+                value=value,
+                route=f"/ioc-library?search={value}",
+                metadata={
+                    "ioc_type": str(item.get("type") or item.get("indicator_type") or "indicator"),
+                    "source": "report-intake",
+                },
+            ))
+
+        notes = _safe_json_obj(intake.analyst_notes)
+        ioc_source_id = str(notes.get("ioc_source_id") or "").strip()
+        if ioc_source_id:
+            rows = await db.execute(
+                select(IOCIndicator)
+                .where(IOCIndicator.source_id == ioc_source_id)
+                .order_by(IOCIndicator.id.asc())
+                .limit(300)
+            )
+            for item in rows.scalars().all():
+                entities.append(LinkedReportEntity(
+                    type="ioc",
+                    id=str(item.id),
+                    label=item.value,
+                    value=item.value,
+                    route=f"/ioc-library/{item.id}",
+                    metadata={
+                        "ioc_type": item.indicator_type,
+                        "confidence": item.confidence,
+                        "source": item.source_id,
+                    },
+                ))
+
+    return _dedupe_entities(entities, limit=900)
+
+
+def _extract_cve_ids(*values: str) -> list[str]:
+    seen: set[str] = set()
+    results: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        for match in _CVE_RE.finditer(value):
+            cve_id = match.group(0).upper()
+            if cve_id not in seen:
+                seen.add(cve_id)
+                results.append(cve_id)
+    return results[:500]
+
+
+def _safe_json_obj(value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _dedupe_entities(entities: list[LinkedReportEntity], limit: int) -> list[LinkedReportEntity]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[LinkedReportEntity] = []
+    for entity in entities:
+        key = (entity.type, (entity.value or entity.id or entity.label).lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entity)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
 
 async def _read_input(
     text: str | None, file: UploadFile | None
