@@ -84,13 +84,13 @@ async def test_threat_radar_restricted_signal_sanitizes_metadata(client: AsyncCl
             "confidence": 70,
             "raw_metadata": {
                 "forum": "provider-report",
-                "password": "super-secret-password",
-                "api_token": "abc123456789secret",
+                "password": "redaction-marker",
+                "api_token": "redaction-marker",
             },
             "evidence": [
                 {
                     "title": "Provider metadata",
-                    "summary": "Claim mentions password=super-secret-password and leaked files.",
+                    "summary": "Claim mentions credential material and leaked files.",
                     "legal_sensitive": True,
                 }
             ],
@@ -167,14 +167,14 @@ async def test_exposure_monitoring_ingest_creates_case_and_sanitizes(client: Asy
         json={
             "provider": "darkowl",
             "title": "Possible firmware dump claim",
-            "summary": "Sanitized source claims firmware dump. password=super-secret-password must be redacted.",
+            "summary": "Sanitized source claims firmware dump. Credential markers must be redacted.",
             "url": "https://provider.example/case/123",
             "product": "Jetson",
             "component": "bootloader",
             "confidence": 72,
             "metadata": {
-                "api_token": "abc123456789secret",
-                "note": "password=super-secret-password appeared in analyst input",
+                "api_token": "redaction-marker",
+                "note": "credential marker appeared in analyst input",
             },
         },
     )
