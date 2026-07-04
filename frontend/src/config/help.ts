@@ -134,6 +134,16 @@ export const helpTopics: HelpTopic[] = [
     tips: ['Unknown CVSS usually means the source record lacks enough scoring data.', 'Exploitability and exposure still need asset-side validation.'],
   },
   {
+    id: 'threat-radar',
+    title: 'Threat Radar',
+    route: '/threat-radar',
+    summary: 'Product Security CTI early-warning module that collects threat signals, scores exposure, maps claims to products/components/dependencies, and creates PSIRT, Threat Hunt, IR, Legal, Detection, and report workflows.',
+    whenToUse: ['Track CVE, KEV, PoC, zero-day, supplier, hardware, malicious package, and internal telemetry signals', 'Map threat claims to product exposure and supply-chain dependencies', 'Create auditable action workflows and executive/PSIRT/hunt reports'],
+    workflow: ['Create or import a sanitized threat signal', 'Map it to product, component, dependency, version, exposure, and blast radius', 'Review the 0-100 risk score and recommended actions', 'Create PSIRT, Hunt, IR, or Detection objects and generate reports'],
+    outputs: ['Scored threat signals and cases', 'Product exposure mappings', 'Case graph', 'PSIRT/Hunt/IR/Detection queues', 'Flash notes and Threat Hunt Packs'],
+    tips: ['Restricted intelligence must stay sanitized metadata only. Do not store exploit payloads, stolen data, credentials, or illegal-source access instructions.', 'CTI without product exposure and telemetry readiness is only a hypothesis.'],
+  },
+  {
     id: 'feeds',
     title: 'Feeds Management',
     route: '/feeds',

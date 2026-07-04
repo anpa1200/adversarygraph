@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type React from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
-import { analyzeApi, type LinkedReportEntity } from '@/api/client';
+import { analyzeApi, reportsApi, type LinkedAnalysisReport, type LinkedReportEntity } from '@/api/client';
+import { safeHref } from '@/utils/url';
 
 type InlineMatch = {
   start: number;
@@ -16,6 +17,11 @@ const ENTITY_ORDER = ['technique', 'cve', 'group', 'ioc'];
 
 export function LinkedReport() {
   const { sessionId = '' } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [provider, setProvider] = useState('claude');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', source_url: '', publisher: '', summary: '', source_text: '' });
   const query = useQuery({
     queryKey: ['linked-report', sessionId],
     queryFn: () => analyzeApi.linkedReport(sessionId),
@@ -26,6 +32,49 @@ export function LinkedReport() {
   const grouped = useMemo(() => groupEntities(report?.entities ?? []), [report?.entities]);
   const matches = useMemo(() => findInlineMatches(report?.source_text ?? '', report?.entities ?? []), [report?.source_text, report?.entities]);
   const sourceUrl = typeof report?.report_intake?.url === 'string' ? report.report_intake.url : '';
+  const reparseMutation = useMutation({
+    mutationFn: () => analyzeApi.reparseLinkedReport(sessionId, { provider }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['linked-report', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+  const editMutation = useMutation({
+    mutationFn: () => analyzeApi.editLinkedReport(sessionId, {
+      name: editForm.name,
+      source_url: editForm.source_url,
+      publisher: editForm.publisher,
+      summary: editForm.summary,
+      source_text: editForm.source_text,
+    }),
+    onSuccess: () => {
+      setEditOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['linked-report', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => reportsApi.remove(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+      navigate('/reports-research');
+    },
+  });
+
+  const openEdit = () => {
+    if (!report) return;
+    setEditForm({
+      name: report.name || '',
+      source_url: sourceUrl,
+      publisher: typeof report.report_intake?.publisher === 'string' ? report.report_intake.publisher : '',
+      summary: report.summary || '',
+      source_text: report.source_text || '',
+    });
+    setEditOpen(true);
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -55,13 +104,45 @@ export function LinkedReport() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link to="/analyze" className="secondary-action">Back to analysis</Link>
+                      <Link to="/reports-research" className="secondary-action">Reports collection</Link>
                       <Link to="/navigator" className="secondary-action">Open Navigator</Link>
                       {sourceUrl && (
                         <a href={sourceUrl} target="_blank" rel="noreferrer" className="secondary-action">
                           Source report
                         </a>
                       )}
+                      <button type="button" onClick={openEdit} className="secondary-action">Edit</button>
+                      <select value={provider} onChange={event => setProvider(event.target.value)} className="field h-9 w-auto min-w-32 py-1 text-xs">
+                        <option value="claude">Claude</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="local">Local LLM</option>
+                      </select>
+                      <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
+                        {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
+                      </button>
+                      <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-raw.txt`, report.source_text || '', 'text/plain;charset=utf-8')} className="secondary-action">Download raw</button>
+                      <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-parsed.json`, JSON.stringify(buildParsedExport(report), null, 2), 'application/json;charset=utf-8')} className="secondary-action">Download parsed</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Delete report "${report.name || report.session_id}"?`)) deleteMutation.mutate();
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="secondary-action border-red-900/70 text-red-300 hover:border-red-500 disabled:opacity-40"
+                      >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                      </button>
                     </div>
+                    {(reparseMutation.isError || editMutation.isError || deleteMutation.isError) && (
+                      <div className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">
+                        {(reparseMutation.error instanceof Error && reparseMutation.error.message) ||
+                          (editMutation.error instanceof Error && editMutation.error.message) ||
+                          (deleteMutation.error instanceof Error && deleteMutation.error.message) ||
+                          'Report action failed.'}
+                      </div>
+                    )}
                   </div>
                 </Panel>
 
@@ -74,6 +155,69 @@ export function LinkedReport() {
                   </div>
                 </Panel>
               </section>
+
+              {editOpen && (
+                <Panel title="Edit report">
+                  <div className="grid gap-3 p-4 xl:grid-cols-2">
+                    <label className="space-y-1 text-xs text-gray-400">
+                      <span className="font-semibold uppercase tracking-wide text-gray-500">Title</span>
+                      <input value={editForm.name} onChange={event => setEditForm({ ...editForm, name: event.target.value })} className="field w-full" />
+                    </label>
+                    <label className="space-y-1 text-xs text-gray-400">
+                      <span className="font-semibold uppercase tracking-wide text-gray-500">Original source URL</span>
+                      <input value={editForm.source_url} onChange={event => setEditForm({ ...editForm, source_url: event.target.value })} className="field w-full" />
+                    </label>
+                    <label className="space-y-1 text-xs text-gray-400">
+                      <span className="font-semibold uppercase tracking-wide text-gray-500">Publisher</span>
+                      <input value={editForm.publisher} onChange={event => setEditForm({ ...editForm, publisher: event.target.value })} className="field w-full" />
+                    </label>
+                    <label className="space-y-1 text-xs text-gray-400 xl:col-span-2">
+                      <span className="font-semibold uppercase tracking-wide text-gray-500">Summary</span>
+                      <textarea value={editForm.summary} onChange={event => setEditForm({ ...editForm, summary: event.target.value })} className="field h-28 w-full resize-y" />
+                    </label>
+                    <label className="space-y-1 text-xs text-gray-400 xl:col-span-2">
+                      <span className="font-semibold uppercase tracking-wide text-gray-500">Raw report text</span>
+                      <textarea value={editForm.source_text} onChange={event => setEditForm({ ...editForm, source_text: event.target.value })} className="field h-96 w-full resize-y font-mono text-xs" />
+                    </label>
+                    <div className="flex flex-wrap gap-2 xl:col-span-2">
+                      <button type="button" onClick={() => editMutation.mutate()} disabled={editMutation.isPending} className="primary-action disabled:opacity-40">
+                        {editMutation.isPending ? 'Saving...' : 'Save changes'}
+                      </button>
+                      <button type="button" onClick={() => setEditOpen(false)} className="secondary-action">Cancel</button>
+                    </div>
+                  </div>
+                </Panel>
+              )}
+
+              {report.report_images.length > 0 && (
+                <Panel title="Original pictures and infographics">
+                  <div className="border-b border-gray-800 px-4 py-3 text-xs leading-relaxed text-gray-500">
+                    Images are referenced from the original report URL and rendered as external image resources. They are not treated as trusted HTML.
+                  </div>
+                  <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+                    {report.report_images.slice(0, 24).map((image, index) => {
+                      const href = safeHref(image.url);
+                      if (!href) return null;
+                      return (
+                        <figure key={`${image.url}-${index}`} className="overflow-hidden rounded border border-gray-800 bg-gray-950">
+                          <a href={href} target="_blank" rel="noreferrer" className="block bg-black">
+                            <img
+                              src={href}
+                              alt={image.alt || `Original report image ${index + 1}`}
+                              loading="lazy"
+                              className="h-56 w-full object-contain"
+                            />
+                          </a>
+                          <figcaption className="space-y-1 border-t border-gray-800 p-3 text-xs leading-5 text-gray-400">
+                            <div className="line-clamp-2">{image.caption || image.alt || 'Report image'}</div>
+                            <div className="truncate font-mono text-[10px] text-gray-600">{image.url}</div>
+                          </figcaption>
+                        </figure>
+                      );
+                    })}
+                  </div>
+                </Panel>
+              )}
 
               <Panel title="Report with inline platform links">
                 <div className="border-b border-gray-800 px-4 py-3 text-xs leading-relaxed text-gray-500">
@@ -236,6 +380,39 @@ function entityTone(type: string) {
   if (type === 'group') return 'text-violet-300';
   if (type === 'ioc') return 'text-amber-300';
   return 'text-mitre-accent';
+}
+
+function buildParsedExport(report: LinkedAnalysisReport) {
+  return {
+    session_id: report.session_id,
+    name: report.name,
+    provider: report.provider,
+    model: report.model,
+    domain: report.domain,
+    created_at: report.created_at,
+    summary: report.summary,
+    techniques: report.techniques,
+    apt_matches: report.apt_matches,
+    entities: report.entities,
+    report_images: report.report_images,
+    report_intake: report.report_intake,
+  };
+}
+
+function downloadText(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'report';
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {

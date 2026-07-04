@@ -1,6 +1,7 @@
 """Integration tests for /api/analyze routes."""
 
 import pytest
+import httpx
 from httpx import AsyncClient
 
 
@@ -68,3 +69,33 @@ async def test_analyze_chat_invalid_provider_returns_400(client: AsyncClient):
         json={"message": "What is T1059?", "provider": "bad_provider"},
     )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ingest_research_url_stores_text_and_images(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    async def fake_safe_get(url: str, **_kwargs):
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=b"""
+            <html><head><title>URL Report</title></head><body>
+            <h1>URL Report</h1><p>Observed CVE-2024-1111 and T1190 exploitation.</p>
+            <img src="/img/graph.png" alt="Kill chain graph">
+            </body></html>
+            """,
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr("app.api.routes.analyze.async_safe_get", fake_safe_get)
+
+    response = await client.post(
+        "/api/analyze/sessions/research-url",
+        data={"url": "https://example.com/report.html", "parse_with_ai": "false", "domain": "enterprise-attack"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "URL Report"
+    assert payload["source_url"] == "https://example.com/report.html"
+
+    assert payload["source_text_available"] is True

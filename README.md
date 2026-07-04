@@ -2,15 +2,15 @@
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
-**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
+**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v5.7.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v5.8.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v5.7.0**. This release adds the Reports / Research collection workflow with linked report review, source-text preservation, deterministic tags, and a research upload control that can either store research or parse it with AI. See the [version matrix](docs/version-matrix.md), [v5.7 release notes](docs/release-notes/v5.7.0.md), [research analysis guide](docs/research-analysis-guide.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
+Current release: **v5.8.0**. This release adds Threat Radar, a product-security CTI early-warning module for scored threat signals, product/component/dependency exposure mapping, case graphs, and PSIRT, Threat Hunt, IR, Detection, and report workflows. See the [version matrix](docs/version-matrix.md), [v5.8 release notes](docs/release-notes/v5.8.0.md), [Threat Radar guide](docs/threat-radar.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
 
 ## What It Does
 
@@ -19,6 +19,7 @@ AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerabili
 Core capabilities:
 
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
+- Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, and PSIRT/Hunt/IR/Detection workflows.
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
 - IOC Library, IOC Investigation pivots, VirusTotal lookup, and feed management.
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
@@ -91,6 +92,7 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
+| Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
 | CVE Library | [docs/cve-cvss-intelligence.md](docs/cve-cvss-intelligence.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](docs/evidence-to-detection-graph.md) |
 | Security policy | [SECURITY.md](SECURITY.md) |

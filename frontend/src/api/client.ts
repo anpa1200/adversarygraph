@@ -804,6 +804,7 @@ export interface LinkedAnalysisReport {
   techniques: AnalysisResult['techniques'];
   apt_matches: AnalysisResult['apt_matches'];
   entities: LinkedReportEntity[];
+  report_images: Array<{ url: string; alt: string; caption: string; source: string }>;
   report_intake: Record<string, unknown> | null;
 }
 
@@ -845,8 +846,17 @@ export interface StoredResearchResult {
   status: string;
   title: string;
   filename: string | null;
+  source_url: string;
   source_text_available: boolean;
   summary: string;
+}
+
+export interface ReportEditPayload {
+  name?: string;
+  source_text?: string;
+  source_url?: string;
+  publisher?: string;
+  summary?: string;
 }
 
 export const analyzeApi = {
@@ -872,11 +882,20 @@ export const analyzeApi = {
   linkedReport: (sessionId: string): Promise<LinkedAnalysisReport> =>
     http.get(`/analyze/sessions/${sessionId}/linked-report`).then(r => r.data),
 
+  editLinkedReport: (sessionId: string, payload: ReportEditPayload): Promise<LinkedAnalysisReport> =>
+    http.patch(`/analyze/sessions/${sessionId}/linked-report`, payload).then(r => r.data),
+
+  reparseLinkedReport: (sessionId: string, payload: { provider: string; model?: string }): Promise<AnalysisResult> =>
+    http.post(`/analyze/sessions/${sessionId}/reparse`, payload).then(r => r.data),
+
   reportCollection: (limit = 100, offset = 0): Promise<ReportCollectionResult> =>
     http.get('/analyze/sessions/collection', { params: { limit, offset } }).then(r => r.data),
 
   storeResearch: (formData: FormData): Promise<StoredResearchResult> =>
     http.post('/analyze/sessions/research', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+
+  ingestResearchUrl: (formData: FormData): Promise<StoredResearchResult> =>
+    http.post('/analyze/sessions/research-url', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
 
   logPcap: (formData: FormData): Promise<LogPcapAnalysisResult> =>
     http.post('/analyze/log-pcap', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
@@ -2655,4 +2674,186 @@ export const evidenceGraphApi = {
   fromIoc: (iocId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-ioc/${iocId}`).then(r => r.data),
   fromAsset: (assetId: string): Promise<Record<string, unknown>> => http.post(`/evidence-graph/from-asset/${assetId}`).then(r => r.data),
   exportUrl: (format: 'json' | 'markdown' | 'csv' | 'evidence-pack') => `/api/evidence-graph/export?fmt=${encodeURIComponent(format)}`,
+};
+
+// ── Threat Radar ─────────────────────────────────────────────────────────────
+
+export type ThreatSignalType =
+  | 'cve_disclosure'
+  | 'cisa_kev_active_exploitation'
+  | 'public_poc'
+  | 'zero_day_claim'
+  | 'exploit_sale_claim'
+  | 'darknet_provider_mention'
+  | 'marketplace_hardware_listing'
+  | 'firmware_dump_claim'
+  | 'source_code_leak_claim'
+  | 'credential_exposure'
+  | 'supplier_breach'
+  | 'malicious_package'
+  | 'critical_dependency_vulnerability'
+  | 'customer_report'
+  | 'internal_telemetry_anomaly';
+
+export interface ThreatRadarScore {
+  score: number;
+  priority: string;
+  factors: Record<string, number>;
+  rationale: string[];
+}
+
+export interface ThreatRadarActionRecommendation {
+  type: string;
+  title: string;
+  owner_team: string;
+  description: string;
+}
+
+export interface ThreatRadarProductMapping {
+  id?: string;
+  signal_id?: string | null;
+  case_id?: string | null;
+  product: string;
+  component?: string;
+  dependency?: string;
+  version?: string;
+  exposure?: string;
+  environment?: string;
+  relevance?: number;
+  blast_radius?: number;
+  evidence?: string;
+  tags?: string[];
+  technique_ids?: string[];
+  created_at?: string;
+}
+
+export interface ThreatRadarSignal {
+  id: string;
+  title: string;
+  signal_type: ThreatSignalType;
+  description: string;
+  status: string;
+  source_id?: string | null;
+  source_name: string;
+  source_url: string;
+  tlp: string;
+  legal_sensitive: boolean;
+  confidence: number;
+  severity: string;
+  cve_ids: string[];
+  technique_ids: string[];
+  iocs: Array<Record<string, unknown>>;
+  actors: string[];
+  sectors: string[];
+  tags: string[];
+  raw_metadata: Record<string, unknown>;
+  created_by: string;
+  created_at?: string;
+  updated_at?: string;
+  score?: ThreatRadarScore;
+  product_mappings: ThreatRadarProductMapping[];
+  recommended_actions: ThreatRadarActionRecommendation[];
+}
+
+export interface ThreatRadarCase {
+  id: string;
+  signal_id?: string | null;
+  title: string;
+  summary: string;
+  status: string;
+  priority: string;
+  risk_score: number;
+  tlp: string;
+  legal_sensitive: boolean;
+  recommended_actions: ThreatRadarActionRecommendation[];
+  product_context: ThreatRadarProductMapping[];
+  tags: string[];
+  created_by: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatRadarSource {
+  id: string;
+  name: string;
+  source_type: string;
+  url: string;
+  reliability: number;
+  tlp: string;
+  legal_sensitive: boolean;
+  enabled: boolean;
+  notes: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatRadarReport {
+  id: string;
+  case_id: string;
+  report_type: string;
+  title: string;
+  markdown: string;
+  metadata: Record<string, unknown>;
+  created_by: string;
+  created_at?: string;
+}
+
+export interface ThreatRadarCreateSignal {
+  title: string;
+  signal_type: ThreatSignalType;
+  description?: string;
+  source_name?: string;
+  source_url?: string;
+  source?: Partial<ThreatRadarSource> & { name: string };
+  tlp?: string;
+  legal_sensitive?: boolean;
+  confidence?: number;
+  severity?: string;
+  cve_ids?: string[];
+  technique_ids?: string[];
+  iocs?: Array<Record<string, unknown>>;
+  actors?: string[];
+  sectors?: string[];
+  tags?: string[];
+  raw_metadata?: Record<string, unknown>;
+  evidence?: Array<{ evidence_type?: string; title?: string; summary?: string; url?: string; tlp?: string; legal_sensitive?: boolean; metadata?: Record<string, unknown> }>;
+  claims?: Array<{ claim_type?: string; statement?: string; credibility?: number; status?: string; tlp?: string; legal_sensitive?: boolean }>;
+  product_mappings?: ThreatRadarProductMapping[];
+  create_case?: boolean;
+}
+
+export const threatRadarApi = {
+  sources: (): Promise<ThreatRadarSource[]> => http.get('/threat-radar/sources').then(r => r.data),
+  createSource: (body: Partial<ThreatRadarSource> & { name: string }): Promise<ThreatRadarSource> =>
+    http.post('/threat-radar/sources', body).then(r => r.data),
+  signals: (params?: { signal_type?: string; status?: string; q?: string; limit?: number; offset?: number }): Promise<ThreatRadarSignal[]> =>
+    http.get('/threat-radar/signals', { params }).then(r => r.data),
+  createSignal: (body: ThreatRadarCreateSignal): Promise<{ signal: ThreatRadarSignal; case: ThreatRadarCase | null; score: ThreatRadarScore }> =>
+    http.post('/threat-radar/signals', body).then(r => r.data),
+  signal: (id: string): Promise<ThreatRadarSignal> => http.get(`/threat-radar/signals/${id}`).then(r => r.data),
+  triageSignal: (id: string, body: { status?: string; confidence?: number; severity?: string; product_mappings?: ThreatRadarProductMapping[]; create_case?: boolean; analyst_notes?: string }): Promise<{ signal: ThreatRadarSignal; case: ThreatRadarCase | null }> =>
+    http.post(`/threat-radar/signals/${id}/triage`, body).then(r => r.data),
+  cases: (params?: { status?: string; priority?: string; limit?: number; offset?: number }): Promise<ThreatRadarCase[]> =>
+    http.get('/threat-radar/cases', { params }).then(r => r.data),
+  caseDetail: (id: string): Promise<{ case: ThreatRadarCase; actions: Array<Record<string, unknown>>; reports: ThreatRadarReport[] }> =>
+    http.get(`/threat-radar/cases/${id}`).then(r => r.data),
+  caseGraph: (id: string): Promise<{ nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }> =>
+    http.get(`/threat-radar/cases/${id}/graph`).then(r => r.data),
+  scoreCase: (id: string): Promise<ThreatRadarScore & { recommended_actions: ThreatRadarActionRecommendation[] }> =>
+    http.post(`/threat-radar/cases/${id}/score`).then(r => r.data),
+  escalateCase: (id: string): Promise<{ case: ThreatRadarCase; ir_escalation: Record<string, unknown> }> =>
+    http.post(`/threat-radar/cases/${id}/escalate`).then(r => r.data),
+  productMap: (body: { signal_id?: string; case_id?: string; mappings: ThreatRadarProductMapping[] }): Promise<ThreatRadarProductMapping[]> =>
+    http.post('/threat-radar/product-map', body).then(r => r.data),
+  productExposure: (): Promise<ThreatRadarProductMapping[]> => http.get('/threat-radar/product-exposure').then(r => r.data),
+  createHunt: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-hunt`).then(r => r.data),
+  createPsirtTask: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-psirt-task`).then(r => r.data),
+  createIrEscalation: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-ir-escalation`).then(r => r.data),
+  createDetectionRequirement: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-detection-requirement`).then(r => r.data),
+  generateReport: (caseId: string, report_type: 'flash_note' | 'product_impact' | 'hunt_pack' | 'psirt_appendix' | 'executive_summary'): Promise<ThreatRadarReport> =>
+    http.post(`/threat-radar/cases/${caseId}/generate-report`, { report_type }).then(r => r.data),
+  watchlist: (watchlist: 'cve' | 'zero-day' | 'supply-chain' | 'hardware'): Promise<ThreatRadarSignal[]> =>
+    http.get(`/threat-radar/watchlists/${watchlist}`).then(r => r.data),
+  queue: (queue: 'hunts' | 'psirt' | 'ir' | 'detections' | 'reports' | 'actions' | 'marketplace' | 'supply-chain' | 'audit'): Promise<Array<Record<string, unknown>>> =>
+    http.get(`/threat-radar/queues/${queue}`).then(r => r.data),
 };

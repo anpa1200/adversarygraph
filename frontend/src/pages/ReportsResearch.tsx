@@ -3,11 +3,12 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
-import { analyzeApi, type ReportCollectionItem, type ReportCollectionTag } from '@/api/client';
+import { analyzeApi, reportsApi, type LinkedAnalysisReport, type ReportCollectionItem, type ReportCollectionTag } from '@/api/client';
 import { useAppStore } from '@/store';
 import { safeHref } from '@/utils/url';
 
 const TAG_BUCKETS = [
+  ['reports', 'Reports'],
   ['ttps', 'TTPs'],
   ['iocs', 'IOCs'],
   ['cves', 'CVEs'],
@@ -23,9 +24,12 @@ export function ReportsResearch() {
   const [activeBucket, setActiveBucket] = useState<string>('all');
   const [researchTitle, setResearchTitle] = useState('');
   const [researchFile, setResearchFile] = useState<File | null>(null);
+  const [researchUrl, setResearchUrl] = useState('');
+  const [urlTitle, setUrlTitle] = useState('');
+  const [urlParseWithAi, setUrlParseWithAi] = useState(true);
   const [parseWithAi, setParseWithAi] = useState(true);
   const [provider, setProvider] = useState('claude');
-  const [lastUpload, setLastUpload] = useState<{ session_id: string; title: string; parsed: boolean } | null>(null);
+  const [lastUpload, setLastUpload] = useState<{ session_id: string; title: string; parsed: boolean; source_url?: string } | null>(null);
   const collection = useQuery({
     queryKey: ['report-research-collection'],
     queryFn: () => analyzeApi.reportCollection(150, 0),
@@ -50,6 +54,26 @@ export function ReportsResearch() {
       setLastUpload(data);
       setResearchFile(null);
       setResearchTitle('');
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+  const urlMutation = useMutation({
+    mutationFn: async () => {
+      if (!researchUrl.trim()) throw new Error('Paste a report URL first.');
+      const fd = new FormData();
+      fd.append('url', researchUrl.trim());
+      fd.append('domain', domain);
+      fd.append('name', urlTitle.trim());
+      fd.append('parse_with_ai', String(urlParseWithAi));
+      if (urlParseWithAi) fd.append('provider', provider);
+      const result = await analyzeApi.ingestResearchUrl(fd);
+      return { session_id: result.session_id, title: result.title, parsed: urlParseWithAi, source_url: result.source_url };
+    },
+    onSuccess: data => {
+      setLastUpload(data);
+      setResearchUrl('');
+      setUrlTitle('');
       queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
     },
@@ -80,8 +104,60 @@ export function ReportsResearch() {
                 </div>
               </div>
             </Panel>
-            <Panel title="Upload research">
+            <Panel title="Add research">
               <div className="space-y-3 p-4">
+                <div className="rounded border border-gray-800 bg-gray-950/60 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Upload from URL</div>
+                  <div className="space-y-2">
+                    <input
+                      value={researchUrl}
+                      onChange={event => setResearchUrl(event.target.value)}
+                      placeholder="https://vendor.example/report.html or report.pdf"
+                      className="field w-full"
+                    />
+                    <input
+                      value={urlTitle}
+                      onChange={event => setUrlTitle(event.target.value)}
+                      placeholder="Optional report title"
+                      className="field w-full"
+                    />
+                    <label className="flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={urlParseWithAi}
+                        onChange={event => setUrlParseWithAi(event.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">Parse URL with AI</span>
+                        Fetch the report, extract text and original image references, then map TTPs, CVEs, IOCs, actors, sectors, and infrastructure.
+                      </span>
+                    </label>
+                    {urlParseWithAi && (
+                      <select value={provider} onChange={event => setProvider(event.target.value)} className="field w-full">
+                        <option value="claude">Claude</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="local">Local LLM</option>
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => urlMutation.mutate()}
+                      disabled={!researchUrl.trim() || urlMutation.isPending}
+                      className="primary-action w-full disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {urlMutation.isPending ? 'Fetching report URL...' : 'Upload from URL'}
+                    </button>
+                    {urlMutation.isError && (
+                      <div className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">
+                        {urlMutation.error instanceof Error ? urlMutation.error.message : 'URL ingestion failed.'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="border-t border-gray-800 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Upload file</div>
                 <input
                   value={researchTitle}
                   onChange={event => setResearchTitle(event.target.value)}
@@ -136,6 +212,7 @@ export function ReportsResearch() {
                 {lastUpload && (
                   <div className="rounded border border-green-800 bg-green-950/20 p-3 text-xs leading-5 text-green-100">
                     <div>{lastUpload.parsed ? 'Parsed with AI' : 'Stored without AI parsing'}: {lastUpload.title}</div>
+                    {lastUpload.source_url && <div className="truncate text-green-200/70">Source: {lastUpload.source_url}</div>}
                     <Link to={`/analyze/${lastUpload.session_id}/report`} className="mt-2 inline-flex text-mitre-accent hover:text-mitre-accent/80">
                       Open linked report
                     </Link>
@@ -176,7 +253,7 @@ export function ReportsResearch() {
           {!collection.isLoading && !collection.isError && filtered.length === 0 && <Empty text="No reports match this filter." />}
 
           <div className="grid gap-4">
-            {filtered.map(item => <ReportCard key={item.session_id} item={item} />)}
+            {filtered.map(item => <ReportCard key={item.session_id} item={item} provider={provider} />)}
           </div>
         </div>
       </div>
@@ -184,8 +261,31 @@ export function ReportsResearch() {
   );
 }
 
-function ReportCard({ item }: { item: ReportCollectionItem }) {
+function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: string }) {
+  const queryClient = useQueryClient();
   const sourceHref = safeHref(item.source_url);
+  const reparseMutation = useMutation({
+    mutationFn: () => analyzeApi.reparseLinkedReport(item.session_id, { provider }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => reportsApi.remove(item.session_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+  const downloadReport = async (kind: 'raw' | 'parsed') => {
+    const report = await analyzeApi.linkedReport(item.session_id);
+    if (kind === 'raw') {
+      downloadText(`${slug(item.title)}-raw.txt`, report.source_text || '', 'text/plain;charset=utf-8');
+      return;
+    }
+    downloadText(`${slug(item.title)}-parsed.json`, JSON.stringify(buildParsedExport(report), null, 2), 'application/json;charset=utf-8');
+  };
   return (
     <article className="overflow-hidden rounded border border-gray-800 bg-gray-900/50">
       <div className="grid gap-4 border-b border-gray-800 p-4 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -205,7 +305,27 @@ function ReportCard({ item }: { item: ReportCollectionItem }) {
             <Link to="/analyze" className="secondary-action">AI Analysis</Link>
             <Link to="/operations" className="secondary-action">Report intake</Link>
             {sourceHref && <a href={sourceHref} target="_blank" rel="noreferrer" className="secondary-action">Source</a>}
+            <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
+              {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
+            </button>
+            <button type="button" onClick={() => downloadReport('raw')} className="secondary-action">Download raw</button>
+            <button type="button" onClick={() => downloadReport('parsed')} className="secondary-action">Download parsed</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Delete report "${item.title}"?`)) deleteMutation.mutate();
+              }}
+              disabled={deleteMutation.isPending}
+              className="secondary-action border-red-900/70 text-red-300 hover:border-red-500 disabled:opacity-40"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </button>
           </div>
+          {(reparseMutation.isError || deleteMutation.isError) && (
+            <div className="mt-3 rounded border border-red-800 bg-red-950/30 p-2 text-xs text-red-200">
+              {(reparseMutation.error instanceof Error && reparseMutation.error.message) || (deleteMutation.error instanceof Error && deleteMutation.error.message) || 'Report action failed.'}
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-3 gap-2 text-xs">
           {TAG_BUCKETS.map(([key, label]) => (
@@ -223,6 +343,39 @@ function ReportCard({ item }: { item: ReportCollectionItem }) {
       </div>
     </article>
   );
+}
+
+function buildParsedExport(report: LinkedAnalysisReport) {
+  return {
+    session_id: report.session_id,
+    name: report.name,
+    provider: report.provider,
+    model: report.model,
+    domain: report.domain,
+    created_at: report.created_at,
+    summary: report.summary,
+    techniques: report.techniques,
+    apt_matches: report.apt_matches,
+    entities: report.entities,
+    report_images: report.report_images,
+    report_intake: report.report_intake,
+  };
+}
+
+function downloadText(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'report';
 }
 
 function TagBucket({ title, tags, empty }: { title: string; tags: ReportCollectionTag[]; empty: string }) {
@@ -279,6 +432,7 @@ function collectionTotals(items: ReportCollectionItem[]) {
 }
 
 function tagTone(type: string) {
+  if (type === 'report') return 'border-slate-700 bg-slate-950/40 text-slate-100';
   if (type === 'ttp') return 'border-cyan-800 bg-cyan-950/30 text-cyan-200';
   if (type === 'ioc') return 'border-amber-800 bg-amber-950/30 text-amber-200';
   if (type === 'cve') return 'border-red-800 bg-red-950/30 text-red-200';

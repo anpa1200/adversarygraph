@@ -305,7 +305,7 @@ services:
       MALWAREGRAPH_LONG_TIMEOUT_SECONDS: ${MALWAREGRAPH_LONG_TIMEOUT_SECONDS:-300}
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

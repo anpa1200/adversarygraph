@@ -11,8 +11,11 @@ import json
 import logging
 import re
 import uuid
+import ipaddress
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Annotated, Any, AsyncIterator
+from urllib.parse import urljoin, urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import get_session
+from app.core.safe_http import async_safe_get
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
 from app.models.ioc import IOCIndicator
@@ -83,6 +87,13 @@ class LinkedReportEntity(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class LinkedReportImage(BaseModel):
+    url: str
+    alt: str = ""
+    caption: str = ""
+    source: str = "remote-report"
+
+
 class LinkedReportOut(BaseModel):
     session_id: str
     name: str | None
@@ -97,6 +108,7 @@ class LinkedReportOut(BaseModel):
     techniques: list[TechniqueHit]
     apt_matches: list[AptMatch]
     entities: list[LinkedReportEntity]
+    report_images: list[LinkedReportImage] = Field(default_factory=list)
     report_intake: dict[str, Any] | None = None
 
 
@@ -138,8 +150,18 @@ class StoredResearchOut(BaseModel):
     status: str
     title: str
     filename: str | None = None
+    source_url: str = ""
     source_text_available: bool
     summary: str
+
+
+class UrlReportFetch(BaseModel):
+    title: str
+    source_url: str
+    content_type: str
+    source_text: str
+    report_images: list[LinkedReportImage] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 _MODEL_RE = re.compile(r'^[\w./:@-]{1,100}$')
@@ -172,6 +194,19 @@ class TechniqueReviewUpdate(BaseModel):
     evidence: str | None = Field(default=None, max_length=500)
     review_note: str | None = Field(default=None, max_length=1000)
     reviewer: str | None = Field(default=None, max_length=120)
+
+
+class ReportEditRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    source_text: str | None = Field(default=None, max_length=_MAX_STORED_REPORT_TEXT)
+    source_url: str | None = Field(default=None, max_length=1000)
+    publisher: str | None = Field(default=None, max_length=255)
+    summary: str | None = Field(default=None, max_length=5000)
+
+
+class ReportReparseRequest(BaseModel):
+    provider: str = "claude"
+    model: str | None = Field(default=None, max_length=100)
 
 
 class LogObservable(BaseModel):
@@ -442,6 +477,101 @@ async def store_research(
         status="completed",
         title=title,
         filename=filename,
+        source_url="",
+        source_text_available=bool(source_text.strip()),
+        summary=summary,
+    )
+
+
+@router.post("/sessions/research-url", response_model=StoredResearchOut)
+async def ingest_research_url(
+    url:      Annotated[str, Form()],
+    provider: Annotated[str, Form()] = "claude",
+    model:    Annotated[str | None, Form()] = None,
+    domain:   Annotated[str, Form()] = "enterprise-attack",
+    name:     Annotated[str | None, Form()] = None,
+    parse_with_ai: Annotated[bool, Form()] = True,
+    session:  AsyncSession = Depends(get_session),
+    user:     TeamUser = Depends(analyst),
+):
+    """Fetch a public report URL, store source text/images, and optionally parse it with AI."""
+    fetched = await _fetch_report_url(url)
+    title = (name or fetched.title or fetched.source_url).strip()[:255]
+    source_text = fetched.source_text[:_MAX_STORED_REPORT_TEXT]
+    if not source_text.strip():
+        raise HTTPException(400, "Report URL did not contain extractable text")
+
+    adapter = _get_adapter(provider, model) if parse_with_ai else None
+    db_session = AnalysisSession(
+        status="processing" if parse_with_ai else "completed",
+        name=title,
+        input_type="url",
+        filename=fetched.source_url,
+        llm_provider=adapter.provider if adapter else "none",
+        model=adapter.model if adapter else "not-parsed",
+        domain=domain,
+        source_text=source_text,
+    )
+    session.add(db_session)
+    await session.flush()
+
+    try:
+        if adapter:
+            result = await adapter.extract(fetched.source_text, domain)
+            await _validate_technique_ids(result, domain, session)
+            apt_matches = await _rank_apt_groups(result, domain, session)
+            await _store_result(db_session, result, apt_matches, session)
+            summary = result.summary
+        else:
+            summary = _research_storage_summary(fetched.source_text, fetched.source_url)
+            session.add(AnalysisResult(
+                session_id=db_session.id,
+                extracted_techniques=[],
+                apt_matches=[],
+                summary=summary,
+                raw_response="URL research stored without AI parsing. Use Parse with AI to extract ATT&CK mappings.",
+            ))
+
+        notes = {
+            "analysis_session_id": str(db_session.id),
+            "source_kind": "url-report",
+            "source_url": fetched.source_url,
+            "content_type": fetched.content_type,
+            "report_images": [image.model_dump() for image in fetched.report_images],
+            "metadata": fetched.metadata,
+        }
+        session.add(ReportIntake(
+            title=title,
+            url=fetched.source_url,
+            publisher=_publisher_from_url(fetched.source_url),
+            status="analyzed" if parse_with_ai else "stored",
+            summary=summary[:5000],
+            source_reliability="unknown",
+            actor_ids=[],
+            technique_ids=[tech.attack_id for tech in result.techniques] if adapter else [],
+            indicators=[item.model_dump() for item in extract_iocs_from_text(fetched.source_text, source_id="report-url", confidence=70)[:200]],
+            analyst_notes=json.dumps(notes, ensure_ascii=False),
+        ))
+        await audit(session, user, "analyze.ingest_research_url", "analysis_session", str(db_session.id), {
+            "domain": domain,
+            "source_url": fetched.source_url,
+            "parse_with_ai": parse_with_ai,
+            "image_count": len(fetched.report_images),
+        })
+        await session.commit()
+    except Exception as exc:
+        db_session.status = "failed"
+        db_session.error = str(exc)
+        await session.commit()
+        logger.error("URL report ingestion failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+    return StoredResearchOut(
+        session_id=str(db_session.id),
+        status="completed",
+        title=title,
+        filename=None,
+        source_url=fetched.source_url,
         source_text_available=bool(source_text.strip()),
         summary=summary,
     )
@@ -640,8 +770,119 @@ async def linked_report(
         techniques=techniques,
         apt_matches=apt_matches,
         entities=entities,
+        report_images=_report_images_from_intake(intake),
         report_intake=_report_intake_dict(intake) if intake else None,
     )
+
+
+@router.patch("/sessions/{session_id}/linked-report", response_model=LinkedReportOut)
+async def edit_linked_report(
+    session_id: str,
+    body: ReportEditRequest,
+    db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    """Edit stored report title, source text, source URL, publisher, or analyst summary."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session ID")
+
+    row = await db.execute(
+        select(AnalysisSession, AnalysisResult)
+        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.id == sid, AnalysisSession.status == "completed")
+    )
+    pair = row.first()
+    if not pair:
+        raise HTTPException(404, "Completed session not found")
+    sess, res = pair
+    if not res:
+        raise HTTPException(404, "Result not found")
+
+    intake = await _find_report_intake_for_session(db, session_id)
+    if body.name is not None:
+        sess.name = body.name.strip()[:255] or sess.name
+        if intake:
+            intake.title = sess.name or intake.title
+    if body.source_text is not None:
+        sess.source_text = body.source_text.strip()[:_MAX_STORED_REPORT_TEXT]
+    if body.summary is not None:
+        res.summary = body.summary.strip()
+        if intake:
+            intake.summary = res.summary[:5000]
+    if body.source_url is not None:
+        source_url = body.source_url.strip()
+        if source_url and not _is_public_http_url(source_url):
+            raise HTTPException(400, "Source URL must be public http/https")
+        sess.filename = source_url or sess.filename
+        if intake:
+            intake.url = source_url
+    if body.publisher is not None and intake:
+        intake.publisher = body.publisher.strip()[:255]
+
+    await audit(db, user, "analyze.edit_linked_report", "analysis_session", session_id)
+    await db.commit()
+    return await linked_report(session_id, db, user)
+
+
+@router.post("/sessions/{session_id}/reparse", response_model=AnalysisOut)
+async def reparse_linked_report(
+    session_id: str,
+    body: ReportReparseRequest,
+    db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    """Run AI extraction again over the stored raw report text."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session ID")
+
+    row = await db.execute(
+        select(AnalysisSession, AnalysisResult)
+        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.id == sid, AnalysisSession.status == "completed")
+    )
+    pair = row.first()
+    if not pair:
+        raise HTTPException(404, "Completed session not found")
+    sess, res = pair
+    if not res:
+        raise HTTPException(404, "Result not found")
+
+    source_text = (sess.source_text or "").strip()
+    if not source_text:
+        raise HTTPException(400, "No stored raw report text is available to reparse")
+
+    adapter = _get_adapter(body.provider, body.model)
+    try:
+        result = await adapter.extract(source_text, sess.domain)
+        await _validate_technique_ids(result, sess.domain, db)
+        apt_matches = await _rank_apt_groups(result, sess.domain, db)
+        sess.llm_provider = adapter.provider
+        sess.model = adapter.model
+        res.extracted_techniques = [technique_to_record(t) for t in result.techniques]
+        res.apt_matches = [m.model_dump() for m in apt_matches]
+        res.summary = result.summary
+        res.raw_response = result.raw_response[:10_000]
+        flag_modified(res, "extracted_techniques")
+        flag_modified(res, "apt_matches")
+        intake = await _find_report_intake_for_session(db, session_id)
+        if intake:
+            intake.summary = result.summary[:5000]
+            intake.status = "analyzed"
+            intake.technique_ids = [tech.attack_id for tech in result.techniques]
+            flag_modified(intake, "technique_ids")
+        await audit(db, user, "analyze.reparse_linked_report", "analysis_session", session_id, {"provider": adapter.provider, "technique_count": len(result.techniques)})
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Report reparse failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+    return _build_out(session_id, adapter.provider, adapter.model, result, apt_matches)
 
 
 # ── Delete a stored session ───────────────────────────────────────────────────
@@ -661,6 +902,9 @@ async def delete_session(
     exists = await db.execute(select(AnalysisSession.id).where(AnalysisSession.id == sid))
     if not exists.scalar_one_or_none():
         raise HTTPException(404, "Session not found")
+    intake = await _find_report_intake_for_session(db, session_id)
+    if intake:
+        await db.delete(intake)
     await audit(db, user, "analyze.delete_session", "analysis_session", session_id)
     await db.execute(sql_delete(AnalysisSession).where(AnalysisSession.id == sid))
     await db.commit()
@@ -844,7 +1088,258 @@ def _research_storage_summary(text: str, filename: str | None) -> str:
     ).strip()
 
 
+async def _fetch_report_url(url: str) -> UrlReportFetch:
+    source_url = url.strip()
+    if not _is_public_http_url(source_url):
+        raise HTTPException(400, "Report URL must use http or https and include a host")
+    try:
+        response = await async_safe_get(
+            source_url,
+            timeout=30,
+            headers={"User-Agent": "AdversaryGraph-ReportIngest/1.0", "Accept": "text/html,application/pdf,text/plain,*/*;q=0.8"},
+        )
+    except ValueError as exc:
+        raise HTTPException(400, f"Unsafe report URL blocked: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Report URL fetch failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(400, f"Report URL returned HTTP {response.status_code}")
+    content = response.content
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Fetched report exceeds 50 MB limit")
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    final_url = str(response.url) if str(response.url) else source_url
+    filename = urlparse(final_url).path.rsplit("/", 1)[-1] or "remote-report"
+
+    if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
+        text = extract_text(content, filename if filename.lower().endswith(".pdf") else "remote-report.pdf")
+        return UrlReportFetch(
+            title=filename or final_url,
+            source_url=final_url,
+            content_type=content_type or "application/pdf",
+            source_text=text,
+            report_images=[],
+            metadata={"parser": "pdf-text", "publisher": _publisher_from_url(final_url)},
+        )
+
+    if content_type in {"text/html", "application/xhtml+xml", ""} or filename.lower().endswith((".html", ".htm", "/")):
+        decoded = _decode_response_text(response)
+        parsed = _extract_html_report(decoded, final_url)
+        return UrlReportFetch(
+            title=parsed["title"] or filename or final_url,
+            source_url=final_url,
+            content_type=content_type or "text/html",
+            source_text=parsed["text"],
+            report_images=parsed["images"],
+            metadata={"parser": "html-text-images", "publisher": _publisher_from_url(final_url), "description": parsed["description"]},
+        )
+
+    text = extract_text(content, filename or "remote-report.txt")
+    return UrlReportFetch(
+        title=filename or final_url,
+        source_url=final_url,
+        content_type=content_type or "application/octet-stream",
+        source_text=text,
+        report_images=[],
+        metadata={"parser": "plain-text", "publisher": _publisher_from_url(final_url)},
+    )
+
+
+class _ReportHTMLParser(HTMLParser):
+    _BLOCK_TAGS = {"p", "div", "section", "article", "header", "footer", "li", "tr", "table", "h1", "h2", "h3", "h4", "h5", "h6", "br"}
+    _SKIP_TAGS = {"script", "style", "noscript", "svg", "canvas", "iframe", "form", "button"}
+    _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+    _IRRELEVANT_RE = re.compile(
+        r"\b(?:ad|ads|advert|advertisement|banner|breadcrumb|cookie|consent|footer|header|hero|masthead|menu|nav|newsletter|"
+        r"promo|recommend|related|share|sidebar|social|sponsor|subscribe|toolbar|widget)\b",
+        re.IGNORECASE,
+    )
+    _CONTENT_RE = re.compile(
+        r"\b(?:article|body-content|content-body|entry-content|main-content|markdown|post-content|report|report-body|"
+        r"research|rich-text|story|threat-report)\b",
+        re.IGNORECASE,
+    )
+    _IMAGE_NOISE_RE = re.compile(
+        r"\b(?:ad|advert|avatar|banner|button|cookie|favicon|hero|icon|logo|pixel|promo|share|social|sponsor|sprite|tracking)\b",
+        re.IGNORECASE,
+    )
+
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.text_parts: list[str] = []
+        self.content_text_parts: list[str] = []
+        self.images: list[LinkedReportImage] = []
+        self.content_images: list[LinkedReportImage] = []
+        self.title_parts: list[str] = []
+        self.description = ""
+        self._skip_depth = 0
+        self._content_depth = 0
+        self._content_stack: list[bool] = []
+        self._in_title = False
+        self._seen_images: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        attr = {key.lower(): value or "" for key, value in attrs}
+        if self._skip_depth:
+            if tag not in self._VOID_TAGS:
+                self._skip_depth += 1
+            return
+        if tag in self._SKIP_TAGS or self._is_irrelevant_container(tag, attr):
+            self._skip_depth = 1
+            return
+        starts_content = self._is_content_container(tag, attr)
+        self._content_stack.append(starts_content)
+        if starts_content:
+            self._content_depth += 1
+        if tag == "title":
+            self._in_title = True
+        if tag == "meta":
+            name = (attr.get("name") or attr.get("property") or "").lower()
+            if name in {"description", "og:description", "twitter:description"} and not self.description:
+                self.description = attr.get("content", "").strip()[:1000]
+        if tag == "img":
+            self._add_image(attr)
+        if tag in self._BLOCK_TAGS:
+            self._append_text("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if tag == "title":
+            self._in_title = False
+        if tag in self._BLOCK_TAGS:
+            self._append_text("\n")
+        if self._content_stack:
+            started_content = self._content_stack.pop()
+            if started_content and self._content_depth:
+                self._content_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        clean = re.sub(r"\s+", " ", data).strip()
+        if not clean:
+            return
+        if self._in_title:
+            self.title_parts.append(clean)
+        self._append_text(clean)
+        self._append_text(" ")
+
+    def _append_text(self, value: str) -> None:
+        self.text_parts.append(value)
+        if self._content_depth:
+            self.content_text_parts.append(value)
+
+    def _add_image(self, attr: dict[str, str]) -> None:
+        raw_src = attr.get("src") or attr.get("data-src") or attr.get("data-original") or _first_srcset_url(attr.get("srcset", ""))
+        if not raw_src:
+            return
+        image_url = urljoin(self.base_url, raw_src.strip())
+        if not _is_public_http_url(image_url) or image_url in self._seen_images or self._is_noise_image(attr, image_url):
+            return
+        self._seen_images.add(image_url)
+        alt = re.sub(r"\s+", " ", attr.get("alt", "")).strip()[:300]
+        image = LinkedReportImage(url=image_url, alt=alt, caption=alt, source="remote-html-img")
+        self.images.append(image)
+        if self._content_depth:
+            self.content_images.append(image)
+
+    def _is_irrelevant_container(self, tag: str, attr: dict[str, str]) -> bool:
+        if tag in {"nav", "aside", "footer"}:
+            return True
+        role = attr.get("role", "").lower()
+        if role in {"banner", "navigation", "complementary", "contentinfo", "search"}:
+            return True
+        haystack = " ".join(attr.get(key, "") for key in ("id", "class", "role", "aria-label", "data-testid", "data-test", "data-component"))
+        return bool(self._IRRELEVANT_RE.search(haystack))
+
+    def _is_content_container(self, tag: str, attr: dict[str, str]) -> bool:
+        if tag in {"article", "main"}:
+            return True
+        haystack = " ".join(attr.get(key, "") for key in ("id", "class", "role", "itemprop", "data-testid", "data-test"))
+        return bool(self._CONTENT_RE.search(haystack))
+
+    def _is_noise_image(self, attr: dict[str, str], image_url: str) -> bool:
+        haystack = " ".join(attr.get(key, "") for key in ("id", "class", "alt", "title", "role", "aria-label")) + " " + image_url
+        if self._IMAGE_NOISE_RE.search(haystack):
+            return True
+        width = _safe_int(attr.get("width", ""))
+        height = _safe_int(attr.get("height", ""))
+        return (width is not None and width <= 4) or (height is not None and height <= 4)
+
+
+def _extract_html_report(html: str, base_url: str) -> dict[str, Any]:
+    parser = _ReportHTMLParser(base_url)
+    parser.feed(html[:5_000_000])
+    title = re.sub(r"\s+", " ", " ".join(parser.title_parts)).strip()[:500]
+    content_text = _clean_html_text("".join(parser.content_text_parts))
+    fallback_text = _clean_html_text("".join(parser.text_parts))
+    text = content_text if len(content_text) >= 500 or (content_text and len(content_text) >= len(fallback_text) * 0.25) else fallback_text
+    if parser.description and parser.description not in text[:2000]:
+        text = f"{parser.description}\n\n{text}".strip()
+    images = parser.content_images if content_text and parser.content_images else parser.images
+    return {"title": title, "description": parser.description, "text": text[:_MAX_STORED_REPORT_TEXT], "images": images[:80]}
+
+
+def _clean_html_text(text: str) -> str:
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def _first_srcset_url(srcset: str) -> str:
+    first = srcset.split(",", 1)[0].strip()
+    return first.split()[0] if first else ""
+
+
+def _safe_int(value: str) -> int | None:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_response_text(response) -> str:
+    try:
+        return response.text
+    except UnicodeDecodeError:
+        return response.content.decode("utf-8", errors="replace")
+
+
+def _is_public_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    hostname = parsed.hostname.lower().strip("[]")
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".localhost"):
+        return False
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return True
+    return not (
+        addr.is_loopback
+        or addr.is_link_local
+        or addr.is_private
+        or addr.is_multicast
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
+
+
+def _publisher_from_url(url: str) -> str:
+    return (urlparse(url).hostname or "").removeprefix("www.")[:255]
+
+
 def _report_intake_dict(intake: ReportIntake) -> dict[str, Any]:
+    notes = _safe_json_obj(intake.analyst_notes)
     return {
         "id": str(intake.id),
         "title": intake.title,
@@ -855,9 +1350,39 @@ def _report_intake_dict(intake: ReportIntake) -> dict[str, Any]:
         "actor_ids": intake.actor_ids or [],
         "technique_ids": intake.technique_ids or [],
         "indicator_count": len(intake.indicators or []),
+        "report_images": [image.model_dump() for image in _report_images_from_intake(intake)],
+        "content_type": str(notes.get("content_type") or ""),
+        "source_kind": str(notes.get("source_kind") or ""),
         "created_at": intake.created_at.isoformat() if intake.created_at else "",
         "updated_at": intake.updated_at.isoformat() if intake.updated_at else "",
     }
+
+
+def _report_images_from_intake(intake: ReportIntake | None) -> list[LinkedReportImage]:
+    if not intake:
+        return []
+    notes = _safe_json_obj(intake.analyst_notes)
+    images = notes.get("report_images")
+    if not isinstance(images, list):
+        return []
+    result: list[LinkedReportImage] = []
+    seen: set[str] = set()
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        url = str(image.get("url") or "").strip()
+        if not _is_public_http_url(url) or url in seen:
+            continue
+        seen.add(url)
+        result.append(LinkedReportImage(
+            url=url,
+            alt=str(image.get("alt") or "")[:300],
+            caption=str(image.get("caption") or image.get("alt") or "")[:500],
+            source=str(image.get("source") or "remote-report")[:80],
+        ))
+        if len(result) >= 80:
+            break
+    return result
 
 
 def _report_collection_tags(
@@ -868,6 +1393,7 @@ def _report_collection_tags(
     entities: list[LinkedReportEntity],
 ) -> dict[str, list[ReportCollectionTag]]:
     tags: dict[str, list[ReportCollectionTag]] = {
+        "reports": [],
         "ttps": [],
         "iocs": [],
         "cves": [],
@@ -875,6 +1401,18 @@ def _report_collection_tags(
         "sectors": [],
         "infrastructure": [],
     }
+    tags["reports"].append(_collection_tag(
+        "report",
+        sess.name or sess.filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
+        str(sess.id),
+        f"/analyze/{sess.id}/report",
+        100,
+        {
+            "source_url": intake.url if intake else "",
+            "publisher": intake.publisher if intake else "",
+            "image_count": len(_report_images_from_intake(intake)),
+        },
+    ))
     for entity in entities:
         if entity.type == "technique":
             tags["ttps"].append(_collection_tag("ttp", entity.label, entity.id, entity.route, 90, entity.metadata))
@@ -932,6 +1470,7 @@ def _collection_tag(
 
 def _tag_bucket_limit(key: str) -> int:
     return {
+        "reports": 50,
         "ttps": 80,
         "iocs": 120,
         "cves": 80,
