@@ -14,6 +14,7 @@ from app.core.safe_http import require_body_size
 _limit_10mb = require_body_size(10 * 1024 * 1024)
 from app.models.operations import ReportIntake
 from app.models.pipeline import AuditEvent, CollectionRun, CollectionSource, DetectionVersion, EnrichmentResult, Observable
+from app.services.asset_intel import retrohunt_assets
 from app.services.atlas import normalize_atlas
 from app.services.auth import TeamUser, analyst, audit, current_user
 from app.services.collection import extract_observables, fetch_rss, misp_reports, stix_reports
@@ -21,6 +22,7 @@ from app.services.detection_feeds import ensure_default_detection_feeds, sync_de
 from app.services.detections import generate_detection, generate_detection_with_ai, validate_detection
 from app.services.enrichment import enrich_observable
 from app.services.sandbox_feeds import list_sandbox_behaviors, sync_sandbox_feed
+from app.services.taxonomy import normalize_freeform_tags
 
 router = APIRouter(prefix="/pipeline", tags=["Collection and Detection Pipeline"])
 
@@ -106,7 +108,13 @@ async def ingest_reports(db: AsyncSession, reports: list[dict], publisher: str, 
             for indicator in indicators:
                 _, was_created = await add_observable(db, indicator, url or source_ref)
                 observable_count += int(was_created)
-    return {"items_created": created, "observables_created": observable_count}
+    asset_retrohunt = None
+    if created:
+        try:
+            asset_retrohunt = await retrohunt_assets(db)
+        except Exception:
+            asset_retrohunt = None
+    return {"items_created": created, "observables_created": observable_count, "asset_retrohunt": asset_retrohunt}
 
 
 @router.get("/me")
@@ -225,7 +233,7 @@ async def sandbox_behaviors(limit: int = 100, db: AsyncSession = Depends(get_ses
 @router.post("/observables", status_code=201)
 async def create_observable(body: ObservableBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     row, created = await add_observable(db, {**body.model_dump(), "normalized_value": body.value.lower().strip()})
-    row.status = body.status; row.confidence = body.confidence; row.tags = body.tags; row.source_refs = body.source_refs
+    row.status = body.status; row.confidence = body.confidence; row.tags = normalize_freeform_tags(body.tags); row.source_refs = body.source_refs
     await audit(db, user, "observable.create" if created else "observable.update", "observable", str(row.id))
     await db.commit(); await db.refresh(row)
     return out(row)

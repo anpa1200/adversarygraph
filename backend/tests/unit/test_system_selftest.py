@@ -6,6 +6,7 @@ from app.api.routes.system import (
     _check_status,
     _overall_selftest_status,
     _storage_writable_check,
+    _taxonomy_normalization_check,
 )
 
 
@@ -110,3 +111,31 @@ def test_storage_writable_check_creates_and_removes_probe(tmp_path):
     assert check.status == "ok"
     assert check.details["writable"] is True
     assert not (tmp_path / ".adversarygraph-selftest").exists()
+
+
+def test_taxonomy_normalization_check_warns_on_raw_tags():
+    check = _taxonomy_normalization_check(
+        {
+            "checked_rows": 3,
+            "normalized": False,
+            "raw_tag_examples": {"ioc_indicators": ["phishing"]},
+            "convention": "namespace:value",
+        }
+    )
+
+    assert check.name == "taxonomy_normalized"
+    assert check.status == "warning"
+    assert "raw unnamespaced tags" in check.message
+
+
+def test_taxonomy_normalization_check_passes_when_clean():
+    check = _taxonomy_normalization_check(
+        {
+            "checked_rows": 3,
+            "normalized": True,
+            "raw_tag_examples": {},
+            "convention": "namespace:value",
+        }
+    )
+
+    assert check.status == "ok"

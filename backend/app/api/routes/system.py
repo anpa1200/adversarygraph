@@ -5,19 +5,21 @@ from time import perf_counter, sleep
 from typing import Any
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from app.core.config import settings
-from app.core.database import async_session_factory
+from app.core.database import async_session_factory, get_session
 from app.core.version import APP_VERSION
 from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelationship, Tactic, Technique
 from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
+from app.services.auth import TeamUser, admin, audit
 from app.services.cve_intel import ensure_cve_sources
 from app.services.startup_status import startup_status
+from app.services.taxonomy_migration import normalize_existing_taxonomy, taxonomy_normalization_status
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -40,6 +42,25 @@ class SelfTestResult(BaseModel):
 @router.get("/startup")
 async def startup() -> dict[str, Any]:
     return startup_status.snapshot()
+
+
+@router.get("/taxonomy/status")
+async def taxonomy_status(db=Depends(get_session), _: TeamUser = Depends(admin)) -> dict[str, Any]:
+    return await taxonomy_normalization_status(db)
+
+
+@router.post("/taxonomy/normalize")
+async def normalize_taxonomy(db=Depends(get_session), user: TeamUser = Depends(admin)) -> dict[str, Any]:
+    result = await normalize_existing_taxonomy(db, commit=False)
+    await audit(
+        db,
+        user,
+        "system.taxonomy_normalize",
+        "taxonomy",
+        details={"rows_changed": result.get("rows_changed", 0), "tables": result.get("tables", {})},
+    )
+    await db.commit()
+    return result
 
 
 def _check(name: str, ok: bool, message: str, details: dict[str, Any] | None = None) -> SelfTestCheck:
@@ -159,6 +180,113 @@ def _api_key_check() -> SelfTestCheck:
             "category": "feed",
             "required_for": ["OpenCTI pull/push/bidirectional sync"],
         },
+        "nvd": {
+            "configured": bool(settings.nvd_api_key),
+            "env_var": "NVD_API_KEY",
+            "category": "product_security",
+            "auth_mode": "optional; public sync works without a key at lower rate limits",
+            "required_for": ["higher-rate NVD CVE and CVSS enrichment"],
+        },
+        "github_advisory_database": {
+            "configured": bool(settings.github_token),
+            "env_var": "GITHUB_TOKEN",
+            "category": "product_security",
+            "auth_mode": "optional; public sync works without a token at lower rate limits",
+            "required_for": ["higher-rate GitHub Advisory Database sync"],
+        },
+        "gitlab_advisory_database": {
+            "configured": bool(settings.gitlab_token),
+            "env_var": "GITLAB_TOKEN",
+            "category": "product_security",
+            "required_for": ["GitLab advisory/package security lookups"],
+        },
+        "msrc": {
+            "configured": bool(settings.msrc_api_key),
+            "env_var": "MSRC_API_KEY",
+            "category": "product_security",
+            "auth_mode": "optional for many public Microsoft Security Update Guide lookups",
+            "required_for": ["Microsoft product security update enrichment"],
+        },
+        "deps_dev": {
+            "configured": bool(settings.deps_dev_api_key),
+            "env_var": "DEPS_DEV_API_KEY",
+            "category": "product_security",
+            "auth_mode": "optional depending API plan",
+            "required_for": ["package dependency graph enrichment"],
+        },
+        "vulncheck": {
+            "configured": bool(settings.vulncheck_api_key),
+            "env_var": "VULNCHECK_API_KEY",
+            "category": "product_security",
+            "required_for": ["VulnCheck KEV, NVD++, exploit, and ransomware-enriched CVE intelligence"],
+        },
+        "snyk": {
+            "configured": bool(settings.snyk_token),
+            "env_var": "SNYK_TOKEN",
+            "category": "product_security",
+            "required_for": ["Snyk package vulnerability and license intelligence"],
+        },
+        "socket": {
+            "configured": bool(settings.socket_token),
+            "env_var": "SOCKET_TOKEN",
+            "category": "product_security",
+            "required_for": ["Socket dependency supply-chain risk intelligence"],
+        },
+        "endoflife_date": {
+            "configured": bool(settings.endoflife_date_token),
+            "env_var": "ENDOFLIFE_DATE_TOKEN",
+            "category": "product_security",
+            "auth_mode": "optional; public lifecycle data can be used without a token",
+            "required_for": ["commercial lifecycle API access if enabled"],
+        },
+        "hibp": {
+            "configured": bool(settings.hibp_api_key),
+            "env_var": "HIBP_API_KEY",
+            "category": "exposure",
+            "required_for": ["domain breach and exposed-account monitoring"],
+        },
+        "leakix": {
+            "configured": bool(settings.leakix_api_key),
+            "env_var": "LEAKIX_API_KEY",
+            "category": "exposure",
+            "required_for": ["internet-exposed service and leak intelligence"],
+        },
+        "spycloud": {
+            "configured": bool(settings.spycloud_api_key),
+            "env_var": "SPYCLOUD_API_KEY",
+            "category": "exposure",
+            "required_for": ["breach, credential, and stealer-log exposure monitoring"],
+        },
+        "flare": {
+            "configured": bool(settings.flare_api_key),
+            "env_var": "FLARE_API_KEY",
+            "category": "exposure",
+            "required_for": ["external exposure and dark web monitoring"],
+        },
+        "darkowl": {
+            "configured": bool(settings.darkowl_api_key),
+            "env_var": "DARKOWL_API_KEY",
+            "category": "exposure",
+            "required_for": ["darknet intelligence monitoring"],
+        },
+        "intel471": {
+            "configured": bool(settings.intel471_api_key),
+            "env_var": "INTEL471_API_KEY",
+            "category": "exposure",
+            "required_for": ["cybercrime actor, marketplace, and leak reporting"],
+        },
+        "kela": {
+            "configured": bool(settings.kela_api_key),
+            "env_var": "KELA_API_KEY",
+            "category": "exposure",
+            "required_for": ["cybercrime and dark web exposure reporting"],
+        },
+        "recorded_future": {
+            "configured": bool(settings.recorded_future_api_key),
+            "env_var": "RECORDED_FUTURE_API_KEY",
+            "category": "product_security",
+            "required_for": ["Recorded Future vulnerability, actor, and exposure enrichment"],
+        },
     }
     configured = [name for name, data in providers.items() if data["configured"]]
     missing_optional = [name for name, data in providers.items() if not data["configured"]]
@@ -214,6 +342,22 @@ def _auth_readiness_check(total_users: int, enabled_users: int) -> SelfTestCheck
         "ok",
         f"Authentication is enabled with {enabled_users} enabled user account{'s' if enabled_users != 1 else ''}.",
         details,
+    )
+
+
+def _taxonomy_normalization_check(status: dict[str, Any]) -> SelfTestCheck:
+    if status.get("normalized"):
+        return _check_status(
+            "taxonomy_normalized",
+            "ok",
+            f"Taxonomy check passed for {status.get('checked_rows', 0)} sampled rows.",
+            status,
+        )
+    return _check_status(
+        "taxonomy_normalized",
+        "warning",
+        "Some sampled rows still contain raw unnamespaced tags. Run /api/system/taxonomy/normalize as admin.",
+        status,
     )
 
 
@@ -606,6 +750,7 @@ async def selftest() -> SelfTestResult:
                     },
                 )
             )
+            checks.append(_taxonomy_normalization_check(await taxonomy_normalization_status(session)))
     except Exception as exc:
         checks.append(
             _check(

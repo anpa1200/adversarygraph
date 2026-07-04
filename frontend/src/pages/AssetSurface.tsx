@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { assetSurfaceApi, layersApi } from '@/api/client';
-import type { AssetSurfaceAnalysisResult, AssetSurfaceAsset } from '@/api/client';
+import type { AssetIntelMatch, AssetSurfaceAnalysisResult, AssetSurfaceAsset } from '@/api/client';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 import { useAppStore } from '@/store';
 
@@ -19,11 +19,11 @@ const PROVIDERS: { id: Provider; label: string; model: string }[] = [
   { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M3' },
 ];
 
-const SAMPLE = `name,type,environment,owner,ip,domain,ports,technologies,exposure,criticality,tags
-customer-portal,web-app,prod,Digital,203.0.113.10,portal.example.com,"80,443,8443","nginx,nodejs,postgres",internet,critical,"customer-data,pci"
-vpn-gateway,remote-access,prod,IT,198.51.100.20,vpn.example.com,"443,500,4500","vpn,sso,mfa",internet,high,"remote-access"
-ad-dc-01,identity,prod,IT,10.10.1.10,ad01.corp.local,"53,88,135,389,445","active-directory,windows",internal,critical,"identity"
-postgres-payments,database,prod,Payments,10.20.5.15,,"5432","postgresql",internal,critical,"database,payments"`;
+const SAMPLE = `asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
+asset-0001,customer-portal,web-app,prod,Digital,203.0.113.10,portal.example.com,"80;443;8443","nginx;nodejs;postgres",internet,critical,"customer-data;pci"
+asset-0002,vpn-gateway,remote-access,prod,IT,198.51.100.20,vpn.example.com,"443;500;4500","vpn;sso;mfa",internet,high,"remote-access;identity-edge"
+asset-0003,ad-dc-01,identity,prod,IT,10.10.1.10,ad01.corp.local,"53;88;135;389;445","active-directory;windows;kerberos;ldap",internal,critical,"identity;tier-0"
+asset-0004,postgres-payments,database,prod,Payments,10.20.5.15,,"5432","postgresql;linux",internal,critical,"database;payments"`;
 
 export function AssetSurface() {
   const navigate = useNavigate();
@@ -43,12 +43,22 @@ export function AssetSurface() {
     queryKey: ['asset-surface-cases'],
     queryFn: assetSurfaceApi.cases,
   });
+  const assetsQuery = useQuery({
+    queryKey: ['asset-registry-assets'],
+    queryFn: assetSurfaceApi.assets,
+  });
+  const matchesQuery = useQuery({
+    queryKey: ['asset-intel-matches'],
+    queryFn: () => assetSurfaceApi.intelMatches({ limit: 100 }),
+  });
   const mutation = useMutation({
     mutationFn: (form: FormData) => assetSurfaceApi.analyze(form),
     onSuccess: nextResult => {
       setResult(nextResult);
       setActiveCaseId(nextResult.case_id ?? null);
       queryClient.invalidateQueries({ queryKey: ['asset-surface-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-registry-assets'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-intel-matches'] });
     },
   });
   const loadCase = useMutation({
@@ -73,6 +83,14 @@ export function AssetSurface() {
   });
   const saveLayer = useMutation({
     mutationFn: (ids: string[]) => layersApi.save(`${inventoryName || 'Asset surface'} TTP layer`, ids, domain),
+  });
+  const retrohunt = useMutation({
+    mutationFn: () => assetSurfaceApi.retrohunt(),
+    onSuccess: summary => {
+      setResult(prev => prev ? { ...prev, retrohunt_summary: summary } : prev);
+      queryClient.invalidateQueries({ queryKey: ['asset-intel-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-registry-assets'] });
+    },
   });
 
   const onDrop = ([nextFile]: File[]) => {
@@ -103,6 +121,11 @@ export function AssetSurface() {
   const allTtpIds = useMemo(() => {
     return Array.from(new Set((result?.assets ?? []).flatMap(asset => asset.ttp_candidates.map(ttp => ttp.attack_id.toUpperCase())))).sort();
   }, [result?.assets]);
+
+  const visibleMatches = useMemo(() => {
+    const fromResult = result?.intel_matches ?? [];
+    return fromResult.length ? fromResult : (matchesQuery.data ?? []);
+  }, [matchesQuery.data, result?.intel_matches]);
 
   const run = () => {
     const form = new FormData();
@@ -295,6 +318,30 @@ export function AssetSurface() {
                 <Metric label="Provider" value={result.provider ?? 'baseline'} compact />
               </section>
 
+              <section className="grid gap-3 lg:grid-cols-4">
+                <Metric label="Saved Registry Assets" value={assetsQuery.data?.length ?? result.registry_summary?.asset_ids?.length ?? 0} />
+                <Metric label="Created / Updated" value={`${result.registry_summary?.created ?? 0} / ${result.registry_summary?.updated ?? 0}`} compact />
+                <Metric label="Retrohunt Matches" value={result.retrohunt_summary?.matches_created ?? visibleMatches.length ?? 0} />
+                <div className="rounded border border-gray-800 bg-gray-950 p-4">
+                  <button type="button" disabled={retrohunt.isPending} onClick={() => retrohunt.mutate()} className="primary-action w-full disabled:opacity-40">
+                    {retrohunt.isPending ? 'Retrohunting...' : 'Retrohunt Saved Assets'}
+                  </button>
+                  <p className="mt-2 text-[11px] leading-5 text-gray-500">
+                    Rechecks saved assets against current CVEs, actor techniques, and report intake.
+                  </p>
+                </div>
+              </section>
+
+              <Panel title="Asset Retrohunt Matches">
+                <AssetIntelMatches matches={visibleMatches} loading={matchesQuery.isLoading || retrohunt.isPending} />
+                {retrohunt.data && (
+                  <div className="mt-3 text-xs text-green-400">
+                    Retrohunt checked {retrohunt.data.assets_checked ?? 0} assets and created {retrohunt.data.matches_created ?? 0} matches.
+                  </div>
+                )}
+                {retrohunt.error && <div className="mt-3 text-xs text-red-300">{String(retrohunt.error)}</div>}
+              </Panel>
+
               <Panel title="Executive Summary">
                 <p className="text-sm leading-6 text-gray-300">{result.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -431,6 +478,64 @@ function AssetRow({ asset }: { asset: AssetSurfaceAsset }) {
         </td>
       </tr>
     </>
+  );
+}
+
+function AssetIntelMatches({ matches, loading }: { matches: AssetIntelMatch[]; loading: boolean }) {
+  if (loading && !matches.length) {
+    return <div className="rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-500">Checking saved assets against current intelligence...</div>;
+  }
+  if (!matches.length) {
+    return (
+      <div className="rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-500">
+        No saved asset relevance matches yet. Upload assets, then sync CVEs/reports or run Retrohunt Saved Assets.
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-left text-xs">
+        <thead className="border-b border-gray-800 text-gray-500">
+          <tr>
+            <th className="py-2 pr-3">Source</th>
+            <th className="py-2 pr-3">Match</th>
+            <th className="py-2 pr-3">Score</th>
+            <th className="py-2 pr-3">Reason</th>
+            <th className="py-2 pr-3">Evidence</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {matches.slice(0, 30).map(match => (
+            <tr key={match.id} className="align-top">
+              <td className="py-3 pr-3">
+                <div className="font-semibold uppercase text-mitre-accent">{match.source_type}</div>
+                <div className="mt-1 font-mono text-[11px] text-gray-500">{match.source_id}</div>
+              </td>
+              <td className="py-3 pr-3">
+                {match.route ? (
+                  <a href={match.route} className="font-semibold text-white hover:text-mitre-accent hover:underline">{match.title || match.source_id}</a>
+                ) : (
+                  <span className="font-semibold text-white">{match.title || match.source_id}</span>
+                )}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {match.tags.slice(0, 5).map(tag => <Chip key={`${match.id}-${tag}`}>{tag}</Chip>)}
+                </div>
+              </td>
+              <td className="py-3 pr-3">
+                <div className="font-bold text-white">{match.relevance_score}</div>
+                <div className="mt-1 text-[11px] text-gray-500">conf {match.confidence}</div>
+              </td>
+              <td className="max-w-[260px] py-3 pr-3 leading-5 text-gray-400">{match.reason}</td>
+              <td className="max-w-[320px] py-3 pr-3">
+                <ul className="space-y-1 text-gray-500">
+                  {match.evidence.slice(0, 3).map((item, index) => <li key={`${match.id}-e-${index}`}>{item}</li>)}
+                </ul>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

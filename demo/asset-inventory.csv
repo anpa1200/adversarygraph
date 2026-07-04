@@ -1,5 +1,5 @@
-asset_id,name,type,environment,owner,ip,domain,ports,technologies,criticality,tags
-vpn-001,edge-vpn,network,prod,identity-team,10.20.1.10,login-gateway.demo.example,"443,8443","vpn,nginx,oidc",high,"internet,identity"
-web-legacy-01,legacy-admin,server,prod,platform-team,10.20.2.44,legacy-admin.demo.example,"80,443","apache,php,mysql",high,"internet,legacy"
-win-ops-01,win-demo-01,workstation,prod,ops-team,10.10.24.55,win-demo-01.demo.local,"445,3389","windows,sysmon,powershell",medium,"endpoint,admin"
-db-01,customer-db,database,prod,data-team,10.30.5.20,db-01.demo.local,"5432","postgresql",critical,"internal,data"
+asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
+vpn-001,edge-vpn,remote-access,prod,identity-team,10.20.1.10,login-gateway.demo.example,"443;8443","vpn;nginx;oidc",internet,high,"identity;remote-access"
+web-legacy-01,legacy-admin,web-app,prod,platform-team,10.20.2.44,legacy-admin.demo.example,"80;443","apache;php;mysql",internet,high,"legacy;admin"
+win-ops-01,win-demo-01,workstation,prod,ops-team,10.10.24.55,win-demo-01.demo.local,"445;3389","windows;sysmon;powershell",internal,medium,"endpoint;admin"
+db-01,customer-db,database,prod,data-team,10.30.5.20,db-01.demo.local,"5432","postgresql;linux",internal,critical,"data;customer-data"

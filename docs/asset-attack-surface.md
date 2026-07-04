@@ -37,6 +37,75 @@ listed in
 
 ## Supported Inventory Fields
 
+For strict parsing, use the canonical CSV schema below. The engine still accepts
+legacy aliases, but production imports should use this exact header:
+
+```csv
+asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
+```
+
+Reference files:
+
+- [`asset-inventory-template.csv`](../asset-inventory-template.csv) contains
+  only the deployed-asset header.
+- [`asset-inventory-example.csv`](../asset-inventory-example.csv) contains a
+  realistic multi-asset example. The parser still accepts optional legacy
+  product, supplier, and dependency columns for backwards compatibility.
+- Threat Radar product-security workflows should use related product,
+  component, SBOM dependency, and exposure tables instead of placing those
+  fields in one asset CSV. See [`threat-radar.md`](threat-radar.md).
+- [`taxonomy-and-label-convention.md`](taxonomy-and-label-convention.md)
+  documents the shared `namespace:value` convention used across assets, TTPs,
+  actors, CVEs, sectors, risk, technologies, products, suppliers,
+  dependencies, and generic tags.
+
+### Strict CSV Schema
+
+| Column | Required | Format | Purpose |
+|---|---:|---|---|
+| `asset_id` | Yes | Stable CMDB/asset ID, unique per row | Persistent registry fingerprint fallback and case traceability |
+| `name` | Yes | Human-readable asset, product, service, or supplier system name | Analyst display and text matching |
+| `asset_type` | Yes | Examples: `web-app`, `api-gateway`, `database`, `identity`, `remote-access`, `ci-cd`, `saas`, `container-platform`, `backup-storage`, `file-server` | Risk scoring and TTP mapping |
+| `environment` | Yes | `prod`, `stage`, `dev`, `test`, `corp`, `cloud`, `third-party`, or similar controlled value | Scope, prioritization, and tags |
+| `owner` | Recommended | Team, service owner, business unit, or vendor owner | Workflow routing and accountability |
+| `ip_addresses` | Recommended | One or more IPv4 addresses separated by `;` | IOC/asset correlation and exposure inference |
+| `domains` | Recommended | One or more FQDNs/domains separated by `;` | IOC/report correlation and exposure inference |
+| `ports` | Recommended | TCP/UDP listener numbers separated by `;` | Entry-point and TTP mapping |
+| `technologies` | Yes | Platforms/services separated by `;`, for example `nginx;nodejs;postgresql` | Main technology labels used for CVE/report matching |
+| `exposure` | Yes | One of `internet`, `internal`, `third-party`, `unknown` | Risk score, validation priority, and TTP mapping |
+| `criticality` | Yes | One of `critical`, `high`, `medium`, `low` | Risk score and prioritization |
+| `tags` | Recommended | Business/security tags separated by `;`, for example `pci;tier-0;customer-data` | Filtering, statistics, and analyst context |
+
+Strict import rules:
+
+- Use UTF-8 CSV with a header row.
+- Use comma as the CSV delimiter.
+- Use semicolon (`;`) inside multi-value fields. Quote the whole cell when it
+  contains semicolons, commas, or spaces.
+- Keep `asset_id` stable across uploads. This lets AdversaryGraph update the
+  same asset instead of creating duplicate registry entries when domain/IP data
+  changes.
+- Use lowercase controlled values for `exposure` and `criticality`.
+- Use stable taxonomy values. The parser normalizes labels into the shared
+  `namespace:value` convention, for example `technology:nginx`,
+  `product:globalprotect-vpn`, `supplier:microsoft`, `risk:critical`,
+  `exposure:internet`, `ttp:T1190`, and `cve:CVE-2024-3400`.
+- Do not put credentials, secrets, private keys, or exploit payloads in the
+  inventory.
+
+Example:
+
+```csv
+asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
+asset-0001,customer-portal,web-app,prod,Digital,203.0.113.10,portal.example.com,"80;443;8443","nginx;nodejs;postgres",internet,critical,"customer-data;pci"
+asset-0002,vpn-gateway,remote-access,prod,IT,198.51.100.20,vpn.example.com,"443;500;4500","vpn;sso;mfa",internet,high,"remote-access;identity-edge"
+```
+
+After upload, AdversaryGraph persists normalized assets in the Asset Registry
+and immediately retrohunts existing CVEs, actor/TTP relationships, report
+intake, and IOC context for relevance to these labels. New CVE and report
+ingestion paths also re-run the same asset relevance check.
+
 The parser accepts flexible field names. Common inputs include:
 
 | Field meaning | Accepted examples |

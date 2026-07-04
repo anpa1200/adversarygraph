@@ -67,6 +67,12 @@ def safe_get(url: str, *, timeout: int = 30, **kwargs: Any) -> requests.Response
     return requests.get(url, timeout=timeout, allow_redirects=False, **kwargs)
 
 
+def safe_post(url: str, *, timeout: int = 30, **kwargs: Any) -> requests.Response:
+    """Make a POST request only if the target URL is safe."""
+    _check_url(url)
+    return requests.post(url, timeout=timeout, allow_redirects=False, **kwargs)
+
+
 def require_body_size(max_bytes: int = 10 * 1024 * 1024):
     """FastAPI dependency: reject requests whose Content-Length exceeds max_bytes."""
     from fastapi import HTTPException, Request

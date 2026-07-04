@@ -23,7 +23,7 @@ Core capabilities:
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
 - IOC Library, IOC Investigation pivots, VirusTotal lookup, and feed management.
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
-- Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories.
+- Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories, with strict `namespace:value` labels for products, suppliers, dependencies, technologies, sectors, CVEs, TTPs, risk, and exposure.
 - Malware Analysis workflow backed by the isolated MalwareGraph service for static triage, strings, unpacking/deobfuscation support, debugger-style review, and AI summaries.
 - Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
 - Evidence-to-Detection Graph for preserving the full reasoning chain from evidence to claims, behavior, ATT&CK, required telemetry, detection candidates, rules, validation scenarios, SIEM results, and analyst decisions.
@@ -115,6 +115,7 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | Attack Simulation | [docs/attack-simulation.md](docs/attack-simulation.md) |
 | SIEM forwarding security | [docs/attack-simulation-siem-forwarding-security.md](docs/attack-simulation-siem-forwarding-security.md) |
 | Asset Attack Surface Mapping | [docs/asset-attack-surface.md](docs/asset-attack-surface.md) |
+| Taxonomy and Label Convention | [docs/taxonomy-and-label-convention.md](docs/taxonomy-and-label-convention.md) |
 | Malware Analysis guide | [docs/malware-analysis-guide.md](docs/malware-analysis-guide.md) |
 | Malware Analysis boundary | [docs/malware-analysis-boundary.md](docs/malware-analysis-boundary.md) |
 | Demo dataset | [demo/README.md](demo/README.md) |

@@ -30,6 +30,12 @@ from app.models.threat_radar import (
     ThreatSupplyChainFinding,
 )
 from app.services.auth import TeamUser, analyst
+from app.services.exposure_monitoring import (
+    classify_exposure_hit,
+    ingest_exposure_hit,
+    monitoring_plan,
+    provider_readiness,
+)
 from app.services.threat_radar import (
     LEGAL_SENSITIVE_TYPES,
     audit_log,
@@ -46,6 +52,7 @@ from app.services.threat_radar import (
     score_signal,
     signal_to_dict,
 )
+from app.services.taxonomy import canonical_value, canonical_values, normalize_freeform_tags
 
 router = APIRouter(prefix="/threat-radar", tags=["Threat Radar"])
 
@@ -215,6 +222,51 @@ class ReportOut(BaseModel):
     created_at: datetime | None = None
 
 
+class ExposureWatchTermIn(BaseModel):
+    value: str = Field(..., min_length=1, max_length=255)
+    type: str = "keyword"
+    products: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    criticality: str = "unknown"
+    tags: list[str] = Field(default_factory=list)
+
+
+class ExposureHitIn(BaseModel):
+    provider: str = Field("manual-exposure", min_length=1, max_length=120)
+    provider_label: str = ""
+    source_type: str = ""
+    title: str = Field(..., min_length=1, max_length=500)
+    summary: str = Field("", max_length=12000)
+    url: str = Field("", max_length=1000)
+    observed_at: str = ""
+    product: str = ""
+    component: str = ""
+    supplier: str = ""
+    version: str = ""
+    exposure: str = "external-monitoring"
+    environment: str = "unknown"
+    ecosystem: str = ""
+    handle: str = ""
+    price: str = ""
+    currency: str = ""
+    confidence: int | None = Field(None, ge=0, le=100)
+    severity: str = ""
+    cve_ids: list[str] = Field(default_factory=list)
+    technique_ids: list[str] = Field(default_factory=list)
+    iocs: list[dict[str, Any]] = Field(default_factory=list)
+    actors: list[str] = Field(default_factory=list)
+    sectors: list[str] = Field(default_factory=list)
+    affected_versions: list[str] = Field(default_factory=list)
+    sbom_match: bool = False
+    legal_sensitive: bool | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExposureMonitorRunIn(BaseModel):
+    providers: list[str] = Field(default_factory=list)
+    watch_terms: list[ExposureWatchTermIn] = Field(default_factory=list)
+
+
 @router.get("/sources", response_model=list[ThreatSourceOut])
 async def list_sources(
     session: AsyncSession = Depends(get_session),
@@ -289,12 +341,12 @@ async def create_signal(
         legal_sensitive=legal_sensitive,
         confidence=payload.confidence,
         severity=payload.severity,
-        cve_ids=sorted({cve.upper() for cve in payload.cve_ids}),
-        technique_ids=sorted({ttp.upper() for ttp in payload.technique_ids}),
+        cve_ids=canonical_values("cve", payload.cve_ids),
+        technique_ids=canonical_values("ttp", payload.technique_ids),
         iocs=payload.iocs,
-        actors=payload.actors,
-        sectors=payload.sectors,
-        tags=sorted(tags),
+        actors=canonical_values("actor", payload.actors),
+        sectors=canonical_values("sector", payload.sectors),
+        tags=normalize_freeform_tags(tags),
         raw_metadata=sanitize_metadata(payload.signal_type, payload.raw_metadata),
         created_by=user.name,
     )
@@ -516,6 +568,30 @@ async def product_exposure(session: AsyncSession = Depends(get_session), _: Team
     return [mapping_to_dict(row) for row in rows.scalars().all()]
 
 
+@router.get("/exposure/providers", response_model=list[dict[str, Any]])
+async def exposure_providers(_: TeamUser = Depends(analyst)):
+    return provider_readiness()
+
+
+@router.post("/exposure/plan", response_model=dict[str, Any])
+async def exposure_monitoring_plan(payload: ExposureMonitorRunIn, _: TeamUser = Depends(analyst)):
+    return monitoring_plan(payload.providers, [item.model_dump() for item in payload.watch_terms])
+
+
+@router.post("/exposure/classify", response_model=dict[str, Any])
+async def classify_exposure(payload: ExposureHitIn, _: TeamUser = Depends(analyst)):
+    return classify_exposure_hit(payload.model_dump())
+
+
+@router.post("/exposure/ingest", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
+async def ingest_exposure(
+    payload: ExposureHitIn,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    return await ingest_exposure_hit(session, payload.model_dump(), user.name)
+
+
 @router.get("/watchlists/{watchlist}", response_model=list[SignalOut])
 async def watchlist(
     watchlist: str,
@@ -623,16 +699,31 @@ async def _add_product_mappings(
 ) -> list[ThreatProductMapping]:
     rows = []
     for item in mappings:
-        tags = sorted({*item.tags, *[ttp.upper() for ttp in item.technique_ids]})
+        product = canonical_value("product", item.product)
+        component = canonical_value("dependency", item.component)
+        dependency = canonical_value("dependency", item.dependency)
+        exposure = canonical_value("exposure", item.exposure)
+        environment = canonical_value("environment", item.environment)
+        tags = normalize_freeform_tags(
+            [
+                *item.tags,
+                *[canonical_value("ttp", ttp) for ttp in item.technique_ids],
+                f"product:{product}" if product else "",
+                f"dependency:{component}" if component else "",
+                f"dependency:{dependency}" if dependency else "",
+                f"exposure:{exposure}" if exposure else "",
+                f"environment:{environment}" if environment else "",
+            ]
+        )
         mapping = ThreatProductMapping(
             signal_id=signal.id if signal else None,
             case_id=case.id if case else None,
-            product=item.product,
-            component=item.component,
-            dependency=item.dependency,
+            product=product,
+            component=component,
+            dependency=dependency,
             version=item.version,
-            exposure=item.exposure,
-            environment=item.environment,
+            exposure=exposure,
+            environment=environment,
             relevance=item.relevance,
             blast_radius=item.blast_radius,
             evidence=item.evidence,

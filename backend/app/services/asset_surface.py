@@ -7,8 +7,42 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.taxonomy import (
+    asset_labels,
+    canonical_value,
+    normalize_freeform_tags,
+    split_multi,
+)
+
 
 MAX_INVENTORY_CHARS = 120_000
+STRICT_ASSET_CSV_COLUMNS = [
+    "asset_id",
+    "name",
+    "asset_type",
+    "environment",
+    "owner",
+    "ip_addresses",
+    "domains",
+    "ports",
+    "technologies",
+    "exposure",
+    "criticality",
+    "tags",
+]
+STRICT_ASSET_CSV_REQUIRED_COLUMNS = [
+    "asset_id",
+    "name",
+    "asset_type",
+    "environment",
+    "technologies",
+    "exposure",
+    "criticality",
+]
+STRICT_ASSET_CSV_ALLOWED_VALUES = {
+    "exposure": ["internet", "internal", "third-party", "unknown"],
+    "criticality": ["critical", "high", "medium", "low"],
+}
 
 
 @dataclass
@@ -22,6 +56,9 @@ class AssetSurfaceRecord:
     domains: list[str] = field(default_factory=list)
     ports: list[int] = field(default_factory=list)
     technologies: list[str] = field(default_factory=list)
+    products: list[str] = field(default_factory=list)
+    suppliers: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
     exposure: str = "unknown"
     criticality: str = "medium"
     tags: list[str] = field(default_factory=list)
@@ -46,6 +83,18 @@ def build_baseline_matrix(records: list[AssetSurfaceRecord]) -> dict[str, Any]:
         signals = _risk_signals(record)
         score = min(100, max(0, 25 + sum(signal["weight"] for signal in signals)))
         ttp_candidates = _dedupe_ttps(_ttp_candidates(record, signals))
+        labels = asset_labels(
+            asset_type=record.asset_type,
+            environment=record.environment,
+            exposure=record.exposure,
+            criticality=record.criticality,
+            technologies=record.technologies,
+            products=record.products,
+            suppliers=record.suppliers,
+            dependencies=record.dependencies,
+            ttps=[item["attack_id"] for item in ttp_candidates],
+            extra_tags=record.tags,
+        )
         rows.append({
             "asset_id": record.asset_id,
             "asset": record.name,
@@ -58,6 +107,10 @@ def build_baseline_matrix(records: list[AssetSurfaceRecord]) -> dict[str, Any]:
             "domains": record.domains,
             "ports": record.ports,
             "technologies": record.technologies,
+            "products": record.products,
+            "suppliers": record.suppliers,
+            "dependencies": record.dependencies,
+            "labels": labels,
             "risk_score": score,
             "risk_level": _risk_level(score),
             "attack_surface": _attack_surface(record, signals),
@@ -104,6 +157,9 @@ def build_ai_prompt(records: list[AssetSurfaceRecord], baseline: dict[str, Any])
             "domains": r.domains,
             "ports": r.ports,
             "technologies": r.technologies,
+            "products": r.products,
+            "suppliers": r.suppliers,
+            "dependencies": r.dependencies,
             "exposure": r.exposure,
             "criticality": r.criticality,
             "tags": r.tags,
@@ -249,7 +305,10 @@ def _parse_text(text: str) -> list[AssetSurfaceRecord]:
             domains=domains,
             ports=ports,
             exposure=_infer_exposure({"text": line}, ips, domains),
-            technologies=_split_multi(line)[:12],
+            technologies=_canonical_list("technology", _split_multi(line)[:12]),
+            products=[],
+            suppliers=[],
+            dependencies=[],
             raw={"text": line},
         ))
     return records
@@ -262,6 +321,9 @@ def _record_from_mapping(row: dict[str, Any], idx: int) -> AssetSurfaceRecord:
     domain_text = _first(normalized, "domains", "domain", "fqdn", "dns", "url", "hostname") or ""
     port_text = _first(normalized, "ports", "open_ports", "port", "service_ports", "listeners") or ""
     tech_text = _first(normalized, "technologies", "technology", "services", "software", "product", "stack") or ""
+    product_text = _first(normalized, "products", "product_names", "software_products", "applications", "packages") or ""
+    supplier_text = _first(normalized, "suppliers", "supplier", "vendor", "vendors", "manufacturer", "provider") or ""
+    dependency_text = _first(normalized, "dependencies", "dependency", "components", "libraries", "packages", "sbom_components") or ""
     tags_text = _first(normalized, "tags", "labels", "business_unit", "application") or ""
     ips = _extract_ips(str(ip_text))
     domains = _extract_domains(str(domain_text))
@@ -269,16 +331,19 @@ def _record_from_mapping(row: dict[str, Any], idx: int) -> AssetSurfaceRecord:
     return AssetSurfaceRecord(
         asset_id=str(_first(normalized, "id", "asset_id", "cmdb_id") or f"asset-{idx:04d}"),
         name=str(name),
-        asset_type=str(_first(normalized, "type", "asset_type", "category", "kind") or "unknown").lower(),
-        environment=str(_first(normalized, "environment", "env", "stage", "account", "subscription") or "unknown").lower(),
+        asset_type=canonical_value("asset_type", _first(normalized, "type", "asset_type", "category", "kind") or "unknown"),
+        environment=canonical_value("environment", _first(normalized, "environment", "env", "stage", "account", "subscription") or "unknown"),
         owner=str(_first(normalized, "owner", "team", "business_owner", "service_owner") or ""),
         ip_addresses=ips,
         domains=domains,
         ports=ports,
-        technologies=_split_multi(str(tech_text)),
+        technologies=_canonical_list("technology", _split_multi(str(tech_text))),
+        products=_canonical_list("product", _split_multi(str(product_text))),
+        suppliers=_canonical_list("supplier", _split_multi(str(supplier_text))),
+        dependencies=_canonical_list("dependency", _split_multi(str(dependency_text))),
         exposure=_infer_exposure(normalized, ips, domains),
         criticality=_normalize_criticality(str(_first(normalized, "criticality", "business_criticality", "tier", "priority") or "medium")),
-        tags=_split_multi(str(tags_text)),
+        tags=normalize_freeform_tags(str(tags_text)),
         raw=row,
     )
 
@@ -297,8 +362,16 @@ def _first(row: dict[str, Any], *keys: str) -> Any:
 
 
 def _split_multi(value: str) -> list[str]:
-    parts = re.split(r"[,;|]\s*|\s{2,}", value.strip())
-    return [part.strip() for part in parts if part.strip()][:30]
+    return split_multi(value, limit=30)
+
+
+def _canonical_list(kind: str, values: list[str]) -> list[str]:
+    result = []
+    for value in values:
+        normalized = canonical_value(kind, value)
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
 
 
 def _extract_ips(value: str) -> list[str]:
@@ -336,16 +409,16 @@ def _extract_ports(value: str) -> list[int]:
 def _infer_exposure(row: dict[str, Any], ips: list[str], domains: list[str]) -> str:
     text = " ".join(str(v).lower() for v in row.values())
     if any(word in text for word in ["vendor", "third-party", "third party", "saas"]):
-        return "third-party"
+        return canonical_value("exposure", "third-party")
     if any(word in text for word in ["internet", "public", "external", "dmz", "edge"]):
-        return "internet"
+        return canonical_value("exposure", "internet")
     if any(word in text for word in ["internal", "private", "corp", "lan"]):
-        return "internal"
+        return canonical_value("exposure", "internal")
     if any(not _is_private_ip(ip) for ip in ips):
-        return "internet"
+        return canonical_value("exposure", "internet")
     if domains and any(not _is_internal_domain(domain) for domain in domains):
-        return "internet"
-    return "unknown"
+        return canonical_value("exposure", "internet")
+    return canonical_value("exposure", "unknown")
 
 
 def _is_private_ip(ip: str) -> bool:
@@ -364,22 +437,21 @@ def _is_internal_domain(domain: str) -> bool:
 
 
 def _normalize_criticality(value: str) -> str:
-    lowered = value.lower()
-    if lowered in {"critical", "high", "medium", "low"}:
-        return lowered
-    if lowered in {"0", "1", "tier 0", "tier 1", "p0", "p1"}:
-        return "critical"
-    if lowered in {"2", "tier 2", "p2"}:
-        return "high"
-    if lowered in {"3", "tier 3", "p3"}:
-        return "medium"
-    return "medium"
+    return canonical_value("risk", value or "medium")
 
 
 def _risk_signals(record: AssetSurfaceRecord) -> list[dict[str, Any]]:
     signals = []
     ports = set(record.ports)
-    text = " ".join([record.name, record.asset_type, *record.technologies, *record.tags]).lower()
+    text = " ".join([
+        record.name,
+        record.asset_type,
+        *record.technologies,
+        *record.products,
+        *record.suppliers,
+        *record.dependencies,
+        *record.tags,
+    ]).lower()
     if record.exposure == "internet":
         signals.append({"label": "internet-facing exposure", "weight": 20})
     if record.criticality in {"critical", "high"}:
@@ -445,7 +517,15 @@ def _entry_points(record: AssetSurfaceRecord) -> list[str]:
 
 def _ttp_candidates(record: AssetSurfaceRecord, signals: list[dict[str, Any]]) -> list[dict[str, str]]:
     labels = " ".join(signal["label"] for signal in signals)
-    text = " ".join([record.name, record.asset_type, *record.technologies, *record.tags]).lower()
+    text = " ".join([
+        record.name,
+        record.asset_type,
+        *record.technologies,
+        *record.products,
+        *record.suppliers,
+        *record.dependencies,
+        *record.tags,
+    ]).lower()
     candidates = []
     if "web application" in labels or record.domains:
         candidates.append({"attack_id": "T1190", "name": "Exploit Public-Facing Application", "reason": "web/API surface or hostname exposure"})

@@ -22,6 +22,7 @@ from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator, IOCSource
 from app.services.ai.factory import get_adapter
 from app.services.sector_intel import normalize_label
+from app.services.taxonomy import normalize_freeform_tags
 
 THREATFOX_API_URL = "https://threatfox-api.abuse.ch/api/v1/"
 OTX_API_URL = "https://otx.alienvault.com/api/v1"
@@ -1920,15 +1921,7 @@ def _flatten_text(value: Any) -> str:
 
 
 def _dedupe_tags(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result = []
-    for value in values:
-        clean = str(value).strip()
-        key = normalize_label(clean)
-        if clean and key not in seen:
-            seen.add(key)
-            result.append(clean)
-    return result[:80]
+    return normalize_freeform_tags(values, limit=80)
 
 
 async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple[int, bool]:
@@ -1962,7 +1955,7 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
             campaign=item.campaign,
             technique_ids=technique_ids,
             description=item.description,
-            tags=item.tags or [],
+            tags=normalize_freeform_tags(item.tags or []),
             raw=raw,
         )
         .on_conflict_do_update(
@@ -1976,7 +1969,7 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
                 "campaign": item.campaign,
                 "technique_ids": technique_ids,
                 "description": item.description,
-                "tags": item.tags or [],
+                "tags": normalize_freeform_tags(item.tags or []),
                 "raw": raw,
                 "updated_at": datetime.now(timezone.utc),
             },

@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
 import { EntityGraph } from '@/components/ui/graph';
 import {
+  cveApi,
   threatRadarApi,
+  type ThreatExposureHit,
   type ThreatRadarCase,
   type ThreatRadarCreateSignal,
   type ThreatRadarProductMapping,
@@ -39,10 +41,39 @@ const TABS = [
   ['cases', 'Cases'],
   ['graph', 'Case Graph'],
   ['exposure', 'Product Exposure'],
+  ['monitoring', 'Exposure Monitoring'],
   ['watchlists', 'Watchlists'],
   ['workflows', 'Workflows'],
   ['reports', 'Reports'],
   ['settings', 'Settings / Sources'],
+] as const;
+
+const INVENTORY_TEMPLATES = [
+  {
+    label: 'Assets',
+    href: '/templates/threat-radar/asset_inventory_template.csv',
+    filename: 'asset_inventory_template.csv',
+  },
+  {
+    label: 'Products',
+    href: '/templates/threat-radar/product_inventory_template.csv',
+    filename: 'product_inventory_template.csv',
+  },
+  {
+    label: 'Components',
+    href: '/templates/threat-radar/component_inventory_template.csv',
+    filename: 'component_inventory_template.csv',
+  },
+  {
+    label: 'SBOM dependencies',
+    href: '/templates/threat-radar/dependency_sbom_inventory_template.csv',
+    filename: 'dependency_sbom_inventory_template.csv',
+  },
+  {
+    label: 'Exposure',
+    href: '/templates/threat-radar/product_exposure_inventory_template.csv',
+    filename: 'product_exposure_inventory_template.csv',
+  },
 ] as const;
 
 type Tab = typeof TABS[number][0];
@@ -53,6 +84,22 @@ export function ThreatRadar() {
   const [selectedSignalId, setSelectedSignalId] = useState('');
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [search, setSearch] = useState('');
+  const [feedResult, setFeedResult] = useState<Record<string, unknown> | null>(null);
+  const [exposureResult, setExposureResult] = useState<Record<string, unknown> | null>(null);
+  const [osvPackages, setOsvPackages] = useState('npm,express,4.17.1\nPyPI,urllib3,1.26.18\nMaven,org.apache.logging.log4j:log4j-core,2.14.1');
+  const [exposureHit, setExposureHit] = useState<ThreatExposureHit>({
+    provider: 'recorded-future',
+    title: 'Possible engineering sample offered for sale',
+    summary: 'Sanitized provider summary mentions an engineering sample / prototype offered for sale. No raw marketplace content, credentials, or stolen files are stored.',
+    url: '',
+    product: 'BlueField',
+    component: 'DPU firmware',
+    supplier: '',
+    handle: '',
+    price: '',
+    confidence: 75,
+    metadata: {},
+  });
   const [form, setForm] = useState({
     title: 'New active exploitation signal',
     signal_type: 'cisa_kev_active_exploitation' as ThreatSignalType,
@@ -81,7 +128,9 @@ export function ThreatRadar() {
   });
   const cases = useQuery({ queryKey: ['threat-radar-cases'], queryFn: () => threatRadarApi.cases({ limit: 100 }) });
   const sources = useQuery({ queryKey: ['threat-radar-sources'], queryFn: threatRadarApi.sources });
+  const cveSources = useQuery({ queryKey: ['cve-sources'], queryFn: cveApi.sources });
   const exposure = useQuery({ queryKey: ['threat-radar-product-exposure'], queryFn: threatRadarApi.productExposure });
+  const exposureProviders = useQuery({ queryKey: ['threat-radar-exposure-providers'], queryFn: threatRadarApi.exposureProviders });
   const selectedSignal = useQuery({
     queryKey: ['threat-radar-signal', selectedSignalId],
     queryFn: () => threatRadarApi.signal(selectedSignalId),
@@ -155,6 +204,39 @@ export function ThreatRadar() {
       threatRadarApi.generateReport(caseId, reportType),
     onSuccess: invalidate,
   });
+  const productFeedMutation = useMutation({
+    mutationFn: async (feed: 'ghsa' | 'epss' | 'osv') => {
+      if (feed === 'ghsa') return cveApi.syncGithubAdvisories({ limit: 100 });
+      if (feed === 'epss') return cveApi.syncEpss(500);
+      return cveApi.syncOsvPackages(parseOsvPackages(osvPackages));
+    },
+    onSuccess: data => {
+      setFeedResult(data);
+      qc.invalidateQueries({ queryKey: ['threat-radar-watchlists'] });
+      qc.invalidateQueries({ queryKey: ['cve-sources'] });
+    },
+  });
+  const classifyExposureMutation = useMutation({
+    mutationFn: () => threatRadarApi.classifyExposure(exposureHit),
+    onSuccess: data => setExposureResult(data),
+  });
+  const ingestExposureMutation = useMutation({
+    mutationFn: () => threatRadarApi.ingestExposure(exposureHit),
+    onSuccess: data => {
+      setExposureResult(data);
+      invalidate();
+    },
+  });
+  const exposurePlanMutation = useMutation({
+    mutationFn: () => threatRadarApi.exposurePlan({
+      providers: exposureProviders.data?.filter(provider => provider.enabled).map(provider => provider.id) ?? [],
+      watch_terms: [
+        { value: exposureHit.product || 'product codename', type: 'product', products: exposureHit.product ? [exposureHit.product] : [], tags: ['product-security'] },
+        { value: exposureHit.component || 'component', type: 'component', components: exposureHit.component ? [exposureHit.component] : [], tags: ['component-monitoring'] },
+      ],
+    }),
+    onSuccess: data => setExposureResult(data),
+  });
 
   const stats = useMemo(() => {
     const rows = signals.data ?? [];
@@ -183,6 +265,24 @@ export function ThreatRadar() {
                   score exposure, and turn decisions into PSIRT, Threat Hunt, IR, Legal, Engineering, Detection, and report workflows.
                   Closed-source and restricted intelligence is stored only as sanitized metadata with TLP and legal-sensitive flags.
                 </p>
+                <div className="mt-4 rounded border border-sky-500/30 bg-gray-950/50 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-200">Download inventory formats</div>
+                  <p className="mt-1 text-xs leading-5 text-sky-100/70">
+                    Use separate related tables for product-security mapping: deployed assets, products, components, SBOM dependencies, and exposure.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {INVENTORY_TEMPLATES.map(template => (
+                      <a
+                        key={template.filename}
+                        className="secondary-action inline-flex min-h-9 items-center justify-center px-3 text-xs"
+                        href={template.href}
+                        download={template.filename}
+                      >
+                        {template.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                 <Metric label="Signals" value={stats.signals} />
@@ -279,6 +379,32 @@ export function ThreatRadar() {
             </Panel>
           )}
 
+          {tab === 'monitoring' && (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
+              <Panel title="Exposure Monitoring">
+                <ExposureMonitoringForm
+                  hit={exposureHit}
+                  setHit={setExposureHit}
+                  onClassify={() => classifyExposureMutation.mutate()}
+                  onIngest={() => ingestExposureMutation.mutate()}
+                  onPlan={() => exposurePlanMutation.mutate()}
+                  pending={classifyExposureMutation.isPending || ingestExposureMutation.isPending || exposurePlanMutation.isPending}
+                  error={classifyExposureMutation.error || ingestExposureMutation.error || exposurePlanMutation.error}
+                />
+              </Panel>
+              <Panel title="Provider Readiness">
+                <ExposureProviderList rows={exposureProviders.data ?? []} loading={exposureProviders.isLoading} />
+                <InfoBlock title="Last result">
+                  {exposureResult ? (
+                    <pre className="m-4 max-h-[520px] overflow-auto whitespace-pre-wrap rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-300">{JSON.stringify(exposureResult, null, 2)}</pre>
+                  ) : (
+                    <p className="p-4 text-sm text-gray-500">Classify a hit, ingest a sanitized provider summary, or build a monitoring plan.</p>
+                  )}
+                </InfoBlock>
+              </Panel>
+            </section>
+          )}
+
           {tab === 'watchlists' && (
             <section className="grid gap-5 xl:grid-cols-2">
               <Watchlist title="CVE Watchlist" rows={watchlists.data?.cve ?? []} onSelect={setSelectedSignalId} />
@@ -306,12 +432,121 @@ export function ThreatRadar() {
           )}
 
           {tab === 'settings' && (
-            <Panel title="Settings / Sources">
-              <SourceList rows={sources.data ?? []} />
-            </Panel>
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
+              <Panel title="Product Security Feeds">
+                <div className="space-y-4 p-4 text-sm text-gray-300">
+                  <p className="leading-6 text-gray-400">
+                    Feed results are stored in the shared CVE Library with normalized tags and raw source metadata.
+                    Threat Radar uses the same records for CVE, package, dependency, product exposure, and PSIRT triage.
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <button className="secondary-action min-h-10" disabled={productFeedMutation.isPending} onClick={() => productFeedMutation.mutate('ghsa')}>
+                      Sync GitHub Advisories
+                    </button>
+                    <button className="secondary-action min-h-10" disabled={productFeedMutation.isPending} onClick={() => productFeedMutation.mutate('epss')}>
+                      Enrich EPSS Scores
+                    </button>
+                    <button className="secondary-action min-h-10" disabled={productFeedMutation.isPending} onClick={() => productFeedMutation.mutate('osv')}>
+                      Query OSV Packages
+                    </button>
+                  </div>
+                  <label className="block text-xs text-gray-400">
+                    OSV packages, one per line: ecosystem, package, optional version
+                    <textarea
+                      className="field mt-1 min-h-28 w-full font-mono text-xs"
+                      value={osvPackages}
+                      onChange={event => setOsvPackages(event.target.value)}
+                    />
+                  </label>
+                  {productFeedMutation.isPending && <div className="rounded border border-sky-500/40 bg-sky-950/20 p-3 text-xs text-sky-100">Syncing product-security feed...</div>}
+                  {productFeedMutation.error && <div className="rounded border border-red-500/50 bg-red-950/30 p-3 text-xs text-red-100">{productFeedMutation.error instanceof Error ? productFeedMutation.error.message : 'Feed sync failed'}</div>}
+                  {feedResult && <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-300">{JSON.stringify(feedResult, null, 2)}</pre>}
+                </div>
+              </Panel>
+              <Panel title="Settings / Sources">
+                <div className="space-y-4 p-4">
+                  <InfoBlock title="Product Security Feed Catalog">
+                    <CveSourceList rows={cveSources.data ?? []} />
+                  </InfoBlock>
+                  <InfoBlock title="Threat Radar Signal Sources">
+                    <SourceList rows={sources.data ?? []} />
+                  </InfoBlock>
+                </div>
+              </Panel>
+            </section>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ExposureMonitoringForm({ hit, setHit, onClassify, onIngest, onPlan, pending, error }: {
+  hit: ThreatExposureHit;
+  setHit: React.Dispatch<React.SetStateAction<ThreatExposureHit>>;
+  onClassify: () => void;
+  onIngest: () => void;
+  onPlan: () => void;
+  pending: boolean;
+  error: unknown;
+}) {
+  const update = (key: keyof ThreatExposureHit, value: string | number | boolean | null | Record<string, unknown>) => {
+    setHit(current => ({ ...current, [key]: value }));
+  };
+  return (
+    <div className="space-y-4 p-4 text-sm text-gray-300">
+      <div className="rounded border border-amber-500/40 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100">
+        Ingest only authorized provider summaries or analyst-written notes. Do not paste stolen credentials, stolen files, exploit payloads,
+        marketplace access details, or raw illegal-source content.
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-xs text-gray-400">Provider
+          <select className="field mt-1 w-full" value={hit.provider} onChange={e => update('provider', e.target.value)}>
+            {['recorded-future', 'virustotal-retrohunt', 'virustotal-livehunt', 'hibp', 'spycloud', 'flare', 'darkowl', 'intel471', 'kela', 'leakix', 'shodan', 'censys', 'urlscan', 'otx', 'threatfox', 'github-code-search', 'gitlab-search', 'socket', 'snyk', 'vulncheck', 'manual-exposure'].map(item => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-gray-400">Source URL<input className="field mt-1 w-full" value={hit.url ?? ''} onChange={e => update('url', e.target.value)} placeholder="Provider report URL or case reference" /></label>
+        <label className="text-xs text-gray-400 md:col-span-2">Title<input className="field mt-1 w-full" value={hit.title} onChange={e => update('title', e.target.value)} /></label>
+        <label className="text-xs text-gray-400">Product<input className="field mt-1 w-full" value={hit.product ?? ''} onChange={e => update('product', e.target.value)} placeholder="BlueField, CUDA, Jetson..." /></label>
+        <label className="text-xs text-gray-400">Component<input className="field mt-1 w-full" value={hit.component ?? ''} onChange={e => update('component', e.target.value)} placeholder="firmware, driver, container..." /></label>
+        <label className="text-xs text-gray-400">Supplier / partner<input className="field mt-1 w-full" value={hit.supplier ?? ''} onChange={e => update('supplier', e.target.value)} /></label>
+        <label className="text-xs text-gray-400">Actor / handle<input className="field mt-1 w-full" value={hit.handle ?? ''} onChange={e => update('handle', e.target.value)} /></label>
+        <label className="text-xs text-gray-400">Price / value<input className="field mt-1 w-full" value={hit.price ?? ''} onChange={e => update('price', e.target.value)} /></label>
+        <label className="text-xs text-gray-400">Confidence<input className="field mt-1 w-full" type="number" min={0} max={100} value={hit.confidence ?? 50} onChange={e => update('confidence', Number(e.target.value))} /></label>
+      </div>
+      <label className="block text-xs text-gray-400">Sanitized provider summary<textarea className="field mt-1 min-h-36 w-full" value={hit.summary ?? ''} onChange={e => update('summary', e.target.value)} /></label>
+      <div className="grid gap-2 md:grid-cols-3">
+        <button className="secondary-action min-h-10" disabled={pending} onClick={onPlan}>Build monitoring plan</button>
+        <button className="secondary-action min-h-10" disabled={pending} onClick={onClassify}>Classify hit</button>
+        <button className="primary-action min-h-10" disabled={pending} onClick={onIngest}>Ingest as signal + case</button>
+      </div>
+      {Boolean(error) && <div className="rounded border border-red-500/50 bg-red-950/30 p-3 text-xs text-red-100">{error instanceof Error ? error.message : 'Exposure monitoring action failed'}</div>}
+    </div>
+  );
+}
+
+function ExposureProviderList({ rows, loading }: { rows: Array<{ id: string; label: string; category: string; purpose: string; env_var: string; configured: boolean; status: string; legal_sensitive: boolean }>; loading: boolean }) {
+  if (loading) return <p className="p-4 text-sm text-gray-500">Loading provider readiness...</p>;
+  if (!rows.length) return <p className="p-4 text-sm text-gray-500">No exposure-monitoring providers are registered.</p>;
+  return (
+    <div className="max-h-[520px] overflow-y-auto">
+      {rows.map(row => (
+        <div key={row.id} className="border-b border-gray-800 p-3 last:border-b-0">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <b className="text-sm text-white">{row.label}</b>
+              <p className="mt-1 text-xs text-gray-500">{row.id} · {row.category} · {row.env_var}</p>
+            </div>
+            <span className={`rounded px-2 py-1 text-[11px] ${row.configured ? 'bg-emerald-900/40 text-emerald-200' : 'bg-gray-800 text-gray-300'}`}>
+              {row.configured ? 'ready' : 'missing key'}
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-gray-400">{row.purpose}</p>
+          {row.legal_sensitive && <p className="mt-2 text-xs text-amber-200">Legal-sensitive source: store sanitized metadata only.</p>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -506,6 +741,29 @@ function SourceList({ rows }: { rows: Array<{ id: string; name: string; source_t
   return <div className="divide-y divide-gray-800">{rows.map(row => <div key={row.id} className="p-4"><b className="text-white">{row.name}</b><p className="mt-1 text-xs text-gray-500">{row.source_type} · reliability {row.reliability}/5 · {row.tlp} · {row.legal_sensitive ? 'legal-sensitive' : 'standard'}</p><p className="mt-1 truncate text-xs text-gray-600">{row.url}</p></div>)}</div>;
 }
 
+function CveSourceList({ rows }: { rows: Array<{ source_id: string; label: string; kind: string; url: string; enabled: boolean; sync_status: string; sync_error: string; last_synced_at?: string | null }> }) {
+  if (!rows.length) return <p className="text-sm text-gray-500">No CVE/Product Security sources are registered yet.</p>;
+  return (
+    <div className="max-h-[520px] overflow-y-auto rounded border border-gray-800">
+      {rows.map(row => (
+        <div key={row.source_id} className="border-b border-gray-800 p-3 last:border-b-0">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <b className="text-sm text-white">{row.label}</b>
+              <p className="mt-1 text-xs text-gray-500">{row.source_id} · {row.kind} · {row.enabled ? 'enabled' : 'disabled'} · {row.sync_status}</p>
+            </div>
+            <span className={`rounded px-2 py-1 text-[11px] ${row.sync_status === 'ok' ? 'bg-emerald-900/40 text-emerald-200' : row.sync_status === 'error' ? 'bg-red-900/50 text-red-100' : 'bg-gray-800 text-gray-300'}`}>
+              {row.last_synced_at ? 'synced' : 'catalog'}
+            </span>
+          </div>
+          <p className="mt-2 truncate text-xs text-gray-600">{row.url}</p>
+          {row.sync_error && <p className="mt-2 text-xs text-red-300">{row.sync_error}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function buildCreatePayload(form: Record<string, any>): ThreatRadarCreateSignal {
   const legalSensitiveTypes = new Set(['exploit_sale_claim', 'darknet_provider_mention', 'marketplace_hardware_listing', 'firmware_dump_claim', 'source_code_leak_claim', 'credential_exposure', 'supplier_breach']);
   return {
@@ -566,6 +824,18 @@ function toFlowGraph(graph: { nodes: Array<Record<string, unknown>>; edges: Arra
 
 function splitList(value: string) {
   return value.split(/[,\s]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function parseOsvPackages(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [ecosystem = '', packageName = '', version = ''] = line.split(',').map(part => part.trim());
+      return { ecosystem, package_name: packageName, package_version: version };
+    })
+    .filter(item => item.ecosystem && item.package_name);
 }
 
 function exposureFactor(value: string) {

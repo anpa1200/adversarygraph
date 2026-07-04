@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.services.ai.factory import get_adapter
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 from app.services.atomic_event_catalog import (
     ATOMIC_EVENT_CATEGORIES,
     ATOMIC_EVENT_SIMULATION_IDS,
@@ -2879,7 +2880,7 @@ async def _assistant_llm_plan(
         "Return only JSON. Design a defensive SIEM telemetry simulation plan, not exploit instructions. "
         "Use ATT&CK technique IDs only. Prefer diverse telemetry: web, WAF, auth, Windows Security, Sysmon, "
         "PowerShell 4104, EDR, firewall, DNS, proxy, Linux auditd, cloud audit, database audit, and IdP logs. "
-        f"{TELEMETRY_FIDELITY_NOTE}"
+        f"{TELEMETRY_FIDELITY_NOTE}\n\n{TAXONOMY_SYSTEM_INSTRUCTIONS}"
     )
     user = json.dumps(
         {

@@ -82,7 +82,7 @@ def _add(
         source_url=source_url,
         confidence=confidence,
         tlp="clear",
-        tags=["report-upload"],
+        tags=["tag:report-upload"],
         description="IOC extracted from uploaded report text.",
         raw={"extractor": "regex-report-upload"},
     )

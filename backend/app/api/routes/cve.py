@@ -21,8 +21,11 @@ from app.services.cve_intel import (
     list_cve_sources,
     sync_all_cve_sources,
     sync_cisa_kev,
+    sync_epss_scores,
+    sync_github_advisories,
     sync_nvd_cve_ids,
     sync_nvd_recent,
+    sync_osv_packages,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,14 +131,34 @@ class CVESyncOut(BaseModel):
     days: int | None = None
     fetched: int | None = None
     requested: int | None = None
+    imported_cves: int | None = None
+    ecosystem: str | None = None
+    severity: str | None = None
     missing_selected: int | None = None
     inserted: int | None = None
     updated: int | None = None
+    package_results: list[dict[str, Any]] | None = None
+    nvd_enrichment: dict[str, Any] | None = None
+    asset_retrohunt: dict[str, Any] | None = None
+    asset_retrohunt_error: str | None = None
     errors: list[str] | None = None
 
 
 class CVEIdSyncIn(BaseModel):
     cve_ids: list[str] = Field(default_factory=list)
+
+
+class OSVPackageIn(BaseModel):
+    package_name: str = ""
+    name: str = ""
+    ecosystem: str = ""
+    package_type: str = ""
+    package_version: str = ""
+    version: str = ""
+
+
+class OSVPackageSyncIn(BaseModel):
+    packages: list[OSVPackageIn] = Field(default_factory=list)
 
 
 @router.get("/sources", response_model=list[CVESourceOut])
@@ -284,6 +307,57 @@ async def sync_kev(session: AsyncSession = Depends(get_session), user: TeamUser 
         return result
     except Exception as exc:
         logger.error("CISA KEV sync failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+
+@router.post("/sync/github-advisories", response_model=CVESyncOut)
+async def sync_github_security_advisories(
+    ecosystem: str = Query("", max_length=80),
+    severity: str = Query("", pattern="^(|low|medium|high|critical)$"),
+    limit: int = Query(100, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    try:
+        result = await sync_github_advisories(session, ecosystem=ecosystem, severity=severity, limit=limit)
+        await audit(session, user, "sync.cve.github_advisories", "cve_source", details={"ecosystem": ecosystem, "severity": severity, "limit": limit})
+        await session.commit()
+        return result
+    except Exception as exc:
+        logger.error("GitHub Advisory sync failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+
+@router.post("/sync/epss", response_model=CVESyncOut)
+async def sync_epss(
+    limit: int = Query(500, ge=1, le=2000),
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    try:
+        result = await sync_epss_scores(session, limit=limit)
+        await audit(session, user, "sync.cve.epss", "cve_source", details={"limit": limit})
+        await session.commit()
+        return result
+    except Exception as exc:
+        logger.error("EPSS sync failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Operation failed. See server logs.") from exc
+
+
+@router.post("/sync/osv/packages", response_model=CVESyncOut)
+async def sync_osv_package_advisories(
+    payload: OSVPackageSyncIn,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    try:
+        packages = [item.model_dump() for item in payload.packages]
+        result = await sync_osv_packages(session, packages)
+        await audit(session, user, "sync.cve.osv_packages", "cve_source", details={"packages": len(packages)})
+        await session.commit()
+        return result
+    except Exception as exc:
+        logger.error("OSV package sync failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
 

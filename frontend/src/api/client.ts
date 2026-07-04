@@ -472,6 +472,12 @@ export const cveApi = {
     http.post('/cve/sync/nvd/missing-cvss', null, { params: { limit } }).then(r => r.data),
   syncKev: (): Promise<Record<string, unknown>> =>
     http.post('/cve/sync/kev').then(r => r.data),
+  syncGithubAdvisories: (params?: { ecosystem?: string; severity?: string; limit?: number }): Promise<Record<string, unknown>> =>
+    http.post('/cve/sync/github-advisories', null, { params }).then(r => r.data),
+  syncEpss: (limit = 500): Promise<Record<string, unknown>> =>
+    http.post('/cve/sync/epss', null, { params: { limit } }).then(r => r.data),
+  syncOsvPackages: (packages: Array<{ package_name?: string; name?: string; ecosystem?: string; package_type?: string; package_version?: string; version?: string }>): Promise<Record<string, unknown>> =>
+    http.post('/cve/sync/osv/packages', { packages }).then(r => r.data),
   correlate: (): Promise<Record<string, number>> =>
     http.post('/cve/correlate').then(r => r.data),
 };
@@ -933,6 +939,9 @@ export interface AssetSurfaceAsset {
   domains: string[];
   ports: number[];
   technologies: string[];
+  products: string[];
+  suppliers: string[];
+  dependencies: string[];
   risk_score: number;
   risk_level: 'critical' | 'high' | 'medium' | 'low';
   ai_risk_level?: string;
@@ -946,6 +955,67 @@ export interface AssetSurfaceAsset {
   priority_actions: string[];
   evidence: string[];
   business_context?: string;
+}
+
+export interface AssetSurfaceRegistrySummary {
+  created?: number;
+  updated?: number;
+  asset_ids?: string[];
+}
+
+export interface AssetSurfaceRetrohuntSummary {
+  assets_checked?: number;
+  matches_created?: number;
+  matches_updated?: number;
+  by_type?: Record<string, number>;
+  asset_match_counts?: Record<string, number>;
+}
+
+export interface AssetIntelMatch {
+  id: string;
+  asset_id: string;
+  source_type: 'cve' | 'actor' | 'report' | string;
+  source_id: string;
+  title: string;
+  relationship: string;
+  relevance_score: number;
+  confidence: number;
+  severity: string;
+  route: string;
+  reason: string;
+  evidence: string[];
+  tags: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetRegistryItem {
+  id: string;
+  fingerprint: string;
+  inventory_asset_id: string;
+  name: string;
+  asset_type: string;
+  environment: string;
+  owner: string;
+  exposure: string;
+  criticality: string;
+  ip_addresses: string[];
+  domains: string[];
+  ports: number[];
+  technologies: string[];
+  products: string[];
+  suppliers: string[];
+  dependencies: string[];
+  technique_ids: string[];
+  tags: string[];
+  labels: Record<string, unknown>;
+  risk_score: number;
+  risk_level: string;
+  source_case_id?: string | null;
+  source_inventory_name: string;
+  first_seen_at: string;
+  last_seen_at: string;
 }
 
 export interface AssetSurfaceAnalysisResult {
@@ -967,6 +1037,9 @@ export interface AssetSurfaceAnalysisResult {
   cross_asset_findings: string[];
   assumptions: string[];
   validation_gaps: string[];
+  registry_summary: AssetSurfaceRegistrySummary;
+  retrohunt_summary: AssetSurfaceRetrohuntSummary;
+  intel_matches: AssetIntelMatch[];
   raw_ai_response: string;
 }
 
@@ -992,6 +1065,12 @@ export const assetSurfaceApi = {
     http.get('/asset-surface/cases').then(r => r.data),
   case: (caseId: string): Promise<AssetSurfaceAnalysisResult> =>
     http.get(`/asset-surface/cases/${caseId}`).then(r => r.data),
+  assets: (): Promise<AssetRegistryItem[]> =>
+    http.get('/asset-surface/assets').then(r => r.data),
+  intelMatches: (params?: { asset_id?: string; source_type?: string; limit?: number }): Promise<AssetIntelMatch[]> =>
+    http.get('/asset-surface/intel-matches', { params }).then(r => r.data),
+  retrohunt: (asset_ids: string[] = []): Promise<AssetSurfaceRetrohuntSummary> =>
+    http.post('/asset-surface/retrohunt', { asset_ids }).then(r => r.data),
   deleteCase: (caseId: string): Promise<void> =>
     http.delete(`/asset-surface/cases/${caseId}`).then(() => {}),
 };
@@ -2822,6 +2901,60 @@ export interface ThreatRadarCreateSignal {
   create_case?: boolean;
 }
 
+export interface ThreatExposureProvider {
+  id: string;
+  label: string;
+  category: string;
+  source_type: string;
+  purpose: string;
+  env_var: string;
+  configured: boolean;
+  requires_key: boolean;
+  enabled: boolean;
+  legal_sensitive: boolean;
+  status: string;
+}
+
+export interface ThreatExposureHit {
+  provider: string;
+  provider_label?: string;
+  source_type?: string;
+  title: string;
+  summary?: string;
+  url?: string;
+  observed_at?: string;
+  product?: string;
+  component?: string;
+  supplier?: string;
+  version?: string;
+  exposure?: string;
+  environment?: string;
+  ecosystem?: string;
+  handle?: string;
+  price?: string;
+  currency?: string;
+  confidence?: number;
+  severity?: string;
+  cve_ids?: string[];
+  technique_ids?: string[];
+  iocs?: Array<Record<string, unknown>>;
+  actors?: string[];
+  sectors?: string[];
+  affected_versions?: string[];
+  sbom_match?: boolean;
+  legal_sensitive?: boolean | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ThreatExposureWatchTerm {
+  value: string;
+  type?: string;
+  products?: string[];
+  components?: string[];
+  criticality?: string;
+  tags?: string[];
+}
+
 export const threatRadarApi = {
   sources: (): Promise<ThreatRadarSource[]> => http.get('/threat-radar/sources').then(r => r.data),
   createSource: (body: Partial<ThreatRadarSource> & { name: string }): Promise<ThreatRadarSource> =>
@@ -2846,6 +2979,13 @@ export const threatRadarApi = {
   productMap: (body: { signal_id?: string; case_id?: string; mappings: ThreatRadarProductMapping[] }): Promise<ThreatRadarProductMapping[]> =>
     http.post('/threat-radar/product-map', body).then(r => r.data),
   productExposure: (): Promise<ThreatRadarProductMapping[]> => http.get('/threat-radar/product-exposure').then(r => r.data),
+  exposureProviders: (): Promise<ThreatExposureProvider[]> => http.get('/threat-radar/exposure/providers').then(r => r.data),
+  exposurePlan: (body: { providers?: string[]; watch_terms?: ThreatExposureWatchTerm[] }): Promise<Record<string, unknown>> =>
+    http.post('/threat-radar/exposure/plan', body).then(r => r.data),
+  classifyExposure: (body: ThreatExposureHit): Promise<Record<string, unknown>> =>
+    http.post('/threat-radar/exposure/classify', body).then(r => r.data),
+  ingestExposure: (body: ThreatExposureHit): Promise<Record<string, unknown>> =>
+    http.post('/threat-radar/exposure/ingest', body).then(r => r.data),
   createHunt: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-hunt`).then(r => r.data),
   createPsirtTask: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-psirt-task`).then(r => r.data),
   createIrEscalation: (caseId: string): Promise<Record<string, unknown>> => http.post(`/threat-radar/cases/${caseId}/create-ir-escalation`).then(r => r.data),

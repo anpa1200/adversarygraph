@@ -1,8 +1,8 @@
 # Roadmap
 
-Current release: **v5.7.0** — research collection upload, linked report review, source-preserving AI parsing, and report-to-platform entity links (2026-07-03)
+Current release: **v5.8.0** — Threat Radar product-security CTI, product/component/dependency exposure mapping, sanitized exposure monitoring, scored cases, and PSIRT/Hunt/IR/Detection workflows (2026-07-04)
 
-For the full history from v0.2.0 through v5.7.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v5.8.0 see [CHANGELOG.md](CHANGELOG.md).
 
 ## v5.7 — Research Collection and Linked Report Review
 

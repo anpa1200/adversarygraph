@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -12,17 +13,58 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.safe_http import safe_get
+from app.core.safe_http import safe_get, safe_post
 from app.core.version import APP_USER_AGENT
 from app.models.attack import Technique
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ioc_intel import _dedupe_attack_ids
+from app.services.taxonomy import canonical_tags
 
 NVD_SOURCE_ID = "nvd-cve-2.0"
 CISA_KEV_SOURCE_ID = "cisa-kev"
+GHSA_SOURCE_ID = "github-advisory-database"
+EPSS_SOURCE_ID = "first-epss"
+OSV_SOURCE_ID = "osv-dev"
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+GHSA_API_URL = "https://api.github.com/advisories"
+EPSS_API_URL = "https://api.first.org/data/v1/epss"
+OSV_QUERY_BATCH_URL = "https://api.osv.dev/v1/querybatch"
+OSV_VULN_URL = "https://api.osv.dev/v1/vulns"
+PRODUCT_SECURITY_SOURCE_CATALOG: tuple[tuple[str, str, str, str], ...] = (
+    (NVD_SOURCE_ID, "NVD CVE API 2.0", "api", NVD_API_URL),
+    (CISA_KEV_SOURCE_ID, "CISA Known Exploited Vulnerabilities", "json", CISA_KEV_URL),
+    (GHSA_SOURCE_ID, "GitHub Advisory Database", "api", GHSA_API_URL),
+    (EPSS_SOURCE_ID, "FIRST EPSS", "api", EPSS_API_URL),
+    (OSV_SOURCE_ID, "OSV.dev Vulnerability Database", "api", OSV_QUERY_BATCH_URL),
+    ("deps-dev", "deps.dev Package Dependency API", "api", "https://api.deps.dev/v3"),
+    ("gitlab-advisory-database", "GitLab Advisory Database", "git", "https://gitlab.com/gitlab-org/advisories-community"),
+    ("pypa-advisory-database", "PyPA Advisory Database", "git", "https://github.com/pypa/advisory-database"),
+    ("go-vuln-db", "Go Vulnerability Database", "json", "https://vuln.go.dev"),
+    ("rustsec-advisory-db", "RustSec Advisory Database", "git", "https://github.com/RustSec/advisory-db"),
+    ("msrc-security-updates", "Microsoft Security Update Guide", "api", "https://api.msrc.microsoft.com/cvrf/v3.0"),
+    ("redhat-security-data", "Red Hat Security Data API", "api", "https://access.redhat.com/hydra/rest/securitydata"),
+    ("ubuntu-security-notices", "Ubuntu Security Notices", "api", "https://ubuntu.com/security/notices.json"),
+    ("debian-security-tracker", "Debian Security Tracker", "json", "https://security-tracker.debian.org/tracker/data/json"),
+    ("alpine-secdb", "Alpine SecDB", "json", "https://secdb.alpinelinux.org"),
+    ("cisa-ics-advisories", "CISA ICS Advisories", "rss", "https://www.cisa.gov/news-events/cybersecurity-advisories"),
+    ("certcc-vulnerability-notes", "CERT/CC Vulnerability Notes", "html", "https://kb.cert.org/vuls"),
+    ("exploit-db", "Exploit-DB Public Exploit Catalog", "csv", "https://gitlab.com/exploit-database/exploitdb"),
+    ("metasploit-modules", "Metasploit Framework Modules", "git", "https://github.com/rapid7/metasploit-framework"),
+    ("vulncheck", "VulnCheck Vulnerability and Exploit Intelligence", "api", "https://vulncheck.com"),
+    ("snyk", "Snyk Vulnerability Database", "api", "https://api.snyk.io"),
+    ("socket-dev", "Socket Package Supply-Chain Intelligence", "api", "https://api.socket.dev"),
+    ("endoflife-date", "endoflife.date Product Lifecycle Data", "api", "https://endoflife.date/api"),
+    ("hibp-domain-breaches", "Have I Been Pwned Domain Breach Monitoring", "api", "https://haveibeenpwned.com/API/v3"),
+    ("leakix", "LeakIX Internet Exposure Intelligence", "api", "https://leakix.net"),
+    ("spycloud", "SpyCloud Breach and Credential Exposure", "api", "https://spycloud.com"),
+    ("flare", "Flare External Exposure and Dark Web Monitoring", "api", "https://flare.io"),
+    ("darkowl", "DarkOwl Darknet Intelligence", "api", "https://darkowl.com"),
+    ("intel471", "Intel 471 Cybercrime Intelligence", "api", "https://intel471.com"),
+    ("kela", "KELA Cybercrime Intelligence", "api", "https://ke-la.com"),
+    ("recorded-future", "Recorded Future Vulnerability and Threat Intelligence", "api", "https://api.recordedfuture.com"),
+)
 
 CVE_ID_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
@@ -51,10 +93,7 @@ class CVEImportItem:
 
 
 async def ensure_cve_sources(session: AsyncSession) -> None:
-    for source_id, label, kind, url in [
-        (NVD_SOURCE_ID, "NVD CVE API 2.0", "api", NVD_API_URL),
-        (CISA_KEV_SOURCE_ID, "CISA Known Exploited Vulnerabilities", "json", CISA_KEV_URL),
-    ]:
+    for source_id, label, kind, url in PRODUCT_SECURITY_SOURCE_CATALOG:
         stmt = insert(CVESource).values(
             source_id=source_id,
             label=label,
@@ -76,7 +115,7 @@ async def list_cve_sources(session: AsyncSession) -> list[CVESource]:
     return list(rows.scalars().all())
 
 
-async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict[str, int]:
+async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict[str, Any]:
     await ensure_cve_sources(session)
     inserted = 0
     updated = 0
@@ -97,7 +136,7 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
             "cwe_ids": sorted(set(item.cwe_ids or [])),
             "cpe_matches": sorted(set(item.cpe_matches or [])),
             "references": item.references or [],
-            "tags": sorted(set(item.tags or [])),
+            "tags": canonical_tags("tag", item.tags or []),
             "known_exploited": item.known_exploited,
             "kev_due_date": item.kev_due_date,
             "kev_required_action": item.kev_required_action,
@@ -116,7 +155,7 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
                 if key in {"cwe_ids", "cpe_matches"} and not value and getattr(existing, key):
                     value = getattr(existing, key)
                 if key == "tags":
-                    value = sorted(set([*(existing.tags or []), *value]))
+                    value = canonical_tags("tag", [*(existing.tags or []), *value])
                 if key == "references":
                     value = _merge_references(existing.references or [], value)
                 setattr(existing, key, value)
@@ -125,7 +164,16 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
             session.add(CVERecord(**values))
             inserted += 1
     await session.commit()
-    return {"inserted": inserted, "updated": updated}
+    result: dict[str, Any] = {"inserted": inserted, "updated": updated}
+    if inserted or updated:
+        try:
+            from app.services.asset_intel import retrohunt_assets
+
+            result["asset_retrohunt"] = await retrohunt_assets(session)
+            await session.commit()
+        except Exception as exc:
+            result["asset_retrohunt_error"] = str(exc)[:500]
+    return result
 
 
 async def sync_nvd_recent(session: AsyncSession, *, days: int = 7, limit: int = 2000) -> dict[str, Any]:
@@ -255,9 +303,199 @@ async def sync_cisa_kev(session: AsyncSession) -> dict[str, Any]:
         raise
 
 
+async def sync_github_advisories(session: AsyncSession, *, ecosystem: str = "", severity: str = "", limit: int = 100) -> dict[str, Any]:
+    """Import recent reviewed GitHub Security Advisories that carry CVE aliases."""
+    await ensure_cve_sources(session)
+    limit = max(1, min(limit, 100))
+    params: dict[str, str] = {
+        "type": "reviewed",
+        "per_page": str(limit),
+        "sort": "updated",
+        "direction": "desc",
+    }
+    if ecosystem:
+        params["ecosystem"] = ecosystem
+    if severity:
+        params["severity"] = severity.lower()
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": APP_USER_AGENT,
+    }
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+    source = await session.get(CVESource, GHSA_SOURCE_ID)
+    try:
+        response = safe_get(GHSA_API_URL, params=params, headers=headers, timeout=60)
+        response.raise_for_status()
+        payload = response.json()
+        advisories = payload if isinstance(payload, list) else []
+        parsed = [item for item in (_parse_ghsa_advisory(item) for item in advisories) if item is not None]
+        result = await upsert_cves(session, parsed)
+        if source:
+            source.last_synced_at = datetime.now(timezone.utc)
+            source.sync_status = "ok"
+            source.sync_error = ""
+        await session.commit()
+        return {
+            "source": GHSA_SOURCE_ID,
+            "mode": "github-advisories",
+            "ecosystem": ecosystem or "all",
+            "severity": severity or "all",
+            "fetched": len(advisories),
+            "imported_cves": len(parsed),
+            **result,
+        }
+    except Exception as exc:
+        if source:
+            source.sync_status = "error"
+            source.sync_error = str(exc)[:500]
+            await session.commit()
+        raise
+
+
+async def sync_epss_scores(session: AsyncSession, *, limit: int = 500) -> dict[str, Any]:
+    """Enrich existing CVEs with FIRST EPSS probability and percentile metadata."""
+    await ensure_cve_sources(session)
+    limit = max(1, min(limit, 2000))
+    rows = await session.execute(
+        select(CVERecord.cve_id)
+        .order_by(CVERecord.known_exploited.desc(), CVERecord.cvss_severity.desc().nulls_last(), CVERecord.last_modified.desc().nulls_last())
+        .limit(limit)
+    )
+    cve_ids = [str(row).upper() for row in rows.scalars().all() if CVE_ID_RE.fullmatch(str(row).upper())]
+    source = await session.get(CVESource, EPSS_SOURCE_ID)
+    if not cve_ids:
+        return {"source": EPSS_SOURCE_ID, "mode": "epss", "requested": 0, "fetched": 0, "updated": 0}
+
+    headers = {"User-Agent": APP_USER_AGENT}
+    updated = 0
+    fetched = 0
+    errors: list[str] = []
+    for chunk in _chunks(cve_ids, 100):
+        try:
+            response = safe_get(EPSS_API_URL, params={"cve": ",".join(chunk)}, headers=headers, timeout=60)
+            response.raise_for_status()
+            payload = response.json()
+            data = payload.get("data", []) if isinstance(payload, dict) else []
+            fetched += len(data)
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                cve_id = str(item.get("cve") or "").upper()
+                cve = await session.scalar(select(CVERecord).where(CVERecord.cve_id == cve_id))
+                if not cve:
+                    continue
+                epss = _float_or_none(item.get("epss"))
+                percentile = _float_or_none(item.get("percentile"))
+                raw = dict(cve.raw or {})
+                raw["epss"] = {
+                    "epss": epss,
+                    "percentile": percentile,
+                    "date": item.get("date", ""),
+                    "source": EPSS_SOURCE_ID,
+                }
+                tags = [*(cve.tags or []), "epss"]
+                if epss is not None and epss >= 0.5:
+                    tags.append("epss-high-probability")
+                if percentile is not None and percentile >= 0.95:
+                    tags.append("epss-top-percentile")
+                if (epss is not None and epss >= 0.1) or (percentile is not None and percentile >= 0.9):
+                    tags.append("product-security-priority")
+                cve.raw = raw
+                cve.tags = canonical_tags("tag", tags)
+                updated += 1
+        except Exception as exc:
+            errors.append(str(exc)[:200])
+
+    if source:
+        source.last_synced_at = datetime.now(timezone.utc)
+        source.sync_status = "ok" if not errors else "degraded"
+        source.sync_error = "; ".join(errors[:5])[:500]
+    await session.commit()
+    return {"source": EPSS_SOURCE_ID, "mode": "epss", "requested": len(cve_ids), "fetched": fetched, "updated": updated, "errors": errors[:20]}
+
+
+async def sync_osv_packages(session: AsyncSession, packages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Query OSV for package/SBOM records and import CVE aliases into the CVE Library."""
+    await ensure_cve_sources(session)
+    queries = []
+    normalized_packages: list[dict[str, str]] = []
+    for package in packages[:200]:
+        name = str(package.get("package_name") or package.get("name") or "").strip()
+        ecosystem = _normalize_osv_ecosystem(str(package.get("ecosystem") or package.get("package_type") or "").strip())
+        version = str(package.get("version") or package.get("package_version") or "").strip()
+        if not name or not ecosystem:
+            continue
+        query: dict[str, Any] = {"package": {"name": name, "ecosystem": ecosystem}}
+        if version:
+            query["version"] = version
+        queries.append(query)
+        normalized_packages.append({"name": name, "ecosystem": ecosystem, "version": version})
+    source = await session.get(CVESource, OSV_SOURCE_ID)
+    if not queries:
+        return {"source": OSV_SOURCE_ID, "mode": "osv-querybatch", "requested": 0, "fetched": 0, "inserted": 0, "updated": 0, "package_results": []}
+
+    try:
+        response = safe_post(OSV_QUERY_BATCH_URL, json={"queries": queries}, headers={"User-Agent": APP_USER_AGENT}, timeout=90)
+        response.raise_for_status()
+        payload = response.json()
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        items: list[CVEImportItem] = []
+        package_results: list[dict[str, Any]] = []
+        for package, result in zip(normalized_packages, results, strict=False):
+            vulns = result.get("vulns", []) if isinstance(result, dict) else []
+            package_results.append({**package, "vulnerability_count": len(vulns), "ids": [str(v.get("id", "")) for v in vulns[:20] if isinstance(v, dict)]})
+            for vuln in vulns:
+                if isinstance(vuln, dict):
+                    parsed = _parse_osv_vuln(vuln, package)
+                    if not parsed and vuln.get("id"):
+                        try:
+                            detail = _fetch_osv_vuln_detail(str(vuln["id"]))
+                        except Exception:
+                            detail = None
+                        if detail:
+                            parsed = _parse_osv_vuln(detail, package)
+                    items.extend(parsed)
+        upsert = await upsert_cves(session, items)
+        imported_cve_ids = sorted({item.cve_id for item in items})
+        nvd_enrichment: dict[str, Any] | None = None
+        if imported_cve_ids:
+            try:
+                nvd_enrichment = await sync_nvd_cve_ids(session, imported_cve_ids, limit=min(len(imported_cve_ids), 50))
+            except Exception as exc:
+                nvd_enrichment = {"status": "error", "error": str(exc)[:500]}
+        if source:
+            source.last_synced_at = datetime.now(timezone.utc)
+            source.sync_status = "ok"
+            source.sync_error = ""
+        await session.commit()
+        return {
+            "source": OSV_SOURCE_ID,
+            "mode": "osv-querybatch",
+            "requested": len(queries),
+            "fetched": sum(item["vulnerability_count"] for item in package_results),
+            "imported_cves": len(items),
+            "package_results": package_results,
+            "nvd_enrichment": nvd_enrichment,
+            **upsert,
+        }
+    except Exception as exc:
+        if source:
+            source.sync_status = "error"
+            source.sync_error = str(exc)[:500]
+            await session.commit()
+        raise
+
+
 async def sync_all_cve_sources(session: AsyncSession, *, days: int = 7) -> dict[str, Any]:
     results: dict[str, Any] = {"totals": {"inserted": 0, "updated": 0}, "sources": []}
-    for syncer in (lambda: sync_nvd_recent(session, days=days), lambda: sync_cisa_kev(session)):
+    for syncer in (
+        lambda: sync_nvd_recent(session, days=days),
+        lambda: sync_cisa_kev(session),
+        lambda: sync_github_advisories(session, limit=100),
+        lambda: sync_epss_scores(session, limit=500),
+    ):
         try:
             item = await syncer()
         except Exception as exc:
@@ -652,6 +890,91 @@ def _parse_kev_vulnerability(item: dict[str, Any], payload: dict[str, Any]) -> C
     )
 
 
+def _parse_ghsa_advisory(item: dict[str, Any]) -> CVEImportItem | None:
+    cve_id = str(item.get("cve_id") or "").upper()
+    if not CVE_ID_RE.fullmatch(cve_id):
+        for identifier in item.get("identifiers") or []:
+            value = str(identifier.get("value") or "").upper() if isinstance(identifier, dict) else ""
+            if CVE_ID_RE.fullmatch(value):
+                cve_id = value
+                break
+    if not CVE_ID_RE.fullmatch(cve_id):
+        return None
+    vulnerabilities = item.get("vulnerabilities") or []
+    ecosystems = sorted({str(v.get("package", {}).get("ecosystem") or "") for v in vulnerabilities if isinstance(v, dict) and v.get("package")})
+    packages = sorted({str(v.get("package", {}).get("name") or "") for v in vulnerabilities if isinstance(v, dict) and v.get("package")})
+    cwes = [str(cwe.get("cwe_id") or "") for cwe in (item.get("cwes") or []) if isinstance(cwe, dict) and cwe.get("cwe_id")]
+    cvss = item.get("cvss") or {}
+    refs = [{"url": url, "source": "GitHub Advisory Database", "tags": ["advisory"]} for url in item.get("references", []) or [] if url]
+    severity = str(item.get("severity") or "").upper()
+    tags = ["github-advisory", "product-security", *[f"ecosystem-{eco}" for eco in ecosystems if eco], *[f"dependency:{pkg}" for pkg in packages[:20] if pkg]]
+    return CVEImportItem(
+        cve_id=cve_id,
+        source_id=GHSA_SOURCE_ID,
+        description=" ".join(part for part in [item.get("summary", ""), item.get("description", "")] if part)[:8000],
+        published=item.get("published_at"),
+        last_modified=item.get("updated_at"),
+        vuln_status="reviewed",
+        cvss_version="",
+        cvss_score=str(cvss.get("score") or ""),
+        cvss_severity=severity,
+        cvss_vector=str(cvss.get("vector_string") or ""),
+        cwe_ids=cwes,
+        references=refs,
+        tags=tags,
+        raw=item,
+    )
+
+
+def _parse_osv_vuln(vuln: dict[str, Any], package: dict[str, str]) -> list[CVEImportItem]:
+    aliases = [str(alias).upper() for alias in vuln.get("aliases", []) or []]
+    cve_ids = sorted({alias for alias in aliases if CVE_ID_RE.fullmatch(alias)})
+    if not cve_ids:
+        vuln_id = str(vuln.get("id") or "").upper()
+        if CVE_ID_RE.fullmatch(vuln_id):
+            cve_ids = [vuln_id]
+    refs = [
+        {"url": str(ref.get("url") or ""), "source": "OSV.dev", "tags": [str(ref.get("type") or "reference").lower()]}
+        for ref in vuln.get("references", []) or []
+        if isinstance(ref, dict) and ref.get("url")
+    ]
+    severity = _osv_severity(vuln.get("severity") or [])
+    tags = [
+        "osv",
+        "product-security",
+        f"ecosystem-{package['ecosystem']}",
+        f"dependency:{package['name']}",
+    ]
+    return [
+        CVEImportItem(
+            cve_id=cve_id,
+            source_id=OSV_SOURCE_ID,
+            description=" ".join(part for part in [vuln.get("summary", ""), vuln.get("details", "")] if part)[:8000],
+            published=vuln.get("published"),
+            last_modified=vuln.get("modified"),
+            vuln_status="osv",
+            cvss_version=severity.get("version", ""),
+            cvss_score=severity.get("score", ""),
+            cvss_severity=severity.get("severity", ""),
+            cvss_vector=severity.get("vector", ""),
+            references=refs,
+            tags=tags,
+            raw={**vuln, "queried_package": package},
+        )
+        for cve_id in cve_ids
+    ]
+
+
+def _fetch_osv_vuln_detail(vuln_id: str) -> dict[str, Any] | None:
+    normalized = vuln_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{3,160}", normalized):
+        return None
+    response = safe_get(f"{OSV_VULN_URL}/{quote(normalized, safe='')}", headers={"User-Agent": APP_USER_AGENT}, timeout=30)
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else None
+
+
 def _best_metric(metrics: dict[str, Any]) -> dict[str, Any]:
     for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
         values = metrics.get(key) or []
@@ -664,6 +987,59 @@ def _best_metric(metrics: dict[str, Any]) -> dict[str, Any]:
                 "vectorString": metric.get("vectorString", ""),
             }
     return {}
+
+
+def _osv_severity(items: list[dict[str, Any]]) -> dict[str, str]:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        score = str(item.get("score") or "")
+        if item.get("type") == "CVSS_V3" and score:
+            return {"version": "3.x", "score": _cvss_score_from_vector(score), "severity": "", "vector": score}
+        if item.get("type") == "CVSS_V4" and score:
+            return {"version": "4.0", "score": _cvss_score_from_vector(score), "severity": "", "vector": score}
+    return {}
+
+
+def _cvss_score_from_vector(vector: str) -> str:
+    match = re.search(r"/BS:([0-9.]+)", vector)
+    return match.group(1) if match else ""
+
+
+def _normalize_osv_ecosystem(value: str) -> str:
+    normalized = value.strip().lower()
+    mapping = {
+        "npm": "npm",
+        "pypi": "PyPI",
+        "python": "PyPI",
+        "maven": "Maven",
+        "go": "Go",
+        "golang": "Go",
+        "go-module": "Go",
+        "nuget": "NuGet",
+        "rubygems": "RubyGems",
+        "gem": "RubyGems",
+        "crates.io": "crates.io",
+        "cargo": "crates.io",
+        "packagist": "Packagist",
+        "composer": "Packagist",
+        "docker": "Docker",
+        "deb": "Debian",
+        "debian": "Debian",
+        "alpine": "Alpine",
+    }
+    return mapping.get(normalized, value.strip())
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _chunks(items: list[str], size: int) -> list[list[str]]:
+    return [items[index:index + size] for index in range(0, len(items), size)]
 
 
 def _extract_cpes(configurations: list[dict[str, Any]]) -> list[str]:

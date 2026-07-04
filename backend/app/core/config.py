@@ -61,6 +61,21 @@ class Settings(BaseSettings):
     # RetroHunt collectors
     nvd_api_key: str = ""          # Optional — increases NVD rate limit from 5 to 50 req/30s
     github_token: str = ""         # Optional — increases GitHub API rate limit
+    gitlab_token: str = ""         # Optional — GitLab advisory and code/security searches
+    msrc_api_key: str = ""         # Optional — Microsoft Security Update Guide higher limits
+    deps_dev_api_key: str = ""     # Optional — deps.dev package/dependency API
+    vulncheck_api_key: str = ""    # Optional — VulnCheck KEV, NVD++, exploit intelligence
+    snyk_token: str = ""           # Optional — Snyk vulnerability/package intelligence
+    socket_token: str = ""         # Optional — Socket package supply-chain risk intelligence
+    endoflife_date_token: str = "" # Optional — endoflife.date commercial API, if used
+    hibp_api_key: str = ""         # Optional — Have I Been Pwned domain breach monitoring
+    leakix_api_key: str = ""       # Optional — LeakIX exposure monitoring
+    spycloud_api_key: str = ""     # Optional — SpyCloud breach/credential exposure
+    flare_api_key: str = ""        # Optional — Flare dark web and leaked credential monitoring
+    darkowl_api_key: str = ""      # Optional — DarkOwl darknet intelligence
+    intel471_api_key: str = ""     # Optional — Intel 471 adversary/darknet reporting
+    kela_api_key: str = ""         # Optional — KELA cybercrime intelligence
+    recorded_future_api_key: str = "" # Optional — Recorded Future vulnerability/threat intelligence
 
     # OpenCTI symmetric sync
     opencti_url: str = ""

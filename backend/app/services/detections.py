@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from app.services.ai.factory import get_adapter
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 
 FORMATS = {"sigma", "yara", "yaral", "kql", "spl", "eql"}
@@ -94,7 +95,9 @@ async def generate_detection_with_ai(
 Generate one analyst-review detection rule only. Return raw rule/query content only.
 Do not use markdown fences. Do not add prose before or after the rule.
 Prefer correctness, readable structure, explicit ATT&CK metadata, and placeholders where
-environment-specific fields must be filled by an analyst."""
+environment-specific fields must be filled by an analyst.
+
+""" + TAXONOMY_SYSTEM_INSTRUCTIONS
     user = f"""Create a {fmt.upper()} detection rule.
 
 Title: {title}

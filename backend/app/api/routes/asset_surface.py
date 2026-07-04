@@ -5,15 +5,24 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.asset_surface import AssetSurfaceCase
+from app.services.asset_intel import (
+    list_asset_matches,
+    list_assets,
+    retrohunt_assets,
+    upsert_assets_from_surface_case,
+)
 from app.services.ai.factory import get_adapter
 from app.services.asset_surface import (
+    STRICT_ASSET_CSV_ALLOWED_VALUES,
+    STRICT_ASSET_CSV_COLUMNS,
+    STRICT_ASSET_CSV_REQUIRED_COLUMNS,
     build_ai_prompt,
     build_baseline_matrix,
     merge_ai_matrix,
@@ -21,6 +30,7 @@ from app.services.asset_surface import (
     parse_inventory,
 )
 from app.services.auth import TeamUser, analyst, audit
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 router = APIRouter(prefix="/asset-surface", tags=["Asset Attack Surface"])
 logger = logging.getLogger(__name__)
@@ -48,6 +58,9 @@ class AssetSurfaceAnalysisOut(BaseModel):
     cross_asset_findings: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     validation_gaps: list[str] = Field(default_factory=list)
+    registry_summary: dict[str, Any] = Field(default_factory=dict)
+    retrohunt_summary: dict[str, Any] = Field(default_factory=dict)
+    intel_matches: list[dict[str, Any]] = Field(default_factory=list)
     raw_ai_response: str = ""
 
 
@@ -64,6 +77,30 @@ class AssetSurfaceCaseListItem(BaseModel):
     summary: str
     created_at: datetime
     updated_at: datetime
+
+
+class AssetRetrohuntIn(BaseModel):
+    asset_ids: list[str] = Field(default_factory=list)
+
+
+@router.get("/csv-schema")
+async def asset_surface_csv_schema(_: TeamUser = Depends(analyst)):
+    return {
+        "format": "csv",
+        "delimiter": ",",
+        "multi_value_separator": ";",
+        "columns": STRICT_ASSET_CSV_COLUMNS,
+        "required_columns": STRICT_ASSET_CSV_REQUIRED_COLUMNS,
+        "allowed_values": STRICT_ASSET_CSV_ALLOWED_VALUES,
+        "template_header": ",".join(STRICT_ASSET_CSV_COLUMNS),
+        "notes": [
+            "Use UTF-8 CSV with a header row.",
+            "Use semicolon-separated values inside multi-value cells.",
+            "Quote cells that contain semicolons, commas, or spaces.",
+            "Keep asset_id stable across uploads.",
+            "Do not include secrets, credentials, private keys, or exploit payloads.",
+        ],
+    }
 
 
 @router.post("/analyze", response_model=AssetSurfaceAnalysisOut)
@@ -98,7 +135,8 @@ async def analyze_asset_surface(
             adapter_provider = adapter.provider
             adapter_model = adapter.model
             ai_raw = await adapter._raw_complete(
-                "You are a senior attack surface management analyst. Return only valid JSON.",
+                "You are a senior attack surface management analyst. Return only valid JSON.\n\n"
+                + TAXONOMY_SYSTEM_INSTRUCTIONS,
                 build_ai_prompt(records, baseline),
             )
             matrix = merge_ai_matrix(baseline, parse_ai_json(ai_raw))
@@ -156,10 +194,23 @@ async def analyze_asset_surface(
     )
     session.add(case)
     await session.flush()
+    registry_summary = await upsert_assets_from_surface_case(
+        session,
+        case_id=case.id,
+        inventory_name=case_name,
+        assets=matrix["assets"],
+    )
+    retrohunt_summary = await retrohunt_assets(session, asset_ids=registry_summary["asset_ids"])
+    recent_matches = await list_asset_matches(session, limit=100)
+    asset_ids = set(registry_summary["asset_ids"])
+    intel_matches = [match for match in recent_matches if match["asset_id"] in asset_ids][:50]
     result.case_id = str(case.id)
     result.case_name = case.name
     result.created_at = case.created_at
     result.updated_at = case.updated_at
+    result.registry_summary = registry_summary
+    result.retrohunt_summary = retrohunt_summary
+    result.intel_matches = intel_matches
     case.result = result.model_dump(mode="json")
 
     await audit(
@@ -169,6 +220,17 @@ async def analyze_asset_surface(
         "asset_surface_case",
         str(case.id),
         details={"name": case.name, "asset_count": case.asset_count, "technique_count": len(case.technique_ids)},
+    )
+    await audit(
+        session,
+        user,
+        "asset_surface.retrohunt",
+        "asset_registry",
+        details={
+            "case_id": str(case.id),
+            "assets_checked": retrohunt_summary.get("assets_checked", 0),
+            "matches_created": retrohunt_summary.get("matches_created", 0),
+        },
     )
     await session.commit()
     await session.refresh(case)
@@ -193,6 +255,44 @@ async def list_asset_surface_cases(
         .offset(offset)
     )
     return [_case_list_item(row) for row in rows.scalars().all()]
+
+
+@router.get("/assets")
+async def list_registered_assets(
+    search: str = "",
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(analyst),
+):
+    return await list_assets(session, search=search, limit=limit, offset=offset)
+
+
+@router.get("/intel-matches")
+async def list_registered_asset_matches(
+    asset_id: str | None = None,
+    source_type: str = "",
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(analyst),
+):
+    try:
+        return await list_asset_matches(session, asset_id=asset_id, source_type=source_type, limit=limit, offset=offset)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid asset ID") from exc
+
+
+@router.post("/retrohunt")
+async def run_asset_retrohunt(
+    payload: AssetRetrohuntIn,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(analyst),
+):
+    summary = await retrohunt_assets(session, asset_ids=payload.asset_ids or None)
+    await audit(session, user, "asset_surface.retrohunt", "asset_registry", details=summary)
+    await session.commit()
+    return summary
 
 
 @router.get("/cases/{case_id}", response_model=AssetSurfaceAnalysisOut)

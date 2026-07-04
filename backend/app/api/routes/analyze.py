@@ -33,14 +33,26 @@ from app.models.operations import ReportIntake
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
 from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.asset_intel import retrohunt_assets
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 logger = logging.getLogger(__name__)
 
 ALLOWED_PROVIDERS = {"claude", "openai", "gemini", "minimax", "local"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+async def _retrohunt_assets_after_report_ingest(session: AsyncSession, *, source: str) -> dict[str, Any] | None:
+    try:
+        summary = await retrohunt_assets(session)
+        logger.info("Asset retrohunt after %s: %s", source, summary)
+        return summary
+    except Exception as exc:
+        logger.warning("Asset retrohunt after %s failed: %s", source, exc, exc_info=True)
+        return None
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -552,6 +564,7 @@ async def ingest_research_url(
             indicators=[item.model_dump() for item in extract_iocs_from_text(fetched.source_text, source_id="report-url", confidence=70)[:200]],
             analyst_notes=json.dumps(notes, ensure_ascii=False),
         ))
+        await _retrohunt_assets_after_report_ingest(session, source="url-report")
         await audit(session, user, "analyze.ingest_research_url", "analysis_session", str(db_session.id), {
             "domain": domain,
             "source_url": fetched.source_url,
@@ -1009,7 +1022,8 @@ async def chat(req: ChatRequest, _: TeamUser = Depends(analyst)):
     system = req.system_prompt or (
         "You are a senior threat intelligence analyst with deep expertise in the MITRE ATT&CK "
         "framework. Answer the analyst's question clearly and concisely. Reference specific "
-        "ATT&CK technique IDs where relevant. Be precise and actionable."
+        "ATT&CK technique IDs where relevant. Be precise and actionable.\n\n"
+        + TAXONOMY_SYSTEM_INSTRUCTIONS
     )
     user = req.message
     if req.context:
@@ -1840,6 +1854,7 @@ def _build_log_pcap_prompt(text: str, observables: list[LogObservable], suspicio
     return (
         "Log/PCAP security analysis input. Diagnose suspicious or malicious activity, map behaviors to MITRE ATT&CK, "
         "and use the supplied extracted observables as evidence when relevant.\n\n"
+        f"{TAXONOMY_SYSTEM_INSTRUCTIONS}\n\n"
         f"Extracted observables:\n{observable_lines or 'none'}\n\n"
         f"Heuristic suspicious findings:\n{finding_lines or 'none'}\n\n"
         "--- BEGIN LOG/PCAP TEXT ---\n"

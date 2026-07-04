@@ -77,7 +77,8 @@ class _MockSession:
         try:
             description = statement.column_descriptions[0]
             model = description.get("entity")
-            selected_name = getattr(description.get("expr"), "name", None)
+            raw_selected_name = getattr(description.get("expr"), "name", None)
+            selected_name = raw_selected_name if isinstance(raw_selected_name, str) else None
         except (AttributeError, IndexError, TypeError):
             model = None
             selected_name = None

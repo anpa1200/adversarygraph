@@ -30,8 +30,8 @@ def test_malpedia_family_to_import_item_maps_attribution_and_context():
     assert item.malware_family == "ExampleRat"
     assert item.actor_name == "APT28, Fancy Bear"
     assert item.source_url == "https://example.test/report"
-    assert "Example RAT" in item.tags
-    assert "APT28" in item.tags
+    assert "tag:example-rat" in item.tags
+    assert "tag:apt28" in item.tags
 
 
 def test_ioc_item_technique_ids_extracts_explicit_and_raw_attack_ids():

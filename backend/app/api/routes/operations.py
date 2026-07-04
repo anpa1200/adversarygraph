@@ -10,9 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.operations import DetectionCandidate, Investigation, ReportIntake, TrackedActor
+from app.services.asset_intel import retrohunt_assets
 from app.services.auth import TeamUser, analyst, audit
 
 router = APIRouter(prefix="/operations", tags=["Operational Intelligence"])
+
+
+async def _retrohunt_assets_after_intake(db: AsyncSession) -> dict | None:
+    try:
+        return await retrohunt_assets(db)
+    except Exception:
+        return None
 
 
 class InvestigationBody(BaseModel):
@@ -114,16 +122,24 @@ async def intake(db: AsyncSession = Depends(get_session), _: TeamUser = Depends(
 @router.post("/intake", status_code=201)
 async def create_intake(body: IntakeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     row = ReportIntake(**body.model_dump()); db.add(row); await db.flush()
+    asset_retrohunt = await _retrohunt_assets_after_intake(db)
     await audit(db, user, "operations.create_intake", "report_intake", str(row.id), {"title": row.title})
-    await db.commit(); await db.refresh(row); return out(row)
+    await db.commit(); await db.refresh(row)
+    payload = out(row)
+    payload["asset_retrohunt"] = asset_retrohunt
+    return payload
 
 
 @router.put("/intake/{item_id}")
 async def update_intake(item_id: str, body: IntakeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     row = await get_or_404(db, ReportIntake, item_id)
     for key, value in body.model_dump().items(): setattr(row, key, value)
+    asset_retrohunt = await _retrohunt_assets_after_intake(db)
     await audit(db, user, "operations.update_intake", "report_intake", item_id)
-    await db.commit(); await db.refresh(row); return out(row)
+    await db.commit(); await db.refresh(row)
+    payload = out(row)
+    payload["asset_retrohunt"] = asset_retrohunt
+    return payload
 
 
 @router.delete("/intake/{item_id}", status_code=204)

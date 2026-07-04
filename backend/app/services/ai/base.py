@@ -15,6 +15,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
+
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -84,7 +86,9 @@ Rules:
 - summary: write for a CTI analyst. Be concise but readable. Mention the main behavior chain, important IOCs or malware names if present, and avoid attribution certainty unless the source explicitly states it.
 - Include ALL techniques you can identify; do not truncate the list.
 - tactic: use the framework kill-chain shortname (for example initial-access, execution, persistence, reconnaissance).
-- If the text contains no detectable adversary behaviour, return empty arrays and explain in summary."""
+- If the text contains no detectable adversary behaviour, return empty arrays and explain in summary.
+
+""" + TAXONOMY_SYSTEM_INSTRUCTIONS
 
 USER_TEMPLATE = """Analyse the following text and extract technique mappings for this framework/domain:
 {domain}

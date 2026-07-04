@@ -19,6 +19,7 @@ from app.core.version import APP_USER_AGENT
 from app.models.attack import AptGroup, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 from app.services.virustotal import classify_indicator, lookup_virustotal_ioc
 
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
@@ -407,7 +408,10 @@ async def _urlscan_activity_analysis(
     try:
         adapter = get_adapter(options.ai_provider)
         text = json.dumps({"indicator": value, "urlscan_results": rows}, ensure_ascii=True, default=str)[:18000]
-        system = "You are a CTI analyst reviewing urlscan activity. Return only valid JSON."
+        system = (
+            "You are a CTI analyst reviewing urlscan activity. Return only valid JSON.\n\n"
+            + TAXONOMY_SYSTEM_INSTRUCTIONS
+        )
         user = (
             "Analyze these urlscan search results for suspicious or malicious web activity patterns. "
             "Return JSON with keys summary, findings, technique_ids. findings must be a list of objects "
@@ -1167,7 +1171,7 @@ def _report_input(**kwargs: Any) -> dict[str, Any]:
 async def _ai_summary(report_input: dict[str, Any], options: InvestigationOptions) -> str:
     adapter = get_adapter(options.ai_provider)
     text = json.dumps(report_input, ensure_ascii=True, default=str)[:30000]
-    system = "You are a senior CTI analyst. Return concise prose, no markdown table."
+    system = "You are a senior CTI analyst. Return concise prose, no markdown table.\n\n" + TAXONOMY_SYSTEM_INSTRUCTIONS
     user = (
         "Summarize this IOC investigation for a CTI analyst. Explain IOC type, relationship graph, "
         "Tier 1/Tier 2 pivots, suspicious evidence, ATT&CK TTPs, kill-chain phases, actor/APT leads, "

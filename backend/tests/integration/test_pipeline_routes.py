@@ -94,6 +94,7 @@ async def test_observable_create(client: AsyncClient):
     assert response.status_code == 201
     assert response.json()["type"] == "domain"
     assert response.json()["value"] == "test.example.com"
+    assert response.json()["tags"] == ["tag:phishing"]
 
 
 @pytest.mark.asyncio

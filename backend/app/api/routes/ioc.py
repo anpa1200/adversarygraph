@@ -786,7 +786,18 @@ async def sync_threatfox_route(
 ):
     try:
         result = await sync_threatfox(session, days=days, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
-        await audit(session, user, "ioc.sync_threatfox", "ioc_source", details={"days": days, "domain": domain, "inserted": result.inserted, "updated": result.updated})
+        await audit(
+            session,
+            user,
+            "ioc.sync_threatfox",
+            "ioc_source",
+            details={
+                "days": days,
+                "domain": domain,
+                "inserted": int(result.get("inserted", 0) or 0),
+                "updated": int(result.get("updated", 0) or 0),
+            },
+        )
         return result
     except Exception as exc:
         logger.error("ThreatFox sync failed: %s", exc, exc_info=True)
@@ -852,7 +863,18 @@ async def sync_source_route(
 ):
     try:
         result = await sync_custom_source(session, source_id=source_id, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
-        await audit(session, user, "ioc.sync_source", "ioc_source", source_id, {"domain": domain, "inserted": result.inserted, "updated": result.updated})
+        await audit(
+            session,
+            user,
+            "ioc.sync_source",
+            "ioc_source",
+            source_id,
+            {
+                "domain": domain,
+                "inserted": int(result.get("inserted", 0) or 0),
+                "updated": int(result.get("updated", 0) or 0),
+            },
+        )
         return result
     except Exception as exc:
         logger.error("Custom IOC source sync failed: %s", exc, exc_info=True)
@@ -878,7 +900,17 @@ async def enrich_ioc_ttps_route(
             domain=domain,
             limit=limit,
         )
-        await audit(session, user, "ioc.enrich_ttps", "ioc_source", details={"domain": domain, "checked": result.checked, "updated": result.updated})
+        await audit(
+            session,
+            user,
+            "ioc.enrich_ttps",
+            "ioc_source",
+            details={
+                "domain": domain,
+                "checked": int(result.get("checked", 0) or 0),
+                "updated": int(result.get("updated", 0) or 0),
+            },
+        )
         await session.commit()
         return result
     except Exception as exc:
