@@ -1,5 +1,26 @@
 # Changelog
 
+## v5.9.0 - 2026-07-07
+
+- Promoted active release markers to v5.9.0 across backend, frontend, README,
+  roadmap, Helm metadata, version matrix, and release consistency checks.
+- Added EMB3D backend service, API route, frontend page, unit coverage, and
+  documentation for embedded-device threat model assessment workflows.
+- Added unified product, component, dependency, and asset modeling support for
+  cross-module exposure analysis.
+- Expanded Threat Radar with full asset-inventory import templates,
+  product-security example datasets, and a dedicated asset review page.
+- Extended Asset Surface and Threat Radar backend/frontend workflows for
+  product, component, dependency, and exposure triage.
+
+## v5.8.0 - 2026-07-04
+
+- Added Threat Radar product-security CTI early warning with scored signals,
+  claims, evidence, case graphs, and sanitized legal-sensitive metadata.
+- Added product/component/dependency exposure mapping, watchlists, workflow
+  queues, and generated PSIRT, Threat Hunt, IR, Detection, and report outputs.
+- Added Threat Radar route tests and documentation for the new workflow.
+
 ## v5.7.0 - 2026-07-03
 
 - Promoted active release markers to v5.7.0 across backend, frontend, README,

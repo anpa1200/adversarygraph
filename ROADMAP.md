@@ -1,8 +1,17 @@
 # Roadmap
 
-Current release: **v5.8.0** — Threat Radar product-security CTI, product/component/dependency exposure mapping, sanitized exposure monitoring, scored cases, and PSIRT/Hunt/IR/Detection workflows (2026-07-04)
+Current release: **v5.9.0** — EMB3D assessment workflows plus Threat Radar full asset-inventory import, product/component/dependency exposure mapping, and asset review pages (2026-07-07)
 
-For the full history from v0.2.0 through v5.8.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v5.9.0 see [CHANGELOG.md](CHANGELOG.md).
+
+## v5.9 — EMB3D and Threat Radar Asset Workflows
+
+- [x] Add EMB3D backend service and API route for embedded-device threat model assessment workflows
+- [x] Add EMB3D frontend page and documentation
+- [x] Add unified model support for product, component, dependency, and asset exposure analysis
+- [x] Add Threat Radar full asset-inventory templates and product-security example datasets
+- [x] Add Threat Radar asset review page for product/component/dependency exposure triage
+- [x] Extend Asset Surface and Threat Radar tests for the expanded asset workflow
 
 ## v5.7 — Research Collection and Linked Report Review
 

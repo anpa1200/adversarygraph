@@ -6,15 +6,16 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v5.8.0 |
-| Release date | 2026-07-04 |
-| Theme | Threat Radar product-security CTI early warning, product exposure scoring, and PSIRT/Hunt/IR/Detection workflows |
+| Version | v5.9.0 |
+| Release date | 2026-07-07 |
+| Theme | EMB3D assessment workflows and Threat Radar full asset-inventory exposure mapping |
 | Status | Stable — hardening sprint in progress |
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v5.9.0 | EMB3D and Threat Radar Asset Workflows | EMB3D API/service/UI/documentation, unified product/component/dependency/asset modeling, full asset-inventory import templates, product-security sample datasets, and Threat Radar asset review pages |
 | v5.8.0 | Threat Radar Product-Security CTI | Threat Radar module, scored CVE/KEV/PoC/zero-day/supplier/package/hardware/customer/internal telemetry signals, product/component/dependency exposure mappings, case graph, sanitized legal-sensitive evidence handling, PSIRT/Hunt/IR/Detection queues, watchlists, and generated reports |
 | v5.7.0 | Research Collection and Linked Report Review | Reports / Research collection page, linked report review with inline entity links, source-text preservation for AI analysis, store-only research upload, Parse with AI upload workflow, and research analysis guide |
 | v5.6.0 | Statistics Tag Analytics | Expanded Statistics module with IOC/CVE/TTP/actor/report/sector/global tag widgets for risk, confidence, region, sector, type, source, telemetry, TLP, attack vector, malware family, and relationship-confidence analysis |
@@ -33,7 +34,7 @@ This file is the canonical reference for AdversaryGraph release history and feat
 | v0.2.0–v1.x | Foundation | Initial FastAPI backend, React frontend, PostgreSQL, Redis, Celery, Docker Compose |
 
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
-For the current release narrative, see [v5.8.0 release notes](release-notes/v5.8.0.md).
+For the current release narrative, see [v5.9.0 release notes](release-notes/v5.9.0.md).
 
 ## Feature Gate Legend
 
