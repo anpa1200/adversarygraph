@@ -93,6 +93,7 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
+| EMB3D embedded threat modeling | [docs/emb3d.md](docs/emb3d.md) |
 | CVE Library | [docs/cve-cvss-intelligence.md](docs/cve-cvss-intelligence.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](docs/evidence-to-detection-graph.md) |
 | Security policy | [SECURITY.md](SECURITY.md) |

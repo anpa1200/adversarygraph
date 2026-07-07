@@ -44,6 +44,8 @@ import { Statistics } from '@/pages/Statistics';
 import { LinkedReport } from '@/pages/LinkedReport';
 import { ReportsResearch } from '@/pages/ReportsResearch';
 import { ThreatRadar } from '@/pages/ThreatRadar';
+import { ThreatRadarAssets } from '@/pages/ThreatRadarAssets';
+import { Emb3d } from '@/pages/Emb3d';
 
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
@@ -114,6 +116,7 @@ function AppShell() {
                   <Route path="/observability" element={<RoleGate require="analyst"><Observability /></RoleGate>} />
                   <Route path="/statistics" element={<RoleGate require="analyst"><Statistics /></RoleGate>} />
                   <Route path="/threat-radar" element={<RoleGate require="analyst"><ThreatRadar /></RoleGate>} />
+                  <Route path="/threat-radar/assets" element={<RoleGate require="analyst"><ThreatRadarAssets /></RoleGate>} />
                   <Route path="/evidence-graph" element={<RoleGate require="analyst"><EvidenceGraph /></RoleGate>} />
                   <Route path="/admin" element={<RoleGate require="admin"><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />
@@ -121,6 +124,7 @@ function AppShell() {
                   <Route path="/examples" element={<Examples />} />
                   <Route path="/sector-intel" element={<SectorIntel />} />
                   <Route path="/asset-surface" element={<AssetSurface />} />
+                  <Route path="/emb3d" element={<RoleGate require="analyst"><Emb3d /></RoleGate>} />
                   <Route path="/attack-simulation" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
                   <Route path="/attack-simulation/:simulationId" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
                   <Route path="/external-simulation" element={<Navigate to="/attack-simulation" replace />} />

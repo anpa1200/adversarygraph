@@ -62,6 +62,16 @@ async def test_threat_radar_signal_to_case_workflow(client: AsyncClient):
     assert graph.status_code == 200
     assert any(node["type"] == "cve" for node in graph.json()["nodes"])
 
+    unified = await client.get("/api/threat-radar/unified/entities")
+    assert unified.status_code == 200
+    unified_entities = unified.json()
+    assert any(item["entity_type"] == "product" and item["value"] == "edge-gateway" for item in unified_entities)
+    assert any(
+        item["entity_type"] == "signal"
+        and any(rel["relationship"] == "mentions-cve" and rel["target_value"] == "CVE-2026-34909" for rel in item["metadata"].get("relationships", []))
+        for item in unified_entities
+    )
+
     for path in ("create-hunt", "create-psirt-task", "create-ir-escalation", "create-detection-requirement"):
         response = await client.post(f"/api/threat-radar/cases/{case_id}/{path}")
         assert response.status_code == 201
@@ -137,6 +147,137 @@ async def test_exposure_monitoring_provider_readiness_and_plan(client: AsyncClie
     body = plan.json()
     assert len(body["providers"]) == 3
     assert body["watch_terms"][0]["products"] == ["bluefield"]
+
+
+@pytest.mark.asyncio
+async def test_company_space_assets_monitors_and_ai_steps(client: AsyncClient):
+    create_space = await client.post(
+        "/api/threat-radar/spaces",
+        json={
+            "name": "NVIDIA Product Security",
+            "description": "Private monitored space for products, assets, and exposure signals.",
+            "owner": "PSIRT",
+            "sector": "Technology",
+            "region": "Global",
+            "tags": ["product-security", "gpu"],
+        },
+    )
+    assert create_space.status_code == 201
+    space = create_space.json()
+    assert space["slug"] == "nvidia-product-security"
+    assert space["counts"]["dashboards"] == 1
+    assert space["counts"]["monitors"] == 2
+
+    metrics = await client.get("/api/threat-radar/spaces/metrics")
+    assert metrics.status_code == 200
+    assert metrics.json()["spaces"] >= 1
+
+    asset = await client.post(
+        f"/api/threat-radar/spaces/{space['id']}/assets",
+        json={
+            "asset_id": "prod-bluefield-edge-001",
+            "name": "BlueField edge gateway",
+            "asset_type": "appliance",
+            "environment": "production",
+            "owner": "Platform Security",
+            "criticality": "critical",
+            "exposure": "internet",
+            "products": ["BlueField"],
+            "components": ["DPU firmware"],
+            "technologies": ["DOCA", "Linux"],
+            "domains": ["edge.example.test"],
+            "tags": ["customer-facing"],
+        },
+    )
+    assert asset.status_code == 201
+    assert asset.json()["products"] == ["bluefield"]
+    assert asset.json()["criticality"] == "critical"
+
+    create_signal = await client.post(
+        "/api/threat-radar/signals",
+        json={
+            "title": "BlueField firmware dump claim",
+            "signal_type": "firmware_dump_claim",
+            "description": "Sanitized provider note references BlueField DPU firmware exposure.",
+            "confidence": 75,
+            "product_mappings": [
+                {
+                    "product": "BlueField",
+                    "component": "DPU firmware",
+                    "exposure": "internet",
+                    "environment": "production",
+                    "relevance": 5,
+                    "blast_radius": 4,
+                }
+            ],
+            "create_case": True,
+        },
+    )
+    assert create_signal.status_code == 201
+
+    detail = await client.get(f"/api/threat-radar/spaces/{space['id']}")
+    assert detail.status_code == 200
+    monitors = detail.json()["monitors"]
+    assert monitors
+
+    run = await client.post(f"/api/threat-radar/spaces/{space['id']}/monitors/{monitors[0]['id']}/run")
+    assert run.status_code == 200
+    run_body = run.json()
+    assert run_body["last_result"]["asset_count"] == 1
+    assert run_body["last_result"]["match_count"] >= 1
+
+    dashboard = await client.post(f"/api/threat-radar/spaces/{space['id']}/dashboards/generate")
+    assert dashboard.status_code == 201
+    dashboard_body = dashboard.json()
+    assert dashboard_body["dashboard_type"] == "threat-monitor"
+    widget_ids = {widget["id"] for widget in dashboard_body["widgets"]}
+    assert {
+        "status-strip",
+        "alert-asset-match",
+        "alert-technology-match",
+        "alert-supply-chain-match",
+        "alerts",
+        "cve-exposure",
+        "breach-leak-exposure",
+    }.issubset(widget_ids)
+    assert not {"space-readiness", "space-assets", "asset-exposure", "product-pressure", "workflow-queues", "ai-next-actions"} & widget_ids
+    alerts = next(widget for widget in dashboard_body["widgets"] if widget["id"] == "alerts")
+    assert alerts["metrics"][0]["value"] >= 1
+    supply_chain_alerts = next(widget for widget in dashboard_body["widgets"] if widget["id"] == "alert-supply-chain-match")
+    assert supply_chain_alerts["metrics"][0]["value"] >= 1
+    assert supply_chain_alerts["rows"][0]["match_type"] == "supply-chain"
+    assert "dpu-firmware" in [item.lower() for item in supply_chain_alerts["rows"][0]["matched_terms"]]
+    persisted_alerts = await client.get(f"/api/threat-radar/spaces/{space['id']}/alerts")
+    assert persisted_alerts.status_code == 200
+    assert persisted_alerts.json()
+    assert persisted_alerts.json()[0]["dedup_key"]
+    assert persisted_alerts.json()[0]["status"] == "new"
+    unified_asset = await client.get("/api/threat-radar/unified/entities?q=bluefield")
+    assert unified_asset.status_code == 200
+    entity_rows = unified_asset.json()
+    assert any(item["entity_type"] == "asset" for item in entity_rows)
+    assert any(item["entity_type"] == "product" and item["value"] == "bluefield" for item in entity_rows)
+    assert any(item["entity_type"] == "alert" for item in entity_rows)
+    search = await client.post(
+        f"/api/threat-radar/spaces/{space['id']}/search",
+        json={"query": "match_type:supply-chain | stats count by priority", "limit": 25},
+    )
+    assert search.status_code == 200
+    assert search.json()["matched"] >= 1
+    assert search.json()["rows"][0]["match_type"] == "supply-chain"
+    update_alert = await client.post(
+        f"/api/threat-radar/spaces/{space['id']}/alerts/{persisted_alerts.json()[0]['id']}/status",
+        json={"status": "triaged", "assignee": "psirt"},
+    )
+    assert update_alert.status_code == 200
+    assert update_alert.json()["status"] == "triaged"
+    ai = await client.post(
+        f"/api/threat-radar/spaces/{space['id']}/ai-assistant",
+        json={"step": "upload_inventory", "context": {"goal": "prepare PSIRT relevance matching"}},
+    )
+    assert ai.status_code == 200
+    assert "inventory" in ai.json()["title"].lower()
+    assert len(ai.json()["checklist"]) >= 3
 
 
 @pytest.mark.asyncio

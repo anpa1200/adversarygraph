@@ -1,8 +1,8 @@
 from uuid import uuid4
 
-from app.models.asset_surface import AssetRegistryItem
+from app.models.asset_surface import AssetIntelMatch, AssetRegistryItem
 from app.models.cve import CVERecord
-from app.services.asset_intel import _match_cve, asset_fingerprint
+from app.services.asset_intel import _collect_match, _match_cve, asset_fingerprint
 from app.services.asset_surface import build_baseline_matrix, parse_inventory
 
 
@@ -53,6 +53,21 @@ asset-ci-1,ci-runner,ci-cd,prod,Platform,10.4.5.6,ci.corp.local,"22;443","gitlab
     assert row["detection_ideas"]
 
 
+def test_product_security_inventory_maps_richer_ttp_profile():
+    content = b"""asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,products,suppliers,dependencies,exposure,criticality,tags
+asset-fw-1,bmc-redfish-controller,bmc_management,production,PSIRT,10.1.1.10,bmc.lab.local,"443;623","redfish;bmc;firmware;ipmi","Firmware Management Controller","internal","openssl;lighttpd",internal,critical,"secure_boot;management_plane"
+asset-k8s-1,ngc-container-runtime,container_orchestrator,production,Platform,10.2.2.20,,"443","kubernetes;containerd;docker;ngc","NGC Container Runtime","internal","container-image;oci",internal,high,"runtime"
+dep-oss-1,openssl,open_source_dependency,unknown,Product Security,,,,openssl,"GPU Driver","openssl","purl;sbom;cpe",third-party,critical,"dependency"
+"""
+
+    records, _ = parse_inventory(content, "product-security.csv")
+    matrix = build_baseline_matrix(records)
+    ttps = {ttp["attack_id"] for row in matrix["assets"] for ttp in row["ttp_candidates"]}
+
+    assert {"T1068", "T1542", "T1562", "T1611", "T1610", "T1525", "T1195", "T1608"}.issubset(ttps)
+    assert len(ttps) >= 12
+
+
 def test_asset_registry_fingerprint_prefers_domain_then_ip():
     assert asset_fingerprint({"domains": ["Portal.Example.com"], "ip_addresses": ["203.0.113.10"]}) == "domain:portal.example.com"
     assert asset_fingerprint({"domains": [], "ip_addresses": ["203.0.113.10"]}) == "ip:203.0.113.10"
@@ -96,3 +111,44 @@ def test_asset_cve_retrohunt_matches_product_tokens_and_ttp_context():
     assert match.source_id == "CVE-2026-0001"
     assert match.relevance_score >= 75
     assert any("nginx" in item.lower() for item in match.evidence)
+
+
+def test_asset_retrohunt_collects_duplicate_actor_matches_as_one_relationship():
+    asset_id = uuid4()
+    matches = {}
+
+    _collect_match(
+        matches,
+        AssetIntelMatch(
+            asset_id=asset_id,
+            source_type="actor",
+            source_id="G0007",
+            relationship="actor-reported-with-relevant-cve",
+            title="APT28",
+            relevance_score=62,
+            confidence=70,
+            evidence=["Relevant CVE: CVE-2026-0001"],
+            tags=["actor:G0007", "cve:CVE-2026-0001"],
+        ),
+    )
+    _collect_match(
+        matches,
+        AssetIntelMatch(
+            asset_id=asset_id,
+            source_type="actor",
+            source_id="G0007",
+            relationship="actor-reported-with-relevant-cve",
+            title="APT28",
+            relevance_score=75,
+            confidence=85,
+            evidence=["Relevant CVE: CVE-2026-0002"],
+            tags=["actor:G0007", "cve:CVE-2026-0002"],
+        ),
+    )
+
+    assert len(matches) == 1
+    match = next(iter(matches.values()))
+    assert match.relevance_score == 75
+    assert match.confidence == 85
+    assert match.evidence == ["Relevant CVE: CVE-2026-0001", "Relevant CVE: CVE-2026-0002"]
+    assert "cve:CVE-2026-0002" in match.tags

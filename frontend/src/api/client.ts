@@ -1040,6 +1040,8 @@ export interface AssetSurfaceAnalysisResult {
   registry_summary: AssetSurfaceRegistrySummary;
   retrohunt_summary: AssetSurfaceRetrohuntSummary;
   intel_matches: AssetIntelMatch[];
+  company_space_id?: string | null;
+  company_space_assets_synced?: number;
   raw_ai_response: string;
 }
 
@@ -1073,6 +1075,113 @@ export const assetSurfaceApi = {
     http.post('/asset-surface/retrohunt', { asset_ids }).then(r => r.data),
   deleteCase: (caseId: string): Promise<void> =>
     http.delete(`/asset-surface/cases/${caseId}`).then(() => {}),
+};
+
+// ── EMB3D Embedded Device Threat Modeling ───────────────────────────────────
+
+export interface Emb3dCatalogProperty {
+  id: string;
+  name: string;
+  category: string;
+  is_subproperty: boolean;
+  stix_id: string;
+}
+
+export interface Emb3dCatalog {
+  version: string;
+  source_url: string;
+  property_count: number;
+  threat_count: number;
+  mitigation_count: number;
+  relationship_count: number;
+  categories: Record<string, number>;
+  properties: Emb3dCatalogProperty[];
+}
+
+export interface Emb3dMitigation {
+  id: string;
+  name: string;
+  description: string;
+  maturity: string;
+  stix_id: string;
+}
+
+export interface Emb3dAssetProperty extends Emb3dCatalogProperty {
+  confidence: number;
+  evidence: string[];
+  threat_count: number;
+}
+
+export interface Emb3dThreat {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  maturity: string;
+  cwes: string[];
+  cves: string[];
+  stix_id: string;
+  properties: Array<{ id: string; name: string; confidence: number }>;
+  mitigations: Emb3dMitigation[];
+}
+
+export interface Emb3dAssetReportItem {
+  asset_id: string;
+  inventory_asset_id: string;
+  name: string;
+  asset_type: string;
+  environment: string;
+  exposure: string;
+  criticality: string;
+  risk_score: number;
+  risk_level: string;
+  properties: Emb3dAssetProperty[];
+  threats: Emb3dThreat[];
+  threat_count: number;
+  mitigation_count: number;
+}
+
+export interface Emb3dTopThreat {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  maturity: string;
+  cwes: string[];
+  cves: string[];
+  stix_id: string;
+  affected_assets: number;
+}
+
+export interface Emb3dTopProperty extends Emb3dCatalogProperty {
+  matched_assets: number;
+}
+
+export interface Emb3dTopMitigation extends Emb3dMitigation {
+  recommended_for_threats: number;
+}
+
+export interface Emb3dAssetReport {
+  version: string;
+  source_url: string;
+  asset_count: number;
+  property_count: number;
+  threat_count: number;
+  mitigation_count: number;
+  category_counts: Record<string, number>;
+  top_threats: Emb3dTopThreat[];
+  top_properties: Emb3dTopProperty[];
+  top_mitigations: Emb3dTopMitigation[];
+  assets: Emb3dAssetReportItem[];
+}
+
+export const emb3dApi = {
+  catalog: (): Promise<Emb3dCatalog> =>
+    http.get('/emb3d/catalog').then(r => r.data),
+  report: (params?: { limit?: number; offset?: number }): Promise<Emb3dAssetReport> =>
+    http.get('/emb3d/assets/report', { params }).then(r => r.data),
+  assess: (asset_ids: string[] = [], limit = 200): Promise<Emb3dAssetReport> =>
+    http.post('/emb3d/assets/assess', { asset_ids, limit }).then(r => r.data),
 };
 
 // ── Saved Layers ──────────────────────────────────────────────────────────────
@@ -2955,7 +3064,142 @@ export interface ThreatExposureWatchTerm {
   tags?: string[];
 }
 
+export interface ThreatCompanySpace {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  owner: string;
+  sector: string;
+  region: string;
+  tags: string[];
+  settings: Record<string, unknown>;
+  counts: Record<string, number>;
+  created_by: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatSpaceAsset {
+  id: string;
+  space_id: string;
+  asset_id: string;
+  name: string;
+  asset_type: string;
+  environment: string;
+  owner: string;
+  criticality: string;
+  exposure: string;
+  products: string[];
+  components: string[];
+  technologies: string[];
+  ip_addresses: string[];
+  domains: string[];
+  tags: string[];
+  metadata: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatSpaceDashboard {
+  id: string;
+  space_id: string;
+  name: string;
+  dashboard_type: string;
+  layout: Record<string, unknown>;
+  widgets: Array<Record<string, unknown>>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatDashboardMetric {
+  label: string;
+  value: number;
+}
+
+export interface ThreatDashboardPoint {
+  label: string;
+  value: number;
+}
+
+export interface ThreatDashboardWidget {
+  id: string;
+  title: string;
+  kind: string;
+  source?: string;
+  metrics?: ThreatDashboardMetric[];
+  points?: ThreatDashboardPoint[];
+  rows?: Array<Record<string, unknown>>;
+}
+
+export interface ThreatSpaceMonitor {
+  id: string;
+  space_id: string;
+  name: string;
+  monitor_type: string;
+  cadence: string;
+  enabled: boolean;
+  query: Record<string, unknown>;
+  alert_threshold: number;
+  last_status: string;
+  last_result: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreatSpaceAIStep {
+  id: string;
+  space_id: string;
+  step: string;
+  title: string;
+  guidance: string;
+  checklist: string[];
+  created_by: string;
+  created_at?: string;
+}
+
+export interface ThreatMonitorSearchResult {
+  query: string;
+  total: number;
+  matched: number;
+  group_by: string;
+  points: ThreatDashboardPoint[];
+  rows: Array<Record<string, unknown>>;
+  errors: string[];
+}
+
+export interface ThreatCompanySpaceDetail {
+  space: ThreatCompanySpace;
+  assets: ThreatSpaceAsset[];
+  dashboards: ThreatSpaceDashboard[];
+  monitors: ThreatSpaceMonitor[];
+  ai_steps: ThreatSpaceAIStep[];
+}
+
 export const threatRadarApi = {
+  spaces: (): Promise<ThreatCompanySpace[]> => http.get('/threat-radar/spaces').then(r => r.data),
+  spaceMetrics: (): Promise<Record<string, number>> => http.get('/threat-radar/spaces/metrics').then(r => r.data),
+  createSpace: (body: Partial<ThreatCompanySpace> & { name: string }): Promise<ThreatCompanySpace> =>
+    http.post('/threat-radar/spaces', body).then(r => r.data),
+  spaceDetail: (id: string): Promise<ThreatCompanySpaceDetail> => http.get(`/threat-radar/spaces/${id}`).then(r => r.data),
+  createSpaceAsset: (spaceId: string, body: Partial<ThreatSpaceAsset> & { name: string }): Promise<ThreatSpaceAsset> =>
+    http.post(`/threat-radar/spaces/${spaceId}/assets`, body).then(r => r.data),
+  createSpaceDashboard: (spaceId: string, body: Partial<ThreatSpaceDashboard>): Promise<ThreatSpaceDashboard> =>
+    http.post(`/threat-radar/spaces/${spaceId}/dashboards`, body).then(r => r.data),
+  generateSpaceDashboard: (spaceId: string): Promise<ThreatSpaceDashboard> =>
+    http.post(`/threat-radar/spaces/${spaceId}/dashboards/generate`).then(r => r.data),
+  createSpaceMonitor: (spaceId: string, body: Partial<ThreatSpaceMonitor> & { name: string }): Promise<ThreatSpaceMonitor> =>
+    http.post(`/threat-radar/spaces/${spaceId}/monitors`, body).then(r => r.data),
+  runSpaceMonitor: (spaceId: string, monitorId: string): Promise<ThreatSpaceMonitor> =>
+    http.post(`/threat-radar/spaces/${spaceId}/monitors/${monitorId}/run`).then(r => r.data),
+  searchSpace: (spaceId: string, body: { query: string; timerange?: string; limit?: number }): Promise<ThreatMonitorSearchResult> =>
+    http.post(`/threat-radar/spaces/${spaceId}/search`, body).then(r => r.data),
+  alerts: (spaceId: string, params?: { status?: string; limit?: number }): Promise<Array<Record<string, unknown>>> =>
+    http.get(`/threat-radar/spaces/${spaceId}/alerts`, { params }).then(r => r.data),
+  updateAlertStatus: (spaceId: string, alertId: string, body: { status: string; assignee?: string; case_id?: string | null }): Promise<Record<string, unknown>> =>
+    http.post(`/threat-radar/spaces/${spaceId}/alerts/${alertId}/status`, body).then(r => r.data),
+  spaceAiAssistant: (spaceId: string, body: { step: string; context?: Record<string, unknown> }): Promise<ThreatSpaceAIStep> =>
+    http.post(`/threat-radar/spaces/${spaceId}/ai-assistant`, body).then(r => r.data),
   sources: (): Promise<ThreatRadarSource[]> => http.get('/threat-radar/sources').then(r => r.data),
   createSource: (body: Partial<ThreatRadarSource> & { name: string }): Promise<ThreatRadarSource> =>
     http.post('/threat-radar/sources', body).then(r => r.data),

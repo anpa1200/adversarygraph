@@ -25,6 +25,7 @@ from app.services.threat_radar import (
     sanitize_metadata,
     score_signal,
 )
+from app.services.unified_model import forward_case_to_unified_model, forward_signal_to_unified_model
 
 
 @dataclass(frozen=True)
@@ -337,6 +338,8 @@ async def ingest_exposure_hit(session: AsyncSession, hit: dict[str, Any], actor:
         await session.flush()
 
     case = await create_case_from_signal(session, signal, actor, [mapping] if mapping else [])
+    await forward_signal_to_unified_model(session, signal, [mapping] if mapping else [])
+    await forward_case_to_unified_model(session, case, signal, [mapping] if mapping else [])
 
     if classification["signal_type"] in {"marketplace_hardware_listing", "firmware_dump_claim", "source_code_leak_claim", "credential_exposure", "darknet_provider_mention"}:
         session.add(

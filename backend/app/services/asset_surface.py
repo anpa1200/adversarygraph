@@ -316,24 +316,104 @@ def _parse_text(text: str) -> list[AssetSurfaceRecord]:
 
 def _record_from_mapping(row: dict[str, Any], idx: int) -> AssetSurfaceRecord:
     normalized = {str(k).strip().lower().replace(" ", "_"): v for k, v in row.items()}
-    name = _first(normalized, "name", "asset", "hostname", "host", "fqdn", "domain", "ip", "ip_address") or f"asset-{idx:04d}"
+    inventory_id = _first(
+        normalized,
+        "id",
+        "asset_id",
+        "cmdb_id",
+        "dependency_id",
+        "exposure_id",
+        "component_id",
+        "product_id",
+    ) or f"asset-{idx:04d}"
+    name = _first(
+        normalized,
+        "name",
+        "asset",
+        "hostname",
+        "host",
+        "fqdn",
+        "domain",
+        "ip",
+        "ip_address",
+        "product_name",
+        "component_name",
+        "package_name",
+        "exposure_id",
+        "product_family",
+    ) or inventory_id
     ip_text = _first(normalized, "ip_addresses", "ips", "ip", "ip_address", "private_ip", "public_ip") or ""
     domain_text = _first(normalized, "domains", "domain", "fqdn", "dns", "url", "hostname") or ""
     port_text = _first(normalized, "ports", "open_ports", "port", "service_ports", "listeners") or ""
-    tech_text = _first(normalized, "technologies", "technology", "services", "software", "product", "stack") or ""
-    product_text = _first(normalized, "products", "product_names", "software_products", "applications", "packages") or ""
-    supplier_text = _first(normalized, "suppliers", "supplier", "vendor", "vendors", "manufacturer", "provider") or ""
-    dependency_text = _first(normalized, "dependencies", "dependency", "components", "libraries", "packages", "sbom_components") or ""
-    tags_text = _first(normalized, "tags", "labels", "business_unit", "application") or ""
+    tech_text = _join_fields(
+        normalized,
+        "technologies",
+        "technology",
+        "services",
+        "software",
+        "product",
+        "stack",
+        "component_type",
+        "attack_surface",
+        "sdk_version",
+        "driver_branch",
+        "firmware_version",
+        "container_image",
+    )
+    product_text = _join_fields(
+        normalized,
+        "products",
+        "product_names",
+        "product_id",
+        "product_name",
+        "product_family",
+        "product_line",
+        "software_products",
+        "applications",
+        "packages",
+    )
+    supplier_text = _join_fields(normalized, "suppliers", "supplier", "vendor", "vendors", "manufacturer", "provider")
+    dependency_text = _join_fields(
+        normalized,
+        "dependencies",
+        "dependency",
+        "dependency_id",
+        "components",
+        "component_id",
+        "component_name",
+        "package_name",
+        "package_type",
+        "libraries",
+        "packages",
+        "sbom_components",
+        "purl",
+        "cpe",
+    )
+    tags_text = _join_fields(
+        normalized,
+        "tags",
+        "labels",
+        "business_unit",
+        "application",
+        "trust_boundary",
+        "telemetry_sources",
+        "deployment_model",
+        "customer_deployment_model",
+        "release_channel",
+        "supported_status",
+        "patch_status",
+        "detection_available",
+        "mitigation_available",
+    )
     ips = _extract_ips(str(ip_text))
     domains = _extract_domains(str(domain_text))
     ports = _extract_ports(str(port_text))
     return AssetSurfaceRecord(
-        asset_id=str(_first(normalized, "id", "asset_id", "cmdb_id") or f"asset-{idx:04d}"),
+        asset_id=str(inventory_id),
         name=str(name),
-        asset_type=canonical_value("asset_type", _first(normalized, "type", "asset_type", "category", "kind") or "unknown"),
+        asset_type=canonical_value("asset_type", _infer_asset_type(normalized)),
         environment=canonical_value("environment", _first(normalized, "environment", "env", "stage", "account", "subscription") or "unknown"),
-        owner=str(_first(normalized, "owner", "team", "business_owner", "service_owner") or ""),
+        owner=str(_first(normalized, "owner", "team", "business_owner", "service_owner", "security_owner", "engineering_owner", "psirt_owner") or ""),
         ip_addresses=ips,
         domains=domains,
         ports=ports,
@@ -348,6 +428,21 @@ def _record_from_mapping(row: dict[str, Any], idx: int) -> AssetSurfaceRecord:
     )
 
 
+def _infer_asset_type(row: dict[str, Any]) -> str:
+    explicit = _first(row, "type", "asset_type", "category", "kind", "component_type", "package_type", "exposure_type")
+    if explicit:
+        return str(explicit)
+    if _first(row, "dependency_id", "package_name", "purl", "cpe"):
+        return "open_source_dependency"
+    if _first(row, "component_id", "component_name"):
+        return "product_component"
+    if _first(row, "exposure_id"):
+        return "product_exposure"
+    if _first(row, "product_id", "product_name", "product_family"):
+        return "product"
+    return "unknown"
+
+
 def _looks_like_csv(text: str) -> bool:
     first = text.splitlines()[0] if text.splitlines() else ""
     return "," in first and any(h in first.lower() for h in ["asset", "host", "ip", "domain", "port", "owner"])
@@ -359,6 +454,11 @@ def _first(row: dict[str, Any], *keys: str) -> Any:
         if value not in (None, ""):
             return value
     return None
+
+
+def _join_fields(row: dict[str, Any], *keys: str) -> str:
+    values = [str(row[key]) for key in keys if row.get(key) not in (None, "")]
+    return ";".join(values)
 
 
 def _split_multi(value: str) -> list[str]:
@@ -520,35 +620,94 @@ def _ttp_candidates(record: AssetSurfaceRecord, signals: list[dict[str, Any]]) -
     text = " ".join([
         record.name,
         record.asset_type,
+        record.environment,
+        record.exposure,
+        record.criticality,
         *record.technologies,
         *record.products,
         *record.suppliers,
         *record.dependencies,
+        *record.domains,
+        *[str(port) for port in record.ports],
         *record.tags,
     ]).lower()
     candidates = []
+    is_internet = record.exposure in {"internet", "external", "public", "customer"} or bool(record.domains)
+    has = lambda *words: any(word in text for word in words)
+    has_port = lambda *ports: any(port in record.ports for port in ports)
+    def add(attack_id: str, name: str, reason: str) -> None:
+        candidates.append({"attack_id": attack_id, "name": name, "reason": reason})
+
+    if is_internet:
+        add("T1595", "Active Scanning", "internet-facing asset can be discovered and fingerprinted before attack")
+    if is_internet or has("product", "firmware", "version", "cpe", "purl"):
+        add("T1592", "Gather Victim Host Information", "inventory exposes product, host, firmware, or dependency context useful for targeting")
+    if has("cloud", "aws", "azure", "gcp", "kubernetes", "container", "ngc"):
+        add("T1580", "Cloud Infrastructure Discovery", "cloud/container infrastructure can be enumerated after access")
+
     if "web application" in labels or record.domains:
-        candidates.append({"attack_id": "T1190", "name": "Exploit Public-Facing Application", "reason": "web/API surface or hostname exposure"})
-    if "remote administration" in labels or any(port in record.ports for port in [22, 3389, 5900]):
-        candidates.append({"attack_id": "T1021", "name": "Remote Services", "reason": "remote administration service exposed"})
+        add("T1190", "Exploit Public-Facing Application", "web/API surface or hostname exposure")
+    if has("web", "api", "nginx", "apache", "http", "portal", "redfish", "bmc"):
+        add("T1190", "Exploit Public-Facing Application", "web, API, BMC, or management interface technology is present")
+    if "remote administration" in labels or has_port(22, 3389, 5900, 445, 5985, 5986):
+        add("T1021", "Remote Services", "remote administration service exposed")
     if "remote access" in labels or any(word in text for word in ["vpn", "citrix", "sso", "okta"]):
-        candidates.append({"attack_id": "T1133", "name": "External Remote Services", "reason": "remote-access or identity edge may be abused for initial access"})
-        candidates.append({"attack_id": "T1110", "name": "Brute Force", "reason": "remote authentication surface requires lockout and MFA validation"})
+        add("T1133", "External Remote Services", "remote-access or identity edge may be abused for initial access")
+        add("T1110", "Brute Force", "remote authentication surface requires lockout and MFA validation")
+    if has("login", "auth", "sso", "vpn", "ldap", "kerberos", "ssh", "rdp") or has_port(22, 3389, 389, 443):
+        add("T1110", "Brute Force", "authentication-facing service requires password-spray and brute-force telemetry")
     if "database" in labels:
-        candidates.append({"attack_id": "T1005", "name": "Data from Local System", "reason": "data-store asset may expose sensitive data if compromised"})
+        add("T1005", "Data from Local System", "data-store asset may expose sensitive data if compromised")
+    if has("database", "postgres", "mysql", "redis", "elastic", "storage", "backup", "artifact", "registry", "source"):
+        add("T1005", "Data from Local System", "data, artifact, source, or backup system could be collected after access")
     if "identity" in labels:
-        candidates.append({"attack_id": "T1078", "name": "Valid Accounts", "reason": "identity/domain surface depends on credential controls"})
-        candidates.append({"attack_id": "T1558", "name": "Steal or Forge Kerberos Tickets", "reason": "Kerberos/AD surfaces need ticket abuse monitoring"})
+        add("T1078", "Valid Accounts", "identity/domain surface depends on credential controls")
+        add("T1558", "Steal or Forge Kerberos Tickets", "Kerberos/AD surfaces need ticket abuse monitoring")
+    if has("identity", "auth", "sso", "ldap", "kerberos", "admin", "service account", "ci", "runner", "registry"):
+        add("T1078", "Valid Accounts", "credentialed access is a realistic path for this asset class")
+    if has("identity", "sso", "okta", "ldap", "kerberos", "auth gateway"):
+        add("T1556", "Modify Authentication Process", "identity or authentication control plane could be tampered with after compromise")
+    if has("active-directory", "kerberos", "ldap", "domain controller", "ad-"):
+        add("T1558", "Steal or Forge Kerberos Tickets", "AD/Kerberos context requires ticket abuse monitoring")
     if "container" in labels:
-        candidates.append({"attack_id": "T1611", "name": "Escape to Host", "reason": "container orchestration surface requires runtime isolation validation"})
+        add("T1611", "Escape to Host", "container orchestration surface requires runtime isolation validation")
+    if has("container", "docker", "kubernetes", "containerd", "runtime", "ngc"):
+        add("T1611", "Escape to Host", "container runtime asset may require host escape detection")
+        add("T1610", "Deploy Container", "orchestrated/containerized environment can be abused to deploy malicious containers")
+    if has("container image", "oci", "registry", "ngc", "base image"):
+        add("T1525", "Implant Internal Image", "image registry or base image workflow can carry implanted images")
     if "cloud storage" in labels:
-        candidates.append({"attack_id": "T1530", "name": "Data from Cloud Storage", "reason": "cloud storage or backup asset may expose bulk data if permissions are weak"})
-        candidates.append({"attack_id": "T1552", "name": "Unsecured Credentials", "reason": "storage and backup systems commonly contain secrets or configuration material"})
+        add("T1530", "Data from Cloud Storage", "cloud storage or backup asset may expose bulk data if permissions are weak")
+        add("T1552", "Unsecured Credentials", "storage and backup systems commonly contain secrets or configuration material")
+    if has("s3", "blob", "bucket", "cloud storage", "object storage", "backup"):
+        add("T1530", "Data from Cloud Storage", "object storage and backups need bulk access monitoring")
+    if has("ci", "runner", "pipeline", "build", "secret", "token", "key", "hsm", "registry", "backup", "config"):
+        add("T1552", "Unsecured Credentials", "build, registry, backup, or configuration systems often contain credentials")
     if "software delivery" in labels:
-        candidates.append({"attack_id": "T1195", "name": "Supply Chain Compromise", "reason": "CI/CD and build infrastructure can affect downstream software trust"})
-        candidates.append({"attack_id": "T1608", "name": "Stage Capabilities", "reason": "build or release systems can be abused to stage modified artifacts"})
+        add("T1195", "Supply Chain Compromise", "CI/CD and build infrastructure can affect downstream software trust")
+        add("T1608", "Stage Capabilities", "build or release systems can be abused to stage modified artifacts")
+    if has("ci", "cd", "build", "runner", "artifact", "registry", "sbom", "dependency", "supplier", "package", "purl", "container image"):
+        add("T1195", "Supply Chain Compromise", "product, dependency, supplier, or artifact workflow is supply-chain relevant")
+    if has("build", "release", "artifact", "registry", "signing", "container image", "package", "sbom", "dependency", "purl"):
+        add("T1608", "Stage Capabilities", "release or artifact path could stage malicious capabilities")
+    if has("runner", "build", "pipeline", "script", "shell", "powershell", "bash", "python", "nodejs"):
+        add("T1059", "Command and Scripting Interpreter", "automation or runtime scripting can execute attacker-controlled commands")
+    if has("artifact", "registry", "package", "download", "update", "firmware", "container image", "ngc"):
+        add("T1105", "Ingress Tool Transfer", "package, update, artifact, or firmware flow can transfer payloads")
     if "legacy" in labels:
-        candidates.append({"attack_id": "T1068", "name": "Exploitation for Privilege Escalation", "reason": "legacy or unpatched software raises local privilege-escalation risk after access"})
+        add("T1068", "Exploitation for Privilege Escalation", "legacy or unpatched software raises local privilege-escalation risk after access")
+    if has("kernel", "driver", "firmware", "bmc", "redfish", "ipmi", "cuda", "gpu driver", "dpu", "bluefield", "jetson", "igx", "openssl"):
+        add("T1068", "Exploitation for Privilege Escalation", "kernel, driver, firmware, or management-plane component may expose privilege escalation risk")
+    if has("firmware", "bootloader", "uefi", "secure boot", "bmc", "dpu firmware", "nic firmware"):
+        add("T1542", "Pre-OS Boot", "firmware, bootloader, or secure-boot scope requires persistence validation below the OS")
+    if has("edr", "agent", "kernel", "driver", "firmware", "bmc", "management plane"):
+        add("T1562", "Impair Defenses", "defensive controls or low-level components may be impaired after compromise")
+    if has("prototype", "hardware", "board", "jetson", "igx", "bluefield", "connectx", "dpu", "gpu"):
+        add("T1200", "Hardware Additions", "hardware/product security inventory requires monitoring for physical/prototype abuse scenarios")
+    if has("gpu", "cuda", "kubernetes", "cluster", "container", "cloud", "compute"):
+        add("T1496", "Resource Hijacking", "compute or accelerator resources can be abused for unauthorized workloads")
+    if has("backup", "storage", "database", "artifact registry", "source repository"):
+        add("T1486", "Data Encrypted for Impact", "data and backup assets require impact/ransomware readiness checks")
     return candidates
 
 

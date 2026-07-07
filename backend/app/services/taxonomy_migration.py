@@ -22,6 +22,7 @@ from app.services.taxonomy import (
     labels_to_tags,
     normalize_freeform_tags,
 )
+from app.services.unified_model import forward_existing_threat_radar_to_unified_model
 
 
 async def normalize_existing_taxonomy(session: AsyncSession, *, commit: bool = True) -> dict[str, Any]:
@@ -397,6 +398,8 @@ async def _normalize_threat_radar(session: AsyncSession, stats: dict[str, Any]) 
             row.environment = environment
             changed_mappings += 1
     _record(stats, "threat_product_mappings", len(mappings), changed_mappings)
+
+    stats["unified_model_forwarding"] = await forward_existing_threat_radar_to_unified_model(session)
 
 
 def _normalize_asset_surface_result(result: dict[str, Any]) -> dict[str, Any]:

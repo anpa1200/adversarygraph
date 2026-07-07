@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.asset_surface import AssetSurfaceCase
+from app.models.threat_radar import ThreatCompanySpace, ThreatSpaceAsset
 from app.services.asset_intel import (
     list_asset_matches,
     list_assets,
@@ -61,6 +62,8 @@ class AssetSurfaceAnalysisOut(BaseModel):
     registry_summary: dict[str, Any] = Field(default_factory=dict)
     retrohunt_summary: dict[str, Any] = Field(default_factory=dict)
     intel_matches: list[dict[str, Any]] = Field(default_factory=list)
+    company_space_id: str | None = None
+    company_space_assets_synced: int = 0
     raw_ai_response: str = ""
 
 
@@ -108,17 +111,26 @@ async def analyze_asset_surface(
     provider: Annotated[str, Form()] = "local",
     model: Annotated[str | None, Form()] = None,
     inventory_name: Annotated[str | None, Form()] = None,
+    company_space_id: Annotated[str | None, Form()] = None,
     use_ai: Annotated[bool, Form()] = True,
     text: Annotated[str | None, Form()] = None,
     file: UploadFile | None = File(default=None),
+    files: list[UploadFile] | None = File(default=None),
     session: AsyncSession = Depends(get_session),
     user: TeamUser = Depends(analyst),
 ):
-    content, filename = await _read_inventory_input(text, file)
-    try:
-        records, _source_text = parse_inventory(content, filename)
-    except Exception as exc:
-        raise HTTPException(400, f"Could not parse inventory: {exc}") from exc
+    company_space = await _get_company_space_or_none(session, company_space_id)
+    inventory_inputs = await _read_inventory_inputs(text, file, files)
+    filenames = [filename or "pasted inventory" for _, filename in inventory_inputs]
+    filename = _combined_filename(filenames)
+    records = []
+    for content, source_filename in inventory_inputs:
+        try:
+            parsed_records, _source_text = parse_inventory(content, source_filename)
+            records.extend(parsed_records)
+        except Exception as exc:
+            source_label = source_filename or "pasted inventory"
+            raise HTTPException(400, f"Could not parse inventory {source_label}: {exc}") from exc
 
     if not records:
         raise HTTPException(400, "Inventory did not contain any recognizable assets")
@@ -158,8 +170,10 @@ async def analyze_asset_surface(
         details={
             "provider": adapter_provider or provider,
             "filename": filename,
+            "filenames": filenames,
             "asset_count": len(records),
             "use_ai": use_ai,
+            "company_space_id": str(company_space.id) if company_space else None,
         },
     )
     case_name = _case_name(inventory_name, filename)
@@ -178,6 +192,8 @@ async def analyze_asset_surface(
         cross_asset_findings=matrix.get("cross_asset_findings", []),
         assumptions=matrix.get("assumptions", []),
         validation_gaps=matrix.get("validation_gaps", []),
+        company_space_id=str(company_space.id) if company_space else None,
+        company_space_assets_synced=0,
         raw_ai_response=ai_raw,
     )
     case = AssetSurfaceCase(
@@ -204,6 +220,7 @@ async def analyze_asset_surface(
     recent_matches = await list_asset_matches(session, limit=100)
     asset_ids = set(registry_summary["asset_ids"])
     intel_matches = [match for match in recent_matches if match["asset_id"] in asset_ids][:50]
+    space_sync_summary = await _sync_company_space_assets(session, company_space, matrix["assets"], case_name, str(case.id))
     result.case_id = str(case.id)
     result.case_name = case.name
     result.created_at = case.created_at
@@ -211,6 +228,8 @@ async def analyze_asset_surface(
     result.registry_summary = registry_summary
     result.retrohunt_summary = retrohunt_summary
     result.intel_matches = intel_matches
+    result.company_space_id = str(company_space.id) if company_space else None
+    result.company_space_assets_synced = space_sync_summary["synced"]
     case.result = result.model_dump(mode="json")
 
     await audit(
@@ -232,6 +251,21 @@ async def analyze_asset_surface(
             "matches_created": retrohunt_summary.get("matches_created", 0),
         },
     )
+    if company_space:
+        await audit(
+            session,
+            user,
+            "asset_surface.sync_company_space",
+            "threat_company_space",
+            str(company_space.id),
+            details={
+                "case_id": str(case.id),
+                "inventory_name": case_name,
+                "assets_synced": space_sync_summary["synced"],
+                "created": space_sync_summary["created"],
+                "updated": space_sync_summary["updated"],
+            },
+        )
     await session.commit()
     await session.refresh(case)
     result.created_at = case.created_at
@@ -324,15 +358,128 @@ async def delete_asset_surface_case(
     await session.commit()
 
 
-async def _read_inventory_input(text: str | None, file: UploadFile | None) -> tuple[bytes, str | None]:
+async def _read_inventory_inputs(
+    text: str | None,
+    file: UploadFile | None,
+    files: list[UploadFile] | None,
+) -> list[tuple[bytes, str | None]]:
+    inventory_inputs: list[tuple[bytes, str | None]] = []
+    total_bytes = 0
     if file:
         content = await file.read()
-        if len(content) > MAX_ASSET_UPLOAD_BYTES:
-            raise HTTPException(413, "Inventory upload exceeds 10 MB limit")
-        return content, file.filename
+        total_bytes += len(content)
+        inventory_inputs.append((content, file.filename))
+    for item in files or []:
+        content = await item.read()
+        total_bytes += len(content)
+        inventory_inputs.append((content, item.filename))
+    if total_bytes > MAX_ASSET_UPLOAD_BYTES:
+        raise HTTPException(413, "Inventory uploads exceed 10 MB total limit")
     if text and text.strip():
-        return text.encode("utf-8"), None
+        content = text.encode("utf-8")
+        if total_bytes + len(content) > MAX_ASSET_UPLOAD_BYTES:
+            raise HTTPException(413, "Inventory uploads exceed 10 MB total limit")
+        inventory_inputs.append((content, None))
+    if inventory_inputs:
+        return inventory_inputs
     raise HTTPException(400, "Provide pasted inventory text or upload a CSV/JSON/TXT inventory file")
+
+
+def _combined_filename(filenames: list[str]) -> str | None:
+    clean = [item.strip() for item in filenames if item.strip() and item != "pasted inventory"]
+    if not clean:
+        return None
+    if len(clean) == 1:
+        return clean[0][:500]
+    joined = "; ".join(clean)
+    if len(joined) <= 500:
+        return joined
+    return f"{len(clean)} inventory files: {joined[:470]}..."
+
+
+async def _get_company_space_or_none(session: AsyncSession, company_space_id: str | None) -> ThreatCompanySpace | None:
+    if not company_space_id:
+        return None
+    try:
+        uid = uuid.UUID(company_space_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid company space ID") from None
+    space = await session.get(ThreatCompanySpace, uid)
+    if not space:
+        raise HTTPException(404, "Company space not found")
+    return space
+
+
+async def _sync_company_space_assets(
+    session: AsyncSession,
+    space: ThreatCompanySpace | None,
+    assets: list[dict[str, Any]],
+    inventory_name: str,
+    case_id: str,
+) -> dict[str, int]:
+    if not space:
+        return {"synced": 0, "created": 0, "updated": 0}
+    created = 0
+    updated = 0
+    for row in assets:
+        asset_id = str(row.get("asset_id") or "").strip() or f"asset-{uuid.uuid4().hex[:8]}"
+        existing = (
+            await session.execute(
+                select(ThreatSpaceAsset).where(
+                    ThreatSpaceAsset.space_id == space.id,
+                    ThreatSpaceAsset.asset_id == asset_id,
+                )
+            )
+        ).scalar_one_or_none()
+        values = {
+            "name": str(row.get("asset") or row.get("name") or asset_id)[:255],
+            "asset_type": str(row.get("asset_type") or "unknown")[:120],
+            "environment": str(row.get("environment") or "unknown")[:120],
+            "owner": str(row.get("owner") or "")[:255],
+            "criticality": str(row.get("criticality") or "medium")[:80],
+            "exposure": str(row.get("exposure") or "unknown")[:80],
+            "products": _list(row.get("products")),
+            "components": _list(row.get("dependencies")) + _list(row.get("components")),
+            "technologies": _list(row.get("technologies")),
+            "ip_addresses": _list(row.get("ip_addresses")),
+            "domains": _list(row.get("domains")),
+            "tags": _space_asset_tags(row),
+            "metadata_json": {
+                "source": "asset_surface_upload",
+                "source_case_id": case_id,
+                "source_inventory_name": inventory_name,
+                "risk_score": row.get("risk_score"),
+                "risk_level": row.get("risk_level"),
+                "ttp_candidates": row.get("ttp_candidates", []),
+                "validation_steps": row.get("validation_steps", []),
+                "control_gaps": row.get("control_gaps", []),
+            },
+        }
+        if existing:
+            for key, value in values.items():
+                setattr(existing, key, value)
+            updated += 1
+        else:
+            session.add(ThreatSpaceAsset(space_id=space.id, asset_id=asset_id, **values))
+            created += 1
+    return {"synced": created + updated, "created": created, "updated": updated}
+
+
+def _space_asset_tags(row: dict[str, Any]) -> list[str]:
+    labels = row.get("labels")
+    if isinstance(labels, dict):
+        return _list(labels.get("tags")) + _list(labels.get("ttps"))
+    return _list(row.get("tags"))
+
+
+def _list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, dict):
+        return [str(item).strip() for item in value.values() if str(item).strip()]
+    return [part.strip() for part in str(value).replace(",", ";").split(";") if part.strip()]
 
 
 def _get_adapter(provider: str, model: str | None):

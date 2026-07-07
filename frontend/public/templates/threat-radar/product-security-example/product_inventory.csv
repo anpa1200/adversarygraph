@@ -1,0 +1,13 @@
+product_id,product_family,product_name,product_line,business_unit,security_owner,engineering_owner,psirt_owner,supported_status,release_channel,customer_deployment_model,criticality,tags
+prod-gpu-driver,GPU Driver,NVIDIA GPU Driver,Data Center Driver,Accelerated Computing,Product Security,Driver Engineering,PSIRT,supported,production,customer_host,critical,"trust_boundary:user_to_kernel;telemetry:kernel_log;platform:windows;platform:linux"
+prod-cuda,CUDA,CUDA Toolkit,AI SDK,Accelerated Computing,Product Security,CUDA Engineering,PSIRT,supported,production,customer_host,high,"trust_boundary:workload_to_gpu_memory;telemetry:application_log;platform:linux"
+prod-cudnn,cuDNN,cuDNN Library,AI SDK,Accelerated Computing,Product Security,Library Engineering,PSIRT,supported,production,customer_host,high,"dependency:cuda;telemetry:application_log"
+prod-tensorrt,TensorRT,TensorRT Runtime,AI Inference,Accelerated Computing,Product Security,Inference Engineering,PSIRT,supported,production,customer_host,high,"dependency:cuda;deployment:container"
+prod-ngc-container,NGC Container,NGC Inference Container,AI Container,Cloud AI,Container Security,Container Engineering,PSIRT,supported,production,kubernetes,high,"container:true;sbom:required;telemetry:container_runtime"
+prod-jetson,Jetson,Jetson Edge Platform,Edge AI,Embedded Systems,Product Security,Jetson Engineering,PSIRT,supported,lts,edge_device,high,"deployment:edge;firmware:true;ota:true"
+prod-igx,IGX,IGX Edge AI Platform,Industrial Edge,Embedded Systems,Product Security,IGX Engineering,PSIRT,supported,production,edge_device,critical,"sector:industrial;firmware:true;secure_boot:true"
+prod-bluefield,BlueField,BlueField DPU,Data Center Infrastructure,Networking,Product Security,Firmware Engineering,PSIRT,supported,production,appliance,critical,"trust_boundary:host_to_firmware;trust_boundary:network_to_management_plane;firmware:true"
+prod-connectx,ConnectX,ConnectX NIC,Data Center Networking,Networking,Product Security,Firmware Engineering,PSIRT,supported,production,appliance,high,"firmware:true;telemetry:nic_telemetry"
+prod-doca,DOCA,DOCA SDK,DPU SDK,Networking,Product Security,DOCA Engineering,PSIRT,supported,production,customer_host,high,"dependency:bluefield;trust_boundary:host_to_firmware"
+prod-vgpu,vGPU,NVIDIA vGPU,Virtualization,Enterprise Software,Product Security,vGPU Engineering,PSIRT,supported,production,virtualized_host,critical,"trust_boundary:guest_to_host;telemetry:hypervisor_log"
+prod-bmc,BMC,Firmware Management Controller,Server Management,Hardware Platform,Product Security,Hardware Engineering,PSIRT,supported,production,appliance,critical,"management:true;firmware:true;telemetry:redfish_log"

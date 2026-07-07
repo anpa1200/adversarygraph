@@ -84,30 +84,26 @@ async def retrohunt_assets(
 
     for asset in assets:
         await session.execute(delete(AssetIntelMatch).where(AssetIntelMatch.asset_id == asset.id))
-        count = 0
+        matches: dict[tuple[str, str, str, str], AssetIntelMatch] = {}
         for cve in cves:
             match = _match_cve(asset, cve, cve_to_techniques.get(cve.cve_id.upper(), set()))
             if match:
-                session.add(match)
-                count += 1
-                by_type["cve"] += 1
+                _collect_match(matches, match)
                 for actor_link in cve_to_actors.get(cve.cve_id.upper(), [])[:5]:
                     actor_match = _actor_from_cve_match(asset, cve, actor_link)
-                    session.add(actor_match)
-                    count += 1
-                    by_type["actor"] += 1
+                    _collect_match(matches, actor_match)
         for actor_id, techniques in actor_to_techniques.items():
             match = _match_actor(asset, actor_id, actor_names.get(actor_id, actor_id), techniques)
             if match:
-                session.add(match)
-                count += 1
-                by_type["actor"] += 1
+                _collect_match(matches, match)
         for report in reports:
             match = _match_report(asset, report)
             if match:
-                session.add(match)
-                count += 1
-                by_type["report"] += 1
+                _collect_match(matches, match)
+        for match in matches.values():
+            session.add(match)
+            by_type[match.source_type] = by_type.get(match.source_type, 0) + 1
+        count = len(matches)
         asset_match_counts[str(asset.id)] = count
         created += count
     return {
@@ -117,6 +113,45 @@ async def retrohunt_assets(
         "by_type": by_type,
         "asset_match_counts": asset_match_counts,
     }
+
+
+def _collect_match(
+    matches: dict[tuple[str, str, str, str], AssetIntelMatch],
+    match: AssetIntelMatch,
+) -> None:
+    key = (
+        str(match.asset_id),
+        match.source_type,
+        match.source_id,
+        match.relationship,
+    )
+    existing = matches.get(key)
+    if not existing:
+        matches[key] = match
+        return
+
+    existing.relevance_score = max(existing.relevance_score or 0, match.relevance_score or 0)
+    existing.confidence = max(existing.confidence or 0, match.confidence or 0)
+    if match.severity and not existing.severity:
+        existing.severity = match.severity
+    existing.evidence = _merged_list(existing.evidence or [], match.evidence or [], limit=20)
+    existing.tags = _merged_list(existing.tags or [], match.tags or [], limit=50)
+    if match.reason and match.reason not in existing.reason:
+        existing.reason = f"{existing.reason} Additional evidence: {match.reason}"[:2000]
+
+
+def _merged_list(left: list[Any], right: list[Any], *, limit: int) -> list[Any]:
+    merged = []
+    seen = set()
+    for item in [*left, *right]:
+        key = str(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+        if len(merged) >= limit:
+            break
+    return merged
 
 
 async def list_assets(session: AsyncSession, *, search: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:

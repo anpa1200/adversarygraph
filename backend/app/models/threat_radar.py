@@ -26,6 +26,211 @@ class ThreatSource(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ThreatCompanySpace(Base):
+    __tablename__ = "threat_company_spaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    sector: Mapped[str] = mapped_column(String(120), default="")
+    region: Mapped[str] = mapped_column(String(120), default="")
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    settings: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_by: Mapped[str] = mapped_column(String(255), default="local")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatSpaceAsset(Base):
+    __tablename__ = "threat_space_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    asset_id: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    asset_type: Mapped[str] = mapped_column(String(80), default="asset", index=True)
+    environment: Mapped[str] = mapped_column(String(80), default="unknown", index=True)
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    criticality: Mapped[str] = mapped_column(String(40), default="medium")
+    exposure: Mapped[str] = mapped_column(String(80), default="unknown")
+    products: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    components: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    technologies: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    ip_addresses: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    domains: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryAsset(Base):
+    __tablename__ = "threat_inv_assets"
+    __table_args__ = (UniqueConstraint("space_id", "asset_id", name="uq_threat_inv_asset_space_asset_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    legacy_asset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    asset_id: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    asset_type: Mapped[str] = mapped_column(String(80), default="asset", index=True)
+    environment: Mapped[str] = mapped_column(String(80), default="unknown", index=True)
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    criticality: Mapped[str] = mapped_column(String(40), default="medium", index=True)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryProduct(Base):
+    __tablename__ = "threat_inv_products"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    asset_ref_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    vendor: Mapped[str] = mapped_column(String(255), default="", index=True)
+    version: Mapped[str] = mapped_column(String(120), default="")
+    cpe: Mapped[str] = mapped_column(String(500), default="", index=True)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryComponent(Base):
+    __tablename__ = "threat_inv_components"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    product_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    component_type: Mapped[str] = mapped_column(String(120), default="")
+    version: Mapped[str] = mapped_column(String(120), default="")
+    cpe: Mapped[str] = mapped_column(String(500), default="", index=True)
+    purl: Mapped[str] = mapped_column(String(500), default="", index=True)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryDependency(Base):
+    __tablename__ = "threat_inv_dependencies"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    component_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    package_name: Mapped[str] = mapped_column(String(255), index=True)
+    package_version: Mapped[str] = mapped_column(String(120), default="")
+    package_type: Mapped[str] = mapped_column(String(80), default="")
+    purl: Mapped[str] = mapped_column(String(500), default="", index=True)
+    cpe: Mapped[str] = mapped_column(String(500), default="", index=True)
+    supplier: Mapped[str] = mapped_column(String(255), default="", index=True)
+    relationship: Mapped[str] = mapped_column(String(80), default="unknown")
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryExposure(Base):
+    __tablename__ = "threat_inv_exposures"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    target_type: Mapped[str] = mapped_column(String(80), default="asset", index=True)
+    kind: Mapped[str] = mapped_column(String(80), default="unknown", index=True)
+    ip: Mapped[str] = mapped_column(String(120), default="", index=True)
+    domain: Mapped[str] = mapped_column(String(255), default="", index=True)
+    port: Mapped[str] = mapped_column(String(40), default="")
+    protocol: Mapped[str] = mapped_column(String(40), default="")
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatInventoryEdge(Base):
+    __tablename__ = "threat_inv_edges"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    src_id: Mapped[str] = mapped_column(String(255), index=True)
+    src_type: Mapped[str] = mapped_column(String(80), index=True)
+    dst_id: Mapped[str] = mapped_column(String(255), index=True)
+    dst_type: Mapped[str] = mapped_column(String(80), index=True)
+    relationship: Mapped[str] = mapped_column(String(120), default="related-to", index=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ThreatSpaceDashboard(Base):
+    __tablename__ = "threat_space_dashboards"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="Executive risk dashboard")
+    dashboard_type: Mapped[str] = mapped_column(String(80), default="risk")
+    layout: Mapped[dict] = mapped_column(JSONB, default=dict)
+    widgets: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatSpaceMonitor(Base):
+    __tablename__ = "threat_space_monitors"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    monitor_type: Mapped[str] = mapped_column(String(80), default="asset-relevance")
+    cadence: Mapped[str] = mapped_column(String(80), default="daily")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    query: Mapped[dict] = mapped_column(JSONB, default=dict)
+    alert_threshold: Mapped[int] = mapped_column(Integer, default=70)
+    last_status: Mapped[str] = mapped_column(String(80), default="not-run")
+    last_result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatDetectionRule(Base):
+    __tablename__ = "threat_detection_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    query: Mapped[str] = mapped_column(Text, default="status:new")
+    schedule: Mapped[str] = mapped_column(String(80), default="daily")
+    severity: Mapped[str] = mapped_column(String(40), default="medium")
+    threshold: Mapped[int] = mapped_column(Integer, default=70)
+    suppression: Mapped[dict] = mapped_column(JSONB, default=dict)
+    last_run: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(80), default="not-run")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatSpaceAIStep(Base):
+    __tablename__ = "threat_space_ai_steps"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    step: Mapped[str] = mapped_column(String(120), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    guidance: Mapped[str] = mapped_column(Text, default="")
+    checklist: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    created_by: Mapped[str] = mapped_column(String(255), default="local")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ThreatSignal(Base):
     __tablename__ = "threat_signals"
 
@@ -49,6 +254,47 @@ class ThreatSignal(Base):
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     raw_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_by: Mapped[str] = mapped_column(String(255), default="local")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ThreatSignalEntity(Base):
+    __tablename__ = "threat_signal_entities"
+    __table_args__ = (UniqueConstraint("signal_id", "entity_type", "value", name="uq_threat_signal_entity"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    signal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), index=True)
+    value: Mapped[str] = mapped_column(String(500), index=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=70)
+    source: Mapped[str] = mapped_column(String(120), default="signal")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ThreatAlert(Base):
+    __tablename__ = "threat_alerts"
+    __table_args__ = (UniqueConstraint("space_id", "dedup_key", name="uq_threat_alert_space_dedup"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    signal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    case_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(500), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(60), default="new", index=True)
+    priority: Mapped[str] = mapped_column(String(40), default="P4 Low/Archive", index=True)
+    severity: Mapped[str] = mapped_column(String(40), default="unknown", index=True)
+    score: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    score_rationale: Mapped[dict] = mapped_column(JSONB, default=dict)
+    dedup_key: Mapped[str] = mapped_column(String(128), index=True)
+    match_type: Mapped[str] = mapped_column(String(80), default="contextual", index=True)
+    matches: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    assignee: Mapped[str] = mapped_column(String(255), default="")
+    suppression: Mapped[dict] = mapped_column(JSONB, default=dict)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

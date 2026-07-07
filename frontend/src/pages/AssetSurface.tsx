@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
-import { assetSurfaceApi, layersApi } from '@/api/client';
-import type { AssetIntelMatch, AssetSurfaceAnalysisResult, AssetSurfaceAsset } from '@/api/client';
+import { assetSurfaceApi, layersApi, threatRadarApi } from '@/api/client';
+import type { AssetIntelMatch, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatCompanySpace } from '@/api/client';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 import { useAppStore } from '@/store';
 
@@ -27,13 +27,15 @@ asset-0004,postgres-payments,database,prod,Payments,10.20.5.15,,"5432","postgres
 
 export function AssetSurface() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { domain, addComparisonLayer, clearComparisonLayers, clearTechniques } = useAppStore();
   const [provider, setProvider] = useState<Provider>('local');
   const [useAi, setUseAi] = useState(true);
   const [inventoryName, setInventoryName] = useState('External asset inventory');
+  const [companySpaceId, setCompanySpaceId] = useState('');
   const [text, setText] = useState(SAMPLE);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AssetSurfaceAnalysisResult | null>(null);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [riskFilter, setRiskFilter] = useState('all');
@@ -42,6 +44,10 @@ export function AssetSurface() {
   const casesQuery = useQuery({
     queryKey: ['asset-surface-cases'],
     queryFn: assetSurfaceApi.cases,
+  });
+  const spacesQuery = useQuery({
+    queryKey: ['threat-radar-spaces'],
+    queryFn: threatRadarApi.spaces,
   });
   const assetsQuery = useQuery({
     queryKey: ['asset-registry-assets'],
@@ -59,6 +65,9 @@ export function AssetSurface() {
       queryClient.invalidateQueries({ queryKey: ['asset-surface-cases'] });
       queryClient.invalidateQueries({ queryKey: ['asset-registry-assets'] });
       queryClient.invalidateQueries({ queryKey: ['asset-intel-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['threat-radar-spaces'] });
+      queryClient.invalidateQueries({ queryKey: ['threat-radar-space-metrics'] });
+      if (companySpaceId) queryClient.invalidateQueries({ queryKey: ['threat-radar-space', companySpaceId] });
     },
   });
   const loadCase = useMutation({
@@ -67,7 +76,7 @@ export function AssetSurface() {
       setResult(savedCase);
       setActiveCaseId(savedCase.case_id ?? null);
       setInventoryName(savedCase.inventory_name || savedCase.case_name || savedCase.filename || 'Asset surface case');
-      setFile(null);
+      setFiles([]);
       setText('');
     },
   });
@@ -93,22 +102,30 @@ export function AssetSurface() {
     },
   });
 
-  const onDrop = ([nextFile]: File[]) => {
-    if (!nextFile) return;
-    setFile(nextFile);
+  const onDrop = (nextFiles: File[]) => {
+    if (!nextFiles.length) return;
+    setFiles(nextFiles);
     setText('');
-    setInventoryName(nextFile.name.replace(/\.[^.]+$/, ''));
+    setInventoryName(nextFiles.length === 1 ? nextFiles[0].name.replace(/\.[^.]+$/, '') : `${nextFiles.length} asset inventory files`);
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
-    maxFiles: 1,
+    multiple: true,
+    maxFiles: 20,
     accept: {
       'text/csv': ['.csv'],
       'application/json': ['.json'],
       'text/plain': ['.txt', '.tsv', '.log'],
     },
   });
+
+  useEffect(() => {
+    const linkedSpaceId = searchParams.get('space_id')?.trim() || '';
+    if (linkedSpaceId && linkedSpaceId !== companySpaceId) {
+      setCompanySpaceId(linkedSpaceId);
+    }
+  }, [companySpaceId, searchParams]);
 
   const filteredAssets = useMemo(() => {
     return (result?.assets ?? []).filter(asset => {
@@ -132,12 +149,13 @@ export function AssetSurface() {
     form.append('provider', provider);
     form.append('use_ai', String(useAi));
     form.append('inventory_name', inventoryName);
-    if (file) form.append('file', file);
+    if (companySpaceId) form.append('company_space_id', companySpaceId);
+    if (files.length) files.forEach(item => form.append('files', item));
     else form.append('text', text);
     mutation.mutate(form);
   };
 
-  const canRun = !mutation.isPending && (Boolean(file) || text.trim().length > 0);
+  const canRun = !mutation.isPending && (files.length > 0 || text.trim().length > 0);
   const addWhiteAssetLayer = (replace = false) => {
     if (!allTtpIds.length) return;
     if (replace) {
@@ -160,6 +178,21 @@ export function AssetSurface() {
           <section className="border-b border-gray-800 p-4">
             <label className="label">Inventory Name</label>
             <input className="field" value={inventoryName} onChange={event => setInventoryName(event.target.value)} />
+          </section>
+
+          <section className="border-b border-gray-800 p-4">
+            <label className="label">Target Company Space</label>
+            <select className="field" value={companySpaceId} onChange={event => setCompanySpaceId(event.target.value)}>
+              <option value="">No company space - analyze only</option>
+              {(spacesQuery.data ?? []).map((space: ThreatCompanySpace) => (
+                <option key={space.id} value={space.id}>
+                  {space.name} ({space.counts.assets ?? 0} assets)
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs leading-5 text-gray-500">
+              Choose a Threat Radar company space to store this upload as private monitored assets. The asset-surface case is still saved normally.
+            </p>
           </section>
 
           <section className="border-b border-gray-800 p-4">
@@ -191,7 +224,7 @@ export function AssetSurface() {
               value={text}
               onChange={event => {
                 setText(event.target.value);
-                setFile(null);
+                setFiles([]);
               }}
               className="min-h-[220px] flex-1 resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-xs text-gray-200 outline-none focus:border-mitre-accent"
               placeholder="Paste CSV, JSON, hostname/IP list, CMDB export, cloud inventory, or scanner output"
@@ -203,12 +236,25 @@ export function AssetSurface() {
               }`}
             >
               <input {...getInputProps()} />
-              {file ? (
-                <span className="text-gray-300">{file.name}</span>
+              {files.length ? (
+                <span className="text-gray-300">{files.length} inventory file{files.length === 1 ? '' : 's'} selected</span>
               ) : (
-                <span>Drop CSV / JSON / TXT inventory or click</span>
+                <span>Drop one or more CSV / JSON / TXT inventories or click</span>
               )}
             </div>
+            {files.length > 0 && (
+              <div className="mt-3 max-h-28 overflow-y-auto rounded border border-gray-800 bg-gray-950 p-2 text-xs text-gray-400">
+                {files.map(item => (
+                  <div key={`${item.name}-${item.size}`} className="flex items-center justify-between gap-3 border-b border-gray-900 py-1 last:border-b-0">
+                    <span className="truncate">{item.name}</span>
+                    <span className="shrink-0 text-gray-600">{Math.ceil(item.size / 1024)} KB</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button type="button" onClick={open} className="secondary-action mt-3 min-h-10 w-full">
+              Upload inventory files
+            </button>
             <button type="button" disabled={!canRun} onClick={run} className="primary mt-4 disabled:opacity-50">
               {mutation.isPending ? 'Building matrix...' : 'Analyze Attack Surface'}
             </button>
@@ -318,9 +364,10 @@ export function AssetSurface() {
                 <Metric label="Provider" value={result.provider ?? 'baseline'} compact />
               </section>
 
-              <section className="grid gap-3 lg:grid-cols-4">
+              <section className="grid gap-3 lg:grid-cols-5">
                 <Metric label="Saved Registry Assets" value={assetsQuery.data?.length ?? result.registry_summary?.asset_ids?.length ?? 0} />
                 <Metric label="Created / Updated" value={`${result.registry_summary?.created ?? 0} / ${result.registry_summary?.updated ?? 0}`} compact />
+                <Metric label="Space Assets Synced" value={result.company_space_assets_synced ?? 0} />
                 <Metric label="Retrohunt Matches" value={result.retrohunt_summary?.matches_created ?? visibleMatches.length ?? 0} />
                 <div className="rounded border border-gray-800 bg-gray-950 p-4">
                   <button type="button" disabled={retrohunt.isPending} onClick={() => retrohunt.mutate()} className="primary-action w-full disabled:opacity-40">
