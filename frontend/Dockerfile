@@ -12,6 +12,8 @@ RUN npm run build
 # Stage 2: serve the built dist/ with nginx
 FROM nginx:alpine
 
+RUN apk upgrade --no-cache c-ares libexpat
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Nginx config: serve static files and proxy /api/ to the backend

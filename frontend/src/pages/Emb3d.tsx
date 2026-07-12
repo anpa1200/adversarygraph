@@ -16,7 +16,7 @@ export function Emb3d() {
     queryFn: emb3dApi.catalog,
   });
 
-  const assets = reportQuery.data?.assets ?? [];
+  const assets = useMemo(() => reportQuery.data?.assets ?? [], [reportQuery.data?.assets]);
   const selectedAsset = useMemo(() => {
     if (!assets.length) return null;
     return assets.find(asset => asset.asset_id === selectedAssetId) ?? assets[0];
