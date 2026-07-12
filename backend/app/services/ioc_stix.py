@@ -15,6 +15,7 @@ from app.services.ioc_intel import IOCImportItem, create_ioc_source, import_iocs
 STIX_NAMESPACE = uuid.UUID("8b5f5359-613e-4ca0-b6f6-7d526b01f2d5")
 STIX_IMPORT_SOURCE_ID = "custom-stix-import"
 TAXII_IMPORT_SOURCE_ID = "custom-taxii-import"
+NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
 
 
 async def export_ioc_stix_bundle(
@@ -242,6 +243,14 @@ def _parse_pattern(pattern: str) -> dict[str, str] | None:
         match = re.search(regex, pattern, flags=re.I)
         if match:
             return {"type": kind, "value": match.group(1)}
+    custom = re.search(
+        r"x-adversarygraph-network-fingerprint:value\s*=\s*'([^']+)'.*?"
+        r"x-adversarygraph-network-fingerprint:fingerprint_type\s*=\s*'([^']+)'",
+        pattern,
+        flags=re.I,
+    )
+    if custom:
+        return {"type": custom.group(2).lower(), "value": custom.group(1)}
     return None
 
 
@@ -260,6 +269,8 @@ def _sco_value(sco: dict[str, Any]) -> dict[str, str] | None:
         for key, kind in [("SHA-256", "sha256"), ("SHA-1", "sha1"), ("MD5", "md5")]:
             if hashes.get(key):
                 return {"type": kind, "value": str(hashes[key])}
+    if stix_type == "x-adversarygraph-network-fingerprint" and sco.get("value"):
+        return {"type": str(sco.get("fingerprint_type") or "ja4").lower(), "value": str(sco["value"])}
     return None
 
 
@@ -283,6 +294,11 @@ def _indicator_pattern(kind: str, value: str) -> str:
         return f"[file:hashes.'SHA-1' = '{escaped}']"
     if kind == "md5":
         return f"[file:hashes.MD5 = '{escaped}']"
+    if kind in NETWORK_FINGERPRINT_TYPES:
+        return (
+            f"[x-adversarygraph-network-fingerprint:value = '{escaped}' AND "
+            f"x-adversarygraph-network-fingerprint:fingerprint_type = '{kind}']"
+        )
     return ""
 
 

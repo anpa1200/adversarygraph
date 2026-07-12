@@ -594,7 +594,7 @@ function rankPivots(result: IOCInvestigationResult): PivotItem[] {
       const evidence = evidenceByTarget.get(node.value.toLowerCase()) ?? [];
       let score = Math.max(...evidence.map(item => item.score), 0);
       score += node.sources.length * 4;
-      if (['ip', 'domain', 'url', 'hash', 'malware', 'actor', 'suspicious-pattern'].includes(node.type)) score += 12;
+      if (['ip', 'domain', 'url', 'hash', 'malware', 'actor', 'suspicious-pattern'].includes(node.type) || NETWORK_FINGERPRINT_TYPES.has(node.type)) score += 12;
       if (node.tier >= 3) score -= 12;
       score = clamp(score, 1, 100);
       return {
@@ -667,6 +667,7 @@ function evidenceReason(edge: RelationshipEdge) {
   if (edge.type === 'actor') return 'Actor lead relation. Useful for hypothesis generation, not attribution.';
   if (edge.type === 'malware') return 'Malware-family relation. Prioritize if confirmed by more than one source.';
   if (edge.type === 'suspicious-pattern') return 'Behavioral pattern from analysis. Review page activity or sandbox evidence.';
+  if (NETWORK_FINGERPRINT_TYPES.has(edge.type)) return 'Network fingerprint pivot. Use it for clustering traffic or infrastructure when source evidence is recent.';
   if (['ip', 'domain', 'url', 'hash'].includes(edge.type)) return 'Observable pivot. Investigate if recent or confirmed by multiple sources.';
   if (edge.type === 'vulnerability' || edge.type.includes('port')) return 'Infrastructure exposure context. Useful for attack-surface pivots.';
   return 'Context relation. Lower confidence unless supported by additional evidence.';
@@ -1420,8 +1421,9 @@ function verdictFromScore(score: number) {
   return 'low signal';
 }
 
-const GRAPH_OBJECT_NODE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'hash', 'md5', 'sha1', 'sha256', 'file', 'report', 'collection']);
-const INVESTIGABLE_NODE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'hash', 'md5', 'sha1', 'sha256']);
+const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
+const GRAPH_OBJECT_NODE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'hash', 'md5', 'sha1', 'sha256', 'file', 'report', 'collection', ...NETWORK_FINGERPRINT_TYPES]);
+const INVESTIGABLE_NODE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'hash', 'md5', 'sha1', 'sha256', ...NETWORK_FINGERPRINT_TYPES]);
 
 function isActionableGraphNode(node: Pick<GraphNode, 'type' | 'tier' | 'value'>) {
   if (node.tier === 0) return true;

@@ -1,8 +1,17 @@
 # Roadmap
 
-Current release: **v5.9.0** — EMB3D assessment workflows plus Threat Radar full asset-inventory import, product/component/dependency exposure mapping, and asset review pages (2026-07-07)
+Current release: **v5.9.1** — JA3/JA4+ network fingerprint handling across IOC extraction, IOC Library, IOC Detail, and IOC Investigation pivots (2026-07-11)
 
-For the full history from v0.2.0 through v5.9.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v5.9.1 see [CHANGELOG.md](CHANGELOG.md).
+
+## v5.9.1 — JA3/JA4+ Network Fingerprint IOC Workflows
+
+- [x] Add JA3, JA3S, JA4, JA4S, JA4H, JA4L, JA4LS, JA4X, JA4SSH, and JA4T IOC types
+- [x] Extract labeled JA3/JA4+ fingerprints from uploaded report text
+- [x] Normalize network fingerprints during IOC import and preserve raw context
+- [x] Add network fingerprint filtering and labels in IOC Library
+- [x] Add network fingerprint context to IOC Detail and IOC node detail pages
+- [x] Include network fingerprints in IOC Investigation pivots and scoring
 
 ## v5.9 — EMB3D and Threat Radar Asset Workflows
 

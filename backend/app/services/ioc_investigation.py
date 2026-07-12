@@ -20,11 +20,13 @@ from app.models.attack import AptGroup, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
-from app.services.virustotal import classify_indicator, lookup_virustotal_ioc
+from app.services.virustotal import IndicatorTarget, classify_indicator, lookup_virustotal_ioc
 
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 HASH_RE = re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
-GRAPH_OBJECT_TYPES = {"ioc", "ip", "ipv4", "ipv6", "domain", "url", "hash", "md5", "sha1", "sha256", "file", "report", "collection"}
+NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
+NETWORK_FINGERPRINT_VALUE_RE = re.compile(r"^(?=[a-z0-9]{3,32}_)(?=[a-z0-9]*\d)[a-z0-9]{3,32}_[a-f0-9]{8,64}(?:_[a-f0-9]{8,64}){0,3}$", re.IGNORECASE)
+GRAPH_OBJECT_TYPES = {"ioc", "ip", "ipv4", "ipv6", "domain", "url", "hash", "md5", "sha1", "sha256", "file", "report", "collection", *NETWORK_FINGERPRINT_TYPES}
 GRAPH_TYPE_ALIASES = {
     "a": "ip",
     "aaaa": "ip",
@@ -38,6 +40,13 @@ GRAPH_TYPE_ALIASES = {
     "sha256_hash": "hash",
     "sha1_hash": "hash",
     "md5_hash": "hash",
+    "ja3_hash": "ja3",
+    "ja3_fingerprint": "ja3",
+    "ja3s_hash": "ja3s",
+    "ja4_fingerprint": "ja4",
+    "tls_fingerprint": "ja4",
+    "network_fingerprint": "ja4",
+    "ja4_ssh": "ja4ssh",
     "file-name": "file",
     "filename": "file",
 }
@@ -63,7 +72,7 @@ async def investigate_ioc(
     if not value:
         raise ValueError("Artifact is empty")
 
-    target = classify_indicator(value)
+    target = _classify_investigation_artifact(value)
     normalized = target.value
     graph_nodes: dict[str, dict[str, Any]] = {}
     graph_edges: list[dict[str, Any]] = []
@@ -75,7 +84,7 @@ async def investigate_ioc(
     source_results.append(local)
     _merge_graph(graph_nodes, graph_edges, local, normalized)
 
-    vt = await _safe_source("virustotal", lambda: _virustotal_enrichment(session, normalized, options.domain))
+    vt = await _safe_source("virustotal", lambda: _virustotal_enrichment(session, normalized, options.domain, target.type))
     source_results.append(vt)
     _merge_graph(graph_nodes, graph_edges, vt, normalized)
 
@@ -252,7 +261,9 @@ async def _local_enrichment(session: AsyncSession, value: str, artifact_type: st
     }
 
 
-async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str) -> dict[str, Any]:
+async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str, artifact_type: str) -> dict[str, Any]:
+    if artifact_type in NETWORK_FINGERPRINT_TYPES:
+        return {"source": "virustotal", "status": "skipped", "summary": "VirusTotal has no native JA3/JA4 fingerprint endpoint.", "relationships": [], "technique_ids": [], "actors": [], "raw": {}}
     data = await lookup_virustotal_ioc(session, value, domain=domain)
     relationships: list[dict[str, Any]] = []
     for name in data.get("names") or []:
@@ -1048,6 +1059,10 @@ def _graph_object_type(raw_type: str, value: str) -> str | None:
         return "url" if _looks_like_url(value) else None
     if node_type in {"hash", "md5", "sha1", "sha256"}:
         return "hash" if HASH_RE.fullmatch(value) else None
+    if node_type in NETWORK_FINGERPRINT_TYPES:
+        if node_type in {"ja3", "ja3s"}:
+            return node_type if re.fullmatch(r"[a-fA-F0-9]{32}", value) else None
+        return node_type if NETWORK_FINGERPRINT_VALUE_RE.fullmatch(value) else None
     if node_type == "file":
         return "file" if _looks_like_file(value) else None
     if node_type in {"report", "collection"}:
@@ -1058,6 +1073,19 @@ def _graph_object_type(raw_type: str, value: str) -> str | None:
 def _infer_graph_source_type(value: str) -> str:
     detected = classify_indicator(value).type
     return _graph_object_type(detected, value) or "ioc"
+
+
+def _classify_investigation_artifact(value: str) -> IndicatorTarget:
+    clean = str(value or "").strip()
+    lower = clean.lower()
+    if NETWORK_FINGERPRINT_VALUE_RE.fullmatch(lower):
+        return IndicatorTarget(
+            value=lower,
+            type="ja4",
+            endpoint="/search",
+            vt_url=f"https://www.virustotal.com/gui/search/{quote(lower)}",
+        )
+    return classify_indicator(clean)
 
 
 def _looks_like_ip(value: str) -> bool:

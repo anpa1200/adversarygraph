@@ -5,12 +5,12 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v5.9.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v5.9.1-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v5.9.0**. This release adds EMB3D assessment workflows and expands Threat Radar with full asset-inventory import templates, product/component/dependency exposure mapping, and dedicated asset review pages. See the [version matrix](docs/version-matrix.md), [v5.9 release notes](docs/release-notes/v5.9.0.md), [EMB3D guide](docs/emb3d.md), [Threat Radar guide](docs/threat-radar.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
+Current release: **v5.9.1**. This release adds JA3/JA4+ network fingerprint handling across IOC extraction, IOC Library, IOC Detail, and IOC Investigation pivots while keeping the v5.9 EMB3D and Threat Radar asset workflows current. See the [version matrix](docs/version-matrix.md), [v5.9.1 release notes](docs/release-notes/v5.9.1.md), [EMB3D guide](docs/emb3d.md), [Threat Radar guide](docs/threat-radar.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
 
 ## What It Does
 

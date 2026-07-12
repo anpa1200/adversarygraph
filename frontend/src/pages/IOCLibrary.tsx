@@ -20,6 +20,8 @@ const sortOptions = [
   ['source_asc', 'Source A-Z'],
   ['confidence_desc', 'Confidence high first'],
 ];
+const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
+const BASE_IOC_TYPES = ['domain', 'ip:port', 'ipv4', 'ipv6', 'md5', 'sha1', 'sha256', 'url', 'malware-family', ...NETWORK_FINGERPRINT_TYPES];
 
 export function IOCLibrary() {
   const qc = useQueryClient();
@@ -65,7 +67,7 @@ export function IOCLibrary() {
 
   const typeOptions = useMemo(() => {
     const fromRows = new Set((library.data?.items ?? []).map(item => item.type).filter(Boolean));
-    ['domain', 'ip:port', 'ipv4', 'ipv6', 'md5', 'sha1', 'sha256', 'url', 'malware-family'].forEach(item => fromRows.add(item));
+    BASE_IOC_TYPES.forEach(item => fromRows.add(item));
     return Array.from(fromRows).sort((a, b) => a.localeCompare(b));
   }, [library.data?.items]);
 
@@ -212,7 +214,7 @@ export function IOCLibrary() {
                   </button>
                   <select value={type} onChange={event => setFilter(() => setType(event.target.value))} className="field w-40">
                     <option value="">All types</option>
-                    {typeOptions.map(item => <option key={item} value={item}>{item}</option>)}
+                    {typeOptions.map(item => <option key={item} value={item}>{iocTypeLabel(item)}</option>)}
                   </select>
                   <select value={source} onChange={event => setFilter(() => setSource(event.target.value))} className="field w-44">
                     <option value="">All sources</option>
@@ -448,7 +450,8 @@ function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate }: {
   return (
     <tr className="align-top hover:bg-gray-900/70">
       <td className="p-3">
-        <span className="rounded bg-gray-800 px-2 py-1 font-mono text-[10px] text-gray-300">{item.type}</span>
+        <span className="rounded bg-gray-800 px-2 py-1 font-mono text-[10px] text-gray-300">{iocTypeLabel(item.type)}</span>
+        {NETWORK_FINGERPRINT_TYPES.has(item.type) && <div className="mt-2 text-[10px] text-cyan-300">network fingerprint</div>}
         <div className="mt-2 text-[10px] text-gray-600">conf {item.confidence}</div>
       </td>
       <td className="max-w-md p-3">
@@ -496,7 +499,7 @@ function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate }: {
       </td>
       <td className="p-3">
         <div className="flex flex-col gap-2">
-          <button onClick={onEnrichment} className="primary-action">
+          <button onClick={onEnrichment} disabled={NETWORK_FINGERPRINT_TYPES.has(item.type)} className="primary-action disabled:opacity-40">
             Live lookup
           </button>
           <button onClick={onInvestigate} className="secondary-action">
@@ -509,6 +512,10 @@ function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate }: {
       </td>
     </tr>
   );
+}
+
+function iocTypeLabel(type: string) {
+  return NETWORK_FINGERPRINT_TYPES.has(type) ? type.toUpperCase() : type;
 }
 
 function GroupMultiSelect({

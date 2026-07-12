@@ -34,6 +34,8 @@ MANUAL_SOURCE_ID = "manual-report-import"
 CUSTOM_FEED_KINDS = {"custom-json", "custom-csv", "custom-txt"}
 OTX_TRANSIENT_HTTP_STATUS_CODES = {429, 502, 503, 504}
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
+NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
+NETWORK_FINGERPRINT_VALUE_RE = re.compile(r"^(?=[a-z0-9]{3,32}_)(?=[a-z0-9]*\d)[a-z0-9]{3,32}_[a-f0-9]{8,64}(?:_[a-f0-9]{8,64}){0,3}$", re.IGNORECASE)
 HASH_TYPE_ALIASES = {
     "sha256_hash": "sha256",
     "filehash-sha256": "sha256",
@@ -49,6 +51,27 @@ HASH_TYPE_ALIASES = {
     "filehash-md5": "md5",
     "file_hash_md5": "md5",
     "md5": "md5",
+    "ja3": "ja3",
+    "ja3_hash": "ja3",
+    "ja3-fingerprint": "ja3",
+    "ja3_fingerprint": "ja3",
+    "ja3s": "ja3s",
+    "ja3s_hash": "ja3s",
+    "ja4": "ja4",
+    "ja4_tls": "ja4",
+    "ja4-fingerprint": "ja4",
+    "ja4_fingerprint": "ja4",
+    "ja4s": "ja4s",
+    "ja4h": "ja4h",
+    "ja4l": "ja4l",
+    "ja4ls": "ja4ls",
+    "ja4x": "ja4x",
+    "ja4ssh": "ja4ssh",
+    "ja4-ssh": "ja4ssh",
+    "ja4_ssh": "ja4ssh",
+    "ja4t": "ja4t",
+    "tls_fingerprint": "ja4",
+    "network_fingerprint": "ja4",
     "ip:port": "ip:port",
     "ipv4:port": "ip:port",
     "ip_port": "ip:port",
@@ -1685,11 +1708,13 @@ def _json_records(payload: Any) -> list[dict[str, Any]]:
 
 
 def _record_to_import(record: dict[str, Any], source_id: str, default_source_url: str) -> IOCImportItem:
-    value = str(_first(record, "value", "ioc", "indicator", "observable", "artifact") or "").strip()
+    fingerprint_key = _fingerprint_value_key(record)
+    value = str(_first(record, "value", "ioc", "indicator", "observable", "artifact", fingerprint_key) or "").strip()
+    raw_type = _first(record, "type", "indicator_type", "ioc_type", "fingerprint_type", "network_fingerprint_type") or fingerprint_key
     tags = _as_tags(_first(record, "tags", "tag", "labels"))
     return IOCImportItem(
         value=value,
-        indicator_type=_normalize_ioc_type(str(_first(record, "type", "indicator_type", "ioc_type") or ""), value),
+        indicator_type=_normalize_ioc_type(str(raw_type or ""), value),
         actor_attack_id=_optional_str(_first(record, "actor_attack_id", "group_attack_id", "attack_id")),
         actor_name=_optional_str(_first(record, "actor_name", "threat_actor", "intrusion_set", "group")),
         malware_family=_optional_str(_first(record, "malware_family", "malware", "family")),
@@ -1708,7 +1733,17 @@ def _record_to_import(record: dict[str, Any], source_id: str, default_source_url
 
 
 def _record_value(record: dict[str, Any]) -> str:
-    return str(_first(record, "value", "ioc", "indicator", "observable", "artifact") or "").strip()
+    fingerprint_key = _fingerprint_value_key(record)
+    return str(_first(record, "value", "ioc", "indicator", "observable", "artifact", fingerprint_key) or "").strip()
+
+
+def _fingerprint_value_key(record: dict[str, Any]) -> str:
+    lowered = {str(key).lower(): key for key in record}
+    for key in ("ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4_ssh", "ja4t", "fingerprint", "network_fingerprint"):
+        original = lowered.get(key)
+        if original and record.get(original) not in (None, ""):
+            return original
+    return ""
 
 
 def _first(record: dict[str, Any], *keys: str) -> Any:
@@ -1926,6 +1961,9 @@ def _dedupe_tags(values: list[str]) -> list[str]:
 
 async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple[int, bool]:
     item.indicator_type = _normalize_ioc_type(item.indicator_type, item.value)
+    if _is_network_fingerprint_type(item.indicator_type):
+        item.value = item.value.strip().lower()
+        item.tags = _dedupe_tags([*(item.tags or []), "network-fingerprint", item.indicator_type])
     technique_ids = _item_technique_ids(item)
     existing = await session.execute(
         select(IOCIndicator).where(
@@ -1938,6 +1976,15 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
     if existing_indicator:
         technique_ids = _dedupe_attack_ids([*(existing_indicator.technique_ids or []), *technique_ids])
     raw = dict(item.raw or {})
+    if _is_network_fingerprint_type(item.indicator_type):
+        raw.setdefault(
+            "network_fingerprint",
+            {
+                "type": item.indicator_type,
+                "family": _network_fingerprint_family(item.indicator_type),
+                "value": item.value,
+            },
+        )
     raw["ioc_ttp_evidence"] = _mapping_evidence_from_item(item)
     raw["ioc_ttp_mapping_priority"] = "strict-report > enrichment-platform > ai-enrichment"
     stmt = (
@@ -2055,6 +2102,8 @@ def _actor_link_targets(item: IOCImportItem, groups: list[AptGroup]) -> list[tup
 
 def _infer_ioc_type(value: str) -> str:
     lower = value.lower()
+    if _looks_like_ja4_family_value(lower):
+        return "ja4"
     if re.fullmatch(r"[a-f0-9]{64}", lower):
         return "sha256"
     if re.fullmatch(r"[a-f0-9]{40}", lower):
@@ -2080,6 +2129,29 @@ def _normalize_ioc_type(kind: str, value: str = "") -> str:
     if inferred != "unknown":
         return inferred
     return clean or "unknown"
+
+
+def _is_network_fingerprint_type(kind: str) -> bool:
+    return str(kind or "").lower() in NETWORK_FINGERPRINT_TYPES
+
+
+def _looks_like_ja4_family_value(value: str) -> bool:
+    return bool(NETWORK_FINGERPRINT_VALUE_RE.fullmatch(str(value or "").strip()))
+
+
+def _network_fingerprint_family(kind: str) -> str:
+    normalized = str(kind or "").lower()
+    if normalized in {"ja3", "ja3s", "ja4", "ja4s", "ja4l", "ja4ls"}:
+        return "tls"
+    if normalized == "ja4h":
+        return "http"
+    if normalized == "ja4ssh":
+        return "ssh"
+    if normalized == "ja4t":
+        return "tcp"
+    if normalized == "ja4x":
+        return "x509"
+    return "network"
 
 
 def _slugify(value: str) -> str:

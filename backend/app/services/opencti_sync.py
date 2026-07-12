@@ -21,6 +21,8 @@ from app.services.ioc_stix import _indicator_pattern, _parse_pattern
 OPENCTI_SOURCE_ID = "opencti"
 OPENCTI_LABEL = "OpenCTI"
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
+NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
+NETWORK_FINGERPRINT_VALUE_RE = re.compile(r"^(?=[a-z0-9]{3,32}_)(?=[a-z0-9]*\d)[a-z0-9]{3,32}_[a-f0-9]{8,64}(?:_[a-f0-9]{8,64}){0,3}$", re.IGNORECASE)
 
 
 class OpenCTISyncError(RuntimeError):
@@ -510,6 +512,11 @@ def _guess_ioc_type(value: str, entity_type: str = "") -> dict[str, str] | None:
     lowered = entity_type.lower()
     if not value:
         return None
+    for kind in NETWORK_FINGERPRINT_TYPES:
+        if kind in lowered:
+            return {"type": kind, "value": value.lower()}
+    if NETWORK_FINGERPRINT_VALUE_RE.fullmatch(value):
+        return {"type": "ja4", "value": value.lower()}
     if "ipv4" in lowered or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?", value):
         return {"type": "ip:port" if ":" in value else "ipv4", "value": value}
     if "ipv6" in lowered or (":" in value and re.fullmatch(r"[0-9a-fA-F:]+", value)):
@@ -585,6 +592,16 @@ def _opencti_observable_type(indicator_type: str) -> str:
         "sha1": "StixFile",
         "md5": "StixFile",
         "email": "Email-Addr",
+        "ja3": "Unknown",
+        "ja3s": "Unknown",
+        "ja4": "Unknown",
+        "ja4s": "Unknown",
+        "ja4h": "Unknown",
+        "ja4l": "Unknown",
+        "ja4ls": "Unknown",
+        "ja4x": "Unknown",
+        "ja4ssh": "Unknown",
+        "ja4t": "Unknown",
     }.get(indicator_type, "Unknown")
 
 

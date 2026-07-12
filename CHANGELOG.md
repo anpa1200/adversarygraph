@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.9.1 - 2026-07-11
+
+- Promoted active release markers to v5.9.1 across backend, frontend, README,
+  roadmap, security policy, Helm metadata, version matrix, release notes, and
+  documentation.
+- Added JA3, JA3S, JA4, JA4S, JA4H, JA4L, JA4LS, JA4X, JA4SSH, and JA4T
+  network fingerprint types to IOC import, normalization, tagging, and raw
+  context preservation.
+- Extended report-text IOC extraction so labeled JA3/JA4+ fingerprints are
+  imported as network-fingerprint observables instead of generic hashes.
+- Added network fingerprint context to IOC Detail, IOC Library filters, IOC
+  node detail pages, and IOC Investigation pivot ranking.
+
 ## v5.9.0 - 2026-07-07
 
 - Promoted active release markers to v5.9.0 across backend, frontend, README,

@@ -8,7 +8,8 @@ import { useAppStore } from '@/store';
 import { RelationshipGraph } from './IOCInvestigation';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 
-const OBSERVABLE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'email', 'hash', 'md5', 'sha1', 'sha256']);
+const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
+const OBSERVABLE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'email', 'hash', 'md5', 'sha1', 'sha256', ...NETWORK_FINGERPRINT_TYPES]);
 const SEARCHABLE_OBJECT_TYPES = new Set([...OBSERVABLE_TYPES, 'file', 'report', 'collection']);
 
 export function IOCNodeDetail() {
@@ -95,7 +96,7 @@ export function IOCNodeDetail() {
               <div className="grid min-w-[260px] gap-2 text-xs">
                 {isObservable && <button onClick={() => navigate(`/ioc-investigation?indicator=${encodeURIComponent(value)}`)} className="primary-action">Investigate IOC</button>}
                 {canSearchIocs && <button onClick={() => navigate(`/ioc-library?search=${encodeURIComponent(value)}`)} className="secondary-action">Search IOC Library</button>}
-                {isObservable && <button onClick={() => navigate(`/virustotal?indicator=${encodeURIComponent(value)}`)} className="secondary-action">VirusTotal Lookup</button>}
+                {isObservable && !NETWORK_FINGERPRINT_TYPES.has(type) && <button onClick={() => navigate(`/virustotal?indicator=${encodeURIComponent(value)}`)} className="secondary-action">VirusTotal Lookup</button>}
                 {isTechnique && <button onClick={() => navigate(`/navigator?technique=${value.toUpperCase()}`)} className="secondary-action">Open Technique</button>}
                 {selectedActorId && <button onClick={() => navigate(`/apt?group=${selectedActorId}`)} className="secondary-action">Open Actor</button>}
                 {type === 'actor' && !selectedActorId && <button onClick={() => navigate(`/apt?search=${encodeURIComponent(value)}`)} className="secondary-action">Search Actor Library</button>}
@@ -112,7 +113,7 @@ export function IOCNodeDetail() {
                   <Metric label="Edges" value={relationshipInvestigation.data.relationships.edges.length} />
                   <p className="line-clamp-4 leading-5">{relationshipInvestigation.data.summary}</p>
                 </div>
-              ) : <Empty text={isObservable ? 'Relationship context will load automatically.' : 'Relationship investigation is available for IOC, IP, domain, URL, and hash nodes.'} />}
+              ) : <Empty text={isObservable ? 'Relationship context will load automatically.' : 'Relationship investigation is available for IOC, IP, domain, URL, hash, and network fingerprint nodes.'} />}
             </ContextCard>
             <ContextCard title="Actor context" loading={actorSearch.isLoading || actorDetail.isLoading} error={actorSearch.error || actorDetail.error}>
               {actorDetail.data ? (
@@ -227,6 +228,7 @@ export function IOCNodeDetail() {
 
 function nodeSummary(type: string, value: string) {
   if (!value) return 'This page was opened without a node value.';
+  if (NETWORK_FINGERPRINT_TYPES.has(type)) return 'Network fingerprint observable. Use this page to pivot into local IOC records, reports, related infrastructure, and technique mappings from the source evidence.';
   if (OBSERVABLE_TYPES.has(type)) return 'Observable node. Use this page to pivot into IOC Library records, enrichment, VirusTotal lookup, and a deeper IOC investigation.';
   if (type === 'file') return 'File artifact node. Use this page to search local IOC records and pivot to hashes or report evidence when available.';
   if (type === 'report' || type === 'collection') return 'Collection or report node. Use it as source context for the related observables and evidence, not as direct attribution.';
@@ -245,6 +247,9 @@ function maliciousAnswer(type: string) {
 function maliciousWhy(type: string, value: string) {
   if (['malware', 'suspicious-pattern', 'reputation', 'vulnerability'].includes(type)) {
     return `${value} has security-relevant context by node type. Validate the original source before marking it malicious.`;
+  }
+  if (NETWORK_FINGERPRINT_TYPES.has(type)) {
+    return `${value} is a network fingerprint. It is useful for clustering traffic or infrastructure, but it becomes malicious only when source evidence, report context, or related observables support that conclusion.`;
   }
   if (OBSERVABLE_TYPES.has(type)) {
     return `${value} is an observable. It becomes malicious only when enrichment, reports, sandbox behavior, or source reputation supports that conclusion.`;

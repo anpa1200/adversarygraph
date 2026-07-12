@@ -7,6 +7,8 @@ import { cveApi, iocApi, type IOCDetail as IOCDetailType } from '@/api/client';
 import { useAppStore } from '@/store';
 import { RelatedCvesPanel } from '@/components/CVE/RelatedCvesPanel';
 
+const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
+
 export function IOCDetail() {
   const navigate = useNavigate();
   const { id = '' } = useParams();
@@ -70,6 +72,8 @@ export function IOCDetail() {
                   </div>
                 </div>
               </section>
+
+              {NETWORK_FINGERPRINT_TYPES.has(item.type) && <NetworkFingerprintPanel item={item} />}
 
               <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
                 <Panel title={`Mapped ATT&CK TTPs (${item.techniques.length})`}>
@@ -141,6 +145,51 @@ export function IOCDetail() {
       </div>
     </div>
   );
+}
+
+function NetworkFingerprintPanel({ item }: { item: IOCDetailType }) {
+  const raw = item.raw ?? {};
+  const network = isRecord(raw.network_fingerprint) ? raw.network_fingerprint : {};
+  const rows = [
+    ['Fingerprint type', item.type.toUpperCase()],
+    ['Family', scalar(network.family) || fingerprintFamily(item.type)],
+    ['Protocol', scalar(raw.protocol) || scalar(raw.network_protocol) || scalar(network.protocol)],
+    ['SNI / host', scalar(raw.sni) || scalar(raw.server_name) || scalar(raw.host) || scalar(raw.hostname)],
+    ['ALPN', scalar(raw.alpn) || scalar(raw.application_layer_protocol)],
+    ['JA4 sections', ja4Sections(item.value)],
+    ['Sensor', scalar(raw.sensor) || scalar(raw.collector) || scalar(raw.source)],
+  ].filter(([, value]) => value);
+
+  return (
+    <Panel title="Network Fingerprint Context">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {rows.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+      </div>
+    </Panel>
+  );
+}
+
+function fingerprintFamily(type: string) {
+  if (['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4l', 'ja4ls'].includes(type)) return 'tls';
+  if (type === 'ja4h') return 'http';
+  if (type === 'ja4ssh') return 'ssh';
+  if (type === 'ja4t') return 'tcp';
+  if (type === 'ja4x') return 'x509';
+  return 'network';
+}
+
+function ja4Sections(value: string) {
+  const parts = value.split('_').filter(Boolean);
+  return parts.length > 1 ? parts.join(' / ') : '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function scalar(value: unknown) {
+  if (value == null || typeof value === 'object') return '';
+  return String(value);
 }
 
 function TechniqueCard({ technique }: { technique: IOCDetailType['techniques'][number] }) {
