@@ -5,12 +5,19 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v5.9.1-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v6.0.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v5.9.1**. This release adds JA3/JA4+ network fingerprint handling across IOC extraction, IOC Library, IOC Detail, and IOC Investigation pivots while keeping the v5.9 EMB3D and Threat Radar asset workflows current. See the [version matrix](docs/version-matrix.md), [v5.9.1 release notes](docs/release-notes/v5.9.1.md), [EMB3D guide](docs/emb3d.md), [Threat Radar guide](docs/threat-radar.md), and [published v5 article](https://medium.com/@1200km/adversarygraph-v5-0-from-cti-mapping-to-attack-simulation-and-siem-validation-21873b2a6c39).
+Current release: **v6.0.0**. This release packages AdversaryGraph for controlled
+self-hosted production with a reproducible readiness gate, corrected release
+history, current screenshot evidence, local case studies, clearer deployment
+go/no-go criteria, and a complete v5-to-v6 reviewer handoff. See the
+[v6 release notes](docs/release-notes/v6.0.0.md),
+[release readiness guide](docs/release-readiness-v6.md),
+[case studies](docs/case-studies-v6.md), and
+[screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
 ## What It Does
 
@@ -91,6 +98,10 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
+| Complete v5 overview | [docs/v5-overview.md](docs/v5-overview.md) |
+| v6 release readiness | [docs/release-readiness-v6.md](docs/release-readiness-v6.md) |
+| v6 case studies | [docs/case-studies-v6.md](docs/case-studies-v6.md) |
+| v6 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](docs/assets/adversarygraph-v6/manifest.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
 | EMB3D embedded threat modeling | [docs/emb3d.md](docs/emb3d.md) |
@@ -158,12 +169,7 @@ The main platform stores structured CTI and workflow data. Malware samples are h
 Local validation commands:
 
 ```bash
-./scripts/check-version-consistency.sh
-docker compose config --quiet
-docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
-cd backend && PYTHONPATH=. DB_PASS=ci_test_password LOG_DIR=/tmp/adversarygraph-test-logs python -m pytest
-cd frontend && npm ci && npm run build && npm audit --audit-level=high
-make security-scan
+./scripts/release-readiness.sh --full
 ```
 
 CI runs backend tests, backend lint, backend SAST, backend dependency audit, frontend build, frontend dependency audit, Docker Compose validation, Docker image builds, container scanning, secret scanning, and version consistency checks.

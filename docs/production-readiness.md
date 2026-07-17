@@ -6,12 +6,14 @@ repository and what still needs operator hardening before internet exposure.
 
 ## Current Status
 
-AdversaryGraph is suitable for:
+AdversaryGraph v6.0.0 is suitable for:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
 - portfolio and demo use
 - internal evaluation with non-sensitive or approved data
+- controlled self-hosted production after every applicable gate in
+  [v6 Release Readiness](release-readiness-v6.md) passes
 
 AdversaryGraph is not a managed public SaaS. The default deployment is suitable
 for controlled self-hosted use; public internet exposure still requires a
@@ -55,6 +57,10 @@ handling policy.
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 
 ## Remaining Production Blockers
+
+These items block broader enterprise, managed-service, or default
+internet-facing claims. They do not invalidate a controlled self-hosted
+deployment with documented compensating controls:
 
 - Raise backend coverage to at least 60%.
 - Add report-level review summary counts.

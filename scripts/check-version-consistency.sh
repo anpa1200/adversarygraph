@@ -58,6 +58,7 @@ fi
 
 required_files=(
   "docs/release-notes/v${expected}.md"
+  "docs/release-summary-v${expected}.md"
   docs/version-matrix.md
   docs/reviewer-guide.md
   docs/security-threat-model.md
@@ -68,6 +69,15 @@ required_files=(
   docs/malware-analysis-boundary.md
   demo/README.md
 )
+
+if [[ "$expected" == 6.* ]]; then
+  required_files+=(
+    docs/release-readiness-v6.md
+    docs/case-studies-v6.md
+    docs/assets/adversarygraph-v6/manifest.md
+    docs/assets/adversarygraph-v6/sha256sums.txt
+  )
+fi
 
 for file in "${required_files[@]}"; do
   if [[ ! -s "$file" ]]; then

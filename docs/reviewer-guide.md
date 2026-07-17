@@ -9,6 +9,9 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Project overview | [README.md](../README.md) |
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
+| v6 release readiness | [docs/release-readiness-v6.md](release-readiness-v6.md) |
+| Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
+| Current screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 | Security policy | [SECURITY.md](../SECURITY.md) |
