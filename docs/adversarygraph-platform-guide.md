@@ -31,6 +31,8 @@ Those v4 malware screenshots remain representative for the current v5 Malware
 Analysis workflow.
 The v5 Attack Simulation screenshot set is stored in
 [`docs/assets/attack-simulation-v5`](assets/attack-simulation-v5/manifest.md).
+The current v6 release evidence pack is stored in
+[`docs/assets/adversarygraph-v6`](assets/adversarygraph-v6/manifest.md).
 
 The screenshot packs include validation metadata. The platform set records
 route load, expected page text, `1920x1200` dimensions, byte size, mean RGB, and

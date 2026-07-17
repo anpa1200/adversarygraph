@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-AdversaryGraph **v5.9.1** is the current feature milestone release.
+AdversaryGraph **v6.0.0** is the current production-readiness milestone release.
 The project is a self-hosted/internal analyst workbench, not a hardened multi-tenant SaaS.
 Security fixes are applied to the latest `main` branch and the latest tagged release.
 
 | Version | Supported |
 |---|---|
 | latest `main` | Yes |
-| latest tagged release (`v5.9.1`) | Yes |
+| latest tagged release (`v6.0.0`) | Yes |
 | older tags (`v4.x` and below) | Best effort |
 
 ## Reporting a Vulnerability

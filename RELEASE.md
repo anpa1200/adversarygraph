@@ -15,13 +15,14 @@ Use this checklist for reviewer-friendly AdversaryGraph releases.
 ## Verification
 
 ```bash
-cd backend
-PYTHONPATH=. python -m pytest -q
-
-cd ../frontend
-npm ci
-npm run build
+./scripts/release-readiness.sh --full
 ```
+
+- Review `docs/release-readiness-v6.md` and record every deployment go/no-go
+  decision.
+- Regenerate release screenshots with `npm run screenshots:v6`, inspect them,
+  and refresh their checksum file.
+- Verify the pre-release backup and rollback path for the target deployment.
 
 ## Tag And Publish
 

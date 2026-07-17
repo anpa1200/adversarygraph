@@ -11,6 +11,8 @@ Published walkthrough and visual reference:
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
+- v6 current UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
+- v6 reproducible case studies: [`case-studies-v6.md`](case-studies-v6.md)
 - Asset Surface screenshot addendum: [`assets/adversarygraph-v4.1-platform/manifest.md`](assets/adversarygraph-v4.1-platform/manifest.md)
 - Platform screenshot manifest: [`assets/adversarygraph-v4-platform/manifest.md`](assets/adversarygraph-v4-platform/manifest.md)
 - Malware screenshot manifest: [`assets/malware-analysis-v4/manifest.md`](assets/malware-analysis-v4/manifest.md)

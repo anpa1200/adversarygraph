@@ -1,8 +1,19 @@
 # Roadmap
 
-Current release: **v5.9.1** — JA3/JA4+ network fingerprint handling across IOC extraction, IOC Library, IOC Detail, and IOC Investigation pivots (2026-07-11)
+Current release: **v6.0.0** — Operational evidence and controlled self-hosted production readiness (2026-07-17)
 
-For the full history from v0.2.0 through v5.9.1 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md).
+
+## v6.0 — Operational Evidence and Production Readiness
+
+- [x] Consolidate and correct the complete v5 release history
+- [x] Add reproducible v6 screenshot capture and sanitized evidence assets
+- [x] Add local, evidence-backed case studies using repository demo data
+- [x] Add an explicit release-readiness gate and deployment go/no-go checklist
+- [x] Remove stale hard-coded frontend release metadata
+- [x] Align backend, frontend, Helm, README, roadmap, security policy, changelog,
+  release notes, and reviewer documentation on v6.0.0
+- [x] Revalidate backend, frontend, Compose, security, and release checks
 
 ## v5.9.1 — JA3/JA4+ Network Fingerprint IOC Workflows
 

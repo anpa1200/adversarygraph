@@ -1,5 +1,26 @@
 # Changelog
 
+## v6.0.0 - 2026-07-17
+
+- Promoted release metadata to v6.0.0 across backend, frontend, Helm, README,
+  roadmap, security policy, version matrix, and release documentation.
+- Added a consolidated v5 overview and corrected inaccurate v5.1-v5.4 release
+  notes against the canonical changelog and repository history.
+- Added a reproducible, opt-in Playwright screenshot workflow with sanitized
+  deterministic data and a v6 screenshot evidence manifest.
+- Added evidence-backed local case studies covering report-to-detection review,
+  asset exposure prioritization, and controlled Attack Simulation validation.
+- Added a v6 production-readiness and release go/no-go guide with explicit
+  deployment boundaries, evidence requirements, rollback preparation, and
+  post-release checks.
+- Replaced stale hard-coded frontend version text with package-derived release
+  metadata.
+- Added a narrow Gitleaks policy for archived third-party HTML and explicit
+  non-secret fixtures so local secret scanning matches the CI gate while
+  application source remains fully scanned.
+- Expanded reviewer and release-process documentation with v6 evidence links
+  and repeatable validation commands.
+
 ## v5.9.1 - 2026-07-11
 
 - Promoted active release markers to v5.9.1 across backend, frontend, README,

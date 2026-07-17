@@ -8,6 +8,7 @@ import { useAppStore } from '@/store';
 import { useState } from 'react';
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
 import { useCurrentUser, hasRole } from '@/hooks/useCurrentUser';
+import packageMetadata from '../../../package.json';
 
 const nav = [
   { to: '/discover',      label: 'Discover',      icon: '⌕' },
@@ -148,7 +149,7 @@ export function Sidebar() {
             <NavLink to="/feeds" className="text-[10px] text-gray-500 hover:text-gray-300">ATT&CK up to date</NavLink>
           </div>
         )}
-        <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v5.8.0</div>
+        <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v{packageMetadata.version}</div>
         {user?.auth_enabled && (
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-800 pt-2">
             <div className="min-w-0">
