@@ -6,7 +6,8 @@ metadata:
   labels:
     {{- include "adversarygraph.labels" . | nindent 4 }}
 spec:
-  accessModes: ["ReadWriteOnce"]
+  accessModes:
+    {{- toYaml .Values.postgresql.accessModes | nindent 4 }}
   {{- if .Values.postgresql.storageClassName }}
   storageClassName: {{ .Values.postgresql.storageClassName | quote }}
   {{- end }}
@@ -22,7 +23,11 @@ metadata:
   labels:
     {{- include "adversarygraph.labels" . | nindent 4 }}
 spec:
-  accessModes: ["ReadWriteOnce"]
+  accessModes:
+    {{- toYaml .Values.persistence.attckData.accessModes | nindent 4 }}
+  {{- if .Values.persistence.attckData.storageClassName }}
+  storageClassName: {{ .Values.persistence.attckData.storageClassName | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.persistence.attckDataSize | quote }}
@@ -34,7 +39,11 @@ metadata:
   labels:
     {{- include "adversarygraph.labels" . | nindent 4 }}
 spec:
-  accessModes: ["ReadWriteOnce"]
+  accessModes:
+    {{- toYaml .Values.persistence.logs.accessModes | nindent 4 }}
+  {{- if .Values.persistence.logs.storageClassName }}
+  storageClassName: {{ .Values.persistence.logs.storageClassName | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.persistence.logsSize | quote }}
@@ -47,7 +56,11 @@ metadata:
   labels:
     {{- include "adversarygraph.labels" . | nindent 4 }}
 spec:
-  accessModes: ["ReadWriteOnce"]
+  accessModes:
+    {{- toYaml .Values.malwaregraph.accessModes | nindent 4 }}
+  {{- if .Values.malwaregraph.storageClassName }}
+  storageClassName: {{ .Values.malwaregraph.storageClassName | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.malwaregraph.storageSize | quote }}

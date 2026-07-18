@@ -17,6 +17,7 @@ spec:
         {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsUser: 999
         runAsGroup: 999
@@ -27,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "adversarygraph.componentImage" .Values.image | quote }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
           envFrom:
@@ -38,12 +39,14 @@ spec:
           env:
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@{{ include "adversarygraph.fullname" . }}-redis:6379/0"
+            - name: HOME
+              value: /tmp
           ports:
             - name: http
               containerPort: 8000
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: http
             initialDelaySeconds: 20
             periodSeconds: 10
@@ -58,12 +61,17 @@ spec:
               mountPath: /app/data/attck
             - name: logs
               mountPath: /app/logs
+            {{- if .Values.malwaregraph.enabled }}
             - name: malwaregraph
               mountPath: /malwaregraph-storage
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
       volumes:
@@ -73,9 +81,13 @@ spec:
         - name: logs
           persistentVolumeClaim:
             claimName: {{ include "adversarygraph.fullname" . }}-logs
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.malwaregraph.enabled }}
         - name: malwaregraph
           persistentVolumeClaim:
             claimName: {{ include "adversarygraph.fullname" . }}-malwaregraph
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

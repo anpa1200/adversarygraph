@@ -6,6 +6,8 @@ import { aptApi, iocApi, syncApi, type IOCLibraryItem } from '@/api/client';
 import { useAppStore } from '@/store';
 import type { GroupListItem } from '@/types/attack';
 import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type FeedKind = 'custom-json' | 'custom-csv' | 'custom-txt';
 
@@ -25,6 +27,11 @@ const BASE_IOC_TYPES = ['domain', 'ip:port', 'ipv4', 'ipv6', 'md5', 'sha1', 'sha
 
 export function IOCLibrary() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canExport = useHasPermission('export_data');
+  const canUploadFiles = useHasPermission('upload_files');
   const navigate = useNavigate();
   const { domain, version } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -251,6 +258,7 @@ export function IOCLibrary() {
               )}
 
               <Panel title={`IOC records (${total})`}>
+                {!canRunAnalysis && <div className="border-b border-gray-800 p-3"><PermissionNotice permission="run_analysis" action="run live IOC lookups or investigations" compact /></div>}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1180px] text-left text-xs">
                     <thead className="bg-gray-950 text-[10px] uppercase text-gray-500">
@@ -276,6 +284,7 @@ export function IOCLibrary() {
                           onEnrichment={() => openEnrichment(item.value)}
                           onOpenDetail={() => navigate(`/ioc-library/${item.id}`)}
                           onInvestigate={() => navigate(`/ioc-investigation?indicator=${encodeURIComponent(item.value)}`)}
+                          canRunAnalysis={canRunAnalysis}
                         />
                       )) : (
                         <tr><td colSpan={7} className="p-6 text-center text-gray-500">No IOC records match the current filters.</td></tr>
@@ -295,23 +304,27 @@ export function IOCLibrary() {
 
             <Panel title="Sync and connect sources">
               <div className="space-y-3 p-4">
+                {!canManageFeeds && <PermissionNotice permission="manage_feeds" action="synchronize or connect IOC feeds" compact />}
+                {!canManageIntel && <PermissionNotice permission="manage_intel" action="import STIX/TAXII data or enrich IOC mappings" compact />}
+                {!canUploadFiles && <PermissionNotice permission="upload_files" action="upload STIX files" compact />}
+                {!canExport && <PermissionNotice permission="export_data" action="export IOC data as STIX" compact />}
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => syncAll.mutate()} disabled={syncAll.isPending} className="primary-action">
+                  <button onClick={() => syncAll.mutate()} disabled={!canManageFeeds || syncAll.isPending} className="primary-action">
                     {syncAll.isPending ? 'Syncing...' : 'Sync all'}
                   </button>
-                  <a
+                  {canExport && <a
                     href={iocApi.stixExportUrl({ search, type, source, actor: actorIds, sort, limit: 5000 })}
                     className="secondary-action"
                   >
                     Export STIX
-                  </a>
+                  </a>}
                   <label className="secondary-action cursor-pointer">
                     {importStix.isPending ? 'Importing...' : 'Import STIX'}
                     <input
                       type="file"
                       accept=".json,.stix,application/json,application/stix+json"
                       className="hidden"
-                      disabled={importStix.isPending}
+                      disabled={!canManageIntel || !canUploadFiles || importStix.isPending}
                       onChange={event => {
                         const file = event.currentTarget.files?.[0];
                         if (file) importStix.mutate(file);
@@ -319,16 +332,16 @@ export function IOCLibrary() {
                       }}
                     />
                   </label>
-                  <button onClick={() => syncThreatFox.mutate()} disabled={syncThreatFox.isPending} className="secondary-action">
+                  <button onClick={() => syncThreatFox.mutate()} disabled={!canManageFeeds || syncThreatFox.isPending} className="secondary-action">
                     ThreatFox
                   </button>
-                  <button onClick={() => syncMalpedia.mutate()} disabled={syncMalpedia.isPending} className="secondary-action">
+                  <button onClick={() => syncMalpedia.mutate()} disabled={!canManageFeeds || syncMalpedia.isPending} className="secondary-action">
                     Malpedia
                   </button>
-                  <button onClick={() => syncOtx.mutate()} disabled={syncOtx.isPending} className="secondary-action">
+                  <button onClick={() => syncOtx.mutate()} disabled={!canManageFeeds || syncOtx.isPending} className="secondary-action">
                     OTX
                   </button>
-                  <button onClick={() => enrichIocTtps.mutate()} disabled={enrichIocTtps.isPending} className="secondary-action">
+                  <button onClick={() => enrichIocTtps.mutate()} disabled={!canManageIntel || enrichIocTtps.isPending} className="secondary-action">
                     {enrichIocTtps.isPending ? 'Enriching...' : 'Enrich IOC TTPs'}
                   </button>
                 </div>
@@ -336,13 +349,14 @@ export function IOCLibrary() {
                   <label className="flex items-start gap-2 text-xs text-gray-300">
                     <input
                       type="checkbox"
+                      disabled={!canManageFeeds}
                       checked={aiEnrichIocs}
                       onChange={event => setAiEnrichIocs(event.target.checked)}
                       className="mt-0.5"
                     />
                     <span>Use AI as last fallback when synced IOCs have no strict report or enrichment-platform TTP mapping.</span>
                   </label>
-                  <select value={aiProvider} onChange={event => setAiProvider(event.target.value as typeof aiProvider)} className="field">
+                  <select disabled={!canManageFeeds} value={aiProvider} onChange={event => setAiProvider(event.target.value as typeof aiProvider)} className="field">
                     <option value="local">Local LLM</option>
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
@@ -357,17 +371,17 @@ export function IOCLibrary() {
                 <SourceStatus mutation={enrichIocTtps} label="IOC-to-TTP enrichment" />
                 <SourceStatus mutation={importStix} label="STIX import" />
                 <div className="grid gap-2">
-                  <input value={feedLabel} onChange={event => setFeedLabel(event.target.value)} placeholder="Feed label" className="field" />
-                  <input value={feedUrl} onChange={event => setFeedUrl(event.target.value)} placeholder="https://example.local/iocs.json|csv|txt" className="field" />
+                  <input disabled={!canManageFeeds} value={feedLabel} onChange={event => setFeedLabel(event.target.value)} placeholder="Feed label" className="field" />
+                  <input disabled={!canManageFeeds} value={feedUrl} onChange={event => setFeedUrl(event.target.value)} placeholder="https://example.local/iocs.json|csv|txt" className="field" />
                   <div className="grid grid-cols-[1fr_auto] gap-2">
-                    <select value={feedKind} onChange={event => setFeedKind(event.target.value as FeedKind)} className="field">
+                    <select disabled={!canManageFeeds} value={feedKind} onChange={event => setFeedKind(event.target.value as FeedKind)} className="field">
                       <option value="custom-json">JSON</option>
                       <option value="custom-csv">CSV</option>
                       <option value="custom-txt">TXT</option>
                     </select>
                     <button
                       onClick={() => createSource.mutate({ label: feedLabel, url: feedUrl, kind: feedKind })}
-                      disabled={!feedLabel.trim() || !feedUrl.trim() || createSource.isPending}
+                      disabled={!canManageFeeds || !feedLabel.trim() || !feedUrl.trim() || createSource.isPending}
                       className="primary-action disabled:opacity-40"
                     >
                       Add feed
@@ -379,13 +393,14 @@ export function IOCLibrary() {
                   <div className="grid gap-2">
                     <input
                       value={mispUrl}
+                      disabled={!canManageFeeds}
                       onChange={event => setMispUrl(event.target.value)}
                       placeholder="MISP JSON export URL or local gateway URL"
                       className="field"
                     />
                     <button
                       onClick={() => createSource.mutate({ label: 'MISP IOC Export', url: mispUrl, kind: 'custom-json', source_id: 'custom-misp-export' })}
-                      disabled={!mispUrl.trim() || createSource.isPending}
+                      disabled={!canManageFeeds || !mispUrl.trim() || createSource.isPending}
                       className="secondary-action disabled:opacity-40"
                     >
                       Connect MISP JSON
@@ -400,23 +415,25 @@ export function IOCLibrary() {
                   <div className="grid gap-2">
                     <input
                       value={taxiiUrl}
+                      disabled={!canManageIntel}
                       onChange={event => setTaxiiUrl(event.target.value)}
                       placeholder="https://taxii.example/api2/collections/{id}/objects/"
                       className="field"
                     />
                     <input
                       value={taxiiToken}
+                      disabled={!canManageIntel}
                       onChange={event => setTaxiiToken(event.target.value)}
                       placeholder="Bearer token (optional)"
                       className="field"
                     />
                     <div className="grid grid-cols-2 gap-2">
-                      <input value={taxiiUsername} onChange={event => setTaxiiUsername(event.target.value)} placeholder="Username" className="field" />
-                      <input value={taxiiPassword} onChange={event => setTaxiiPassword(event.target.value)} placeholder="Password" type="password" className="field" />
+                      <input disabled={!canManageIntel} value={taxiiUsername} onChange={event => setTaxiiUsername(event.target.value)} placeholder="Username" className="field" />
+                      <input disabled={!canManageIntel} value={taxiiPassword} onChange={event => setTaxiiPassword(event.target.value)} placeholder="Password" type="password" className="field" />
                     </div>
                     <button
                       onClick={() => importTaxii.mutate()}
-                      disabled={!taxiiUrl.trim() || importTaxii.isPending}
+                      disabled={!canManageIntel || !taxiiUrl.trim() || importTaxii.isPending}
                       className="secondary-action disabled:opacity-40"
                     >
                       {importTaxii.isPending ? 'Pulling TAXII...' : 'Pull TAXII STIX'}
@@ -440,11 +457,12 @@ export function IOCLibrary() {
   );
 }
 
-function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate }: {
+function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate, canRunAnalysis }: {
   item: IOCLibraryItem;
   onEnrichment: () => void;
   onOpenDetail: () => void;
   onInvestigate: () => void;
+  canRunAnalysis: boolean;
 }) {
   const navigate = useNavigate();
   return (
@@ -499,12 +517,12 @@ function IOCRow({ item, onEnrichment, onOpenDetail, onInvestigate }: {
       </td>
       <td className="p-3">
         <div className="flex flex-col gap-2">
-          <button onClick={onEnrichment} disabled={NETWORK_FINGERPRINT_TYPES.has(item.type)} className="primary-action disabled:opacity-40">
+          {canRunAnalysis && <button onClick={onEnrichment} disabled={NETWORK_FINGERPRINT_TYPES.has(item.type)} className="primary-action disabled:opacity-40">
             Live lookup
-          </button>
-          <button onClick={onInvestigate} className="secondary-action">
+          </button>}
+          {canRunAnalysis && <button onClick={onInvestigate} className="secondary-action">
             Investigate IOC
-          </button>
+          </button>}
           <button onClick={onOpenDetail} className="secondary-action">
             Open detail
           </button>

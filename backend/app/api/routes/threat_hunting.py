@@ -14,9 +14,10 @@ from app.core.version import APP_VERSION
 from app.models.threat_hunting import ThreatHuntFinding, ThreatHuntQueryVersion
 from app.models.threat_radar import ThreatHuntRequest
 from app.services import threat_hunting as hunts
-from app.services.auth import TeamUser, analyst, audit
+from app.services.auth import TeamUser, analyst, audit, require_permission
 
 router = APIRouter(prefix="/threat-hunting", tags=["Threat Hunting"])
+export_threat_hunt = require_permission("export_data")
 
 HuntStatus = Literal[
     "queued",
@@ -473,19 +474,23 @@ async def archive_hunt_legacy(
 @router.get("/hunts/{hunt_id}/query-versions", response_model=list[QueryVersionOut])
 async def query_versions(
     hunt_id: UUID,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(analyst),
 ) -> list[ThreatHuntQueryVersion]:
-    return await hunts.list_query_versions(db, hunt_id)
+    return await hunts.list_query_versions(db, hunt_id, limit=limit, offset=offset)
 
 
 @router.get("/hunts/{hunt_id}/findings", response_model=list[FindingOut])
 async def list_findings(
     hunt_id: UUID,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(analyst),
 ) -> list[ThreatHuntFinding]:
-    return await hunts.list_findings(db, hunt_id)
+    return await hunts.list_findings(db, hunt_id, limit=limit, offset=offset)
 
 
 @router.post("/hunts/{hunt_id}/findings", response_model=FindingOut, status_code=201)
@@ -581,7 +586,7 @@ async def archive_finding_legacy(
 async def export_hunt(
     hunt_id: UUID,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(export_threat_hunt),
 ) -> dict[str, Any]:
     hunt = await hunts.get_hunt(db, hunt_id)
     findings = await hunts.list_findings(db, hunt_id, include_archived=True)

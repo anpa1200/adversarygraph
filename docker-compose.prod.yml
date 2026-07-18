@@ -1,8 +1,9 @@
 # Hardened production overlay.
 #
 # Usage:
+#   ./scripts/validate-production-env.sh
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml config
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 #
 # This overlay keeps the default local-only public ports, enables native auth by
 # default, disables startup feed sync noise, tightens restart/security defaults,
@@ -64,6 +65,8 @@ services:
       AUTH_PASSWORD_REQUIRE_NUMBER: ${AUTH_PASSWORD_REQUIRE_NUMBER:-false}
       AUTH_PASSWORD_REQUIRE_SPECIAL: ${AUTH_PASSWORD_REQUIRE_SPECIAL:-false}
       AUTH_MFA_ENABLED: ${AUTH_MFA_ENABLED:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required for the production overlay}
+      SECURE_COOKIES: ${SECURE_COOKIES:-true}
       AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     deploy:
@@ -115,10 +118,15 @@ services:
 
   frontend:
     restart: always
+    read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0750,nosuid,nodev
+      - /var/cache/nginx:uid=101,gid=101,mode=0750,nosuid,nodev
+      - /tmp:uid=101,gid=101,mode=0750,nosuid,nodev
     deploy:
       resources:
         limits:
@@ -137,13 +145,15 @@ services:
   atlas-builder:
     restart: unless-stopped
     profiles: ["docs"]
+    environment:
+      ATLAS_SYNC_INTERVAL: "0"
 
   atlas-docs:
     restart: unless-stopped
     profiles: ["docs"]
 
   backup:
-    image: postgres:16-alpine
+    image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
     profiles: ["tools"]
     restart: "no"
     environment:

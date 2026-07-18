@@ -7,6 +7,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { analyzeApi } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 
@@ -29,6 +31,7 @@ interface Props {
 }
 
 export function LLMChat({ initialContext, placeholder = 'Ask the AI assistant…' }: Props) {
+  const canRunAnalysis = useHasPermission('run_analysis');
   const [provider, setProvider] = useState<Provider>('claude');
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<Message[]>([]);
@@ -53,7 +56,7 @@ export function LLMChat({ initialContext, placeholder = 'Ask the AI assistant…
 
   const send = useCallback(async () => {
     const msg = input.trim();
-    if (!msg || streaming) return;
+    if (!canRunAnalysis || !msg || streaming) return;
     setInput('');
     setHistory(h => [...h, { role: 'user', content: msg }]);
 
@@ -61,10 +64,16 @@ export function LLMChat({ initialContext, placeholder = 'Ask the AI assistant…
       ? initialContext
       : history.map(m => `${m.role === 'user' ? 'Analyst' : 'AI'}: ${m.content}`).join('\n');
 
-    await run(
-      analyzeApi.chat({ message: msg, provider, context })
+    await run(signal => analyzeApi.chat({ message: msg, provider, context }, signal));
+  }, [canRunAnalysis, input, streaming, history, initialContext, provider, run]);
+
+  if (!canRunAnalysis) {
+    return (
+      <div className="border-t border-gray-700 p-3">
+        <PermissionNotice permission="run_analysis" action="use the AI assistant" compact />
+      </div>
     );
-  }, [input, streaming, history, initialContext, provider, run]);
+  }
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

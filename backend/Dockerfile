@@ -18,10 +18,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Runtime-only native libs needed by asyncpg / psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    curl \
+# Refresh base-image packages before installing runtime dependencies so that
+# published images include Debian security updates available at build time.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+      libpq5 \
+      curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
@@ -29,10 +32,15 @@ COPY --from=builder /install /usr/local
 COPY . .
 
 RUN mkdir -p /app/data/attck /app/logs && \
-    groupadd -r appuser && \
-    useradd -r -g appuser -d /app -s /sbin/nologin appuser && \
+    groupadd --system --gid 999 appuser && \
+    useradd --system --uid 999 --gid 999 --home-dir /app --shell /usr/sbin/nologin appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/api/ready || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -35,3 +35,25 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-secrets" (include "adversarygraph.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "adversarygraph.componentImage" -}}
+{{- if .digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .digest) -}}
+{{- fail "image digest must use the form sha256:<64 lowercase hexadecimal characters>" -}}
+{{- end -}}
+{{- printf "%s@%s" .repository .digest -}}
+{{- else -}}
+{{- printf "%s:%s" .repository .tag -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "adversarygraph.fullImage" -}}
+{{- if .digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .digest) -}}
+{{- fail "image digest must use the form sha256:<64 lowercase hexadecimal characters>" -}}
+{{- end -}}
+{{- printf "%s@%s" .image .digest -}}
+{{- else -}}
+{{- .image -}}
+{{- end -}}
+{{- end -}}

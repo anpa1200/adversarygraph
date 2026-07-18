@@ -151,7 +151,8 @@ def classify_exposure_hit(hit: dict[str, Any]) -> dict[str, Any]:
         str(hit.get(key, ""))
         for key in ("provider", "title", "summary", "source_type", "product", "component", "supplier", "handle", "url")
     ).lower()
-    metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+    metadata_value = hit.get("metadata")
+    metadata = metadata_value if isinstance(metadata_value, dict) else {}
     metadata_text = " ".join(str(value) for value in metadata.values()).lower()
     text = f"{text} {metadata_text}"
 

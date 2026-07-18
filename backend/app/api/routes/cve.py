@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.auth import TeamUser, audit, current_user, require_permission
 from app.services.cve_intel import (
     correlate_cves,
     cve_correlation_graph,
@@ -27,6 +27,8 @@ from app.services.cve_intel import (
     sync_nvd_recent,
     sync_osv_packages,
 )
+
+manage_cve_feeds = require_permission("manage_feeds")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cve", tags=["CVE Intelligence"])
@@ -236,7 +238,7 @@ async def related_cves_for_ioc(
 async def sync_all_cves(
     days: int = Query(7, ge=1, le=120),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await sync_all_cve_sources(session, days=days)
@@ -253,7 +255,7 @@ async def sync_nvd(
     days: int = Query(7, ge=1, le=120),
     limit: int = Query(2000, ge=1, le=2000),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await sync_nvd_recent(session, days=days, limit=limit)
@@ -270,7 +272,7 @@ async def sync_nvd_by_cve_ids(
     payload: CVEIdSyncIn,
     limit: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await sync_nvd_cve_ids(session, payload.cve_ids, limit=limit)
@@ -286,7 +288,7 @@ async def sync_nvd_by_cve_ids(
 async def sync_missing_cvss(
     limit: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await enrich_missing_cvss(session, limit=limit)
@@ -299,7 +301,7 @@ async def sync_missing_cvss(
 
 
 @router.post("/sync/kev", response_model=CVESyncOut)
-async def sync_kev(session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def sync_kev(session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_cve_feeds)):
     try:
         result = await sync_cisa_kev(session)
         await audit(session, user, "sync.cve.kev", "cve_source")
@@ -316,7 +318,7 @@ async def sync_github_security_advisories(
     severity: str = Query("", pattern="^(|low|medium|high|critical)$"),
     limit: int = Query(100, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await sync_github_advisories(session, ecosystem=ecosystem, severity=severity, limit=limit)
@@ -332,7 +334,7 @@ async def sync_github_security_advisories(
 async def sync_epss(
     limit: int = Query(500, ge=1, le=2000),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         result = await sync_epss_scores(session, limit=limit)
@@ -348,7 +350,7 @@ async def sync_epss(
 async def sync_osv_package_advisories(
     payload: OSVPackageSyncIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_cve_feeds),
 ):
     try:
         packages = [item.model_dump() for item in payload.packages]
@@ -362,7 +364,7 @@ async def sync_osv_package_advisories(
 
 
 @router.post("/correlate")
-async def run_cve_correlation(session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def run_cve_correlation(session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_cve_feeds)):
     try:
         result = await correlate_cves(session)
         await audit(session, user, "cve.correlate", "cve_record", details=result)

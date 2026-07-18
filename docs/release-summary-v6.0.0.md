@@ -1,5 +1,10 @@
 # AdversaryGraph v6.0.0 Release Summary
 
+> Historical evidence note: the public `v6.0.0` GitHub release has no attached
+> `adversarygraph-images.env` and predates the strengthened post-v6 immutable
+> seven-image publication path. Do not attribute the current `main` artifact
+> gate or later Threat Hunting AI controls to this tag.
+
 AdversaryGraph v6.0.0 turns the accumulated v5 feature set into a more
 reviewable operational release. The emphasis is evidence: one command for the
 release gate, current reproducible screenshots, deterministic local case
@@ -21,10 +26,11 @@ criteria, and a documented rollback path.
 
 ## Production Claim
 
-v6.0.0 is suitable for controlled self-hosted production when the operator
-passes the release-readiness checklist and supplies TLS, authentication,
-network isolation, secrets management, backups, monitoring, retention policy,
-and an approved data-handling process.
+v6.0.0 can be evaluated for a controlled self-hosted deployment when the
+operator supplies TLS, authentication, network isolation, secrets management,
+backups, monitoring, retention policy, an approved data-handling process, and
+retained build/scan evidence for the exact deployed artifacts. It does not
+carry the immutable digest manifest required by the newer post-v6 gate.
 
 It is not a managed SaaS, a multi-tenant isolation boundary, or safe for direct
 internet exposure with default settings.

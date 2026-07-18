@@ -24,6 +24,11 @@ class AnalysisSession(Base):
     llm_provider: Mapped[str] = mapped_column(String(20))  # claude | openai | gemini | local
     model: Mapped[str] = mapped_column(String(100), default="")
     domain: Mapped[str] = mapped_column(String(50), default="enterprise-attack")
+    # Authoritative marking for the stored source. New and legacy reports are
+    # conservative by default; only the manage-intel edit path may lower it.
+    tlp: Mapped[str] = mapped_column(
+        String(20), default="TLP:AMBER+STRICT", nullable=False
+    )
     source_text: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -101,8 +101,16 @@ class EvidenceGraphEdge(Base):
     __tablename__ = "evidence_graph_edges"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_node_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
-    target_node_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    source_node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_graph_nodes.id", ondelete="CASCADE"),
+        index=True,
+    )
+    target_node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_graph_nodes.id", ondelete="CASCADE"),
+        index=True,
+    )
     edge_type: Mapped[str] = mapped_column(String(80), index=True)
     rationale: Mapped[str] = mapped_column(Text, default="")
     confidence: Mapped[int] = mapped_column(Integer, default=50)

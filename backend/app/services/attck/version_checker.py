@@ -59,6 +59,7 @@ def get_status() -> list[DomainStatus]:
             ingested_at = row.ingested_at.isoformat() if row and row.ingested_at else None
 
             # Latest GitHub version
+            latest: str | None
             try:
                 latest = get_latest_version(domain)
             except Exception as exc:

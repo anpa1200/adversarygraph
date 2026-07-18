@@ -72,6 +72,13 @@ async def test_evidence_graph_node_and_edge_crud(client):
     assert edge_update.status_code == 200, edge_update.text
     assert edge_update.json()["review_status"] == "analyst_reviewed"
 
+    orphan_update = await client.patch(
+        f"/api/evidence-graph/edges/{edge['id']}",
+        json={"target_node_id": "11111111-1111-4111-8111-111111111111"},
+        headers=_auth_headers(),
+    )
+    assert orphan_update.status_code == 404
+
 
 @pytest.mark.asyncio
 async def test_evidence_graph_full_path_gaps_and_score(client):
@@ -173,3 +180,27 @@ async def test_evidence_graph_viewer_cannot_mutate_when_auth_enabled(client, app
         assert response.status_code == 403
     finally:
         monkeypatch.setattr(settings, "auth_enabled", False)
+
+
+@pytest.mark.asyncio
+async def test_evidence_graph_rejects_oversized_and_null_persistent_fields(client):
+    oversized = await client.post(
+        "/api/evidence-graph/nodes",
+        json={"node_type": "evidence", "title": "bounded", "raw_excerpt": "x" * 250_001},
+        headers=_auth_headers(),
+    )
+    node = await _node(client, "evidence", "Patch target")
+    null_title = await client.patch(
+        f"/api/evidence-graph/nodes/{node['id']}",
+        json={"title": None},
+        headers=_auth_headers(),
+    )
+    long_search = await client.get(
+        "/api/evidence-graph",
+        params={"search": "x" * 501},
+        headers=_auth_headers(),
+    )
+
+    assert oversized.status_code == 422
+    assert null_title.status_code == 422
+    assert long_search.status_code == 422

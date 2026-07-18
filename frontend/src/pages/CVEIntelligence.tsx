@@ -9,11 +9,14 @@ import { cveApi, type CVEDetail, type CVEItem } from '@/api/client';
 import { safeHref } from '@/utils/url';
 import { DataTable } from '@/components/ui/data-table';
 import { EntityGraph } from '@/components/ui/graph';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const severities = ['', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 export function CVEIntelligence() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -148,18 +151,22 @@ export function CVEIntelligence() {
 
             <Panel title="Library controls">
               <div className="space-y-3 p-4 text-sm">
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="primary-action" disabled={syncAll.isPending} onClick={() => syncAll.mutate()}>{syncAll.isPending ? 'Syncing...' : 'Sync NVD + KEV'}</button>
-                  <button className="secondary-action" disabled={correlate.isPending} onClick={() => correlate.mutate()}>{correlate.isPending ? 'Correlating...' : 'Refresh correlations'}</button>
-                  <button className="secondary-action" disabled={syncNvd.isPending} onClick={() => syncNvd.mutate()}>NVD recent</button>
-                  <button className="secondary-action" disabled={syncKev.isPending} onClick={() => syncKev.mutate()}>CISA KEV</button>
-                  <button className="secondary-action" disabled={enrichPageCvss.isPending || missingCvssOnPage.length === 0} onClick={() => enrichPageCvss.mutate()}>
-                    {enrichPageCvss.isPending ? 'Enriching page...' : 'Enrich visible CVSS'}
-                  </button>
-                  <button className="secondary-action" disabled={enrichMissingCvss.isPending} onClick={() => enrichMissingCvss.mutate()}>
-                    {enrichMissingCvss.isPending ? 'Enriching batch...' : 'Enrich next missing batch'}
-                  </button>
-                </div>
+                {canManageFeeds ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="primary-action" disabled={syncAll.isPending} onClick={() => syncAll.mutate()}>{syncAll.isPending ? 'Syncing...' : 'Sync NVD + KEV'}</button>
+                    <button className="secondary-action" disabled={correlate.isPending} onClick={() => correlate.mutate()}>{correlate.isPending ? 'Correlating...' : 'Refresh correlations'}</button>
+                    <button className="secondary-action" disabled={syncNvd.isPending} onClick={() => syncNvd.mutate()}>NVD recent</button>
+                    <button className="secondary-action" disabled={syncKev.isPending} onClick={() => syncKev.mutate()}>CISA KEV</button>
+                    <button className="secondary-action" disabled={enrichPageCvss.isPending || missingCvssOnPage.length === 0} onClick={() => enrichPageCvss.mutate()}>
+                      {enrichPageCvss.isPending ? 'Enriching page...' : 'Enrich visible CVSS'}
+                    </button>
+                    <button className="secondary-action" disabled={enrichMissingCvss.isPending} onClick={() => enrichMissingCvss.mutate()}>
+                      {enrichMissingCvss.isPending ? 'Enriching batch...' : 'Enrich next missing batch'}
+                    </button>
+                  </div>
+                ) : (
+                  <PermissionNotice permission="manage_feeds" action="synchronize CVE sources or refresh correlations" compact />
+                )}
                 {(enrichMissingCvss.data || enrichPageCvss.data) && (
                   <div className="rounded border border-blue-500/40 bg-blue-950/20 p-3 text-xs text-blue-100">
                     NVD enrichment checked {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.missing_selected ?? (enrichPageCvss.data?.requested || 0))} records, fetched {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.fetched ?? 0)}, updated {String((enrichMissingCvss.data ?? enrichPageCvss.data)?.updated ?? 0)}.

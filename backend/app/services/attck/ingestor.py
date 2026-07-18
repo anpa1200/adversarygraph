@@ -80,8 +80,12 @@ def _detection_source_map(by_id: dict[str, dict], relationships: list[dict]) -> 
     for rel in relationships:
         if rel.get("relationship_type") != "detects":
             continue
-        target = by_id.get(rel.get("target_ref"), {})
-        strategy = by_id.get(rel.get("source_ref"), {})
+        target_ref = rel.get("target_ref")
+        source_ref = rel.get("source_ref")
+        if not isinstance(target_ref, str) or not isinstance(source_ref, str):
+            continue
+        target = by_id.get(target_ref, {})
+        strategy = by_id.get(source_ref, {})
         if target.get("type") != "attack-pattern" or strategy.get("type") != "x-mitre-detection-strategy":
             continue
         if _is_stale(target) or _is_stale(strategy):
@@ -110,7 +114,8 @@ def _log_source_label(source_ref: dict | str, by_id: dict[str, dict]) -> str:
 
     name = str(source_ref.get("name") or "").strip()
     component_ref = source_ref.get("x_mitre_data_component_ref")
-    component_name = str(by_id.get(component_ref, {}).get("name") or "").strip()
+    component = by_id.get(component_ref, {}) if isinstance(component_ref, str) else {}
+    component_name = str(component.get("name") or "").strip()
     if name:
         return name
     return component_name

@@ -11,7 +11,11 @@ services:
     volumes:
       - ./backend:/app
       - attck_data:/app/data/attck
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
 
   worker:
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2

@@ -6,13 +6,13 @@ Current public documentation bundle:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
 - v5 Attack Simulation screenshots: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
-- v6 current UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
+- Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 production acceptance gate: [`release-readiness-v6.md`](release-readiness-v6.md)
 - Platform screenshots: [`assets/adversarygraph-v4-platform/manifest.md`](assets/adversarygraph-v4-platform/manifest.md)
 - Malware screenshots: [`assets/malware-analysis-v4/manifest.md`](assets/malware-analysis-v4/manifest.md)
 - Published article mirror: <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>
 - Medium publication: <https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e>
-- Local visual appendix: [`full-guide-v2.md#24-visual-appendix`](full-guide-v2.md#24-visual-appendix)
+- Local visual appendix: [`full-guide-v2.md#25-visual-appendix`](full-guide-v2.md#25-visual-appendix)
 
 ## Services
 
@@ -40,12 +40,19 @@ Important settings:
 | `OPENAI_API_KEY` | OpenAI provider |
 | `OPENAI_MODEL` | OpenAI model default |
 | `GEMINI_API_KEY` | Gemini provider |
+| `GEMINI_MODEL` | Gemini model default, currently `gemini-3.5-flash` |
 | `MINIMAX_API_KEY` | MiniMax provider |
 | `MINIMAX_MODEL` | MiniMax model default |
 | `MINIMAX_BASE_URL` | MiniMax OpenAI-compatible API base URL |
 | `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM endpoint |
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
 | `LOCAL_LLM_MODEL` | Local model default |
+| `THREAT_HUNTING_AI_ENABLED` | Enable governed Threat Hunting AI endpoints, default `true` |
+| `THREAT_HUNTING_AI_CLOUD_ENABLED` | Permit configured remote providers for eligible markings, default `false` |
+| `THREAT_HUNTING_AI_DEFAULT_PROVIDER` | Default Threat Hunting provider: `local`, `claude`, `openai`, `gemini`, or `minimax`; default `local` |
+| `THREAT_HUNTING_AI_TIMEOUT_SECONDS` | Maximum governed assistant generation time; default `45` seconds, enforced range `5`–`180` |
+| `THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT` | Maximum raw source-text characters included in report-to-hypothesis context; default `40000`, enforced range `4000`–`80000` |
+| `THREAT_HUNTING_AI_MAX_CANDIDATES` | Maximum returned report-to-hypothesis candidates; default `3`, enforced range `1`–`3` |
 | `ATTCK_DOMAINS` | ATT&CK/ATLAS domains to ingest, for example `enterprise-attack,mobile-attack,ics-attack,atlas` |
 | `THREATFOX_AUTH_KEY` | Optional abuse.ch ThreatFox key for IOC sync |
 | `AUTO_IOC_FULL_SYNC_ON_STARTUP` | Run background full IOC source sync after API startup |
@@ -69,6 +76,78 @@ Important settings:
 
 See [`local-storage-and-permissions.md`](local-storage-and-permissions.md) for
 the exact local database, cache, log, and artifact storage locations.
+
+### Governed Threat Hunting AI policy
+
+Threat Hunting has a stricter AI boundary than general report extraction. The
+operator-configured local OpenAI-compatible provider is the default. Cloud AI
+is disabled by default for this feature even when a Claude, OpenAI, Gemini, or
+MiniMax key is configured elsewhere in the deployment. Enable remote use only
+after the organization approves the provider, model, data terms, processing
+region, retention behavior, and permitted source markings.
+
+The policy is enforced in two layers:
+
+| Input or state | Permitted provider behavior |
+|---|---|
+| `TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` | Local by default; an enabled/configured remote provider also requires explicit analyst acknowledgment for the request |
+| `TLP:AMBER+STRICT` or `TLP:RED` | Local-only; operator cloud enablement and analyst acknowledgment cannot override the block |
+| Unsaved plan context | Local-only; save the draft before remote plan assistance so the server can apply canonical hunt context and TLP controls |
+| Unsaved query, findings, or outcome context | Assistant request is blocked until the hunt exists |
+
+The source-report selector uses completed reports or research sessions with
+source text already stored in the workspace. The report carries an
+authoritative server-side marking that defaults to `TLP:AMBER+STRICT`; only a
+user with `manage_intel` may change it through the linked-report edit path.
+Hypothesis requests may raise but cannot lower that persisted marking.
+Report-to-hypothesis generation currently supports the Enterprise ATT&CK domain
+only. It does not fetch an arbitrary URL or support Mobile, ICS, or ATLAS report
+conversion.
+
+Useful read-only provider discovery:
+
+```bash
+curl http://localhost:3000/api/threat-hunting/ai/providers | jq
+```
+
+Provider discovery reports whether an entry is configured, remote, and subject
+to acknowledgment. Provider and model choice remains server-governed: the API
+rejects an unconfigured provider and a client model override that differs from
+the configured model. Do not treat the `local` label as proof of network
+locality: verify `LOCAL_LLM_BASE_URL`, TLS/network routing where applicable,
+provider-side logging, authentication, and retention.
+
+The assistant returns `lifecycle_status=suggested` and never executes a query,
+saves a hunt or finding, changes lifecycle state, selects a disposition, or
+initiates an operational action. The UI's **Apply safe fields** and **Apply safe
+suggestions** actions copy only permitted content into an unsaved editable hunt
+draft. **Open editable draft** opens the normal unsaved finding form. The
+analyst must review and save separately.
+
+After a provider returns, the API rechecks the stored report or canonical saved
+hunt used to construct the request. If it changed during generation, the API
+returns a conflict and does not persist or return the stale suggestion. A later
+edit does not mutate or automatically invalidate an existing append-only
+assistance record; analysts must regenerate or compare that snapshot manually.
+
+Saved-hunt requests are also bounded and disclose every active limit in the
+returned and persisted warnings: 12,000 characters for the canonical query;
+the newest five query versions with 6,000 query characters and 4,000
+backend-assumption characters each; and the newest 50 active findings with
+3,000 summary characters and 2,000 note characters each.
+
+Each generation writes an append-only AI-assistance record containing the
+optional hunt and stored-session IDs, task/stage, `suggested` lifecycle,
+provider/model, prompt version, effective TLP, sanitized source references,
+the recorded remote-processing acknowledgment state, citation metadata, and
+bounded server-validated citation excerpts of at most 300
+characters each, input/output checksums, validated structured suggestion,
+warnings, and actor/time. It does not persist the raw assistant prompt, full raw
+report, raw provider response, credentials, or provider exception. Continue to
+protect the original report store, assistance records, hunt records, returned
+citations, analyst focus text, API logs, and backups according to their
+effective marking. Verify that request logging and reverse proxies do not
+capture request bodies.
 
 ## Backups
 
@@ -160,25 +239,35 @@ intentionally want a fresh database.
 
 ## Updates
 
+For a local source-based development environment:
+
 ```bash
-git pull
+git pull --ff-only
 docker compose pull
 docker compose up -d --build
 ```
 
 Review `CHANGELOG.md` before upgrading tagged releases.
 
-For production-like upgrades:
+For production-like upgrades, check out the reviewed tag and load all seven
+`ADVERSARYGRAPH_*_IMAGE` digest references from that release's
+`adversarygraph-images.env` attachment into `.env`, then deploy the prebuilt
+artifacts without rebuilding:
 
 ```bash
 ./scripts/backup.sh
+AUTH_EXISTING_ADMIN_CONFIRMED=true ./scripts/validate-production-env.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ./scripts/selftest.sh
 ```
 
+This manifest is a post-v6 release artifact. The historical public `v6.0.0`
+release does not contain it; use a later successfully gated tag or document an
+equivalent independent build, scan, and digest-recording process.
+
 For the current feature scope, review
-[`docs/release-summary-v5.5.0.md`](release-summary-v5.5.0.md).
+[`docs/release-summary-v6.0.0.md`](release-summary-v6.0.0.md).
 
 ## Feeds Management
 
@@ -338,10 +427,29 @@ The default Compose deployment is not a hardened public SaaS. If exposing Advers
   headers to the API.
 - Create permanent named admin accounts, then clear
   `AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
+- Before the first production rollout, configure either a strong temporary
+  bootstrap administrator or a trusted OIDC/SAML proxy with a strong
+  `PROXY_SECRET`. For later rollouts, verify that at least one named permanent
+  administrator still exists before leaving the bootstrap password empty, then
+  run the preflight/deployment once with
+  `AUTH_EXISTING_ADMIN_CONFIRMED=true make prod`.
 - Use Admin Panel to review sessions, revoke sessions, reset local MFA, and
   inspect auth audit events.
 - Do not expose PostgreSQL or Redis publicly.
 - Rotate default secrets.
+- Run `./scripts/validate-production-env.sh`; it rejects known placeholders,
+  short or reused database/Redis/rate-limit proxy secrets,
+  wildcard/non-HTTPS CORS, disabled authentication, insecure session cookies,
+  and deployments without a bootstrap/proxy/verified-existing-admin path,
+  without printing secret values.
+- Generate an independent `RATE_LIMIT_PROXY_SECRET` with
+  `openssl rand -hex 32`. The supplied frontend Nginx overwrites any
+  client-supplied rate-limit trust header and authenticates its direct TCP-peer
+  IP to the API; never expose this secret to browser code or accept it from an
+  outer untrusted proxy. If a TLS or identity gateway fronts the container, the
+  application-level bucket normally represents that gateway. Enforce
+  per-client throttling at the trusted gateway unless the original source is
+  preserved through a separately reviewed connection-layer design.
 - Restrict allowed upload size.
 - Configure provider keys through a secret manager.
 - Review LLM provider data handling.
@@ -356,8 +464,22 @@ docker compose ps
 docker compose logs -f api
 docker compose logs -f worker
 curl http://localhost:3000/api/health
+curl http://localhost:3000/api/ready
 curl http://localhost:3000/api/system/selftest | jq
 ```
+
+`/api/health` is a process liveness/version check. `/api/ready` also checks the
+database and returns HTTP `503` when the API should not receive traffic. Use
+readiness for rollout gates and load-balancer admission; use the self-test for
+the broader dependency and feed diagnosis. The full self-test requires
+`run_analysis` when authentication is enabled. Treat `status=degraded` as a
+warning state, not a passing release result, even when every core check is
+healthy.
+
+If the self-test reports `taxonomy_normalized` as a warning, a user with
+`manage_feeds` permission can select **Normalize Taxonomy** in the popup. The
+same operation is available as `POST /api/system/taxonomy/normalize`; rerun the
+self-test after it completes.
 
 Open **Observability** in the sidebar, or browse directly to:
 
@@ -386,17 +508,33 @@ Security validation:
 
 ```bash
 make security-scan
+make security-scan-strict
 ```
 
-This runs backend lint/SAST, dependency audits, frontend audit, Compose
-validation, and host-installed secret/container scanners where available. CI also
-runs gitleaks and Trivy.
+The first command is a best-effort developer scan and reports missing optional
+host tools as skipped. The strict target is required for release evidence and
+fails when Bandit, pip-audit, Gitleaks, Trivy, or Helm is unavailable, or when
+any scan/build/render fails. `./scripts/release-readiness.sh --full` includes
+that strict scan after the test and build gates.
+
+### Reverse-proxy request boundaries
+
+The supplied Nginx configurations cap ordinary API requests at 10 MiB and
+apply explicit larger limits only to intended upload routes: 256 MiB for
+MalwareGraph submissions, 64 MiB for report analysis and IOC reports, and
+12 MiB for Asset Surface imports. Keep equal or tighter limits at any upstream
+load balancer. Do not add a global unlimited upload exception. Within the larger
+report-analysis route, `/api/analyze/chat` independently limits the analyst
+message to 12,000 characters before any provider call; context and system-prompt
+fields retain their smaller schema limits.
 
 ## Data Retention
 
 Operators should define:
 
 - How long uploaded reports are retained.
+- How long append-only Threat Hunting AI-assistance records and their validated
+  structured suggestions are retained.
 - Whether generated reports are stored.
 - Whether STIX/OpenCTI exports may be shared outside the local environment.
 - Whether raw LLM responses are retained.

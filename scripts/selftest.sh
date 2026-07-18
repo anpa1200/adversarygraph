@@ -5,7 +5,7 @@ BASE_URL="${ADVERSARYGRAPH_URL:-http://localhost:3000}"
 MAX_WAIT_SECONDS="${SELFTEST_TIMEOUT:-120}"
 SLEEP_SECONDS="${SELFTEST_INTERVAL:-3}"
 SELFTEST_URL="${BASE_URL}/api/system/selftest"
-HEALTH_URL="${BASE_URL}/api/health"
+READINESS_URL="${BASE_URL}/api/ready"
 
 tmp_response="$(mktemp)"
 tmp_err="$(mktemp)"
@@ -29,14 +29,14 @@ while [ "$elapsed" -le "$MAX_WAIT_SECONDS" ]; do
   fi
 
   if [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; then
-    if health="$(curl -fsS "$HEALTH_URL" 2>"$tmp_err")"; then
-      printf '%s\n' "$health"
-      status="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","error"))')"
-      if [ "$status" = "ok" ]; then
-        echo "AdversaryGraph health check passed. Full self-test is auth-protected."
+    if readiness="$(curl -fsS "$READINESS_URL" 2>"$tmp_err")"; then
+      printf '%s\n' "$readiness"
+      status="$(printf '%s' "$readiness" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","error"))')"
+      if [ "$status" = "ready" ]; then
+        echo "AdversaryGraph readiness check passed. Full self-test is auth-protected."
         exit 0
       fi
-      echo "AdversaryGraph health returned status=${status}." >&2
+      echo "AdversaryGraph readiness returned status=${status}." >&2
       exit 1
     fi
   fi

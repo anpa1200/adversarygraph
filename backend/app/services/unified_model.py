@@ -311,56 +311,64 @@ async def forward_existing_threat_radar_to_unified_model(session: AsyncSession) 
     counts = {"spaces": 0, "assets": 0, "signals": 0, "cases": 0, "alerts": 0}
     spaces = list((await session.execute(select(ThreatCompanySpace))).scalars().all())
     space_by_id = {space.id: space for space in spaces}
-    for space in spaces:
+    for company_space in spaces:
         await upsert_entity(
             session,
             "company_space",
-            f"space:{space.slug or space.id}",
-            label=space.name,
-            tags=["scope:company-space", *list(space.tags or [])],
-            metadata={"model": "threat_radar.company_space", "space_id": str(space.id), "slug": space.slug},
+            f"space:{company_space.slug or company_space.id}",
+            label=company_space.name,
+            tags=["scope:company-space", *list(company_space.tags or [])],
+            metadata={
+                "model": "threat_radar.company_space",
+                "space_id": str(company_space.id),
+                "slug": company_space.slug,
+            },
         )
         counts["spaces"] += 1
     assets = list((await session.execute(select(ThreatSpaceAsset))).scalars().all())
     for asset in assets:
-        space = space_by_id.get(asset.space_id)
-        if not space:
+        asset_space = space_by_id.get(asset.space_id)
+        if not asset_space:
             continue
-        await forward_space_asset_to_unified_model(session, space, asset)
+        await forward_space_asset_to_unified_model(session, asset_space, asset)
         counts["assets"] += 1
     signals = list((await session.execute(select(ThreatSignal))).scalars().all())
-    for signal in signals:
+    for radar_signal in signals:
         mappings = list(
             (
                 await session.execute(
-                    select(ThreatProductMapping).where(ThreatProductMapping.signal_id == signal.id)
+                    select(ThreatProductMapping).where(
+                        ThreatProductMapping.signal_id == radar_signal.id
+                    )
                 )
             ).scalars().all()
         )
-        await forward_signal_to_unified_model(session, signal, mappings)
+        await forward_signal_to_unified_model(session, radar_signal, mappings)
         counts["signals"] += 1
     cases = list((await session.execute(select(ThreatCase))).scalars().all())
     signal_by_id = {signal.id: signal for signal in signals}
     for case in cases:
-        signal = signal_by_id.get(case.signal_id) if case.signal_id else None
+        case_signal = signal_by_id.get(case.signal_id) if case.signal_id else None
         mappings = []
-        if signal:
+        if case_signal:
             mappings = list(
                 (
                     await session.execute(
-                        select(ThreatProductMapping).where(ThreatProductMapping.signal_id == signal.id)
+                        select(ThreatProductMapping).where(
+                            ThreatProductMapping.signal_id == case_signal.id
+                        )
                     )
                 ).scalars().all()
             )
-        await forward_case_to_unified_model(session, case, signal, mappings)
+        await forward_case_to_unified_model(session, case, case_signal, mappings)
         counts["cases"] += 1
     alerts = list((await session.execute(select(ThreatAlert))).scalars().all())
     for alert in alerts:
-        space = space_by_id.get(alert.space_id)
-        if not space:
+        alert_space = space_by_id.get(alert.space_id)
+        if not alert_space:
             continue
-        signal = signal_by_id.get(alert.signal_id) if alert.signal_id else None
-        await forward_alert_to_unified_model(session, space, alert, signal)
+        alert_signal = signal_by_id.get(alert.signal_id) if alert.signal_id else None
+        await forward_alert_to_unified_model(session, alert_space, alert, alert_signal)
         counts["alerts"] += 1
     return counts
 

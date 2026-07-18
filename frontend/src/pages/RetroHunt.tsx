@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { retroHuntApi, RetroHuntSignal } from '../api/client';
 import { useNavigate } from 'react-router-dom';
+import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -175,9 +178,9 @@ function SignalDetail({ signal, onClose }: { signal: RetroHuntSignal; onClose: (
             </div>
           )}
 
-          {signal.url && (
+          {safeHref(signal.url) && (
             <div style={{ marginTop: 16 }}>
-              <a href={signal.url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', fontSize: 12 }}>
+              <a href={safeHref(signal.url)} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', fontSize: 12 }}>
                 View source →
               </a>
             </div>
@@ -235,6 +238,7 @@ function SignalRow({ signal, onClick }: { signal: RetroHuntSignal; onClick: () =
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function RetroHunt() {
+  const canManageFeeds = useHasPermission('manage_feeds');
   const qc = useQueryClient();
 
   const [q, setQ] = useState('');
@@ -303,7 +307,9 @@ export default function RetroHunt() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {!canManageFeeds && <PermissionNotice permission="manage_feeds" action="collect new RetroHunt signals" compact />}
             <select
+              disabled={!canManageFeeds}
               value={collectDays}
               onChange={e => setCollectDays(Number(e.target.value))}
               style={{ padding: '5px 8px', background: '#111827', border: '1px solid #374151', borderRadius: 5, color: '#9ca3af', fontSize: 12 }}
@@ -315,7 +321,7 @@ export default function RetroHunt() {
             </select>
             <button
               onClick={() => collectMutation.mutate()}
-              disabled={!!isCollecting}
+              disabled={!canManageFeeds || !!isCollecting}
               style={{
                 padding: '6px 14px', borderRadius: 5, border: 'none', cursor: isCollecting ? 'not-allowed' : 'pointer',
                 background: isCollecting ? '#1f2937' : '#1d4ed8', color: isCollecting ? '#6b7280' : '#fff',
@@ -410,9 +416,11 @@ export default function RetroHunt() {
         {!signalsQuery.isLoading && signals.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
             No signals found.{' '}
-            <button onClick={() => collectMutation.mutate()} style={{ color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
-              Run collection to populate.
-            </button>
+            {canManageFeeds ? (
+              <button onClick={() => collectMutation.mutate()} style={{ color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+                Run collection to populate.
+              </button>
+            ) : 'Ask a feed manager to run collection.'}
           </div>
         )}
         {signals.map(signal => (

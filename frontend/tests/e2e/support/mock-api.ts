@@ -141,6 +141,42 @@ export async function mockApi(page: Page) {
     created_by: 'analyst@example.test',
     created_at: '2026-07-17T08:00:00Z',
   }];
+  const reportSessionId = '11111111-1111-4111-8111-111111111111';
+  let storedReportTlp = 'TLP:AMBER+STRICT';
+  const reportCollectionItem = {
+    session_id: reportSessionId,
+    title: 'Identity provider intrusion research',
+    source_url: 'https://example.test/research/identity-intrusion',
+    publisher: 'Example Research',
+    status: 'completed',
+    provider: 'local',
+    model: 'llama3.1:8b',
+    domain: 'enterprise-attack',
+    tlp: storedReportTlp,
+    created_at: '2026-07-16T07:00:00Z',
+    updated_at: '2026-07-16T07:30:00Z',
+    summary: 'The report documents suspicious identity federation changes followed by mailbox access.',
+    source_text_available: true,
+    counts: { reports: 1, ttps: 2, iocs: 0, cves: 0, threat_actors: 1, sectors: 1, infrastructure: 0 },
+    tags: {},
+  };
+  const ineligibleReportItem = {
+    ...reportCollectionItem,
+    session_id: '22222222-2222-4222-8222-222222222222',
+    title: 'Unparsed ATLAS research note',
+    status: 'stored',
+    domain: 'atlas',
+    source_text_available: false,
+  };
+  const aiCitation = {
+    source_session_id: reportSessionId,
+    source_type: 'report',
+    source_ref: reportSessionId,
+    quote: 'The actor modified federation trust settings before accessing cloud mailboxes.',
+    start: 124,
+    end: 209,
+    verified: true,
+  };
 
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
@@ -275,6 +311,152 @@ export async function mockApi(page: Page) {
           kev_due_date: '',
           kev_required_action: '',
         }],
+      });
+    }
+    if (path === '/analyze/sessions/collection') {
+      return json({
+        total: 2,
+        limit: 150,
+        offset: 0,
+        items: [
+          { ...reportCollectionItem, tlp: storedReportTlp },
+          { ...ineligibleReportItem, tlp: storedReportTlp },
+        ],
+      });
+    }
+    if (path === `/analyze/sessions/${reportSessionId}/linked-report`) {
+      if (route.request().method() === 'PATCH') {
+        const body = route.request().postDataJSON();
+        if (typeof body.tlp === 'string') storedReportTlp = body.tlp;
+      }
+      return json({
+        session_id: reportSessionId,
+        name: reportCollectionItem.title,
+        provider: reportCollectionItem.provider,
+        model: reportCollectionItem.model,
+        domain: reportCollectionItem.domain,
+        tlp: storedReportTlp,
+        created_at: reportCollectionItem.created_at,
+        source_text: 'The actor modified federation trust settings before accessing cloud mailboxes.',
+        source_text_available: true,
+        source_note: '',
+        summary: reportCollectionItem.summary,
+        techniques: [],
+        apt_matches: [],
+        entities: [],
+        report_images: [],
+        report_intake: { url: reportCollectionItem.source_url, publisher: reportCollectionItem.publisher },
+      });
+    }
+    if (path === '/threat-hunting/ai/providers' && route.request().method() === 'GET') {
+      return json([
+        { id: 'local', label: 'Local', model: 'llama3.1:8b', configured: true, remote: false, requires_acknowledgement: false, default: true },
+        { id: 'openai', label: 'OpenAI', model: 'gpt-4.1', configured: true, remote: true, requires_acknowledgement: true, default: false },
+        { id: 'claude', label: 'Claude', model: '', configured: false, remote: true, requires_acknowledgement: true, default: false },
+      ]);
+    }
+    if (path === '/threat-hunting/ai/hypotheses' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      if (body.source_session_id !== reportSessionId) return apiError(404, 'Stored report or research session not found');
+      if (body.provider === 'openai' && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
+      if (body.provider === 'openai' && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(body.tlp)) return apiError(422, `${body.tlp} context is local-only`);
+      return json({
+        assistance_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        provider: body.provider,
+        model: body.provider === 'openai' ? 'gpt-4.1' : 'llama3.1:8b',
+        lifecycle_status: 'suggested',
+        generated_at: '2026-07-18T08:00:00Z',
+        prompt_version: 'threat-hunt-hypothesis-v1',
+        source_session_id: reportSessionId,
+        source_type: 'report',
+        source_title: reportCollectionItem.title,
+        source_ref: reportSessionId,
+        candidates: [{
+          title: 'Suspicious federation trust modification',
+          hypothesis: 'If an adversary modified identity federation trust, then audit telemetry should show an unusual trust update followed by mailbox access from a new session.',
+          description: 'Derived from reviewed identity intrusion research.',
+          scope: 'Identity provider audit logs and cloud mailbox sign-ins for the last fourteen days.',
+          technique_ids: ['T1098', 'T1078'],
+          tactics: ['persistence', 'defense-evasion'],
+          telemetry_sources: ['Identity provider audit logs', 'Cloud mailbox sign-in logs'],
+          required_fields: ['@timestamp', 'actor.id', 'operation.name', 'source.ip'],
+          tags: ['identity', 'report-derived'],
+          query_language: 'kql',
+          query_text: 'operation.name : "Update federation trust"',
+          expected_evidence: 'A federation trust update followed by mailbox access from a new session.',
+          false_positive_notes: 'Approved identity migrations can produce the same administrative operation.',
+          assumptions: 'Identity audit logs are complete for the scoped period.',
+          rationale: 'The sequence is falsifiable and tied to two distinct telemetry sources.',
+          source_evidence: [aiCitation],
+        }],
+        warnings: ['Validate tenant-specific field names before using the query.'],
+        requires_human_review: true,
+        execution_boundary: 'No telemetry query was executed and no hunt record was created.',
+      });
+    }
+    if (path === '/threat-hunting/ai/assist' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      const stage = String(body.stage || '');
+      const context = body.context || {};
+      if (!['plan', 'query', 'findings', 'outcome'].includes(stage)) return apiError(422, 'Unsupported AI assistance stage');
+      if (!body.hunt_id && stage !== 'plan') return apiError(422, 'Save the hunt before requesting this stage');
+      if (!body.hunt_id && body.provider !== 'local') return apiError(422, 'Unsaved hunt assistance is local-only');
+      if (body.provider === 'openai' && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
+      if (body.provider === 'openai' && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(context.tlp)) return apiError(422, `${context.tlp} context is local-only`);
+      const stagePatch: Record<string, unknown> = {
+        plan: {
+          title: 'AI must not overwrite an existing hunt title',
+          scope: 'Managed identity and endpoint telemetry for a bounded fourteen-day period.',
+          technique_ids: ['T1078'],
+          telemetry_sources: ['Identity provider audit logs'],
+          assumptions: 'Clock synchronization and identity audit retention are verified.',
+        },
+        query: {
+          query_language: 'kql',
+          query_text: 'operation.name : "Update federation trust"',
+          telemetry_sources: ['Identity provider audit logs'],
+          required_fields: ['operation.name', 'actor.id', 'source.ip'],
+        },
+        findings: { technique_ids: ['T1078'], tags: ['ai-reviewed'] },
+        outcome: {
+          result_summary: 'The reviewed evidence supports a bounded identity investigation, with remaining gaps in historical sign-in retention.',
+          disposition: 'confirmed_malicious',
+          status: 'completed',
+        },
+      }[stage] as Record<string, unknown>;
+      return json({
+        assistance_id: `bbbbbbbb-bbbb-4bbb-8bbb-${stage.padEnd(12, '0').slice(0, 12)}`,
+        provider: body.provider,
+        model: body.provider === 'openai' ? 'gpt-4.1' : 'llama3.1:8b',
+        stage,
+        lifecycle_status: 'suggested',
+        generated_at: '2026-07-18T08:10:00Z',
+        prompt_version: `threat-hunt-${stage}-v1`,
+        summary: `AI suggestions for the ${stage} stage are ready for analyst review.`,
+        recommended_actions: ['Verify the proposed fields against the source and local telemetry schema.'],
+        questions: ['Which approved telemetry system will be used for validation?'],
+        evidence_gaps: ['Historical coverage has not been independently verified.'],
+        cautions: ['Do not treat this output as proof of execution or compromise.'],
+        suggested_patch: stagePatch,
+        finding_drafts: stage === 'findings' ? [{
+          title: 'Federation trust update requires validation',
+          summary: 'An identity administration event aligns with the hunt hypothesis but still requires source-event review.',
+          severity: 'high',
+          confidence: 72,
+          status: 'reviewed',
+          verdict: 'supports',
+          tlp: 'TLP:CLEAR',
+          evidence_type: 'Identity audit event',
+          evidence_ref: 'identity:event:pending-review',
+          event_time: null,
+          observables: ['tenant.example'],
+          technique_ids: ['T1098'],
+          notes: 'AI-generated draft; verify the canonical event before saving.',
+        }] : [],
+        citations: [aiCitation],
+        warnings: [],
+        requires_human_review: true,
+        execution_boundary: 'No telemetry query was executed and no hunt or finding record was changed.',
       });
     }
     if (path === '/threat-hunting/templates') return json([huntTemplate]);

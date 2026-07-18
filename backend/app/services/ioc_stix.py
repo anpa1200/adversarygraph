@@ -100,7 +100,11 @@ async def import_ioc_stix_bundle(
 ) -> dict[str, Any]:
     await create_ioc_source(session, label=source_label, url=source_url or "local-stix-import", kind="custom-json", source_id=source_id)
     objects = [obj for obj in bundle.get("objects", []) if isinstance(obj, dict)]
-    by_id = {obj.get("id"): obj for obj in objects if obj.get("id")}
+    by_id: dict[str, dict[str, Any]] = {}
+    for obj in objects:
+        object_id = obj.get("id")
+        if isinstance(object_id, str) and object_id:
+            by_id[object_id] = obj
     relationships = [obj for obj in objects if obj.get("type") == "relationship"]
     items: list[IOCImportItem] = []
 
@@ -221,7 +225,7 @@ def _relationship_context(source_object_id: str, by_id: dict[str, dict[str, Any]
         if rel.get("source_ref") != source_object_id and rel.get("target_ref") != source_object_id:
             continue
         other_id = rel.get("target_ref") if rel.get("source_ref") == source_object_id else rel.get("source_ref")
-        other = by_id.get(other_id) or {}
+        other = by_id.get(other_id, {}) if isinstance(other_id, str) else {}
         if other.get("type") == "intrusion-set":
             actor = {"name": str(other.get("name") or ""), "attack_id": _mitre_external_id(other)}
         elif other.get("type") == "malware":

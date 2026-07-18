@@ -1,6 +1,7 @@
 import { PointerEvent, useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { systemApi, type SelfTestCheck, type SelfTestResult } from '@/api/client';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type PopupState = 'visible' | 'collapsed' | 'dismissed';
 type ProviderDetail = {
@@ -72,9 +73,13 @@ function summarize(result?: SelfTestResult, error?: Error | null) {
     const degradedCveSources = Array.isArray(cveSyncDetails.sources)
       ? cveSyncDetails.sources.filter(source => asRecord(source).sync_status === 'error').length
       : 0;
+    const warningChecks = result.checks.filter(check => check.status !== 'ok');
+    const degradedFeedCount = degradedSources + degradedCveSources;
     return {
       title: 'AdversaryGraph self-test degraded',
-      body: `Core platform checks passed, but ${degradedSources + degradedCveSources || 'one or more'} feed source${degradedSources + degradedCveSources === 1 ? '' : 's'} need attention. Checked in ${result.duration_ms} ms.`,
+      body: degradedFeedCount > 0
+        ? `Core platform checks passed, but ${degradedFeedCount} feed source${degradedFeedCount === 1 ? '' : 's'} need attention. Checked in ${result.duration_ms} ms.`
+        : `Core platform checks passed, but ${warningChecks.length || 'one or more'} readiness check${warningChecks.length === 1 ? '' : 's'} ${warningChecks.length === 1 ? 'needs' : 'need'} attention${warningChecks.length ? `: ${warningChecks.map(check => check.name).join(', ')}` : ''}. Checked in ${result.duration_ms} ms.`,
       tone: 'warning' as const,
     };
   }
@@ -231,6 +236,8 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
 }
 
 export function SystemSelfTestPopup() {
+  const canRunSelfTest = useHasPermission('run_analysis');
+  const canManageTaxonomy = useHasPermission('manage_feeds');
   const [popupState, setPopupState] = useState<PopupState>('visible');
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const dragOffset = useRef<{ x: number; y: number } | null>(null);
@@ -238,9 +245,16 @@ export function SystemSelfTestPopup() {
   const query = useQuery({
     queryKey: ['system-selftest'],
     queryFn: systemApi.selftest,
+    enabled: canRunSelfTest,
     retry: 8,
     retryDelay: attempt => Math.min(2000 + attempt * 1500, 8000),
     refetchOnWindowFocus: false,
+  });
+  const normalizeTaxonomy = useMutation({
+    mutationFn: systemApi.normalizeTaxonomy,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['system-selftest'] });
+    },
   });
 
   useEffect(() => {
@@ -256,10 +270,13 @@ export function SystemSelfTestPopup() {
     return undefined;
   }, [query.data?.status, queryClient]);
 
-  if (popupState === 'dismissed') return null;
+  if (!canRunSelfTest || popupState === 'dismissed') return null;
 
   const error = query.error instanceof Error ? query.error : null;
   const summary = summarize(query.data, error);
+  const taxonomyNeedsNormalization = query.data?.checks.some(
+    check => check.name === 'taxonomy_normalized' && check.status !== 'ok',
+  ) ?? false;
   const troubleshootingUrl = `/troubleshooting?${new URLSearchParams({
     error: summary.body,
     url: '/system/selftest',
@@ -394,9 +411,21 @@ export function SystemSelfTestPopup() {
           >
             Run Again
           </button>
-          <a className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10" href="/feeds">
-            Open Feeds
-          </a>
+          {canManageTaxonomy && taxonomyNeedsNormalization && (
+            <button
+              type="button"
+              className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+              disabled={normalizeTaxonomy.isPending}
+              onClick={() => normalizeTaxonomy.mutate()}
+            >
+              {normalizeTaxonomy.isPending ? 'Normalizing…' : 'Normalize Taxonomy'}
+            </button>
+          )}
+          {canManageTaxonomy && (
+            <a className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10" href="/feeds">
+              Open Feeds
+            </a>
+          )}
           <a className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10" href={troubleshootingUrl}>
             Troubleshooting
           </a>

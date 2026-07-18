@@ -2,7 +2,7 @@
 
 > A practical, evidence-led guide for building, running, reviewing, and improving
 > threat hunts with AdversaryGraph. This edition uses MITRE ATT&CK v19
-> terminology and was reviewed on 17 July 2026 against the current v19 release
+> terminology and was reviewed on 18 July 2026 against the current v19 release
 > and v19.1 data. Revalidate ATT&CK mappings whenever the platform's ATT&CK
 > content is upgraded.
 
@@ -35,11 +35,14 @@ and business context before use.
 12. [Decide, escalate, and close](#12-decide-escalate-and-close)
 13. [Convert learning into durable defense](#13-convert-learning-into-durable-defense)
 14. [AdversaryGraph threat-hunting workflow](#14-adversarygraph-threat-hunting-workflow)
+    - [Stored report or research session to hypothesis](#1431-turn-a-stored-report-or-research-session-into-a-hypothesis)
+    - [Assistance across the hunt](#1432-use-assistance-across-the-hunt-without-delegating-decisions)
 15. [Security, privacy, and operational boundaries](#15-security-privacy-and-operational-boundaries)
 16. [Metrics and maturity](#16-metrics-and-maturity)
 17. [Twenty worked hunt playbooks](#17-twenty-worked-hunt-playbooks)
 18. [Reusable templates](#18-reusable-templates)
 19. [Operational checklists](#19-operational-checklists)
+    - [Governed AI assistance review](#198-governed-ai-assistance-review)
 20. [Primary references](#20-primary-references)
 
 ## 1. Purpose and outcomes
@@ -357,12 +360,12 @@ ATT&CK changes over time. Every hunt should retain:
 - Detection Strategy, Analytic, and Data Component identifiers where used; and
 - the retrieval or review date.
 
-This guide uses the current ATT&CK v19 terminology. As reviewed on 17 July 2026,
+This guide uses the current ATT&CK v19 terminology. As reviewed on 18 July 2026,
 MITRE lists ATT&CK v19 as the current release and publishes v19.1 data. Consult
 the official [ATT&CK version history](https://attack.mitre.org/resources/versions/)
-(accessed 17 July 2026) and
+(accessed 18 July 2026) and
 [ATT&CK v19 release notes](https://attack.mitre.org/resources/updates/updates-april-2026/)
-(accessed 17 July 2026) before upgrading stored mappings.
+(accessed 18 July 2026) before upgrading stored mappings.
 
 ### 7.2 Use the current defensive model
 
@@ -849,6 +852,8 @@ Hunting workspace provides a governed place to turn those inputs into a
 hypothesis and record reviewed outcomes.
 
 ```text
+Stored report/research -> classify source -> optional governed AI suggestion
+                                                |
 Threat Radar / report / IOC / CVE / asset / detection gap / prior incident
     -> create hunt
     -> hypothesis + scope + owner + priority
@@ -893,6 +898,103 @@ Likewise:
 9. Store the versioned query text and its language.
 10. Keep status `draft` until readiness and authorization are reviewed; use
     `planned` when the run is approved and scheduled.
+
+#### 14.3.1 Turn a stored report or research session into a hypothesis
+
+The governed assistant starts from a completed report or research session with
+source text already stored in AdversaryGraph. It does not accept a new URL,
+fetch another source, or search enterprise telemetry as part of generation.
+
+1. Open the stored report or research session. Confirm that analysis is
+   completed and that its source text, publisher, source URL, and ATT&CK domain
+   are the intended source.
+2. Confirm the source report's persisted handling marking before generation.
+   New and legacy reports default conservatively to `TLP:AMBER+STRICT`. A user
+   with `manage_intel` may classify the stored report through the linked-report
+   edit API; every later hypothesis request reads that server-side value. A
+   request may raise the effective marking, but it cannot lower the stored one.
+3. Confirm that the source uses the Enterprise ATT&CK domain. Governed Threat
+   Hunting AI does not currently generate hunts from Mobile, ICS, or ATLAS
+   report domains.
+4. Select the `hypothesis` assistant task. The service sends a bounded portion
+   of the stored source to the selected approved provider and returns a
+   suggestion containing a falsifiable hypothesis, candidate Enterprise ATT&CK
+   techniques, expected evidence, counter-evidence, assumptions, telemetry
+   requirements, and benign alternatives when the source supports them.
+5. Review every citation against the stored report. A citation proves only that
+   the report contains the referenced text; it does not prove that the behavior
+   occurred in the local environment.
+6. Resolve any dropped-citation or truncation warning. The server removes a
+   proposed citation that cannot be matched to an exact stored-source excerpt.
+   If the stored source changes during generation, the service rejects the
+   result as a stale-context conflict; retry against the current source.
+   Regenerate after any later material report edit rather than relying on an
+   older source snapshot.
+7. Edit the suggestion into organization-specific language, define the actual
+   scope and owner, and save it through the normal hunt form. The resulting hunt
+   remains a `draft`; AI generation does not authorize or start it.
+
+The backend writes an append-only AI-assistance record with the optional hunt
+and stored-session IDs, task and stage, `suggested` lifecycle, provider/model,
+prompt version, effective TLP, sanitized source references, citation metadata,
+the recorded remote-processing acknowledgment state, and bounded
+server-validated citation excerpts of at most 300 characters
+each, input and output checksums, validated structured suggestion, warnings, and
+generation actor/time. It does not store the full raw report, raw prompt, raw
+provider response, credentials, or provider exception. The original stored
+report remains the source of record.
+
+#### 14.3.2 Use assistance across the hunt without delegating decisions
+
+The same governed boundary applies to every assistant task:
+
+| Task | The assistant may draft | The analyst must decide and save |
+|---|---|---|
+| `hypothesis` | Falsifiable behavior statement, rationale, candidate Enterprise ATT&CK IDs, supporting and refuting evidence to seek | Whether the source justifies a hunt, final wording, priority, owner, and local scope |
+| `plan` | Telemetry sources, required fields, data-quality checks, pivot sequence, expected evidence, benign alternatives, and stop conditions | Authorized systems, identities, time range, exclusions, readiness, and approval to run |
+| `query` | Implementation-independent logic or a translation for a declared query language, plus assumptions and validation warnings | Destination schema and syntax, cost controls, peer review, query-version save, and external execution |
+| `findings` | A draft organization of analyst-selected finding summaries, contradictions, evidence gaps, and follow-up questions | Evidence references, verdict, confidence, severity, finding status, escalation, and whether events are related |
+| `outcome` | A draft result summary, limitations, telemetry gaps, and possible defensive follow-up | Disposition, completion, incident handoff, detection publication, archive, and every operational decision |
+
+Generation never changes the hunt, creates or reviews a finding, appends a
+query version, chooses a disposition, or advances lifecycle status. An analyst
+must review, edit, and save through the ordinary governed workflow. In
+particular, generated finding or outcome prose is not evidence and cannot
+replace an event reference, reviewed finding, or external query-run record.
+
+In the UI, **Apply safe fields** or **Apply safe suggestions** copies only
+permitted scalar values into blank draft fields and merges permitted list
+values into the unsaved hunt form. It does not save the hunt or mark the
+assistance record accepted. **Open editable draft** opens the ordinary unsaved
+finding form; it does not create a finding. Review every copied value, then use
+the normal Save action. Query, findings, and outcome assistance require a saved
+hunt so the server can enforce canonical context. An unsaved plan may use only
+the configured local provider.
+
+Stage-specific application stays narrow. Query assistance may fill only blank
+query/evidence/assumption fields and merge telemetry sources and required
+fields. A findings-stage hunt patch is ignored. An opened AI finding draft is
+forced to status `new`, verdict `inconclusive`, the hunt TLP, evidence type
+`analysis`, and blank evidence reference, event time, observables, and query
+version; the analyst must add canonical evidence. Outcome assistance may fill
+only a blank result summary or assumptions field.
+
+Each suggestion is a snapshot. The server rechecks a stored report or canonical
+hunt after the provider returns and rejects the result with a conflict if that
+context changed during generation. A later edit also makes an earlier
+suggestion stale, but does not rewrite the append-only assistance record;
+regenerate or compare it manually with the current context. A coverage or
+truncation warning identifies report text, query text, query versions, finding
+summaries, or finding notes that were shortened or omitted from the bounded
+request. The assistant cannot make claims about content or records it did not
+receive.
+
+For a saved hunt, the current bounds are 12,000 characters of the canonical
+query; the newest five query versions with up to 6,000 query characters and
+4,000 backend-assumption characters each; and the newest 50 active findings
+with up to 3,000 summary characters and 2,000 note characters each. The
+response and append-only record carry deterministic warnings when one of these
+limits affects a request.
 
 ### 14.4 Execute and review
 
@@ -1407,20 +1509,51 @@ organizational policy; this guide is not legal advice.
 
 ### 15.5 AI boundary
 
-AI may assist with hypothesis drafts, ATT&CK candidates, query translation,
-result clustering, and summaries. It must not silently:
+AI may assist with hypothesis drafts, Enterprise ATT&CK candidates, hunt plans,
+query translation, organization of analyst-selected finding summaries, and
+outcome summaries. Every response is an untrusted suggestion. It must not:
 
 - execute queries or simulations;
 - broaden scope or access new data;
+- create evidence or claim that a report describes local activity;
+- create, review, escalate, or close a finding;
 - mark an event malicious or close a hunt;
 - invent evidence, source references, ATT&CK versions, or query results;
 - publish a detection directly to production; or
 - initiate containment or external communication.
 
-Mark generated content, retain the model/provider and prompt context allowed by
-policy, and require analyst review. Do not send sensitive telemetry to an
-external model unless the organization has explicitly approved the provider,
-data terms, region, and retention behavior.
+Threat Hunting AI uses the local OpenAI-compatible provider by default. Cloud
+AI is disabled by default for this feature. An operator must first allow cloud
+use, and the analyst must explicitly acknowledge that the bounded assistant
+input will leave the deployment before each cloud-backed request is accepted.
+Cloud eligibility is still subject to organizational provider, model, data-term,
+region, and retention policy.
+
+`TLP:AMBER+STRICT` and `TLP:RED` assistant inputs are local-only; enabling cloud
+AI does not override that rule. `TLP:CLEAR`, `TLP:GREEN`, and `TLP:AMBER` may use
+an approved cloud provider only after both gates are satisfied. A stored report
+has an authoritative server-side marking and defaults conservatively to
+`TLP:AMBER+STRICT`. Only the `manage_intel` report-edit path may change it. A
+hypothesis request may raise the effective marking but cannot lower the stored
+value; the effective marking must cover every source and hunt field included in
+the request.
+
+The label `local` means an operator-configured OpenAI-compatible endpoint. The
+operator must verify that its address, hosting, logging, retention, and access
+controls satisfy the intended local/private policy; the label alone does not
+prove that data stays on the host.
+
+Generated content is marked and linked to provenance metadata. The append-only
+assistance record retains the optional hunt and stored-session IDs, task/stage,
+`suggested` lifecycle, provider/model, prompt version, effective TLP, sanitized
+source references, the recorded remote-processing acknowledgment state,
+offsets, and bounded server-validated citation excerpts of at most 300
+characters each, input/output checksums, validated structured
+output, warnings, and actor/time. It does not retain the raw prompt, full raw
+report, raw provider response, credentials, or provider exception. Prompt
+injection inside a source report remains possible model input; the fixed task
+boundary, structured validation, citations, and human review reduce risk but do
+not make the output authoritative.
 
 ### 15.6 Response boundary
 
@@ -3260,6 +3393,36 @@ conversion_or_retirement_condition: [value]
 - [ ] Review access, audit, secret rotation, exports, and privacy exceptions.
 - [ ] Report risk reduction and remaining uncertainty, not only activity counts.
 
+### 19.8 Governed AI assistance review
+
+- [ ] The source is a stored report/research session or canonical saved-hunt
+      context; the assistant did not fetch a new source or telemetry.
+- [ ] The hunt's effective TLP was reviewed; its `TLP:AMBER` draft default was
+      raised when the hunt context or organizational policy required it.
+- [ ] For report-to-hypothesis assistance, the authoritative stored report TLP
+      was reviewed; its conservative `TLP:AMBER+STRICT` default was changed
+      only by an authorized `manage_intel` user, and the request did not lower
+      that stored marking.
+- [ ] Report-to-hypothesis input uses the Enterprise ATT&CK domain.
+- [ ] A remote provider was enabled by policy and explicitly acknowledged, or
+      the configured local provider was used.
+- [ ] `TLP:AMBER+STRICT` and `TLP:RED` context remained local-only.
+- [ ] Every technique, field assumption, citation, query fragment, and scope
+      statement was reviewed against the source and local environment.
+- [ ] Dropped-citation and truncation warnings were resolved or recorded as
+      limitations; any stale-context conflict was retried against current data,
+      and later source/hunt edits were checked manually.
+- [ ] AI prose was not recorded as evidence and did not replace a source event,
+      external run ID, reviewed finding, or analyst decision.
+- [ ] **Apply safe fields**, **Apply safe suggestions**, or **Open editable
+      draft** was followed by review and a separate normal Save action.
+- [ ] No generated content changed lifecycle, disposition, finding review state,
+      incident handling, response, or production detection state automatically.
+- [ ] The append-only assistance record contains only the validated structured
+      suggestion, governed metadata, and bounded validated citation excerpts;
+      no full raw report, prompt, provider response, credential, or provider
+      exception was persisted there.
+
 ## 20. Primary references
 
 This guide uses first-party standards, frameworks, and public-sector operational
@@ -3269,8 +3432,8 @@ vendor's official documentation.
 ### MITRE ATT&CK
 
 - [TTP-Based Hunting training](https://attack.mitre.org/resources/learn-more-about-attack/training/threat-hunting/) (accessed 17 July 2026).
-- [ATT&CK version history](https://attack.mitre.org/resources/versions/) (accessed 17 July 2026).
-- [ATT&CK v19 release notes](https://attack.mitre.org/resources/updates/updates-april-2026/) (accessed 17 July 2026).
+- [ATT&CK version history](https://attack.mitre.org/resources/versions/) (accessed 18 July 2026).
+- [ATT&CK v19 release notes](https://attack.mitre.org/resources/updates/updates-april-2026/) (accessed 18 July 2026).
 - [Defense Evasion split crosswalk (JSON)](https://attack.mitre.org/docs/subtechniques/de-split-crosswalk.json) (accessed 17 July 2026).
 - [Defense Evasion split crosswalk (CSV)](https://attack.mitre.org/docs/subtechniques/de-split-crosswalk.csv) (accessed 17 July 2026).
 - [October 2025 defensive-model update](https://attack.mitre.org/resources/updates/updates-october-2025/) (accessed 17 July 2026).

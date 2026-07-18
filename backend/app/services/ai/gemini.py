@@ -7,12 +7,9 @@ from typing import AsyncIterator
 from app.core.config import settings
 from app.services.ai.base import LLMAdapter
 
-DEFAULT_MODEL = "gemini-2.0-flash"
-
-
 class GeminiAdapter(LLMAdapter):
-    def __init__(self, model: str = DEFAULT_MODEL) -> None:
-        self._model_name = model
+    def __init__(self, model: str | None = None) -> None:
+        self._model_name = model or settings.gemini_model
         import google.genai as genai
         import google.genai.types as genai_types
         self._client = genai.Client(api_key=settings.gemini_api_key)

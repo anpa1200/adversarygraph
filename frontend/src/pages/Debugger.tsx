@@ -14,6 +14,7 @@ import { RUNTIME_DEBUG_DISCLAIMER, readHiddenCases, visibleJobs } from '@/pages/
 import { CodeEditor } from '@/components/ui/code-editor';
 import { VirtualList } from '@/components/ui/virtual-list';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { safeInternalHref } from '@/utils/url';
 
 const input = 'w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 outline-none focus:border-mitre-accent';
 
@@ -845,7 +846,7 @@ function Leads({ workspace }: { workspace: MalwareGraphDebuggerWorkspace }) {
     <div>
       <b className="text-gray-200">TTP leads</b>
       <div className="mt-2 space-y-2">
-        {workspace.attack_leads.map((lead, index) => <a key={`${field(lead.attack_id)}-${index}`} href={field(lead.navigator_route)} className="block rounded border border-gray-800 p-2 hover:border-mitre-accent">
+        {workspace.attack_leads.map((lead, index) => <a key={`${field(lead.attack_id)}-${index}`} href={safeInternalHref(field(lead.navigator_route)) ?? `/navigator?technique=${encodeURIComponent(field(lead.attack_id))}`} className="block rounded border border-gray-800 p-2 hover:border-mitre-accent">
           <div className="font-mono text-mitre-accent">{field(lead.attack_id)}</div>
           <div className="text-gray-400">{field(lead.name)}</div>
         </a>)}
@@ -855,7 +856,7 @@ function Leads({ workspace }: { workspace: MalwareGraphDebuggerWorkspace }) {
     <div>
       <b className="text-gray-200">IOC leads</b>
       <div className="mt-2 max-h-56 overflow-y-auto space-y-2">
-        {workspace.ioc_leads.map((lead, index) => <a key={`${field(lead.value)}-${index}`} href={field(lead.adversarygraph_route) || `/ioc-library?search=${encodeURIComponent(field(lead.value))}`} className="block rounded border border-gray-800 p-2 hover:border-mitre-accent">
+        {workspace.ioc_leads.map((lead, index) => <a key={`${field(lead.value)}-${index}`} href={safeInternalHref(field(lead.adversarygraph_route)) || `/ioc-library?search=${encodeURIComponent(field(lead.value))}`} className="block rounded border border-gray-800 p-2 hover:border-mitre-accent">
           <div className="break-all font-mono text-gray-200">{field(lead.value)}</div>
           <div className="text-gray-500">{field(lead.type)}</div>
         </a>)}

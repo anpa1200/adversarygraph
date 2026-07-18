@@ -4,7 +4,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { aptApi, attackApi, analyzeApi, iocApi, operationsApi, type IOCItem, type Investigation } from '@/api/client';
 import { useAppStore } from '@/store';
 import { Header } from '@/components/Layout/Header';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 import { IocLink } from '@/utils/ctiLinks';
+import { safeHref } from '@/utils/url';
 
 type Provider = 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
 type ReportFormat = 'md' | 'txt' | 'pdf';
@@ -124,6 +127,9 @@ export function InvestigationReport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { domain, version, selectedTechniques, coverageTechniques, techniqueAssessments, replaceTechniques } = useAppStore();
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canExportData = useHasPermission('export_data');
   const ids = useMemo(() => [...selectedTechniques].sort(), [selectedTechniques]);
   const [activeInvestigationId, setActiveInvestigationId] = useState('');
   const [newInvestigationName, setNewInvestigationName] = useState('');
@@ -146,6 +152,7 @@ export function InvestigationReport() {
   const { data: investigations = [] } = useQuery({
     queryKey: ['operations-investigations'],
     queryFn: operationsApi.investigations,
+    enabled: canRunAnalysis,
   });
   const activeInvestigation = useMemo(
     () => investigations.find(item => item.id === activeInvestigationId) ?? investigations[0] ?? null,
@@ -182,7 +189,7 @@ export function InvestigationReport() {
   const { data: matches = [], isFetching: matchesLoading } = useQuery({
     queryKey: ['report-matches', domain, version, investigationIds.join(',')],
     queryFn: () => aptApi.compare({ technique_ids: investigationIds, domain, version: version ?? undefined, top_n: 10 }),
-    enabled: investigationIds.length > 0,
+    enabled: canRunAnalysis && investigationIds.length > 0,
   });
 
   const actorIocQueries = useQueries({
@@ -190,7 +197,7 @@ export function InvestigationReport() {
       ? matches.slice(0, 5).map(match => ({
         queryKey: ['report-actor-iocs', match.group_attack_id],
         queryFn: () => iocApi.actor(match.group_attack_id, { days: 180, active_only: true, limit: 20 }),
-        enabled: investigationIds.length > 0,
+        enabled: canRunAnalysis && investigationIds.length > 0,
       }))
       : [],
   });
@@ -243,6 +250,10 @@ export function InvestigationReport() {
   };
 
   const compareAndSave = async () => {
+    if (!canRunAnalysis || !canManageIntel) {
+      setWorkflowMessage('run_analysis and manage_intel permissions are required to compare and save actor leads.');
+      return;
+    }
     if (!activeInvestigation || !investigationIds.length) {
       setWorkflowMessage('Create/select an investigation and add TTPs before comparing.');
       return;
@@ -274,6 +285,10 @@ export function InvestigationReport() {
   };
 
   const summarizeInvestigation = async () => {
+    if (!canRunAnalysis || !canManageIntel) {
+      setWorkflowMessage('run_analysis and manage_intel permissions are required to generate and save an investigation summary.');
+      return;
+    }
     if (!activeInvestigation || !investigationIds.length) {
       setWorkflowMessage('Create/select an investigation and add evidence before AI summary.');
       return;
@@ -318,9 +333,11 @@ export function InvestigationReport() {
   };
 
   const saveGeneratedReport = async (content: string, mode: 'local' | Provider, title = reportTitle) => {
-    if (!activeInvestigation) {
+    if (!activeInvestigation || !canManageIntel) {
       setGeneratedReport(content);
-      setWorkflowMessage('Report generated. Create or select an investigation to save it to the report list.');
+      setWorkflowMessage(!activeInvestigation
+        ? 'Report generated. Create or select an investigation to save it to the report list.'
+        : 'Report generated in read-only mode. manage_intel is required to save it to the investigation.');
       return;
     }
     const reportNode = buildSavedReportNode({ title, content, provider: mode, format: 'markdown' });
@@ -345,7 +362,7 @@ export function InvestigationReport() {
   };
 
   const generateWithAi = async () => {
-    if (!investigationIds.length || !selectedSectionCount) return;
+    if (!canRunAnalysis || !investigationIds.length || !selectedSectionCount) return;
     setIsAiGenerating(true);
     setAiError('');
     setGeneratedReport('');
@@ -376,6 +393,7 @@ export function InvestigationReport() {
   };
 
   const download = (format: ReportFormat) => {
+    if (!canExportData) return;
     const filenameBase = slug(activeReportTitle || 'adversarygraph-investigation-report');
     if (format === 'pdf') {
       const pdf = buildSimplePdf(markdownToPlainText(activeReport));
@@ -399,8 +417,8 @@ export function InvestigationReport() {
               <FlowStep number={4} title="Do additional IOC investigations" text="Investigate extracted IOCs and add useful IOC results back to the same case." actionLabel="Open IOC Investigation" onAction={() => navigate('/ioc-investigation')} />
               <FlowStep number={5} title="Keep investigation structured" text="Review logs, reports, TTP layer, IOC list, evidence nodes, and timeline below." />
               <FlowStep number={6} title="Create Navigator-like TTP layer" text="Send all investigation TTPs to the ATT&CK matrix." actionLabel="Send to matrix" onAction={openLayerOnMatrix} disabled={!investigationIds.length} />
-              <FlowStep number={7} title="Compare TTPs with threat actors" text="Compare the investigation layer and save overlap leads to this case." actionLabel="Compare + save" onAction={() => void compareAndSave()} disabled={!activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending} />
-              <FlowStep number={8} title="Summarize investigation with AI" text="Summarize saved evidence, TTPs, IOCs, actor leads, and caveats." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Summarize'} onAction={() => void summarizeInvestigation()} disabled={!activeInvestigation || !investigationIds.length || isSummaryGenerating} />
+              <FlowStep number={7} title="Compare TTPs with threat actors" text="Compare the investigation layer and save overlap leads to this case." actionLabel="Compare + save" onAction={() => void compareAndSave()} disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending} />
+              <FlowStep number={8} title="Summarize investigation with AI" text="Summarize saved evidence, TTPs, IOCs, actor leads, and caveats." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Summarize'} onAction={() => void summarizeInvestigation()} disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || isSummaryGenerating} />
               <FlowStep number={9} title="Create investigation report" text="Generate a local or AI-assisted report, then export PDF / Markdown / TXT." />
             </div>
             {(workflowMessage || updateActiveInvestigation.error) && (
@@ -415,6 +433,9 @@ export function InvestigationReport() {
 
           <Panel title="Investigation workspace">
             <div className="space-y-4 p-3">
+              {!canManageIntel && (
+                <PermissionNotice permission="manage_intel" action="create investigations or save comparison, summary, and report results" compact />
+              )}
               <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_minmax(320px,1.4fr)]">
                 <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto]">
                   <input
@@ -426,7 +447,7 @@ export function InvestigationReport() {
                   <button
                     type="button"
                     onClick={() => createInvestigation.mutate()}
-                    disabled={createInvestigation.isPending}
+                    disabled={!canManageIntel || createInvestigation.isPending}
                     className="primary-action disabled:opacity-50"
                   >
                     Open the new investigation
@@ -516,7 +537,7 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={() => void compareAndSave()}
-                        disabled={!activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending}
+                        disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending}
                         className="secondary-action disabled:opacity-40"
                       >
                         Compare + save result
@@ -524,7 +545,7 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={() => void summarizeInvestigation()}
-                        disabled={!activeInvestigation || !investigationIds.length || isSummaryGenerating}
+                        disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || isSummaryGenerating}
                         className="primary-action disabled:opacity-40"
                       >
                         {isSummaryGenerating ? 'Summarizing...' : 'Complete AI analysis'}
@@ -545,7 +566,7 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={generateWithAi}
-                        disabled={!investigationIds.length || !selectedSectionCount || isAiGenerating}
+                        disabled={!canRunAnalysis || !investigationIds.length || !selectedSectionCount || isAiGenerating}
                         className="primary-action disabled:opacity-40"
                       >
                         {isAiGenerating ? 'Generating...' : 'AI assistant'}
@@ -607,13 +628,16 @@ export function InvestigationReport() {
 
               <Panel title="Download">
                 <div className="space-y-3 p-3">
+                  {!canExportData && (
+                    <PermissionNotice permission="export_data" action="download investigation reports" compact />
+                  )}
                   <p className="text-[10px] leading-4 text-gray-500">
                     Downloading: <span className="text-gray-300">{selectedSavedReport?.label ?? 'Current generated / live preview'}</span>
                   </p>
                   <div className="grid grid-cols-3 gap-2">
-                    <button type="button" onClick={() => download('pdf')} disabled={!activeReport.trim()} className="secondary-action disabled:opacity-40">PDF</button>
-                    <button type="button" onClick={() => download('md')} disabled={!activeReport.trim()} className="secondary-action disabled:opacity-40">MD</button>
-                    <button type="button" onClick={() => download('txt')} disabled={!activeReport.trim()} className="secondary-action disabled:opacity-40">TXT</button>
+                    <button type="button" onClick={() => download('pdf')} disabled={!canExportData || !activeReport.trim()} className="secondary-action disabled:opacity-40">PDF</button>
+                    <button type="button" onClick={() => download('md')} disabled={!canExportData || !activeReport.trim()} className="secondary-action disabled:opacity-40">MD</button>
+                    <button type="button" onClick={() => download('txt')} disabled={!canExportData || !activeReport.trim()} className="secondary-action disabled:opacity-40">TXT</button>
                   </div>
                 </div>
               </Panel>
@@ -1328,7 +1352,10 @@ function renderInlineMarkdown(text: string) {
     }
     const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (link) {
-      return <a key={index} href={link[2]} target="_blank" rel="noreferrer" className="text-cyan-300 underline decoration-cyan-900 underline-offset-4 hover:text-cyan-100">{link[1]}</a>;
+      const href = safeHref(link[2]);
+      return href
+        ? <a key={index} href={href} target="_blank" rel="noreferrer" className="text-cyan-300 underline decoration-cyan-900 underline-offset-4 hover:text-cyan-100">{link[1]}</a>
+        : <span key={index}>{link[1]}</span>;
     }
     return <span key={index}>{part}</span>;
   });

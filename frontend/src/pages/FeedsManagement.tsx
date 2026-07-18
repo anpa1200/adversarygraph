@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
 import { iocApi, pipelineApi, sectorApi, syncApi } from '@/api/client';
 import type { CollectionSource, IOCSourceStatus, OpenCTISyncResult } from '@/api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type FeedKind = 'custom-json' | 'custom-csv' | 'custom-txt';
 type RuleFeedKind = 'sigma' | 'yara';
@@ -17,6 +19,10 @@ const domainLabels: Record<string, string> = {
 
 export function FeedsManagement() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
+  const canUploadFiles = useHasPermission('upload_files');
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [customLabel, setCustomLabel] = useState('');
@@ -229,6 +235,14 @@ export function FeedsManagement() {
       <Header title="Feeds Management" />
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-7xl space-y-5">
+          {(!canManageFeeds || !canManageIntel || !canExport || !canUploadFiles) && (
+            <section className="grid gap-2 rounded-lg border border-gray-800 bg-gray-900/60 p-3 lg:grid-cols-3">
+              {!canManageFeeds && <PermissionNotice permission="manage_feeds" action="add, edit, synchronize, or delete feeds" compact />}
+              {!canManageIntel && <PermissionNotice permission="manage_intel" action="import STIX/TAXII data or enrich IOC mappings" compact />}
+              {!canExport && <PermissionNotice permission="export_data" action="export synchronized intelligence" compact />}
+              {!canUploadFiles && <PermissionNotice permission="upload_files" action="upload STIX files" compact />}
+            </section>
+          )}
           <section className="grid gap-4 xl:grid-cols-[1fr_420px]">
             <Panel title="Reference and Dynamic Database Sync">
               <div className="space-y-4 p-4">
@@ -255,17 +269,17 @@ export function FeedsManagement() {
                   ))}
                 </div>
                 <label className="flex items-center gap-2 text-xs text-gray-400">
-                  <input type="checkbox" checked={forceReferences} onChange={event => setForceReferences(event.target.checked)} />
+                  <input type="checkbox" disabled={!canManageFeeds} checked={forceReferences} onChange={event => setForceReferences(event.target.checked)} />
                   Force refresh cached reference bundles
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  <button className="primary" disabled={syncReferences.isPending || taskRunning || activeDomains.length === 0} onClick={() => syncReferences.mutate()}>
+                  <button className="primary" disabled={!canManageFeeds || syncReferences.isPending || taskRunning || activeDomains.length === 0} onClick={() => syncReferences.mutate()}>
                     {forceReferences ? 'Force sync selected references' : 'Sync selected references'}
                   </button>
-                  <button className="primary" disabled={syncDynamicDb.isPending} onClick={() => syncDynamicDb.mutate()}>
+                  <button className="primary" disabled={!canManageFeeds || syncDynamicDb.isPending} onClick={() => syncDynamicDb.mutate()}>
                     {syncDynamicDb.isPending ? 'Syncing...' : 'Sync Local / Dynamic DB'}
                   </button>
-                  <button className="secondary-action" disabled={syncMispGalaxy.isPending} onClick={() => syncMispGalaxy.mutate()}>
+                  <button className="secondary-action" disabled={!canManageFeeds || syncMispGalaxy.isPending} onClick={() => syncMispGalaxy.mutate()}>
                     {syncMispGalaxy.isPending ? 'Syncing...' : 'Sync MISP Galaxy'}
                   </button>
                 </div>
@@ -387,20 +401,21 @@ export function FeedsManagement() {
                   Connect IOC feeds for indicators, malware context, actor links, source URLs, and TTP mapping.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <button className="primary" disabled={syncAllIocs.isPending} onClick={() => syncAllIocs.mutate()}>{syncAllIocs.isPending ? 'Syncing...' : 'Sync all IOC sources'}</button>
-                  <button className="secondary-action" disabled={syncThreatFox.isPending} onClick={() => syncThreatFox.mutate()}>ThreatFox</button>
-                  <button className="secondary-action" disabled={syncMalpedia.isPending} onClick={() => syncMalpedia.mutate()}>Malpedia</button>
-                  <button className="secondary-action" disabled={syncOtx.isPending} onClick={() => syncOtx.mutate()}>OTX</button>
-                  <button className="secondary-action" disabled={enrichIocTtps.isPending} onClick={() => enrichIocTtps.mutate()}>
+                  <button className="primary" disabled={!canManageFeeds || syncAllIocs.isPending} onClick={() => syncAllIocs.mutate()}>{syncAllIocs.isPending ? 'Syncing...' : 'Sync all IOC sources'}</button>
+                  <button className="secondary-action" disabled={!canManageFeeds || syncThreatFox.isPending} onClick={() => syncThreatFox.mutate()}>ThreatFox</button>
+                  <button className="secondary-action" disabled={!canManageFeeds || syncMalpedia.isPending} onClick={() => syncMalpedia.mutate()}>Malpedia</button>
+                  <button className="secondary-action" disabled={!canManageFeeds || syncOtx.isPending} onClick={() => syncOtx.mutate()}>OTX</button>
+                  <button className="secondary-action" disabled={!canManageIntel || enrichIocTtps.isPending} onClick={() => enrichIocTtps.mutate()}>
                     {enrichIocTtps.isPending ? 'Enriching...' : 'Enrich local IOC DB to TTPs'}
                   </button>
-                  <a className="secondary-action" href={iocApi.stixExportUrl({ limit: 5000 })}>Export STIX</a>
+                  {canExport && <a className="secondary-action" href={iocApi.stixExportUrl({ limit: 5000 })}>Export STIX</a>}
                   <label className="secondary-action cursor-pointer">
                     Import STIX
                     <input
                       type="file"
                       accept=".json,.stix,application/json,application/stix+json"
                       className="hidden"
+                      disabled={!canManageIntel || !canUploadFiles}
                       onChange={event => {
                         const file = event.currentTarget.files?.[0];
                         if (file) importStix.mutate(file);
@@ -413,6 +428,7 @@ export function FeedsManagement() {
                   <label className="flex items-start gap-2 text-xs text-gray-300">
                     <input
                       type="checkbox"
+                      disabled={!canManageFeeds}
                       checked={aiEnrichIocs}
                       onChange={event => setAiEnrichIocs(event.target.checked)}
                       className="mt-0.5"
@@ -421,7 +437,7 @@ export function FeedsManagement() {
                       Use AI as last fallback for new IOCs without source-backed or enrichment-platform TTP evidence.
                     </span>
                   </label>
-                  <select className={field} value={aiProvider} onChange={event => setAiProvider(event.target.value as typeof aiProvider)}>
+                  <select className={field} disabled={!canManageFeeds} value={aiProvider} onChange={event => setAiProvider(event.target.value as typeof aiProvider)}>
                     <option value="local">Local LLM</option>
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
@@ -430,14 +446,14 @@ export function FeedsManagement() {
                   </select>
                 </div>
                 <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_140px_auto]">
-                  <input className={field} value={customLabel} onChange={event => setCustomLabel(event.target.value)} placeholder="Feed label" />
-                  <input className={field} value={customUrl} onChange={event => setCustomUrl(event.target.value)} placeholder="https://example.local/iocs.json|csv|txt" />
-                  <select className={field} value={customKind} onChange={event => setCustomKind(event.target.value as FeedKind)}>
+                  <input className={field} disabled={!canManageFeeds} value={customLabel} onChange={event => setCustomLabel(event.target.value)} placeholder="Feed label" />
+                  <input className={field} disabled={!canManageFeeds} value={customUrl} onChange={event => setCustomUrl(event.target.value)} placeholder="https://example.local/iocs.json|csv|txt" />
+                  <select className={field} disabled={!canManageFeeds} value={customKind} onChange={event => setCustomKind(event.target.value as FeedKind)}>
                     <option value="custom-json">JSON</option>
                     <option value="custom-csv">CSV</option>
                     <option value="custom-txt">TXT</option>
                   </select>
-                  <button className="primary" disabled={!customLabel.trim() || !customUrl.trim() || createIocSource.isPending} onClick={() => createIocSource.mutate({ label: customLabel, url: customUrl, kind: customKind })}>Add</button>
+                  <button className="primary" disabled={!canManageFeeds || !customLabel.trim() || !customUrl.trim() || createIocSource.isPending} onClick={() => createIocSource.mutate({ label: customLabel, url: customUrl, kind: customKind })}>Add</button>
                 </div>
                 <div className="max-h-64 divide-y divide-gray-800 overflow-y-auto rounded border border-gray-800 bg-gray-950">
                   {(iocSources.data ?? []).map(source => (
@@ -447,7 +463,7 @@ export function FeedsManagement() {
                       onSync={() => syncIocSource.mutate(source.source_id)}
                       onUpdate={payload => updateIocSource.mutate({ sourceId: source.source_id, payload })}
                       onDelete={() => deleteIocSource.mutate(source.source_id)}
-                      disabled={syncIocSource.isPending || updateIocSource.isPending || deleteIocSource.isPending}
+                      disabled={!canManageFeeds || syncIocSource.isPending || updateIocSource.isPending || deleteIocSource.isPending}
                     />
                   ))}
                 </div>
@@ -486,6 +502,7 @@ export function FeedsManagement() {
                       type="number"
                       min={1}
                       max={5000}
+                      disabled={!canManageFeeds}
                       value={openctiLimit}
                       onChange={event => setOpenctiLimit(Number(event.target.value) || 500)}
                       title="Maximum objects per sync action"
@@ -493,13 +510,13 @@ export function FeedsManagement() {
                     <button className="secondary-action" disabled={checkOpencti.isPending} onClick={() => checkOpencti.mutate()}>
                       Check OpenCTI
                     </button>
-                    <button className="secondary-action" disabled={pullOpencti.isPending} onClick={() => pullOpencti.mutate()}>
+                    <button className="secondary-action" disabled={!canManageFeeds || pullOpencti.isPending} onClick={() => pullOpencti.mutate()}>
                       {pullOpencti.isPending ? 'Pulling...' : 'Pull from OpenCTI'}
                     </button>
-                    <button className="secondary-action" disabled={pushOpencti.isPending} onClick={() => pushOpencti.mutate()}>
+                    <button className="secondary-action" disabled={!canManageFeeds || pushOpencti.isPending} onClick={() => pushOpencti.mutate()}>
                       {pushOpencti.isPending ? 'Pushing...' : 'Push to OpenCTI'}
                     </button>
-                    <button className="primary" disabled={syncOpencti.isPending} onClick={() => syncOpencti.mutate()}>
+                    <button className="primary" disabled={!canManageFeeds || syncOpencti.isPending} onClick={() => syncOpencti.mutate()}>
                       {syncOpencti.isPending ? 'Syncing...' : 'Bidirectional sync'}
                     </button>
                   </div>
@@ -525,8 +542,8 @@ export function FeedsManagement() {
                     Add a MISP event or attribute JSON export URL as a custom IOC source. Use a local gateway when MISP requires authentication headers.
                   </p>
                   <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
-                    <input className={field} value={mispUrl} onChange={event => setMispUrl(event.target.value)} placeholder="MISP JSON export URL or local gateway URL" />
-                    <button className="primary" disabled={!mispUrl.trim() || createIocSource.isPending} onClick={() => createIocSource.mutate({ label: 'MISP IOC Export', url: mispUrl, kind: 'custom-json', source_id: 'custom-misp-export' })}>Connect MISP</button>
+                    <input className={field} disabled={!canManageFeeds} value={mispUrl} onChange={event => setMispUrl(event.target.value)} placeholder="MISP JSON export URL or local gateway URL" />
+                    <button className="primary" disabled={!canManageFeeds || !mispUrl.trim() || createIocSource.isPending} onClick={() => createIocSource.mutate({ label: 'MISP IOC Export', url: mispUrl, kind: 'custom-json', source_id: 'custom-misp-export' })}>Connect MISP</button>
                   </div>
                 </div>
                 <div className="rounded border border-gray-800 bg-gray-950 p-3">
@@ -535,13 +552,13 @@ export function FeedsManagement() {
                     Pull STIX indicators and observed-data from a TAXII collection objects endpoint into the IOC Library.
                   </p>
                   <div className="mt-3 grid gap-2">
-                    <input className={field} value={taxiiUrl} onChange={event => setTaxiiUrl(event.target.value)} placeholder="https://taxii.example/api2/collections/{id}/objects/" />
-                    <input className={field} value={taxiiToken} onChange={event => setTaxiiToken(event.target.value)} placeholder="Bearer token (optional)" />
+                    <input className={field} disabled={!canManageIntel} value={taxiiUrl} onChange={event => setTaxiiUrl(event.target.value)} placeholder="https://taxii.example/api2/collections/{id}/objects/" />
+                    <input className={field} disabled={!canManageIntel} value={taxiiToken} onChange={event => setTaxiiToken(event.target.value)} placeholder="Bearer token (optional)" />
                     <div className="grid gap-2 md:grid-cols-2">
-                      <input className={field} value={taxiiUsername} onChange={event => setTaxiiUsername(event.target.value)} placeholder="Username" />
-                      <input className={field} type="password" value={taxiiPassword} onChange={event => setTaxiiPassword(event.target.value)} placeholder="Password" />
+                      <input className={field} disabled={!canManageIntel} value={taxiiUsername} onChange={event => setTaxiiUsername(event.target.value)} placeholder="Username" />
+                      <input className={field} disabled={!canManageIntel} type="password" value={taxiiPassword} onChange={event => setTaxiiPassword(event.target.value)} placeholder="Password" />
                     </div>
-                    <button className="primary w-fit" disabled={!taxiiUrl.trim() || importTaxii.isPending} onClick={() => importTaxii.mutate()}>
+                    <button className="primary w-fit" disabled={!canManageIntel || !taxiiUrl.trim() || importTaxii.isPending} onClick={() => importTaxii.mutate()}>
                       {importTaxii.isPending ? 'Pulling TAXII...' : 'Pull TAXII STIX'}
                     </button>
                   </div>
@@ -565,20 +582,20 @@ export function FeedsManagement() {
                   Connect raw rule files, URL lists, or GitHub tree URLs. Imported Sigma/YARA rules keep source links and ATT&CK tags when available. YARA-L generation is available from the Pipeline detection studio.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <button className="primary" disabled={createDefaultRuleFeeds.isPending} onClick={() => createDefaultRuleFeeds.mutate()}>
+                  <button className="primary" disabled={!canManageFeeds || createDefaultRuleFeeds.isPending} onClick={() => createDefaultRuleFeeds.mutate()}>
                     {createDefaultRuleFeeds.isPending ? 'Adding...' : 'Add SigmaHQ + YARA defaults'}
                   </button>
                 </div>
                 <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_120px_auto]">
-                  <input className={field} value={ruleName} onChange={event => setRuleName(event.target.value)} placeholder="Feed name" />
-                  <input className={field} value={ruleUrl} onChange={event => setRuleUrl(event.target.value)} placeholder="Raw rule URL, URL list, or GitHub tree URL" />
-                  <select className={field} value={ruleKind} onChange={event => setRuleKind(event.target.value as RuleFeedKind)}>
+                  <input className={field} disabled={!canManageFeeds} value={ruleName} onChange={event => setRuleName(event.target.value)} placeholder="Feed name" />
+                  <input className={field} disabled={!canManageFeeds} value={ruleUrl} onChange={event => setRuleUrl(event.target.value)} placeholder="Raw rule URL, URL list, or GitHub tree URL" />
+                  <select className={field} disabled={!canManageFeeds} value={ruleKind} onChange={event => setRuleKind(event.target.value as RuleFeedKind)}>
                     <option value="sigma">Sigma</option>
                     <option value="yara">YARA</option>
                   </select>
-                  <button className="primary" disabled={!ruleName.trim() || !ruleUrl.trim() || createRuleFeed.isPending} onClick={() => createRuleFeed.mutate()}>Add</button>
+                  <button className="primary" disabled={!canManageFeeds || !ruleName.trim() || !ruleUrl.trim() || createRuleFeed.isPending} onClick={() => createRuleFeed.mutate()}>Add</button>
                 </div>
-                <PipelineSourceList sources={ruleFeeds} run={runPipelineSource} />
+                <PipelineSourceList sources={ruleFeeds} run={runPipelineSource} canRun={canManageFeeds} />
                 <MutationStatus label="Rule feed" mutation={createRuleFeed} />
                 <MutationStatus label="Rule feed sync" mutation={runPipelineSource} />
               </div>
@@ -592,12 +609,12 @@ export function FeedsManagement() {
                     Connect JSON exports from CAPE, Cuckoo, ANY.RUN-style gateways, or internal sandbox aggregators. Behavior data enriches malware families, signatures, network artifacts, and ATT&CK IDs.
                   </p>
                   <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
-                    <input className={field} value={sandboxName} onChange={event => setSandboxName(event.target.value)} placeholder="Sandbox feed name" />
-                    <input className={field} value={sandboxUrl} onChange={event => setSandboxUrl(event.target.value)} placeholder="https://sandbox.local/reports.json" />
-                    <button className="primary" disabled={!sandboxName.trim() || !sandboxUrl.trim() || createSandboxFeed.isPending} onClick={() => createSandboxFeed.mutate()}>Add</button>
+                    <input className={field} disabled={!canManageFeeds} value={sandboxName} onChange={event => setSandboxName(event.target.value)} placeholder="Sandbox feed name" />
+                    <input className={field} disabled={!canManageFeeds} value={sandboxUrl} onChange={event => setSandboxUrl(event.target.value)} placeholder="https://sandbox.local/reports.json" />
+                    <button className="primary" disabled={!canManageFeeds || !sandboxName.trim() || !sandboxUrl.trim() || createSandboxFeed.isPending} onClick={() => createSandboxFeed.mutate()}>Add</button>
                   </div>
                 </div>
-                <PipelineSourceList sources={sandboxFeeds} run={runPipelineSource} />
+                <PipelineSourceList sources={sandboxFeeds} run={runPipelineSource} canRun={canManageFeeds} />
 
                 <div className="border-t border-gray-800 pt-4">
                   <h3 className="text-sm font-semibold text-white">RSS / Atom collection</h3>
@@ -605,12 +622,12 @@ export function FeedsManagement() {
                     Add public or internal report feeds. New items become pending intake and observables for analyst review.
                   </p>
                   <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
-                    <input className={field} value={rssName} onChange={event => setRssName(event.target.value)} placeholder="RSS feed name" />
-                    <input className={field} value={rssUrl} onChange={event => setRssUrl(event.target.value)} placeholder="HTTPS RSS / Atom URL" />
-                    <button className="primary" disabled={!rssName.trim() || !rssUrl.trim() || createRssFeed.isPending} onClick={() => createRssFeed.mutate()}>Add</button>
+                    <input className={field} disabled={!canManageFeeds} value={rssName} onChange={event => setRssName(event.target.value)} placeholder="RSS feed name" />
+                    <input className={field} disabled={!canManageFeeds} value={rssUrl} onChange={event => setRssUrl(event.target.value)} placeholder="HTTPS RSS / Atom URL" />
+                    <button className="primary" disabled={!canManageFeeds || !rssName.trim() || !rssUrl.trim() || createRssFeed.isPending} onClick={() => createRssFeed.mutate()}>Add</button>
                   </div>
                 </div>
-                <PipelineSourceList sources={rssFeeds} run={runPipelineSource} />
+                <PipelineSourceList sources={rssFeeds} run={runPipelineSource} canRun={canManageFeeds} />
                 <MutationStatus label="Sandbox feed" mutation={createSandboxFeed} />
                 <MutationStatus label="RSS feed" mutation={createRssFeed} />
               </div>
@@ -722,9 +739,10 @@ function IOCSourceRow({
   );
 }
 
-function PipelineSourceList({ sources, run }: {
+function PipelineSourceList({ sources, run, canRun }: {
   sources: CollectionSource[];
   run: { mutate: (id: string) => void; isPending: boolean; variables?: string };
+  canRun: boolean;
 }) {
   if (!sources.length) return <div className="rounded border border-gray-800 p-4 text-sm text-gray-600">No sources configured.</div>;
   return (
@@ -740,7 +758,7 @@ function PipelineSourceList({ sources, run }: {
             <p className="mt-1 truncate text-[10px] text-gray-600">{source.url}</p>
             {source.last_run_at && <p className="mt-1 text-[10px] text-gray-700">Last run: {source.last_run_at}</p>}
           </div>
-          <button className="secondary-action" disabled={run.isPending} onClick={() => run.mutate(source.id)}>
+          <button className="secondary-action" disabled={!canRun || run.isPending} onClick={() => run.mutate(source.id)}>
             {run.variables === source.id ? 'Syncing' : 'Sync'}
           </button>
         </div>

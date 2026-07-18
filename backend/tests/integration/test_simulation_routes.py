@@ -45,7 +45,7 @@ def _ai_attack_flow_result():
             "ok": True,
             "status": 200,
             "error": "",
-            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?token=test",
+            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?source=test",
             "event_count": 2,
             "sent_event_count": 2,
             "duration_ms": 12,
@@ -103,6 +103,55 @@ async def test_simulation_forward_logs_rejects_unsafe_scheme(client):
 
 
 @pytest.mark.asyncio
+async def test_simulation_forward_logs_rejects_query_string_credentials(client):
+    response = await client.post(
+        "/api/simulation/forward-logs",
+        json={
+            "source": "web",
+            "destination_url": "https://siem.example.test/collector?access_token=secret",
+            "limit": 10,
+        },
+    )
+    assert response.status_code == 400
+    assert "query parameters" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_completed_ai_delivery_reports_destination_persistence_warning(client, monkeypatch):
+    async def fake_run_ai_assistant_telemetry_simulation(**kwargs):
+        result = _ai_attack_flow_result()
+        # Simulate an upstream sender returning a URL that is unsafe to store
+        # after the delivery has already completed.
+        result["delivery"]["destination_url"] = (
+            "http://127.0.0.1:30304/logeye/api/logger.jsp?token=must-not-be-stored"
+        )
+        return result
+
+    monkeypatch.setattr(
+        "app.api.routes.simulation.external_simulation.run_ai_assistant_telemetry_simulation",
+        fake_run_ai_assistant_telemetry_simulation,
+    )
+
+    response = await client.post(
+        "/api/simulation/ai-assistant/telemetry",
+        json={
+            "mode": "challenge",
+            "ai_provider": "local",
+            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?source=request",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["delivery"]["ok"] is True
+    assert body["delivery"]["destination_url"] == ""
+    assert body["destination_persistence"]["saved"] is False
+    assert "Delivery completed" in body["destination_persistence"]["warning"]
+    flows = (await client.get("/api/simulation/attack-flows")).json()
+    assert flows[0]["delivery"]["destination_url"] == ""
+
+
+@pytest.mark.asyncio
 async def test_ai_assistant_attack_flow_is_saved_and_listed(client, monkeypatch):
     async def fake_run_ai_assistant_telemetry_simulation(**kwargs):
         result = _ai_attack_flow_result()
@@ -124,7 +173,7 @@ async def test_ai_assistant_attack_flow_is_saved_and_listed(client, monkeypatch)
             "ai_provider": "local",
             "complicated_attack": True,
             "actor_profile": "apt29",
-            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?token=test",
+            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?source=test",
             "payload_format": "per_event",
         },
     )
@@ -182,7 +231,7 @@ async def test_saved_attack_flow_can_be_resent(client, monkeypatch):
         json={
             "mode": "challenge",
             "ai_provider": "local",
-            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?token=first",
+            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?source=first",
         },
     )
     assert created.status_code == 200
@@ -192,7 +241,7 @@ async def test_saved_attack_flow_can_be_resent(client, monkeypatch):
     resent = await client.post(
         f"/api/simulation/attack-flows/{flow_id}/resend",
         json={
-            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?token=second",
+            "destination_url": "http://127.0.0.1:30304/logeye/api/logger.jsp?source=second",
             "payload_format": "per_event",
         },
     )

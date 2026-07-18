@@ -147,11 +147,11 @@ export const helpTopics: HelpTopic[] = [
     id: 'threat-hunting',
     title: 'Threat Hunting',
     route: '/threat-hunting',
-    summary: 'Hypothesis-driven workspace for defining hunt scope, preserving ATT&CK and telemetry context, reviewing findings, and recording an explicit analyst outcome.',
-    whenToUse: ['Turn a CTI, ATT&CK, IOC, asset, or detection lead into a bounded hunt', 'Document queries and evidence reviewed in approved telemetry tools', 'Record no-match, benign, suspicious, malicious, inconclusive, telemetry-gap, or query-failure outcomes'],
-    workflow: ['Start from a template or selected ATT&CK techniques', 'Define a falsifiable hypothesis, scope, telemetry, expected evidence, and false positives', 'Copy the reviewed query into an approved SIEM, EDR, data lake, or telemetry tool', 'Record findings, disposition, limitations, and defensive handoffs'],
-    outputs: ['Versioned hunt plan', 'Query and telemetry requirements', 'Evidence-backed findings', 'Reviewed outcome and exportable hunt record'],
-    tips: ['AdversaryGraph records and reviews hunt work; it does not claim that a stored query was executed.', 'No matches in a bounded query do not prove that an environment is clean. Record searched scope and telemetry gaps.'],
+    summary: 'Hypothesis-driven workspace for defining hunt scope, preserving ATT&CK and telemetry context, reviewing findings, recording an explicit analyst outcome, and requesting governed AI suggestions at every stage.',
+    whenToUse: ['Turn a stored report/research session, CTI, ATT&CK, IOC, asset, or detection lead into a bounded hunt', 'Document queries and evidence reviewed in approved telemetry tools', 'Record no-match, benign, suspicious, malicious, inconclusive, telemetry-gap, or query-failure outcomes'],
+    workflow: ['Start from a stored report, template, or selected ATT&CK techniques; optionally generate an AI hypothesis draft', 'Define and review a falsifiable hypothesis, scope, telemetry, expected evidence, and false positives', 'Use stage-scoped AI suggestions only as editable drafts, then copy the reviewed query into an approved SIEM, EDR, data lake, or telemetry tool', 'Record reviewed findings, disposition, limitations, and defensive handoffs'],
+    outputs: ['Versioned hunt plan', 'Governed AI suggestion records with provenance and warnings', 'Query and telemetry requirements', 'Evidence-backed findings', 'Reviewed outcome and exportable hunt record'],
+    tips: ['AI suggestions do not save a hunt, create evidence, set a verdict or disposition, change lifecycle state, or execute a query.', 'AdversaryGraph records and reviews hunt work; it does not claim that a stored query was executed.', 'No matches in a bounded query do not prove that an environment is clean. Record searched scope and telemetry gaps.'],
   },
   {
     id: 'feeds',
@@ -311,7 +311,7 @@ export const localRunSections = [
     body: [
       'When auth is enabled, the first screen is the login page and protected pages require a valid session.',
       'Admin Panel manages local users, roles, sessions, MFA workflow state, password reset, and audit records.',
-      'Viewer can read, analyst can run analysis/simulation workflows, and admin can manage users and protected operations.',
+      'Viewer can read; analyst can run analysis workflows; detection engineer and incident responder can run authorized simulations; admin can manage users and protected operations.',
     ],
   },
   {

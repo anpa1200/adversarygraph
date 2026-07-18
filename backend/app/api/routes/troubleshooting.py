@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -8,9 +9,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.services.ai.factory import get_adapter
-from app.services.auth import TeamUser, current_user
+from app.services.auth import TeamUser, require_permission
 
 router = APIRouter(prefix="/troubleshooting", tags=["Troubleshooting"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_PROVIDERS = {"local", "claude", "openai", "gemini", "minimax"}
 
@@ -71,7 +73,7 @@ Rules:
 @router.post("/assistant", response_model=TroubleshootingAssistantResponse)
 async def assistant(
     body: TroubleshootingAssistantRequest,
-    _: TeamUser = Depends(current_user),
+    _: TeamUser = Depends(require_permission("run_analysis")),
 ) -> TroubleshootingAssistantResponse:
     fallback = _deterministic_response(body)
     try:
@@ -95,8 +97,9 @@ async def assistant(
             raw_response=raw[:4000],
         )
     except Exception as exc:
+        logger.exception("Troubleshooting AI provider request failed provider=%s", body.provider)
         fallback.summary = f"{fallback.summary} AI provider failed, so deterministic guidance is shown."
-        fallback.raw_response = f"{type(exc).__name__}: {exc}"[:1000]
+        fallback.raw_response = "AI provider request failed. See server logs."
         return fallback
 
 

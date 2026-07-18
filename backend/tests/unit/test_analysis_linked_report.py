@@ -6,6 +6,8 @@ from app.api.routes.analyze import (
     _extract_html_report,
     _extract_cve_ids,
     _fallback_report_text,
+    _is_public_http_url,
+    _redact_url_secrets,
     _report_images_from_intake,
 )
 from app.models.analysis import AnalysisResult, AnalysisSession
@@ -113,11 +115,61 @@ def test_extract_html_report_prefers_article_and_drops_page_chrome_images():
 def test_report_images_from_intake_filters_unsafe_urls():
     intake = ReportIntake(
         title="Report",
-        analyst_notes='{"report_images":[{"url":"https://example.com/a.png","alt":"A"},{"url":"http://127.0.0.1/private.png","alt":"bad"}]}',
+        analyst_notes='{"report_images":[{"url":"https://example.com/a.png?api_key=image-secret","alt":"A"},{"url":"http://127.0.0.1/private.png","alt":"bad"}]}',
     )
 
     images = _report_images_from_intake(intake)
 
     assert len(images) == 1
-    assert images[0].url == "https://example.com/a.png"
+    assert images[0].url == "https://example.com/a.png?api_key=REDACTED"
+    assert "image-secret" not in images[0].url
     assert images[0].alt == "A"
+
+
+def test_redact_url_secrets_removes_userinfo_fragment_and_sensitive_query_values():
+    sanitized = _redact_url_secrets(
+        "https://analyst:password@example.com/report?source=feed&token=top-secret&api_key=key-secret&sig=signed#access_token=fragment-secret"
+    )
+
+    assert sanitized == (
+        "https://example.com/report?source=feed&token=REDACTED&api_key=REDACTED&sig=REDACTED"
+    )
+    assert "password" not in sanitized
+    assert "top-secret" not in sanitized
+    assert "fragment-secret" not in sanitized
+
+
+def test_public_report_url_rejects_embedded_basic_authentication():
+    assert _is_public_http_url("https://user:secret@example.com/report") is False
+
+
+def test_fallback_report_text_redacts_historical_source_url_secrets():
+    session_id = uuid4()
+    session = AnalysisSession(
+        id=session_id,
+        status="completed",
+        name=None,
+        input_type="url",
+        filename="https://example.com/report?token=session-secret",
+        llm_provider="none",
+        model="not-parsed",
+        domain="enterprise-attack",
+    )
+    result = AnalysisResult(
+        session_id=session_id,
+        extracted_techniques=[],
+        apt_matches=[],
+        summary="Stored report",
+        raw_response="",
+    )
+    intake = ReportIntake(
+        title="Historical report",
+        url="https://example.com/report?api_key=intake-secret",
+    )
+
+    text = _fallback_report_text(session, result, intake)
+
+    assert "session-secret" not in text
+    assert "intake-secret" not in text
+    assert "token=REDACTED" in text
+    assert "api_key=REDACTED" in text

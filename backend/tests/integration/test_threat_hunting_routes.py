@@ -57,6 +57,17 @@ async def test_threat_hunt_full_lifecycle(client: AsyncClient):
     assert listed.status_code == 200
     assert [row["id"] for row in listed.json()] == [hunt_id]
 
+    oversized_versions = await client.get(
+        f"/api/threat-hunting/hunts/{hunt_id}/query-versions",
+        params={"limit": 501},
+    )
+    invalid_findings_offset = await client.get(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings",
+        params={"offset": -1},
+    )
+    assert oversized_versions.status_code == 422
+    assert invalid_findings_offset.status_code == 422
+
     planned = await client.patch(
         f"/api/threat-hunting/hunts/{hunt_id}",
         json={"status": "planned", "owner": "hunt-team"},
@@ -93,6 +104,19 @@ async def test_threat_hunt_full_lifecycle(client: AsyncClient):
         json={"title": "Forged attribution", "analyst": "forged-client-name"},
     )
     assert forged_attribution.status_code == 422
+
+    forged_review_state = await client.post(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings",
+        json={
+            "title": "Finding created as already reviewed",
+            "summary": "This would bypass review provenance.",
+            "status": "reviewed",
+            "verdict": "supports",
+            "evidence_ref": "siem:event:forged-review",
+        },
+    )
+    assert forged_review_state.status_code == 422
+    assert "must start with status new" in forged_review_state.json()["detail"]
 
     detail = await client.get(f"/api/threat-hunting/hunts/{hunt_id}")
     assert detail.status_code == 200
@@ -187,6 +211,51 @@ async def test_threat_hunt_enforces_review_and_completion(client: AsyncClient):
     assert archived.json()["archived_at"]
 
 
+async def test_reviewed_findings_require_real_evidence_and_valid_transitions(client: AsyncClient):
+    created = await client.post("/api/threat-hunting/hunts", json=HUNT)
+    hunt_id = created.json()["id"]
+    finding = await client.post(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings",
+        json={
+            "title": "Candidate command execution",
+            "summary": "Process and network telemetry support the hunt hypothesis.",
+            "verdict": "supports",
+        },
+    )
+    assert finding.status_code == 201
+    finding_id = finding.json()["id"]
+
+    missing_evidence = await client.patch(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings/{finding_id}",
+        json={"status": "reviewed"},
+    )
+    assert missing_evidence.status_code == 422
+    assert "evidence_ref" in missing_evidence.text
+
+    staged_evidence = await client.patch(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings/{finding_id}",
+        json={"evidence_ref": "siem:event:67890"},
+    )
+    assert staged_evidence.status_code == 200
+    reviewed = await client.patch(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings/{finding_id}",
+        json={"status": "reviewed"},
+    )
+    assert reviewed.status_code == 200
+
+    cannot_remove_evidence = await client.patch(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings/{finding_id}",
+        json={"evidence_ref": "   "},
+    )
+    assert cannot_remove_evidence.status_code == 422
+
+    invalid_backward_transition = await client.patch(
+        f"/api/threat-hunting/hunts/{hunt_id}/findings/{finding_id}",
+        json={"status": "new"},
+    )
+    assert invalid_backward_transition.status_code == 409
+
+
 async def test_threat_hunting_routes_require_analyst_role(
     app,
     client: AsyncClient,
@@ -197,6 +266,13 @@ async def test_threat_hunting_routes_require_analyst_role(
 
     async def viewer_user():
         return TeamUser(name="viewer", roles=["viewer"], permissions=["read"])
+
+    async def export_user():
+        return TeamUser(
+            name="exporter",
+            roles=["analyst"],
+            permissions=["read", "run_analysis", "export_data"],
+        )
 
     previous = app.dependency_overrides.get(current_user)
     monkeypatch.setattr(settings, "auth_enabled", True)
@@ -209,22 +285,30 @@ async def test_threat_hunting_routes_require_analyst_role(
         created = await client.post("/api/threat-hunting/hunts", json=HUNT)
         assert created.status_code == 201, created.text
         hunt_id = created.json()["id"]
+        export_path = f"/api/threat-hunting/hunts/{hunt_id}/export"
         hunt_read_paths = (
             "/api/threat-hunting/hunts",
             f"/api/threat-hunting/hunts/{hunt_id}",
             f"/api/threat-hunting/hunts/{hunt_id}/query-versions",
             f"/api/threat-hunting/hunts/{hunt_id}/findings",
-            f"/api/threat-hunting/hunts/{hunt_id}/export",
         )
         for path in hunt_read_paths:
             allowed_read = await client.get(path)
             assert allowed_read.status_code == 200, path
+
+        denied_export = await client.get(export_path)
+        assert denied_export.status_code == 403
+
+        app.dependency_overrides[current_user] = export_user
+        allowed_export = await client.get(export_path)
+        assert allowed_export.status_code == 200
 
         app.dependency_overrides[current_user] = viewer_user
         for path in (
             "/api/threat-hunting/templates",
             "/api/threat-hunting/stats",
             *hunt_read_paths,
+            export_path,
         ):
             denied_read = await client.get(path)
             assert denied_read.status_code == 403, path

@@ -9,7 +9,7 @@ AdversaryGraph is a self-hosted analyst workbench, not a managed SaaS.
 | Browser to frontend | User has access to the workspace |
 | Frontend to API | API is reachable from the operator-controlled network |
 | API to PostgreSQL | Database is private to the deployment |
-| API/worker to LLM provider | Operator controls provider choice and accepts provider data terms |
+| API/worker to LLM provider | Operator controls provider choice and accepts provider data terms; governed Threat Hunting cloud AI is disabled by default and requires explicit analyst acknowledgment when enabled |
 | API to MITRE/GitHub | Public ATT&CK STIX bundles are downloaded for sync |
 | API to IOC feeds | Operator controls ThreatFox, OTX, and custom feed credentials/URLs |
 | AdversaryGraph to malware-analysis service | Malware samples remain outside the main application containers; only validated result artifacts are imported |
@@ -25,6 +25,8 @@ Potentially sensitive data includes:
 - Malware-analysis artifacts such as strings, PCAPs, memory metadata, debugger notes, and unpacked payloads.
 - LLM raw responses.
 - Analyst notes.
+- Threat Hunting AI suggestions, analyst focus text, source citations, and
+  assistant provenance metadata.
 - Campaign or customer names.
 - IOC feed contents and actor-linked indicators.
 - Custom feed URLs.
@@ -49,6 +51,12 @@ For private analysis:
 - Use non-default database credentials.
 - Use private LLM infrastructure if provider transmission is not acceptable.
 - Restrict access through a reverse proxy.
+- Keep the API behind an edge that rejects oversized decoded request bodies.
+  The bundled Nginx configurations enforce a 10 MiB default and narrowly
+  scoped larger upload limits. Application upload handlers also enforce their
+  documented decoded-file limits, but the generic `Content-Length` pre-check
+  is not an ASGI streaming limiter and cannot protect a directly exposed API
+  from an oversized chunked JSON or form body.
 - Configure `AUTH_ENABLED=true` for native username/password access control.
   The local setup guide is available at <http://localhost:3000/auth-guide>.
 - For trusted-header authentication, configure `PROXY_SECRET`. The proxy must
@@ -57,6 +65,9 @@ For private analysis:
 - Set explicit `CORS_ALLOWED_ORIGINS`; wildcard origins are rejected when
   credentialed API access is enabled.
 - Back up and purge data according to local policy.
+- Keep governed Threat Hunting AI on the operator-configured local endpoint
+  unless cloud processing is explicitly enabled and approved. Treat
+  `TLP:AMBER+STRICT` and `TLP:RED` hunt context as local-only.
 
 ## LLM Output
 
@@ -65,7 +76,35 @@ LLM output is treated as untrusted:
 - Mappings require analyst review.
 - Similarity scores are investigation leads.
 - Generated detection logic is draft material.
+- Threat Hunting hypotheses, plans, queries, finding drafts, and outcome
+  summaries are suggestions, not evidence or decisions.
+- Threat Hunting AI does not execute telemetry queries, save findings, change
+  lifecycle state, choose a disposition, or initiate response actions.
+- Applying a safe suggestion only copies permitted content into an unsaved
+  editable form; the analyst must review and use the normal save workflow.
 - Exports should include limitations when used in a report.
+
+Threat Hunting AI starts from a stored report/research session or the bounded
+current-hunt context. Stored reports carry a server-side TLP marking and default
+to `TLP:AMBER+STRICT`; only the `manage_intel` report-edit path may change it.
+The request may raise but cannot lower that marking. Cloud processing is
+disabled by default; when an operator enables it, a remote request still
+requires explicit analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED`
+requests are rejected for remote providers.
+Enterprise ATT&CK is the only supported report-to-hunt framework in the current
+post-v6 `main` implementation.
+
+The assistant request treats report text as untrusted model input. Fixed task
+prompts, structured validation, source-span checks, provider/TLP gates, and
+human review reduce prompt-injection and hallucination risk but cannot eliminate
+it. The API rechecks stored source or saved-hunt context after a provider call
+and rejects the result if that context changed during generation; later edits
+still require manual comparison or regeneration. The platform may retain
+bounded, server-validated citation excerpts of at most 300 characters with
+their source references and offsets, but it does not
+persist the raw assistant prompt, full raw report, or raw provider response in
+an AI-assistance record. The stored report remains the controlled source of
+record; assistant provenance does not create another full-text copy.
 
 ## File Parsing
 
@@ -107,6 +146,11 @@ IOC feeds are operational data, not stable reference data. Operators should:
 - review custom feed provenance before import;
 - expect server-side feed fetches to reject localhost, private, link-local,
   multicast, reserved, and cloud-metadata destinations as SSRF protection;
+- treat URL validation as one layer of defense: environment proxies are
+  disabled, each connection is pinned to a validated public address, and each
+  redirect target is independently resolved and validated while HTTPS keeps
+  the original hostname for certificate verification; production deployments
+  should still enforce DNS policy and outbound network allowlists;
 - avoid importing customer-private feeds into public demos;
 - define retention and export rules for actor IOC CSVs;
 - treat extracted IOCs from uploaded reports as untrusted until reviewed.

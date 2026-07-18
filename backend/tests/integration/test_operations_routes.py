@@ -9,11 +9,22 @@ async def test_operations_lists_return_arrays(client: AsyncClient):
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    invalid = await client.get("/api/operations/investigations", params={"limit": 0})
+    oversized = await client.get("/api/operations/intake", params={"limit": 501})
+    assert invalid.status_code == 422
+    assert oversized.status_code == 422
+
 
 @pytest.mark.asyncio
 async def test_investigation_validation(client: AsyncClient):
     response = await client.post("/api/operations/investigations", json={"name": ""})
     assert response.status_code == 422
+
+    oversized = await client.post(
+        "/api/operations/investigations",
+        json={"name": "valid", "description": "x" * 100_001},
+    )
+    assert oversized.status_code == 422
 
 
 @pytest.mark.asyncio

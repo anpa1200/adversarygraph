@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { operationsApi, type Investigation } from '@/api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type InvestigationPayload = {
   label: string;
@@ -28,6 +30,9 @@ export function AddToInvestigationButton({
   disabled?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const canManage = useHasPermission('manage_intel');
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canAdd = canManage && canRunAnalysis;
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState('');
@@ -36,7 +41,7 @@ export function AddToInvestigationButton({
   const { data: investigations = [], isLoading } = useQuery({
     queryKey: ['operations-investigations'],
     queryFn: operationsApi.investigations,
-    enabled: open,
+    enabled: open && canAdd,
   });
 
   const selected = useMemo(
@@ -63,10 +68,15 @@ export function AddToInvestigationButton({
   const updatePosition = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const width = Math.min(360, Math.max(320, window.innerWidth - 24));
+    const width = Math.min(360, Math.max(1, window.innerWidth - 24));
     const left = Math.min(Math.max(12, rect.right - width), window.innerWidth - width - 12);
+    const maxMenuHeight = Math.min(420, window.innerHeight - 32);
+    const below = rect.bottom + 8;
+    const top = below + maxMenuHeight <= window.innerHeight - 12
+      ? below
+      : Math.max(12, rect.top - maxMenuHeight - 8);
     setMenuPosition({
-      top: Math.min(rect.bottom + 8, window.innerHeight - 16),
+      top,
       left,
       width,
     });
@@ -155,7 +165,7 @@ export function AddToInvestigationButton({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <button
+      {canAdd ? <button
         ref={buttonRef}
         type="button"
         disabled={disabled}
@@ -166,13 +176,17 @@ export function AddToInvestigationButton({
         className={className}
       >
         + Add to investigation
-      </button>
-      <Link
-        to="/report"
-        className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-600"
-      >
-        Open Investigation
-      </Link>
+      </button> : !canManage
+        ? <PermissionNotice permission="manage_intel" action="add results to an investigation" compact />
+        : <PermissionNotice permission="run_analysis" action="open and select an investigation" compact />}
+      {canRunAnalysis && (
+        <Link
+          to="/report"
+          className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-600"
+        >
+          Open Investigation
+        </Link>
+      )}
       {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : null}
     </span>
   );

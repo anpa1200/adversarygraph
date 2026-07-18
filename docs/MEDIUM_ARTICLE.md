@@ -4,7 +4,7 @@
 
 > **Editor's note:** AdversaryGraph now uses “Group & Campaign Similarity” terminology instead of “APT attribution.” TTP overlap and Jaccard similarity are analytical leads for hypothesis generation and prioritization, not attribution proof. In Docker mode, report content is sent only to the LLM provider configured by the operator unless a local/private LLM gateway is used. The public Web workspace does not perform LLM report extraction or backend private report storage.
 
-> **v2.5 update:** The current release adds the IOC Library, searchable multi-select group filtering, VirusTotal IOC enrichment, STIX/TAXII import/export, MISP JSON export ingestion, custom IOC feeds, Sigma/YARA rule-feed sync, sandbox behavior enrichment, and a personal/private-use license model.
+> **v2.5 update:** That release added the IOC Library, searchable multi-select group filtering, VirusTotal IOC enrichment, STIX/TAXII import/export, MISP JSON export ingestion, custom IOC feeds, Sigma/YARA rule-feed sync, sandbox behavior enrichment, and a personal/private-use license model.
 
 ---
 
@@ -61,7 +61,13 @@ AdversaryGraph is self-hosted. In Docker mode, report content is sent only to th
 
 ## Architecture in Brief
 
-AdversaryGraph is four containers:
+> **Historical architecture note:** the diagram below describes the original
+> v2.5-era four-service core. Current post-v6 deployments also package
+> MalwareGraph, the isolated attack-lab targets, and the Anomaly Detection
+> Atlas documentation service; use the current deployment guides for an
+> authoritative production topology.
+
+The original core used four containers:
 
 ```
 React / Vite frontend  ←→  FastAPI backend  ←→  PostgreSQL
@@ -150,7 +156,7 @@ This is the killer feature and what most analysts will use day-to-day.
 Navigate to **Analyze** in the sidebar. You'll see:
 
 1. A provider dropdown (Claude / OpenAI / Gemini / Local)
-2. An optional model override (defaults to `claude-opus-4-8`, `gpt-4.1`, `gemini-2.0-flash`)
+2. An optional model override (defaults to `claude-opus-4-8`, `gpt-4.1`, `gemini-3.5-flash`)
 3. A domain selector (`enterprise-attack` for most corporate IR work)
 4. A text area or file upload
 

@@ -13,8 +13,11 @@ import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
 import { Header } from '@/components/Layout/Header';
 import type { TechniqueListItem } from '@/types/attack';
 import { useSearchParams } from 'react-router-dom';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 export function Navigator() {
+  const canExport = useHasPermission('export_data');
+  const canRunSimulation = useHasPermission('run_attack_simulation');
   const {
     domain, version,
     selectedTechniques, overlayTechniques,
@@ -58,6 +61,7 @@ export function Navigator() {
   const { data: simulationCatalog = [] } = useQuery({
     queryKey: ['simulation-catalog'],
     queryFn: simulationApi.catalog,
+    enabled: canRunSimulation,
     staleTime: 5 * 60 * 1000,
   });
   const simulationTechniqueIds = useMemo(
@@ -164,7 +168,7 @@ export function Navigator() {
         <button onClick={() => setCoverageImportOpen(true)} className="border border-green-800 text-green-400 px-2 py-1 rounded">Import coverage</button>
         {coverageTechniques.size > 0 && <>
           <span className="text-green-500">{coverageTechniques.size} covered</span>
-          <button onClick={() => exportBacklog(selectedTechniques, overlayTechniques, coverageTechniques)} className="border border-amber-800 text-amber-400 px-2 py-1 rounded">Export detection backlog</button>
+          {canExport && <button onClick={() => exportBacklog(selectedTechniques, overlayTechniques, coverageTechniques)} className="border border-amber-800 text-amber-400 px-2 py-1 rounded">Export detection backlog</button>}
           <button onClick={clearCoverage} className="text-gray-600">Clear coverage</button>
         </>}
       </div>

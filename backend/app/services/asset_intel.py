@@ -71,11 +71,13 @@ async def retrohunt_assets(
     )).all()
 
     cve_to_techniques: dict[str, set[str]] = {}
-    for link in cve_technique_links:
-        cve_to_techniques.setdefault(link.cve_id.upper(), set()).add(link.attack_id.upper())
+    for technique_link in cve_technique_links:
+        cve_to_techniques.setdefault(technique_link.cve_id.upper(), set()).add(
+            technique_link.attack_id.upper()
+        )
     cve_to_actors: dict[str, list[CVEActorLink]] = {}
-    for link in cve_actor_links:
-        cve_to_actors.setdefault(link.cve_id.upper(), []).append(link)
+    for actor_link in cve_actor_links:
+        cve_to_actors.setdefault(actor_link.cve_id.upper(), []).append(actor_link)
     actor_to_techniques: dict[str, set[str]] = {}
     actor_names: dict[str, str] = {}
     for group, attack_id in actor_rows:

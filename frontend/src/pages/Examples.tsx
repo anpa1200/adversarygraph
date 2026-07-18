@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
 import { loadDfirReportIndex, type DfirExampleReport } from '@/config/intelligence';
+import { safeHref } from '@/utils/url';
 
 type Filter = 'all' | 'with-ttps' | 'with-actors' | 'recent';
 
@@ -98,7 +99,7 @@ export function Examples() {
                       PDF workflow
                     </button>
                     <a
-                      href={report.url}
+                      href={safeHref(report.url)}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-400 hover:text-white hover:border-gray-500"
@@ -141,7 +142,8 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function openPdfWorkflow(report: DfirExampleReport) {
-  window.open(report.url, '_blank', 'noopener,noreferrer');
+  const href = safeHref(report.url);
+  if (href) window.open(href, '_blank', 'noopener,noreferrer');
   const payload = [
     `DFIR Report PDF workflow`,
     ``,

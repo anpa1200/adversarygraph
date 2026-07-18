@@ -5,14 +5,17 @@
 # hot-reloading, and replaces the nginx frontend with the Vite dev server.
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
     restart: unless-stopped
     entrypoint: ["/usr/local/bin/adversarygraph-postgres-entrypoint.sh"]
     command: ["postgres", "-c", "unix_socket_directories=/var/run/postgresql,/var/run/postgresql-shared"]
     environment:
       POSTGRES_DB: ${DB_NAME:-adversarygraph}
       POSTGRES_USER: ${DB_USER:-ag_user}
-      POSTGRES_PASSWORD: ${DB_PASS:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required; copy .env.example to .env and set a strong value}
     volumes:
       - ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}:/var/lib/postgresql/data
       - pg_socket:/var/run/postgresql-shared
@@ -31,13 +34,13 @@ services:
           cpus: '1.0'
 
   db-apply-env-creds:
-    image: postgres:16-alpine
+    image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
     profiles: ["tools"]
     restart: "no"
     environment:
       POSTGRES_DB: ${DB_NAME:-adversarygraph}
       POSTGRES_USER: ${DB_USER:-ag_user}
-      POSTGRES_PASSWORD: ${DB_PASS:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required; copy .env.example to .env and set a strong value}
     volumes:
       - pg_socket:/var/run/postgresql-shared
     depends_on:
@@ -54,7 +57,7 @@ services:
         echo "Applied .env PostgreSQL password for role $$POSTGRES_USER"
 
   selftest:
-    image: curlimages/curl:8.11.1
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
     restart: "no"
     depends_on:
       api:
@@ -67,7 +70,7 @@ services:
         max=120
         elapsed=0
         while [ "$$elapsed" -le "$$max" ]; do
-          if response="$$(curl -fsS http://api:8000/api/system/selftest 2>/tmp/selftest.err)"; then
+          if response="$$(wget -q -O - http://api:8000/api/system/selftest 2>/tmp/selftest.err)"; then
             echo "$$response"
             echo "$$response" | grep -q '"status":"ok"'
             echo "AdversaryGraph self-test passed."
@@ -75,10 +78,10 @@ services:
           fi
           err="$$(cat /tmp/selftest.err 2>/dev/null || true)"
           if echo "$$err" | grep -Eq '401|403'; then
-            if health="$$(curl -fsS http://api:8000/api/health 2>/tmp/selftest.err)"; then
-              echo "$$health"
-              echo "$$health" | grep -q '"status":"ok"'
-              echo "AdversaryGraph health check passed. Full self-test is auth-protected."
+            if readiness="$$(wget -q -O - http://api:8000/api/ready 2>/tmp/selftest.err)"; then
+              echo "$$readiness"
+              echo "$$readiness" | grep -q '"status":"ready"'
+              echo "AdversaryGraph readiness check passed. Full self-test is auth-protected."
               exit 0
             fi
           fi
@@ -90,11 +93,11 @@ services:
         exit 1
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99}
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme_redis}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required; set a strong value in .env}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_redis}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required; set a strong value in .env}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -105,11 +108,15 @@ services:
           cpus: '0.5'
 
   malwaregraph:
+    image: ${ADVERSARYGRAPH_MALWAREGRAPH_IMAGE:-adversarygraph-malwaregraph:local-scan}
     build:
       context: .
       dockerfile: docker/malwaregraph/Dockerfile
+      args:
+        MALWAREGRAPH_REF: ${MALWAREGRAPH_REF:-79f604c6b59522cc993c82d32e081e8357bba98a}
     restart: unless-stopped
     environment:
+      HOME: /tmp
       MALWAREGRAPH_STORAGE_DIR: /app/storage
       MALWAREGRAPH_API_KEY: ${MALWAREGRAPH_API_KEY:-}
       MALWAREGRAPH_RETENTION_DAYS: ${MALWAREGRAPH_RETENTION_DAYS:-7}
@@ -121,6 +128,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}
@@ -157,6 +165,7 @@ services:
       retries: 5
 
   attack-lab-web:
+    image: ${ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE:-adversarygraph-attack-lab-web:local-scan}
     build:
       context: .
       dockerfile: docker/attack-lab-web/Dockerfile
@@ -166,7 +175,14 @@ services:
       ATTACK_LAB_WEB_PORT: 8081
       ATTACK_LAB_WEB_LOG_DIR: /app/logs
     volumes:
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    depends_on:
+      logs-permissions:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -190,6 +206,7 @@ services:
       retries: 5
 
   attack-lab-endpoint:
+    image: ${ADVERSARYGRAPH_ATTACK_LAB_ENDPOINT_IMAGE:-adversarygraph-attack-lab-endpoint:local-scan}
     build:
       context: .
       dockerfile: docker/attack-lab-endpoint/Dockerfile
@@ -199,7 +216,14 @@ services:
       ATTACK_LAB_ENDPOINT_PORT: 8090
       ATTACK_LAB_ENDPOINT_LOG_DIR: /app/logs
     volumes:
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    depends_on:
+      logs-permissions:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -223,14 +247,38 @@ services:
       retries: 5
 
   attck-data-permissions:
-    image: busybox:1.36
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
     command: sh -c "mkdir -p /app/data/attck && chown -R 999:999 /app/data/attck && chmod -R u+rwX,g+rwX /app/data/attck"
     user: "0:0"
     volumes:
       - attck_data:/app/data/attck
     restart: "no"
 
+  # Initialize the shared log volume before concurrent non-root writers start.
+  # nocopy prevents Docker from racing image-directory copy-up on a fresh volume.
+  logs-permissions:
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
+    command: sh -c "mkdir -p /app/logs/attack-simulation && chown -R 999:999 /app/logs && chmod -R u+rwX,g+rwX,o-rwx /app/logs"
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    volumes:
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    restart: "no"
+
   api:
+    image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -238,26 +286,37 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - attck_data:/app/data/attck
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
       - malwaregraph_storage:/malwaregraph-storage
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-adversarygraph}
       DB_USER: ${DB_USER:-ag_user}
-      DB_PASS: ${DB_PASS:-changeme}
+      DB_PASS: ${DB_PASS:?DB_PASS is required; set a strong value in .env}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required; set a strong value in .env}@redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
       LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-llama3.1:8b}
+      THREAT_HUNTING_AI_ENABLED: ${THREAT_HUNTING_AI_ENABLED:-true}
+      THREAT_HUNTING_AI_CLOUD_ENABLED: ${THREAT_HUNTING_AI_CLOUD_ENABLED:-false}
+      THREAT_HUNTING_AI_DEFAULT_PROVIDER: ${THREAT_HUNTING_AI_DEFAULT_PROVIDER:-local}
+      THREAT_HUNTING_AI_TIMEOUT_SECONDS: ${THREAT_HUNTING_AI_TIMEOUT_SECONDS:-45}
+      THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT: ${THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT:-40000}
+      THREAT_HUNTING_AI_MAX_CANDIDATES: ${THREAT_HUNTING_AI_MAX_CANDIDATES:-3}
       ATTCK_DOMAINS: ${ATTCK_DOMAINS:-enterprise-attack,mobile-attack,ics-attack,atlas}
       ATTCK_DATA_DIR: /app/data/attck
       THREATFOX_AUTH_KEY: ${THREATFOX_AUTH_KEY:-}
@@ -314,15 +373,18 @@ services:
       AUTH_BOOTSTRAP_ADMIN_USERNAME: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}
       AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-}
       PROXY_SECRET: ${PROXY_SECRET:-}
+      RATE_LIMIT_PROXY_SECRET: ${RATE_LIMIT_PROXY_SECRET:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       MALWAREGRAPH_URL: http://malwaregraph:8100
       MALWAREGRAPH_API_KEY: ${MALWAREGRAPH_API_KEY:-}
       MALWAREGRAPH_STORAGE_DIR: /malwaregraph-storage
       MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS: ${MALWAREGRAPH_REQUEST_TIMEOUT_SECONDS:-30}
       MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS: ${MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS:-180}
       MALWAREGRAPH_LONG_TIMEOUT_SECONDS: ${MALWAREGRAPH_LONG_TIMEOUT_SECONDS:-300}
+      MALWAREGRAPH_MAX_UPLOAD_BYTES: ${MALWAREGRAPH_MAX_UPLOAD_BYTES:-268435456}
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -342,6 +404,8 @@ services:
         condition: service_healthy
       attck-data-permissions:
         condition: service_completed_successfully
+      logs-permissions:
+        condition: service_completed_successfully
     networks:
       - default
       - malwaregraph_internal
@@ -354,6 +418,7 @@ services:
     # frontend or a reverse proxy). Port 8000 is NOT published to the host.
 
   worker:
+    image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -366,13 +431,14 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-adversarygraph}
       DB_USER: ${DB_USER:-ag_user}
-      DB_PASS: ${DB_PASS:-changeme}
+      DB_PASS: ${DB_PASS:?DB_PASS is required; set a strong value in .env}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required; set a strong value in .env}@redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}
@@ -434,11 +500,12 @@ services:
           cpus: '2.0'
 
   beat:
+    image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: celery -A app.tasks.celery_app beat --loglevel=info
+    command: celery -A app.tasks.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     volumes:
       - attck_data:/app/data/attck
     environment:
@@ -446,9 +513,9 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-adversarygraph}
       DB_USER: ${DB_USER:-ag_user}
-      DB_PASS: ${DB_PASS:-changeme}
+      DB_PASS: ${DB_PASS:?DB_PASS is required; set a strong value in .env}
       ADVERSARYGRAPH_DB_DIR: ${ADVERSARYGRAPH_DB_DIR:-./data/postgres}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required; set a strong value in .env}@redis:6379/0
       ATTCK_DATA_DIR: /app/data/attck
       THREATFOX_AUTH_KEY: ${THREATFOX_AUTH_KEY:-}
       OTX_API_KEY: ${OTX_API_KEY:-}
@@ -502,28 +569,34 @@ services:
           cpus: '0.5'
 
   frontend:
+    image: ${ADVERSARYGRAPH_FRONTEND_IMAGE:-adversarygraph-frontend:local-scan}
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      API_UPSTREAM: api:8000
+      RATE_LIMIT_PROXY_SECRET: ${RATE_LIMIT_PROXY_SECRET:-}
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3000:8080"
     depends_on:
       - api
 
   atlas-builder:
+    image: ${ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE:-adversarygraph-anomaly-docs:local-scan}
     build:
       context: .
       dockerfile: anomaly_detection/docs-site/Dockerfile
     restart: unless-stopped
     environment:
       ATLAS_REPOSITORY: ${ATLAS_REPOSITORY:-https://github.com/anpa1200/anomaly-detection-atlas.git}
-      ATLAS_SYNC_INTERVAL: ${ATLAS_SYNC_INTERVAL:-3600}
+      ATLAS_REPOSITORY_REF: ${ATLAS_REPOSITORY_REF:-819995c5681668ffd0c6a4e0f86b170b5a6bbbac}
+      ATLAS_SYNC_INTERVAL: ${ATLAS_SYNC_INTERVAL:-0}
     volumes:
       - atlas_site:/output
 
   atlas-docs:
-    image: nginx:1.27-alpine
+    image: ${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46}
     restart: unless-stopped
     volumes:
       - atlas_site:/usr/share/nginx/html:ro

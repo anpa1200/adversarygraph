@@ -191,6 +191,14 @@ async def create_edge(db: AsyncSession, payload: dict[str, Any], actor: str) -> 
 async def update_edge(db: AsyncSession, edge_id: str, payload: dict[str, Any]) -> EvidenceGraphEdge:
     row = await get_edge(db, edge_id)
     cleaned = validate_edge_payload(payload, partial=True)
+    if "source_node_id" in cleaned:
+        cleaned["source_node_id"] = (
+            await get_node(db, str(cleaned["source_node_id"]))
+        ).id
+    if "target_node_id" in cleaned:
+        cleaned["target_node_id"] = (
+            await get_node(db, str(cleaned["target_node_id"]))
+        ).id
     for key, value in _edge_columns(cleaned).items():
         setattr(row, key, value)
     return row

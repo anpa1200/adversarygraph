@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { aptApi, attackApi } from '@/api/client';
 import { loadReportIndex, type ReportReference } from '@/config/intelligence';
 import { useAppStore } from '@/store';
+import { safeHref } from '@/utils/url';
 
 export function GlobalSearch() {
   const { domain, version } = useAppStore();
@@ -53,7 +54,7 @@ export function GlobalSearch() {
         <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-4 space-y-5 sm:max-h-[70vh]">
           <Results title="Threat actors">{results.groups.map(item => <button key={item.attack_id} onClick={() => { navigate(`/apt?group=${item.attack_id}`); setOpen(false); }} className="result"><b>{item.name}</b><small>{item.attack_id} · {item.aliases.slice(0, 3).join(', ')}</small></button>)}</Results>
           <Results title="Techniques">{results.techniques.map(item => <button key={item.attack_id} onClick={() => { navigate(`/navigator?technique=${item.attack_id}`); setOpen(false); }} className="result"><b>{item.name}</b><small>{item.attack_id} · {item.tactics.join(', ')}</small></button>)}</Results>
-          <Results title="CTI / IR reports">{results.reports.map(item => <a key={item.url} href={item.url} target="_blank" rel="noreferrer" className="result"><b>{item.title}</b><small>{item.publisher} · {item.match_basis}</small></a>)}</Results>
+          <Results title="CTI / IR reports">{results.reports.map(item => <a key={item.url} href={safeHref(item.url)} target="_blank" rel="noreferrer" className="result"><b>{item.title}</b><small>{item.publisher} · {item.match_basis}</small></a>)}</Results>
           {!query && <p className="text-sm text-gray-500">Search across live ATT&amp;CK data and the shared 1200km CTI/IR report index.</p>}
         </div>
       </div>

@@ -6,8 +6,25 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.redaction import redact_sensitive_text
 
 _CONFIGURED_ATTR = "_adversarygraph_logging_configured"
+
+
+class SensitiveDataFilter(logging.Filter):
+    """Redact common credentials before console or file handlers persist them."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        record.msg = redact_sensitive_text(record.getMessage())
+        record.args = ()
+        if record.exc_info:
+            exception_text = logging.Formatter().formatException(record.exc_info)
+            record.exc_text = redact_sensitive_text(exception_text)
+        if record.stack_info:
+            record.stack_info = redact_sensitive_text(record.stack_info)
+        return True
 
 
 def configure_logging() -> None:
@@ -28,12 +45,6 @@ def configure_logging() -> None:
         "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s"
     )
 
-    class RequestIdFilter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            if not hasattr(record, "request_id"):
-                record.request_id = "-"
-            return True
-
     console_handler = logging.StreamHandler(sys.stdout)
     file_handler = RotatingFileHandler(
         log_dir / "adversarygraph-api.log",
@@ -45,7 +56,7 @@ def configure_logging() -> None:
     for handler in (console_handler, file_handler):
         handler.setLevel(level)
         handler.setFormatter(formatter)
-        handler.addFilter(RequestIdFilter())
+        handler.addFilter(SensitiveDataFilter())
         handler._adversarygraph_handler = True
         root.addHandler(handler)
 

@@ -6,6 +6,8 @@ multi-worker setups, replace the in-memory deque with a Redis sorted set.
 """
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import time
 from collections import defaultdict, deque
 from typing import Deque
@@ -14,9 +16,18 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.config import settings
+
 # (max_requests, window_seconds) per exact path prefix (POST/non-GET only)
 _LIMITS: dict[str, tuple[int, int]] = {
+    "/api/auth/login":        (10, 60),
     "/api/analyze":           (10, 60),
+    "/api/threat-hunting/ai":  (6, 60),
+    "/api/malwaregraph/llm":   (6, 60),
+    "/api/malwaregraph/analyses": (20, 60),
+    "/api/retrohunt/collect":  (5, 60),
+    "/api/knowledge/seed":     (5, 60),
+    "/api/sector/sync":        (5, 60),
     "/api/sync/trigger":       (5, 60),
     "/api/sync/ioc":           (5, 60),
     "/api/sync/dynamic-db":    (5, 60),
@@ -27,13 +38,60 @@ _LIMITS: dict[str, tuple[int, int]] = {
 
 # {(ip, prefix): deque of timestamps}
 _windows: dict[tuple[str, str], Deque[float]] = defaultdict(deque)
+_CLEANUP_INTERVAL_SECONDS = 60
+_MAX_WINDOW_KEYS = 50_000
+_last_cleanup = 0.0
+
+
+def _cleanup_windows(now: float) -> None:
+    """Discard expired client keys so transient callers cannot leak memory."""
+    global _last_cleanup
+    if now - _last_cleanup < _CLEANUP_INTERVAL_SECONDS:
+        return
+    _last_cleanup = now
+    for key, bucket in list(_windows.items()):
+        window = _LIMITS.get(key[1], (0, 60))[1]
+        while bucket and bucket[0] < now - window:
+            bucket.popleft()
+        if not bucket:
+            _windows.pop(key, None)
+
+
+def _bucket_for(key: tuple[str, str], now: float) -> Deque[float]:
+    _cleanup_windows(now)
+    if key not in _windows and len(_windows) >= _MAX_WINDOW_KEYS:
+        oldest_key = min(
+            _windows,
+            key=lambda item: _windows[item][-1] if _windows[item] else float("-inf"),
+        )
+        _windows.pop(oldest_key, None)
+    return _windows[key]
 
 
 def _client_ip(request: Request) -> str:
-    """Return client IP, honoring X-Forwarded-For when behind a proxy."""
+    """Return a non-spoofable client key for rate limiting.
+
+    Forwarded headers are trusted only when the dedicated rate-limit proxy
+    secret is configured and present. Direct deployments therefore key on the
+    actual TCP peer instead of attacker-controlled XFF. The authentication
+    proxy secret is deliberately not accepted for this separate trust boundary.
+    """
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    proxy_secret = request.headers.get("X-RateLimit-Proxy-Secret") or ""
+    if (
+        forwarded
+        and settings.rate_limit_proxy_secret
+        and hmac.compare_digest(proxy_secret, settings.rate_limit_proxy_secret)
+    ):
+        candidate = forwarded.split(",", 1)[0].strip()
+        # 45 characters covers the longest standard textual IPv6 address,
+        # including an embedded IPv4 address. Reject longer/malformed tokens
+        # so a trusted but misconfigured proxy cannot create unbounded keys.
+        if 0 < len(candidate) <= 45:
+            try:
+                return str(ipaddress.ip_address(candidate))
+            except ValueError:
+                pass
     if request.client:
         return request.client.host
     return "unknown"
@@ -62,7 +120,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = _client_ip(request)
         key = (ip, matched_prefix)
         now = time.monotonic()
-        bucket = _windows[key]
+        bucket = _bucket_for(key, now)
 
         # Drop timestamps outside the current window
         while bucket and bucket[0] < now - window:

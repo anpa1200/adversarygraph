@@ -796,12 +796,15 @@ export interface LinkedReportEntity {
   metadata: Record<string, unknown>;
 }
 
+export type ReportTlp = 'TLP:CLEAR' | 'TLP:GREEN' | 'TLP:AMBER' | 'TLP:AMBER+STRICT' | 'TLP:RED';
+
 export interface LinkedAnalysisReport {
   session_id: string;
   name: string | null;
   provider: string;
   model: string;
   domain: string;
+  tlp: ReportTlp;
   created_at: string;
   source_text: string;
   source_text_available: boolean;
@@ -832,6 +835,7 @@ export interface ReportCollectionItem {
   provider: string;
   model: string;
   domain: string;
+  tlp: ReportTlp;
   created_at: string;
   updated_at: string;
   summary: string;
@@ -855,6 +859,7 @@ export interface StoredResearchResult {
   source_url: string;
   source_text_available: boolean;
   summary: string;
+  tlp: ReportTlp;
 }
 
 export interface ReportEditPayload {
@@ -863,6 +868,7 @@ export interface ReportEditPayload {
   source_url?: string;
   publisher?: string;
   summary?: string;
+  tlp?: ReportTlp;
 }
 
 export const analyzeApi = {
@@ -871,15 +877,16 @@ export const analyzeApi = {
     http.post('/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
 
   /** Streaming: returns a native EventSource-compatible fetch stream */
-  stream: (formData: FormData): Promise<Response> =>
-    fetch('/api/analyze/stream', { method: 'POST', body: formData }),
+  stream: (formData: FormData, signal?: AbortSignal): Promise<Response> =>
+    fetch('/api/analyze/stream', { method: 'POST', body: formData, signal }),
 
   /** Single-turn chat with SSE streaming */
-  chat: (payload: { message: string; provider: string; model?: string; context?: string; system_prompt?: string }): Promise<Response> =>
+  chat: (payload: { message: string; provider: string; model?: string; context?: string; system_prompt?: string }, signal?: AbortSignal): Promise<Response> =>
     fetch('/api/analyze/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal,
     }),
 
   getResult: (sessionId: string): Promise<AnalysisResult> =>
@@ -1284,6 +1291,8 @@ export interface TroubleshootingAssistantResponse {
 export const systemApi = {
   selftest: (): Promise<SelfTestResult> =>
     http.get('/system/selftest').then(r => r.data),
+  normalizeTaxonomy: (): Promise<{ rows_changed: number; tables: Record<string, unknown> }> =>
+    http.post('/system/taxonomy/normalize').then(r => r.data),
   startup: (): Promise<StartupStatus> =>
     http.get('/system/startup').then(r => r.data),
   troubleshootingAssistant: (payload: TroubleshootingAssistantRequest): Promise<TroubleshootingAssistantResponse> =>
@@ -2472,7 +2481,115 @@ export interface ThreatHuntStats {
   by_priority: Record<string, number>;
 }
 
+export type ThreatHuntAIProviderId = 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
+export type ThreatHuntAIStage = 'plan' | 'query' | 'findings' | 'outcome';
+
+export interface ThreatHuntAIProvider {
+  id: ThreatHuntAIProviderId;
+  label: string;
+  model: string;
+  configured: boolean;
+  remote: boolean;
+  requires_acknowledgement: boolean;
+  default: boolean;
+}
+
+export interface ThreatHuntAICitation {
+  source_session_id?: string | null;
+  source_type: 'report' | 'research' | 'hunt' | 'query_version' | 'finding' | string;
+  source_ref: string;
+  quote: string;
+  start: number | null;
+  end: number | null;
+  verified: boolean;
+}
+
+export interface ThreatHuntAIAssistRequest {
+  provider: ThreatHuntAIProviderId;
+  model?: string;
+  stage: ThreatHuntAIStage;
+  hunt_id?: string;
+  context: ThreatHuntInput;
+  analyst_focus?: string;
+  cloud_processing_acknowledged: boolean;
+}
+
+export interface ThreatHuntAIAssistResponse {
+  assistance_id: string;
+  provider: ThreatHuntAIProviderId;
+  model: string;
+  stage: ThreatHuntAIStage;
+  lifecycle_status: 'suggested';
+  generated_at: string;
+  prompt_version: string;
+  summary: string;
+  recommended_actions: string[];
+  questions: string[];
+  evidence_gaps: string[];
+  cautions: string[];
+  suggested_patch: Partial<ThreatHuntInput>;
+  finding_drafts: Array<Partial<ThreatHuntFindingInput>>;
+  citations: ThreatHuntAICitation[];
+  warnings: string[];
+  requires_human_review: boolean;
+  execution_boundary: string;
+}
+
+export interface ThreatHuntAIHypothesisRequest {
+  provider: ThreatHuntAIProviderId;
+  model?: string;
+  source_session_id: string;
+  source_type: 'report' | 'research';
+  source_title?: string;
+  source_ref?: string;
+  tlp: ThreatHuntTlp;
+  analyst_focus?: string;
+  cloud_processing_acknowledged: boolean;
+}
+
+export interface ThreatHuntAIHypothesisCandidate {
+  title: string;
+  hypothesis: string;
+  description?: string;
+  scope?: string;
+  technique_ids?: string[];
+  tactics?: string[];
+  telemetry_sources?: string[];
+  required_fields?: string[];
+  tags?: string[];
+  query_language?: ThreatHuntQueryLanguage;
+  query_text?: string;
+  expected_evidence?: string;
+  false_positive_notes?: string;
+  assumptions?: string;
+  rationale: string;
+  source_evidence: ThreatHuntAICitation[];
+}
+
+export interface ThreatHuntAIHypothesisResponse {
+  assistance_id: string;
+  provider: ThreatHuntAIProviderId;
+  model: string;
+  lifecycle_status: 'suggested';
+  generated_at: string;
+  prompt_version: string;
+  source_session_id: string;
+  source_type: string;
+  source_title: string;
+  source_ref: string;
+  candidates: ThreatHuntAIHypothesisCandidate[];
+  warnings: string[];
+  requires_human_review: boolean;
+  execution_boundary: string;
+}
+
 export const threatHuntingApi = {
+  aiProviders: (): Promise<ThreatHuntAIProvider[]> =>
+    http.get('/threat-hunting/ai/providers', { skipGlobalError: true } as any).then(r => r.data),
+  assist: (body: ThreatHuntAIAssistRequest): Promise<ThreatHuntAIAssistResponse> =>
+    http.post('/threat-hunting/ai/assist', body, { skipGlobalError: true } as any).then(r => r.data),
+  generateHypotheses: (body: ThreatHuntAIHypothesisRequest): Promise<ThreatHuntAIHypothesisResponse> =>
+    http.post('/threat-hunting/ai/hypotheses', body, { skipGlobalError: true } as any).then(r => r.data),
   templates: (): Promise<ThreatHuntTemplate[]> =>
     http.get('/threat-hunting/templates').then(r => r.data),
   stats: (): Promise<ThreatHuntStats> =>

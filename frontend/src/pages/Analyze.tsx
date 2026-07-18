@@ -9,6 +9,8 @@ import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
 import { AddToInvestigationButton } from '@/components/AddToInvestigationButton';
 import type { ReportSession } from '@/types/attack';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 type AnalysisMode = 'cti' | 'log-pcap';
@@ -27,13 +29,17 @@ const LOG_PCAP_HISTORY_LIMIT = 20;
 const PROVIDERS: { id: Provider; label: string; model: string; color: string }[] = [
   { id: 'claude',  label: 'Claude',  model: 'claude-opus-4-8',  color: 'border-orange-600 bg-orange-900/20 text-orange-300' },
   { id: 'openai',  label: 'OpenAI',  model: 'gpt-4.1',           color: 'border-green-700  bg-green-900/20  text-green-300'  },
-  { id: 'gemini',  label: 'Gemini',  model: 'gemini-2.0-flash',  color: 'border-blue-600   bg-blue-900/20   text-blue-300'   },
+  { id: 'gemini',  label: 'Gemini',  model: 'gemini-3.5-flash',  color: 'border-blue-600   bg-blue-900/20   text-blue-300'   },
   { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M3',         color: 'border-violet-600 bg-violet-900/20 text-violet-300' },
   { id: 'local',   label: 'Local',   model: 'llama3.1:8b',        color: 'border-cyan-600   bg-cyan-900/20   text-cyan-300'   },
 ];
 
 export function Analyze() {
   const { domain, addTechniques, addComparisonLayer } = useAppStore();
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
+  const canUploadFiles = useHasPermission('upload_files');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -101,6 +107,7 @@ export function Analyze() {
   }, [queryClient, result?.session_id]);
 
   const handleRun = useCallback(async () => {
+    if (!canRunAnalysis || (file && !canUploadFiles)) return;
     const fd = new FormData();
     fd.append('provider', provider);
     fd.append('domain', domain);
@@ -116,10 +123,10 @@ export function Analyze() {
       logPcapMutation.mutate(fd);
       return;
     }
-    await run(analyzeApi.stream(fd));
-  }, [provider, domain, file, text, reset, mode, logPcapMutation, run]);
+    await run(signal => analyzeApi.stream(fd, signal));
+  }, [canRunAnalysis, canUploadFiles, provider, domain, file, text, reset, mode, logPcapMutation, run]);
 
-  const onDrop = useCallback(([f]: File[]) => { if (f) { setFile(f); setText(''); } }, []);
+  const onDrop = useCallback(([f]: File[]) => { if (canRunAnalysis && canUploadFiles && f) { setFile(f); setText(''); } }, [canRunAnalysis, canUploadFiles]);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -129,9 +136,10 @@ export function Analyze() {
       'application/vnd.tcpdump.pcap': ['.pcap', '.pcapng', '.cap'],
     },
     maxFiles: 1,
+    disabled: !canRunAnalysis || !canUploadFiles,
   });
 
-  const canSubmit = (!!text.trim() || !!file) && !streaming && !logPcapMutation.isPending;
+  const canSubmit = canRunAnalysis && (!!text.trim() || (!!file && canUploadFiles)) && !streaming && !logPcapMutation.isPending;
 
   return (
     <div className="flex flex-col h-full">
@@ -149,6 +157,7 @@ export function Analyze() {
               {PROVIDERS.map(p => (
                 <button
                   key={p.id}
+                  disabled={!canRunAnalysis}
                   onClick={() => setProvider(p.id)}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                     provider === p.id ? p.color : 'border-gray-700 text-gray-500 hover:text-gray-300'
@@ -166,6 +175,7 @@ export function Analyze() {
             <div className="mb-3 grid grid-cols-2 gap-1 rounded bg-gray-950 p-1 text-xs">
               <button
                 type="button"
+                disabled={!canRunAnalysis}
                 onClick={() => setMode('cti')}
                 className={`rounded px-2 py-1.5 ${mode === 'cti' ? 'bg-mitre-accent text-white' : 'text-gray-500 hover:text-gray-300'}`}
               >
@@ -173,6 +183,7 @@ export function Analyze() {
               </button>
               <button
                 type="button"
+                disabled={!canRunAnalysis}
                 onClick={() => setMode('log-pcap')}
                 className={`rounded px-2 py-1.5 ${mode === 'log-pcap' ? 'bg-mitre-accent text-white' : 'text-gray-500 hover:text-gray-300'}`}
               >
@@ -186,6 +197,7 @@ export function Analyze() {
             )}
             <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Paste text</div>
             <textarea
+              disabled={!canRunAnalysis}
               value={text}
               onChange={e => { setText(e.target.value); setFile(null); }}
               rows={8}
@@ -215,11 +227,13 @@ export function Analyze() {
                   <p className="text-gray-600">{isDragActive ? 'Drop here' : 'Drag & drop or click'}</p>
                 )}
               </div>
+              {!canUploadFiles && <div className="mt-2"><PermissionNotice permission="upload_files" action="upload report, log, or PCAP files" compact /></div>}
             </div>
           </div>
 
           {/* Submit */}
           <div className="p-4 border-b border-gray-800">
+            {!canRunAnalysis && <div className="mb-3"><PermissionNotice permission="run_analysis" action="submit CTI, log, or PCAP analysis" compact /></div>}
             {streaming ? (
               <button
                 onClick={abort}
@@ -283,6 +297,8 @@ export function Analyze() {
               activeSessionId={activeResult?.session_id ?? null}
               loadingSessionId={loadReportMutation.variables ?? null}
               deletingSessionId={deleteReportMutation.variables ?? null}
+              canDelete={canManageIntel}
+              canExport={canExport}
               onOpen={sessionId => loadReportMutation.mutate(sessionId)}
               onDelete={sessionId => {
                 if (window.confirm('Delete this stored analysis?')) {
@@ -370,6 +386,7 @@ function LogPcapResultView({
   addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
+  const canExport = useHasPermission('export_data');
   const ttpIds = result.techniques.filter(item => item.review_status !== 'rejected').map(item => item.attack_id);
   const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].includes(item.type));
   const expectedBehaviors = buildExpectedSuspiciousBehaviors(result);
@@ -468,8 +485,8 @@ function LogPcapResultView({
             />
             <button onClick={addToMyTtps} disabled={!ttpIds.length} className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">+ My TTPs</button>
             <button onClick={compareOnMatrix} disabled={!ttpIds.length} className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">⇄ Matrix compare</button>
-            <button onClick={() => downloadReport('md')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ MD report</button>
-            <button onClick={() => downloadReport('txt')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ TXT report</button>
+            {canExport && <button onClick={() => downloadReport('md')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ MD report</button>}
+            {canExport && <button onClick={() => downloadReport('txt')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ TXT report</button>}
           </div>
         </div>
       </div>
@@ -560,6 +577,8 @@ function PreviousAnalysisList({
   deletingSessionId,
   onOpen,
   onDelete,
+  canDelete,
+  canExport,
 }: {
   reports: ReportSession[];
   loading: boolean;
@@ -568,6 +587,8 @@ function PreviousAnalysisList({
   deletingSessionId: string | null;
   onOpen: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
+  canDelete: boolean;
+  canExport: boolean;
 }) {
   return (
     <div className="min-h-[180px] max-h-[320px] flex flex-col">
@@ -611,34 +632,34 @@ function PreviousAnalysisList({
                 </div>
               </button>
               <div className="mt-2 flex items-center gap-2">
-                <a
+                {canExport && <a
                   href={exportApi.analysisUrl(report.session_id)}
                   download={`analysis-${report.session_id.slice(0, 8)}.pdf`}
                   className="text-[10px] text-gray-500 hover:text-gray-200"
                 >
                   PDF
-                </a>
-                <a
+                </a>}
+                {canExport && <a
                   href={exportApi.analysisStixUrl(report.session_id)}
                   download={`analysis-${report.session_id.slice(0, 8)}-opencti.stix.json`}
                   className="text-[10px] text-gray-500 hover:text-gray-200"
                 >
                   STIX
-                </a>
+                </a>}
                 <a
                   href={`/analyze/${report.session_id}/report`}
                   className="text-[10px] text-mitre-accent hover:text-red-300"
                 >
                   Linked report
                 </a>
-                <button
+                {canDelete && <button
                   type="button"
                   onClick={() => onDelete(report.session_id)}
                   className="ml-auto text-[10px] text-gray-600 hover:text-red-400"
                   disabled={isDeleting}
                 >
                   {isDeleting ? 'Deleting...' : 'Delete'}
-                </button>
+                </button>}
               </div>
             </div>
           );
@@ -725,6 +746,8 @@ function ResultsView({
   addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
+  const canManageIntel = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
   const [tab, setTab] = useState<'techniques' | 'groups' | 'raw'>('techniques');
   const [displayResult, setDisplayResult] = useState(result);
 
@@ -779,7 +802,7 @@ function ResultsView({
     navigate('/navigator');
   };
 
-  const canReview = result.session_id !== 'stream';
+  const canReview = canManageIntel && result.session_id !== 'stream';
   const canInject = acceptedTechniqueIds().length > 0;
   const acceptedCount = displayResult.techniques.filter(t => t.review_status === 'accepted').length;
   const needsEvidenceCount = displayResult.techniques.filter(t => t.review_status === 'needs-evidence').length;
@@ -844,21 +867,21 @@ function ResultsView({
               disabled={!canInject && !displayResult.summary}
               className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded"
             />
-            <a
+            {canExport && <a
               href={exportApi.analysisUrl(displayResult.session_id)}
               download={`analysis-${displayResult.session_id.slice(0, 8)}.pdf`}
               className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
             >
               ↓ PDF report
-            </a>
-            <a
+            </a>}
+            {canExport && <a
               href={exportApi.analysisStixUrl(displayResult.session_id)}
               download={`analysis-${displayResult.session_id.slice(0, 8)}-opencti.stix.json`}
               className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition-colors"
               title="Download a STIX 2.1 bundle for OpenCTI import"
             >
               ↓ STIX/OpenCTI
-            </a>
+            </a>}
             {canReview && (
               <a
                 href={`/analyze/${displayResult.session_id}/report`}

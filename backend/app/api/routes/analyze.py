@@ -12,37 +12,56 @@ import logging
 import re
 import uuid
 import ipaddress
+from dataclasses import asdict
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Annotated, Any, AsyncIterator
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete as sql_delete, select
+from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import get_session
-from app.core.safe_http import async_safe_get
+from app.core.config import settings
+from app.core.safe_http import ResponseTooLargeError, async_safe_get
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
 from app.models.ioc import IOCIndicator
 from app.models.operations import ReportIntake
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.auth import TeamUser, audit, current_user, has_permission, require_permission
 from app.services.asset_intel import retrohunt_assets
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
+run_analysis = require_permission("run_analysis")
+manage_reports = require_permission("manage_intel")
 logger = logging.getLogger(__name__)
 
 ALLOWED_PROVIDERS = {"claude", "openai", "gemini", "minimax", "local"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_SOURCE_URL_LENGTH = 1000
+MAX_CHAT_MESSAGE_CHARS = 12_000
+_ANALYSIS_FAILURE = "Analysis processing failed. See server logs."
+_STREAM_STORAGE_FAILURE = "Analysis result storage failed. See server logs."
+_URL_INGEST_FAILURE = "URL report ingestion failed. See server logs."
+
+
+def _log_failure(message: str, exc: Exception) -> None:
+    """Log failure type without copying untrusted exception text into logs."""
+    logger.error("%s (%s)", message, type(exc).__name__)
+
+
+def _require_upload_permission(user: TeamUser, file: UploadFile | None) -> None:
+    if file is not None and settings.auth_enabled and not has_permission(user, "upload_files"):
+        raise HTTPException(403, "Permission required: upload_files")
 
 
 async def _retrohunt_assets_after_report_ingest(session: AsyncSession, *, source: str) -> dict[str, Any] | None:
@@ -51,7 +70,7 @@ async def _retrohunt_assets_after_report_ingest(session: AsyncSession, *, source
         logger.info("Asset retrohunt after %s: %s", source, summary)
         return summary
     except Exception as exc:
-        logger.warning("Asset retrohunt after %s failed: %s", source, exc, exc_info=True)
+        logger.warning("Asset retrohunt after %s failed (%s)", source, type(exc).__name__)
         return None
 
 
@@ -112,6 +131,7 @@ class LinkedReportOut(BaseModel):
     provider: str
     model: str
     domain: str
+    tlp: str
     created_at: str
     source_text: str
     source_text_available: bool
@@ -142,6 +162,7 @@ class ReportCollectionItem(BaseModel):
     provider: str
     model: str
     domain: str
+    tlp: str
     created_at: str
     updated_at: str
     summary: str
@@ -165,6 +186,7 @@ class StoredResearchOut(BaseModel):
     source_url: str = ""
     source_text_available: bool
     summary: str
+    tlp: str
 
 
 class UrlReportFetch(BaseModel):
@@ -179,6 +201,7 @@ class UrlReportFetch(BaseModel):
 _MODEL_RE = re.compile(r'^[\w./:@-]{1,100}$')
 _MAX_STORED_REPORT_TEXT = 120_000
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
+_REPORT_TLP_PATTERN = r"^(TLP:CLEAR|TLP:GREEN|TLP:AMBER|TLP:AMBER\+STRICT|TLP:RED)$"
 
 
 class SessionListItem(BaseModel):
@@ -188,14 +211,17 @@ class SessionListItem(BaseModel):
     provider: str
     model: str
     domain: str
+    tlp: str
     filename: str | None
     created_at: str
     technique_count: int
 
 
 class ChatRequest(BaseModel):
-    message: str
-    provider: str = "claude"
+    model_config = {"extra": "forbid"}
+
+    message: str = Field(..., min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
+    provider: str = Field(default="claude", max_length=20)
     model: str | None = Field(default=None, max_length=100)
     context: str = Field(default="", max_length=8000)
     system_prompt: str | None = Field(default=None, max_length=5000)
@@ -214,6 +240,7 @@ class ReportEditRequest(BaseModel):
     source_url: str | None = Field(default=None, max_length=1000)
     publisher: str | None = Field(default=None, max_length=255)
     summary: str | None = Field(default=None, max_length=5000)
+    tlp: str | None = Field(default=None, pattern=_REPORT_TLP_PATTERN)
 
 
 class ReportReparseRequest(BaseModel):
@@ -258,8 +285,9 @@ async def analyze(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
-    user:     TeamUser = Depends(analyst),
+    user:     TeamUser = Depends(run_analysis),
 ):
+    _require_upload_permission(user, file)
     body, filename = await _read_input(text, file)
     adapter = _get_adapter(provider, model)
 
@@ -272,6 +300,7 @@ async def analyze(
         llm_provider=provider,
         model=adapter.model,
         domain=domain,
+        tlp="TLP:AMBER+STRICT",
         source_text=body[:_MAX_STORED_REPORT_TEXT],
     )
     session.add(db_session)
@@ -287,9 +316,9 @@ async def analyze(
         await session.commit()
     except Exception as exc:
         db_session.status = "failed"
-        db_session.error = str(exc)
+        db_session.error = _ANALYSIS_FAILURE
         await session.commit()
-        logger.error("Analysis failed: %s", exc, exc_info=True)
+        _log_failure("Analysis failed", exc)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     return _build_out(session_id, adapter.provider, adapter.model, result, apt_matches)
@@ -306,7 +335,7 @@ async def analyze_stream(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
-    user:     TeamUser = Depends(analyst),
+    user:     TeamUser = Depends(run_analysis),
 ):
     """
     Streams SSE events:
@@ -314,6 +343,7 @@ async def analyze_stream(
       data: {"type":"result","data":{...}}   ← final parsed result
       data: {"type":"error","message":"..."}
     """
+    _require_upload_permission(user, file)
     body, filename = await _read_input(text, file)
     adapter = _get_adapter(provider, model)
 
@@ -325,6 +355,7 @@ async def analyze_stream(
         llm_provider=provider,
         model=adapter.model,
         domain=domain,
+        tlp="TLP:AMBER+STRICT",
         source_text=body[:_MAX_STORED_REPORT_TEXT],
     )
 
@@ -357,9 +388,9 @@ async def analyze_stream(
                         await fresh.commit()
                     except Exception as store_exc:
                         db_s.status = "failed"
-                        db_s.error = str(store_exc)
+                        db_s.error = _STREAM_STORAGE_FAILURE
                         await fresh.commit()
-                        logger.error("Stream DB write failed: %s", store_exc, exc_info=True)
+                        _log_failure("Stream DB write failed", store_exc)
                         yield _sse({"type": "error", "message": "Operation failed. See server logs."})
                         return
                 else:
@@ -369,7 +400,7 @@ async def analyze_stream(
             yield _sse({"type": "result", "data": out.model_dump()})
 
         except Exception as exc:
-            logger.error("Stream failed: %s", exc, exc_info=True)
+            _log_failure("Stream failed", exc)
             yield _sse({"type": "error", "message": "Operation failed. See server logs."})
 
     return StreamingResponse(
@@ -390,8 +421,9 @@ async def analyze_log_pcap(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
-    user:     TeamUser = Depends(analyst),
+    user:     TeamUser = Depends(run_analysis),
 ):
+    _require_upload_permission(user, file)
     body, filename = await _read_log_input(text, file)
     if not body.strip():
         raise HTTPException(400, "Uploaded log/pcap did not contain extractable text")
@@ -407,7 +439,7 @@ async def analyze_log_pcap(
         apt_matches = await _rank_apt_groups(result, domain, session)
         await audit(session, user, "analyze.log_pcap", "analysis_session", details={"provider": provider, "domain": domain, "filename": filename, "technique_count": len(result.techniques)})
     except Exception as exc:
-        logger.error("Log/PCAP AI analysis failed: %s", exc, exc_info=True)
+        _log_failure("Log/PCAP AI analysis failed", exc)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     report = _build_log_pcap_report(filename, result, observables, suspicious, apt_matches)
@@ -444,7 +476,7 @@ async def store_research(
     text:     Annotated[str | None, Form()] = None,
     file:     UploadFile | None = File(default=None),
     session:  AsyncSession = Depends(get_session),
-    user:     TeamUser = Depends(analyst),
+    user:     TeamUser = Depends(manage_reports),
 ):
     """
     Store a research/report document without LLM parsing.
@@ -452,6 +484,7 @@ async def store_research(
     This keeps the source available in Reports / Research and the linked report
     page while making it explicit that no ATT&CK extraction has been performed.
     """
+    _require_upload_permission(user, file)
     body, filename = await _read_input(text, file)
     title = (name or filename or "Unparsed research").strip()[:255]
     source_text = body[:_MAX_STORED_REPORT_TEXT]
@@ -465,6 +498,7 @@ async def store_research(
         llm_provider="none",
         model="not-parsed",
         domain=domain,
+        tlp="TLP:AMBER+STRICT",
         source_text=source_text,
     )
     session.add(db_session)
@@ -492,6 +526,7 @@ async def store_research(
         source_url="",
         source_text_available=bool(source_text.strip()),
         summary=summary,
+        tlp=db_session.tlp,
     )
 
 
@@ -504,11 +539,17 @@ async def ingest_research_url(
     name:     Annotated[str | None, Form()] = None,
     parse_with_ai: Annotated[bool, Form()] = True,
     session:  AsyncSession = Depends(get_session),
-    user:     TeamUser = Depends(analyst),
+    user:     TeamUser = Depends(manage_reports),
 ):
     """Fetch a public report URL, store source text/images, and optionally parse it with AI."""
     fetched = await _fetch_report_url(url)
-    title = (name or fetched.title or fetched.source_url).strip()[:255]
+    source_url = _redact_url_secrets(fetched.source_url)
+    report_images = [
+        image.model_copy(update={"url": _redact_url_secrets(image.url)})
+        for image in fetched.report_images
+        if _is_public_http_url(image.url)
+    ][:80]
+    title = (name or fetched.title or source_url).strip()[:255]
     source_text = fetched.source_text[:_MAX_STORED_REPORT_TEXT]
     if not source_text.strip():
         raise HTTPException(400, "Report URL did not contain extractable text")
@@ -518,10 +559,11 @@ async def ingest_research_url(
         status="processing" if parse_with_ai else "completed",
         name=title,
         input_type="url",
-        filename=fetched.source_url,
+        filename=source_url[:500],
         llm_provider=adapter.provider if adapter else "none",
         model=adapter.model if adapter else "not-parsed",
         domain=domain,
+        tlp="TLP:AMBER+STRICT",
         source_text=source_text,
     )
     session.add(db_session)
@@ -535,7 +577,7 @@ async def ingest_research_url(
             await _store_result(db_session, result, apt_matches, session)
             summary = result.summary
         else:
-            summary = _research_storage_summary(fetched.source_text, fetched.source_url)
+            summary = _research_storage_summary(fetched.source_text, source_url)
             session.add(AnalysisResult(
                 session_id=db_session.id,
                 extracted_techniques=[],
@@ -547,36 +589,40 @@ async def ingest_research_url(
         notes = {
             "analysis_session_id": str(db_session.id),
             "source_kind": "url-report",
-            "source_url": fetched.source_url,
+            "source_url": source_url,
             "content_type": fetched.content_type,
-            "report_images": [image.model_dump() for image in fetched.report_images],
+            "report_images": [image.model_dump() for image in report_images],
             "metadata": fetched.metadata,
         }
         session.add(ReportIntake(
             title=title,
-            url=fetched.source_url,
-            publisher=_publisher_from_url(fetched.source_url),
+            url=source_url,
+            publisher=_publisher_from_url(source_url),
             status="analyzed" if parse_with_ai else "stored",
             summary=summary[:5000],
             source_reliability="unknown",
             actor_ids=[],
             technique_ids=[tech.attack_id for tech in result.techniques] if adapter else [],
-            indicators=[item.model_dump() for item in extract_iocs_from_text(fetched.source_text, source_id="report-url", confidence=70)[:200]],
+            indicators=[asdict(item) for item in extract_iocs_from_text(
+                fetched.source_text,
+                source_id="report-url",
+                confidence=70,
+            )[:200]],
             analyst_notes=json.dumps(notes, ensure_ascii=False),
         ))
         await _retrohunt_assets_after_report_ingest(session, source="url-report")
         await audit(session, user, "analyze.ingest_research_url", "analysis_session", str(db_session.id), {
             "domain": domain,
-            "source_url": fetched.source_url,
+            "source_url": source_url,
             "parse_with_ai": parse_with_ai,
-            "image_count": len(fetched.report_images),
+            "image_count": len(report_images),
         })
         await session.commit()
     except Exception as exc:
         db_session.status = "failed"
-        db_session.error = str(exc)
+        db_session.error = _URL_INGEST_FAILURE
         await session.commit()
-        logger.error("URL report ingestion failed: %s", exc, exc_info=True)
+        _log_failure("URL report ingestion failed", exc)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     return StoredResearchOut(
@@ -584,9 +630,10 @@ async def ingest_research_url(
         status="completed",
         title=title,
         filename=None,
-        source_url=fetched.source_url,
+        source_url=source_url,
         source_text_available=bool(source_text.strip()),
         summary=summary,
+        tlp=db_session.tlp,
     )
 
 
@@ -596,8 +643,8 @@ async def ingest_research_url(
 @router.get("/sessions", response_model=list[SessionListItem])
 async def list_sessions(
     db: AsyncSession = Depends(get_session),
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=250),
+    offset: int = Query(0, ge=0),
     _: TeamUser = Depends(current_user),
 ):
     """
@@ -622,7 +669,8 @@ async def list_sessions(
             provider=sess.llm_provider,
             model=sess.model,
             domain=sess.domain,
-            filename=sess.filename,
+            tlp=_stored_report_tlp(sess.tlp),
+            filename=_redact_url_secrets(sess.filename or "", limit=500) if sess.input_type == "url" else sess.filename,
             created_at=sess.created_at.isoformat(),
             technique_count=technique_count,
         ))
@@ -632,8 +680,8 @@ async def list_sessions(
 @router.get("/sessions/collection", response_model=ReportCollectionOut)
 async def report_collection(
     db: AsyncSession = Depends(get_session),
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=250),
+    offset: int = Query(0, ge=0),
     _: TeamUser = Depends(current_user),
 ):
     """
@@ -643,15 +691,19 @@ async def report_collection(
     tags so analysts can browse the research collection without opening every
     individual linked report.
     """
-    safe_limit = min(max(limit, 1), 250)
-    safe_offset = max(offset, 0)
+    total = int(await db.scalar(
+        select(func.count(AnalysisSession.id))
+        .select_from(AnalysisSession)
+        .join(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+        .where(AnalysisSession.status == "completed")
+    ) or 0)
     rows = await db.execute(
         select(AnalysisSession, AnalysisResult)
         .join(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
         .where(AnalysisSession.status == "completed")
         .order_by(AnalysisSession.created_at.desc())
-        .limit(safe_limit)
-        .offset(safe_offset)
+        .limit(limit)
+        .offset(offset)
     )
     pairs = rows.all()
     items: list[ReportCollectionItem] = []
@@ -665,15 +717,17 @@ async def report_collection(
         apt_matches = [AptMatch(**item) for item in res.apt_matches]
         entities = await _linked_report_entities(db, sess, res, intake, source_text, techniques, apt_matches)
         tags = _report_collection_tags(sess, res, intake, source_text, entities)
+        safe_filename = _redact_url_secrets(sess.filename or "", limit=500) if sess.input_type == "url" else (sess.filename or "")
         items.append(ReportCollectionItem(
             session_id=str(sess.id),
-            title=sess.name or sess.filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
-            source_url=intake.url if intake else "",
+            title=sess.name or safe_filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
+            source_url=_redact_url_secrets(intake.url) if intake else "",
             publisher=intake.publisher if intake else "",
             status=intake.status if intake else sess.status,
             provider=sess.llm_provider,
             model=sess.model,
             domain=sess.domain,
+            tlp=_stored_report_tlp(sess.tlp),
             created_at=sess.created_at.isoformat(),
             updated_at=sess.updated_at.isoformat() if sess.updated_at else sess.created_at.isoformat(),
             summary=res.summary,
@@ -682,7 +736,7 @@ async def report_collection(
             tags=tags,
         ))
 
-    return ReportCollectionOut(total=safe_offset + len(items), limit=safe_limit, offset=safe_offset, items=items)
+    return ReportCollectionOut(total=total, limit=limit, offset=offset, items=items)
 
 
 # ── Compare a stored report against MITRE actors ──────────────────────────────
@@ -693,7 +747,7 @@ async def compare_session(
     session_id: str,
     top_n: int = 10,
     db: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_analysis),
 ):
     """
     Re-run Jaccard comparison for a stored report session against all group profiles
@@ -775,6 +829,7 @@ async def linked_report(
         provider=sess.llm_provider,
         model=sess.model,
         domain=sess.domain,
+        tlp=_stored_report_tlp(sess.tlp),
         created_at=sess.created_at.isoformat(),
         source_text=source_text[:_MAX_STORED_REPORT_TEXT],
         source_text_available=source_text_available,
@@ -793,7 +848,7 @@ async def edit_linked_report(
     session_id: str,
     body: ReportEditRequest,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_reports),
 ):
     """Edit stored report title, source text, source URL, publisher, or analyst summary."""
     try:
@@ -828,13 +883,18 @@ async def edit_linked_report(
         source_url = body.source_url.strip()
         if source_url and not _is_public_http_url(source_url):
             raise HTTPException(400, "Source URL must be public http/https")
-        sess.filename = source_url or sess.filename
+        safe_source_url = _redact_url_secrets(source_url)
+        sess.filename = safe_source_url[:500] or sess.filename
         if intake:
-            intake.url = source_url
+            intake.url = safe_source_url
     if body.publisher is not None and intake:
         intake.publisher = body.publisher.strip()[:255]
+    if body.tlp is not None:
+        sess.tlp = body.tlp
 
-    await audit(db, user, "analyze.edit_linked_report", "analysis_session", session_id)
+    await audit(db, user, "analyze.edit_linked_report", "analysis_session", session_id, {
+        "tlp": sess.tlp,
+    })
     await db.commit()
     return await linked_report(session_id, db, user)
 
@@ -844,7 +904,7 @@ async def reparse_linked_report(
     session_id: str,
     body: ReportReparseRequest,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_reports),
 ):
     """Run AI extraction again over the stored raw report text."""
     try:
@@ -892,7 +952,7 @@ async def reparse_linked_report(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Report reparse failed: %s", exc, exc_info=True)
+        _log_failure("Report reparse failed", exc)
         raise HTTPException(500, "Operation failed. See server logs.") from exc
 
     return _build_out(session_id, adapter.provider, adapter.model, result, apt_matches)
@@ -905,7 +965,7 @@ async def reparse_linked_report(
 async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_reports),
 ):
     try:
         sid = uuid.UUID(session_id)
@@ -931,7 +991,7 @@ async def update_technique_review(
     attack_id: str,
     body: TechniqueReviewUpdate,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_reports),
 ):
     try:
         sid = uuid.UUID(session_id)
@@ -1012,7 +1072,7 @@ async def get_result(
 # ── Single-turn LLM chat ──────────────────────────────────────────────────────
 
 @router.post("/chat")
-async def chat(req: ChatRequest, _: TeamUser = Depends(analyst)):
+async def chat(req: ChatRequest, _: TeamUser = Depends(run_analysis)):
     """
     Analyst asks a free-form question about ATT&CK, a technique, or a TTP set.
     Returns a streaming SSE response of plain text (not JSON).
@@ -1035,7 +1095,7 @@ async def chat(req: ChatRequest, _: TeamUser = Depends(analyst)):
                 yield _sse({"type": "token", "content": token})
             yield _sse({"type": "done"})
         except Exception as exc:
-            logger.error("Chat stream failed: %s", exc, exc_info=True)
+            _log_failure("Chat stream failed", exc)
             yield _sse({"type": "error", "message": "Operation failed. See server logs."})
 
     return StreamingResponse(
@@ -1058,13 +1118,14 @@ async def _find_report_intake_for_session(db: AsyncSession, session_id: str) -> 
 
 
 def _fallback_report_text(sess: AnalysisSession, res: AnalysisResult, intake: ReportIntake | None) -> str:
+    safe_filename = _redact_url_secrets(sess.filename or "", limit=500) if sess.input_type == "url" else (sess.filename or "")
     lines = [
-        sess.name or sess.filename or f"Analysis {sess.id}",
+        sess.name or safe_filename or f"Analysis {sess.id}",
         "",
     ]
     if intake:
         lines.extend([
-            f"Source URL: {intake.url or 'not provided'}",
+            f"Source URL: {_redact_url_secrets(intake.url) or 'not provided'}",
             f"Publisher: {intake.publisher or 'unknown'}",
             f"Reliability: {intake.source_reliability or 'unknown'}",
             "",
@@ -1102,20 +1163,30 @@ def _research_storage_summary(text: str, filename: str | None) -> str:
     ).strip()
 
 
+def _stored_report_tlp(value: str | None) -> str:
+    allowed = {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}
+    return value if value in allowed else "TLP:AMBER+STRICT"
+
+
 async def _fetch_report_url(url: str) -> UrlReportFetch:
     source_url = url.strip()
-    if not _is_public_http_url(source_url):
+    if len(source_url) > 4096 or not _is_public_http_url(source_url):
         raise HTTPException(400, "Report URL must use http or https and include a host")
     try:
         response = await async_safe_get(
             source_url,
             timeout=30,
+            max_bytes=MAX_UPLOAD_BYTES,
             headers={"User-Agent": "AdversaryGraph-ReportIngest/1.0", "Accept": "text/html,application/pdf,text/plain,*/*;q=0.8"},
         )
+    except ResponseTooLargeError as exc:
+        raise HTTPException(413, "Fetched report exceeds 50 MB limit") from exc
     except ValueError as exc:
-        raise HTTPException(400, f"Unsafe report URL blocked: {exc}") from exc
+        logger.warning("Report URL blocked by outbound policy: %s", type(exc).__name__)
+        raise HTTPException(400, "Report URL is not allowed by the outbound network policy") from exc
     except Exception as exc:
-        raise HTTPException(502, f"Report URL fetch failed: {exc}") from exc
+        logger.warning("Report URL fetch failed: %s", type(exc).__name__)
+        raise HTTPException(502, "Report URL could not be fetched. See server logs.") from exc
 
     if response.status_code >= 400:
         raise HTTPException(400, f"Report URL returned HTTP {response.status_code}")
@@ -1123,8 +1194,9 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Fetched report exceeds 50 MB limit")
     content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    final_url = str(response.url) if str(response.url) else source_url
-    filename = urlparse(final_url).path.rsplit("/", 1)[-1] or "remote-report"
+    raw_final_url = str(response.url) if str(response.url) else source_url
+    final_url = _redact_url_secrets(raw_final_url)
+    filename = urlparse(raw_final_url).path.rsplit("/", 1)[-1] or "remote-report"
 
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
         text = extract_text(content, filename if filename.lower().endswith(".pdf") else "remote-report.pdf")
@@ -1139,7 +1211,7 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
 
     if content_type in {"text/html", "application/xhtml+xml", ""} or filename.lower().endswith((".html", ".htm", "/")):
         decoded = _decode_response_text(response)
-        parsed = _extract_html_report(decoded, final_url)
+        parsed = _extract_html_report(decoded, raw_final_url)
         return UrlReportFetch(
             title=parsed["title"] or filename or final_url,
             source_url=final_url,
@@ -1253,8 +1325,11 @@ class _ReportHTMLParser(HTMLParser):
         raw_src = attr.get("src") or attr.get("data-src") or attr.get("data-original") or _first_srcset_url(attr.get("srcset", ""))
         if not raw_src:
             return
-        image_url = urljoin(self.base_url, raw_src.strip())
-        if not _is_public_http_url(image_url) or image_url in self._seen_images or self._is_noise_image(attr, image_url):
+        raw_image_url = urljoin(self.base_url, raw_src.strip())
+        if not _is_public_http_url(raw_image_url):
+            return
+        image_url = _redact_url_secrets(raw_image_url)
+        if image_url in self._seen_images or self._is_noise_image(attr, image_url):
             return
         self._seen_images.add(image_url)
         alt = re.sub(r"\s+", " ", attr.get("alt", "")).strip()[:300]
@@ -1327,9 +1402,73 @@ def _decode_response_text(response) -> str:
         return response.content.decode("utf-8", errors="replace")
 
 
-def _is_public_http_url(url: str) -> bool:
-    parsed = urlparse(url)
+def _is_sensitive_query_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    if normalized in {"auth", "authorization", "bearer", "jwt", "key", "sig", "signature"}:
+        return True
+    return any(
+        marker in normalized
+        for marker in (
+            "accesskey",
+            "accesstoken",
+            "apikey",
+            "assertion",
+            "clientsecret",
+            "credential",
+            "password",
+            "privatekey",
+            "refreshtoken",
+            "samlresponse",
+            "secret",
+            "secretkey",
+            "sessionid",
+            "sharedaccesssignature",
+            "subscriptionkey",
+            "ticket",
+            "token",
+        )
+    )
+
+
+def _redact_url_secrets(url: str, *, limit: int = MAX_SOURCE_URL_LENGTH) -> str:
+    """Remove URL userinfo and redact credential-like query values."""
+    value = str(url or "").strip()
+    if not value or limit <= 0:
+        return ""
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return ""
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return value[:limit]
+
+    try:
+        query_items = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=100)
+    except ValueError:
+        safe_query = ""
+    else:
+        safe_query = urlencode(
+            [
+                (key, "REDACTED" if _is_sensitive_query_key(key) else item_value)
+                for key, item_value in query_items
+            ],
+            doseq=True,
+        )
+    # The server never needs URL fragments, and OAuth-style fragments may
+    # carry access tokens. Removing userinfo also covers legacy embedded basic
+    # authentication without ever copying it to storage or API responses.
+    safe_netloc = parsed.netloc.rsplit("@", 1)[-1]
+    return parsed._replace(netloc=safe_netloc, query=safe_query, fragment="").geturl()[:limit]
+
+
+def _is_public_http_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username is not None or parsed.password is not None:
         return False
     hostname = parsed.hostname.lower().strip("[]")
     if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".localhost"):
@@ -1357,7 +1496,7 @@ def _report_intake_dict(intake: ReportIntake) -> dict[str, Any]:
     return {
         "id": str(intake.id),
         "title": intake.title,
-        "url": intake.url,
+        "url": _redact_url_secrets(intake.url),
         "publisher": intake.publisher,
         "status": intake.status,
         "source_reliability": intake.source_reliability,
@@ -1384,8 +1523,11 @@ def _report_images_from_intake(intake: ReportIntake | None) -> list[LinkedReport
     for image in images:
         if not isinstance(image, dict):
             continue
-        url = str(image.get("url") or "").strip()
-        if not _is_public_http_url(url) or url in seen:
+        raw_url = str(image.get("url") or "").strip()
+        if not _is_public_http_url(raw_url):
+            continue
+        url = _redact_url_secrets(raw_url)
+        if url in seen:
             continue
         seen.add(url)
         result.append(LinkedReportImage(
@@ -1415,14 +1557,15 @@ def _report_collection_tags(
         "sectors": [],
         "infrastructure": [],
     }
+    safe_filename = _redact_url_secrets(sess.filename or "", limit=500) if sess.input_type == "url" else (sess.filename or "")
     tags["reports"].append(_collection_tag(
         "report",
-        sess.name or sess.filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
+        sess.name or safe_filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
         str(sess.id),
         f"/analyze/{sess.id}/report",
         100,
         {
-            "source_url": intake.url if intake else "",
+            "source_url": _redact_url_secrets(intake.url) if intake else "",
             "publisher": intake.publisher if intake else "",
             "image_count": len(_report_images_from_intake(intake)),
         },
@@ -1691,17 +1834,17 @@ async def _linked_report_entities(
                 .order_by(IOCIndicator.id.asc())
                 .limit(300)
             )
-            for item in rows.scalars().all():
+            for indicator in rows.scalars().all():
                 entities.append(LinkedReportEntity(
                     type="ioc",
-                    id=str(item.id),
-                    label=item.value,
-                    value=item.value,
-                    route=f"/ioc-library/{item.id}",
+                    id=str(indicator.id),
+                    label=indicator.value,
+                    value=indicator.value,
+                    route=f"/ioc-library/{indicator.id}",
                     metadata={
-                        "ioc_type": item.indicator_type,
-                        "confidence": item.confidence,
-                        "source": item.source_id,
+                        "ioc_type": indicator.indicator_type,
+                        "confidence": indicator.confidence,
+                        "source": indicator.source_id,
                     },
                 ))
 
@@ -1765,7 +1908,10 @@ async def _read_input(
         raw = b"".join(chunks)
         return extract_text(raw, file.filename or "upload"), file.filename
     if text and text.strip():
-        return text.strip(), None
+        clean_text = text.strip()
+        if len(clean_text.encode("utf-8")) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Text input exceeds 50 MB limit")
+        return clean_text, None
     raise HTTPException(400, "Provide either 'text' or 'file'")
 
 
@@ -1789,7 +1935,10 @@ async def _read_log_input(text: str | None, file: UploadFile | None) -> tuple[st
             return _extract_strings(raw), name
         return extract_text(raw, name), name
     if text and text.strip():
-        return text.strip(), None
+        clean_text = text.strip()
+        if len(clean_text.encode("utf-8")) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Text input exceeds 50 MB limit")
+        return clean_text, None
     raise HTTPException(400, "Provide either 'text' or 'file'")
 
 
@@ -1914,7 +2063,8 @@ def _get_adapter(provider: str, model: str | None):
     try:
         return get_adapter(provider, model)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        logger.warning("AI adapter configuration rejected (%s)", type(exc).__name__)
+        raise HTTPException(400, "AI provider configuration is invalid") from exc
 
 
 async def _validate_technique_ids(

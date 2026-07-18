@@ -31,10 +31,11 @@ const config = {
 
   deploymentBranch: 'gh-pages',
   trailingSlash: true,
-  onBrokenLinks: 'warn',
+  onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
   markdown: {
     hooks: {
-      onBrokenMarkdownLinks: 'warn',
+      onBrokenMarkdownLinks: 'throw',
     },
   },
   i18n: {
@@ -50,6 +51,7 @@ const config = {
           path: 'docs',
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
+          rehypePlugins: [[require('./src/rehype/explicitAnchors'), {}]],
         },
         blog: false,
         theme: {

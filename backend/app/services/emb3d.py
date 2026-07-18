@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import requests
-
+from app.core.safe_http import safe_get
 from app.models.asset_surface import AssetRegistryItem
 
 
@@ -156,22 +155,22 @@ def assess_assets_with_emb3d(
 
 def assess_asset_with_emb3d(asset: AssetRegistryItem, kb: Emb3dKnowledgeBase) -> dict[str, Any]:
     matches = infer_emb3d_properties(asset)
-    properties = []
+    properties: list[dict[str, Any]] = []
     threat_ids: set[str] = set()
     for match in matches:
         prop = kb.properties.get(match.property_id)
         if not prop:
             continue
-        threats = kb.property_to_threats.get(match.property_id, [])
-        threat_ids.update(threats)
+        linked_threat_ids = kb.property_to_threats.get(match.property_id, [])
+        threat_ids.update(linked_threat_ids)
         properties.append({
             **prop,
             "confidence": match.confidence,
             "evidence": list(match.evidence),
-            "threat_count": len(threats),
+            "threat_count": len(linked_threat_ids),
         })
 
-    threats = []
+    threat_reports: list[dict[str, Any]] = []
     for threat_id in sorted(threat_ids, key=_emb3d_sort_key):
         threat = kb.threats.get(threat_id)
         if not threat:
@@ -181,7 +180,7 @@ def assess_asset_with_emb3d(asset: AssetRegistryItem, kb: Emb3dKnowledgeBase) ->
             if threat_id in kb.property_to_threats.get(item["id"], [])
         ]
         mitigation_ids = kb.threat_to_mitigations.get(threat_id, [])
-        threats.append({
+        threat_reports.append({
             **threat,
             "properties": [{"id": item["id"], "name": item["name"], "confidence": item["confidence"]} for item in linked_properties],
             "mitigations": [kb.mitigations[mid] for mid in mitigation_ids if mid in kb.mitigations],
@@ -198,9 +197,13 @@ def assess_asset_with_emb3d(asset: AssetRegistryItem, kb: Emb3dKnowledgeBase) ->
         "risk_score": asset.risk_score or 0,
         "risk_level": asset.risk_level or "low",
         "properties": sorted(properties, key=lambda item: (_emb3d_sort_key(item["id"]), -item["confidence"])),
-        "threats": threats,
-        "threat_count": len(threats),
-        "mitigation_count": len({m["id"] for threat in threats for m in threat.get("mitigations", [])}),
+        "threats": threat_reports,
+        "threat_count": len(threat_reports),
+        "mitigation_count": len({
+            mitigation["id"]
+            for threat in threat_reports
+            for mitigation in threat.get("mitigations", [])
+        }),
     }
 
 
@@ -329,7 +332,7 @@ def _load_bundle(*, source_url: str, cache_path: Path) -> dict[str, Any]:
     except OSError:
         pass
 
-    response = requests.get(source_url, timeout=30)
+    response = safe_get(source_url, timeout=30)
     response.raise_for_status()
     bundle = response.json()
     try:

@@ -98,23 +98,13 @@ async def test_threatfox_sync_reports_missing_key(client: AsyncClient, monkeypat
 @pytest.mark.asyncio
 async def test_threatfox_sync_reports_rejected_key(client: AsyncClient, monkeypatch):
     from app.core.config import settings
-    from app.services import ioc_intel
+    from app.api.routes import ioc as ioc_route
 
-    class Response:
-        status_code = 403
-        reason = "Forbidden"
-
-        def json(self):
-            return {"query_status": "unknown_auth_key"}
-
-        def raise_for_status(self):
-            raise ioc_intel.requests.HTTPError("403 Client Error")
-
-    def fake_post(*args, **kwargs):
-        return Response()
+    async def fake_sync_threatfox(*args, **kwargs):
+        raise RuntimeError("ThreatFox rejected THREATFOX_AUTH_KEY")
 
     monkeypatch.setattr(settings, "threatfox_auth_key", "bad-key")
-    monkeypatch.setattr(ioc_intel.requests, "post", fake_post)
+    monkeypatch.setattr(ioc_route, "sync_threatfox", fake_sync_threatfox)
 
     resp = await client.post("/api/ioc/sync/threatfox?days=1")
 

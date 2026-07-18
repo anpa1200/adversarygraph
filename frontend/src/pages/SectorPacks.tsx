@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { sectorPacksApi, SectorPack } from '../api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const CONFIDENCE_COLORS: Record<string, string> = {
   High: '#ef4444',
@@ -61,6 +63,7 @@ function TextSection({ title, text }: { title: string; text: string }) {
 }
 
 export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () => void }) {
+  const canExportData = useHasPermission('export_data');
   const [tab, setTab] = useState<TabKey>('overview');
   const confColor = CONFIDENCE_COLORS[pack.confidence_level] ?? '#6b7280';
   const navigate = useNavigate();
@@ -207,6 +210,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
   }
 
   function exportMarkdown() {
+    if (!canExportData) return;
     const lines: string[] = [
       `# ${pack.sector_name} — NVIDIA Sector Intelligence Pack`,
       ``,
@@ -324,6 +328,7 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={exportMarkdown}
+              disabled={!canExportData}
               style={{
                 padding: '5px 12px', background: '#1e3a5f', color: '#60a5fa',
                 border: '1px solid #1d4ed8', borderRadius: 4, cursor: 'pointer', fontSize: 12,
@@ -342,6 +347,11 @@ export function PackDetail({ pack, onClose }: { pack: SectorPack; onClose: () =>
             </button>
           </div>
         </div>
+        {!canExportData && (
+          <div style={{ padding: '8px 20px', borderBottom: '1px solid #374151' }}>
+            <PermissionNotice permission="export_data" action="download sector packs" compact />
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{

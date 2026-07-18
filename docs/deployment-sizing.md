@@ -47,4 +47,5 @@ Suggested baseline:
   planned schedule.
 - Enable auth before exposing the UI beyond localhost.
 - Use an external reverse proxy or ingress for TLS.
-- Monitor `/api/health`, `/api/observability/summary`, and service logs.
+- Monitor `/api/health` for process liveness, `/api/ready` for database-backed
+  traffic readiness, `/api/observability/summary`, and service logs.

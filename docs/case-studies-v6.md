@@ -125,7 +125,7 @@ validation while preserving authorization and telemetry-fidelity boundaries.
 | Evidence | Location |
 |---|---|
 | Sanitized inputs and expected outputs | [`demo/`](../demo/) |
-| Current visual evidence | [v6 screenshot manifest](assets/adversarygraph-v6/manifest.md) |
+| Tagged v6.0.0 visual evidence | [v6 screenshot manifest](assets/adversarygraph-v6/manifest.md) |
 | Automated browser smoke coverage | [`frontend/tests/e2e/`](../frontend/tests/e2e/) |
 | Validation rules and limitations | [Validation and Limitations](validation-and-limitations.md) |
 | Production acceptance gates | [v6 Release Readiness](release-readiness-v6.md) |

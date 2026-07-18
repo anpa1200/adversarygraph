@@ -1,16 +1,24 @@
-.git
-.env
-**/.docusaurus
-**/build
-**/dist
-**/node_modules
-**/.vite
-**/__pycache__
-**/.pytest_cache
-pg_data
-data
-logs
-backend/.pytest_cache
-frontend/dist
-adversarygraph_logs
-malwaregraph_storage
+# Root-context images copy only the lab fixtures, PostgreSQL wrapper, Atlas
+# documentation source, and the three Atlas build helpers. Keep the rest of
+# the repository (including local data, credentials, caches, and Git history)
+# out of the Docker build context.
+**
+!docker
+!docker/**
+!anomaly_detection
+!anomaly_detection/docs-site
+!anomaly_detection/docs-site/**
+!anomaly_detection/docs-overlay
+!anomaly_detection/docs-overlay/**
+!anomaly_detection/docker
+!anomaly_detection/docker/sync-and-build.sh
+!scripts
+!scripts/sync-anomaly-atlas.sh
+!scripts/generate-ttp-reference-index.mjs
+!scripts/apply-adversarygraph-docs-overlay.mjs
+
+# Generated and local-only Atlas assets are not image inputs.
+anomaly_detection/docs-site/node_modules
+anomaly_detection/docs-site/build
+anomaly_detection/docs-site/.docusaurus
+anomaly_detection/docs-site/.cache-loader

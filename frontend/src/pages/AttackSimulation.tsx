@@ -27,6 +27,8 @@ import { TtpLink } from '@/utils/ctiLinks';
 import { DataTable } from '@/components/ui/data-table';
 import { VirtualList } from '@/components/ui/virtual-list';
 import { EntityGraph } from '@/components/ui/graph';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type DetectionResult = 'passed' | 'failed' | 'partial' | 'not_proven';
 type SiemAuthType = 'none' | 'bearer' | 'token' | 'basic' | 'custom_header';
@@ -52,6 +54,7 @@ const SIEM_HISTORY_LIMIT = 10;
 
 export function AttackSimulation() {
   const navigate = useNavigate();
+  const canForwardSiem = useHasPermission('forward_siem');
   const qc = useQueryClient();
   const { simulationId: routeSimulationId } = useParams();
   const { domain, version } = useAppStore();
@@ -75,7 +78,7 @@ export function AttackSimulation() {
   const [siemToken, setSiemToken] = useState('');
   const [siemHeaderName, setSiemHeaderName] = useState('Authorization');
   const [siemConnectionMode, setSiemConnectionMode] = useState<SiemConnectionMode>('auto');
-  const [allowHttpFallback, setAllowHttpFallback] = useState(true);
+  const [allowHttpFallback, setAllowHttpFallback] = useState(false);
   const [siemPayloadFormat, setSiemPayloadFormat] = useState<SiemPayloadFormat>('raw_lines');
   const [aiAssistantMode, setAiAssistantMode] = useState<AiAssistantMode>('challenge');
   const [aiAssistantProvider, setAiAssistantProvider] = useState<AiProvider>('local');
@@ -96,7 +99,7 @@ export function AttackSimulation() {
   const catalogQuery = useQuery({ queryKey: ['simulation-catalog'], queryFn: simulationApi.catalog });
   const targetsQuery = useQuery({ queryKey: ['simulation-targets'], queryFn: simulationApi.targets });
   const aiScenariosQuery = useQuery({ queryKey: ['simulation-ai-assistant-scenarios'], queryFn: simulationApi.aiAssistantScenarios });
-  const siemHistoryQuery = useQuery({ queryKey: ['simulation-siem-destinations'], queryFn: simulationApi.siemDestinations, retry: false });
+  const siemHistoryQuery = useQuery({ queryKey: ['simulation-siem-destinations'], queryFn: simulationApi.siemDestinations, retry: false, enabled: canForwardSiem });
   const attackFlowsQuery = useQuery({ queryKey: ['simulation-attack-flows'], queryFn: simulationApi.attackFlows, retry: false });
   const matrixData = useAttackMatrix(domain, version);
   const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
@@ -269,7 +272,7 @@ export function AttackSimulation() {
       token: siemToken,
       header_name: siemHeaderName,
       connection_mode: siemConnectionMode,
-      allow_http_fallback: allowHttpFallback,
+      allow_http_fallback: siemAuthType === 'none' && allowHttpFallback,
       payload_format: siemPayloadFormat,
     }),
     onSuccess: () => {
@@ -343,7 +346,7 @@ export function AttackSimulation() {
       token: siemToken,
       header_name: siemHeaderName,
       connection_mode: siemConnectionMode,
-      allow_http_fallback: allowHttpFallback,
+      allow_http_fallback: siemAuthType === 'none' && allowHttpFallback,
       payload_format: aiAssistantComplicated ? 'raw_lines' : (siemPayloadFormat === 'raw_lines' ? 'per_event' : siemPayloadFormat),
     }),
     onSuccess: next => {
@@ -365,7 +368,7 @@ export function AttackSimulation() {
       token: siemToken,
       header_name: siemHeaderName,
       connection_mode: siemConnectionMode,
-      allow_http_fallback: allowHttpFallback,
+      allow_http_fallback: siemAuthType === 'none' && allowHttpFallback,
       payload_format: siemPayloadFormat,
     }),
     onSuccess: next => {
@@ -394,6 +397,7 @@ export function AttackSimulation() {
   }, [siemHistoryQuery.data]);
 
   const saveCurrentSiemDestination = () => {
+    if (!canForwardSiem) return;
     if (siemUrl.trim()) {
       saveSiemDestinationMutation.mutate();
       return;
@@ -418,11 +422,12 @@ export function AttackSimulation() {
     setSiemToken('');
     setSiemHeaderName(item.headerName || 'Authorization');
     setSiemConnectionMode(item.connectionMode);
-    setAllowHttpFallback(item.allowHttpFallback);
+    setAllowHttpFallback(item.authType === 'none' && item.allowHttpFallback);
     setSiemPayloadFormat(item.payloadFormat);
     setSiemSource(item.source);
   };
   const clearSiemHistory = () => {
+    if (!canForwardSiem) return;
     clearSiemDestinationsMutation.mutate();
   };
   const openAiAssistant = () => {
@@ -698,6 +703,7 @@ export function AttackSimulation() {
             }}
           />
           <SiemForwarder
+            canForward={canForwardSiem}
             destinationUrl={siemUrl}
             authType={siemAuthType}
             username={siemUsername}
@@ -714,7 +720,10 @@ export function AttackSimulation() {
             error={forwardLogsMutation.error}
             isPending={forwardLogsMutation.isPending}
             onDestinationUrlChange={setSiemUrl}
-            onAuthTypeChange={setSiemAuthType}
+            onAuthTypeChange={value => {
+              setSiemAuthType(value);
+              if (value !== 'none') setAllowHttpFallback(false);
+            }}
             onUsernameChange={setSiemUsername}
             onPasswordChange={setSiemPassword}
             onTokenChange={setSiemToken}
@@ -730,6 +739,7 @@ export function AttackSimulation() {
           />
           <div id="ai-attack-assistant" className="scroll-mt-6">
             <AiAttackAssistant
+              canForwardSiem={canForwardSiem}
               mode={aiAssistantMode}
               aiProvider={aiAssistantProvider}
               complicated={aiAssistantComplicated}
@@ -1070,6 +1080,7 @@ function LogEventRow({ event, index }: { event: AttackSimulationLogs['events'][n
 }
 
 function AiAttackAssistant({
+  canForwardSiem,
   mode,
   aiProvider,
   complicated,
@@ -1099,6 +1110,7 @@ function AiAttackAssistant({
   onRun,
   onResend,
 }: {
+  canForwardSiem: boolean;
   mode: AiAssistantMode;
   aiProvider: AiProvider;
   complicated: boolean;
@@ -1161,6 +1173,7 @@ function AiAttackAssistant({
           <label className="flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-300">
             <input
               type="checkbox"
+              aria-label="Generate complicated multi-source attack flow"
               checked={complicated}
               onChange={event => onComplicatedChange(event.target.checked)}
               className="mt-1"
@@ -1236,7 +1249,7 @@ function AiAttackAssistant({
           <AttackFlowHistory
             flows={history}
             loading={historyLoading}
-            canResend={Boolean(destinationUrl.trim())}
+            canResend={canForwardSiem && Boolean(destinationUrl.trim())}
             result={resendResult}
             error={resendError}
             resendingFlowId={resendingFlowId}
@@ -1628,6 +1641,7 @@ function humanizePhase(value: string) {
 }
 
 function SiemForwarder({
+  canForward,
   destinationUrl,
   authType,
   username,
@@ -1658,6 +1672,7 @@ function SiemForwarder({
   onSourceChange,
   onSend,
 }: {
+  canForward: boolean;
   destinationUrl: string;
   authType: SiemAuthType;
   username: string;
@@ -1698,6 +1713,7 @@ function SiemForwarder({
     <Panel title="Forward Logs To SIEM">
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="space-y-3">
+          {!canForward && <PermissionNotice permission="forward_siem" action="save destinations or forward telemetry logs" compact />}
           <label className="label">SIEM IP / URL</label>
           <input
             className="field font-mono text-xs placeholder:text-gray-600"
@@ -1706,11 +1722,11 @@ function SiemForwarder({
             placeholder="192.168.1.10:8088/services/collector/event or https://siem.example/api/events"
           />
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={!destinationUrl.trim()} onClick={onSaveDestination} className="secondary-action disabled:opacity-40">
+            <button type="button" disabled={!canForward || !destinationUrl.trim()} onClick={onSaveDestination} className="secondary-action disabled:opacity-40">
               Save destination
             </button>
             {history.length > 0 && (
-              <button type="button" onClick={onClearHistory} className="secondary-action">
+              <button type="button" disabled={!canForward} onClick={onClearHistory} className="secondary-action disabled:opacity-40">
                 Clear history
               </button>
             )}
@@ -1771,16 +1787,18 @@ function SiemForwarder({
           <label className="flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-300">
             <input
               type="checkbox"
+              aria-label="Allow unauthenticated HTTP fallback"
               checked={allowHttpFallback}
+              disabled={authType !== 'none'}
               onChange={event => onAllowHttpFallbackChange(event.target.checked)}
               className="mt-1"
             />
             <span>
-              Allow HTTP fallback if HTTPS TLS handshake fails. Use this for local collectors that are configured with an HTTPS-looking URL but actually listen over plain HTTP.
+              Allow unauthenticated HTTP fallback if an HTTPS TLS handshake fails. This is disabled whenever credentials or tokens are selected because fallback could expose them in plaintext.
             </span>
           </label>
           <label className="label">Authentication type</label>
-          <select className="field" value={authType} onChange={event => onAuthTypeChange(event.target.value as SiemAuthType)}>
+          <select aria-label="SIEM authentication type" className="field" value={authType} onChange={event => onAuthTypeChange(event.target.value as SiemAuthType)}>
             <option value="none">None</option>
             <option value="bearer">Bearer token</option>
             <option value="token">Token auth</option>
@@ -1840,7 +1858,7 @@ function SiemForwarder({
             <option value="run">Attack run JSONL</option>
           </select>
           <Mini label="Run filter" value={followRunId || `all ${source} events`} />
-          <button type="button" disabled={!canSend || isPending} onClick={onSend} className="primary-action w-full disabled:opacity-40">
+          <button type="button" disabled={!canForward || !canSend || isPending} onClick={onSend} className="primary-action w-full disabled:opacity-40">
             Send logs
           </button>
           {result && (
@@ -1932,6 +1950,7 @@ function saveSiemHistoryItem(item: Omit<SiemDestinationHistoryItem, 'id' | 'save
   if (!url) return loadSiemHistory();
   const nextItem: SiemDestinationHistoryItem = {
     ...item,
+    allowHttpFallback: item.authType === 'none' && item.allowHttpFallback,
     url,
     username: item.authType === 'basic' ? item.username.trim() : '',
     headerName: item.authType === 'custom_header' ? item.headerName.trim() : item.headerName || 'Authorization',
@@ -1943,7 +1962,11 @@ function saveSiemHistoryItem(item: Omit<SiemDestinationHistoryItem, 'id' | 'save
     nextItem,
     ...existing.filter(entry => entry.id !== nextItem.id && normalizeSiemDestination(entry.url) !== normalizeSiemDestination(url)),
   ].slice(0, SIEM_HISTORY_LIMIT);
-  window.localStorage.setItem(SIEM_HISTORY_KEY, JSON.stringify(next));
+  try {
+    window.localStorage.setItem(SIEM_HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // Destination history is optional; delivery remains available without it.
+  }
   return next;
 }
 
@@ -1954,7 +1977,7 @@ function toSiemDestinationPayload(item: Omit<SiemDestinationHistoryItem, 'id' | 
     username: item.authType === 'basic' ? item.username.trim() : '',
     header_name: item.authType === 'custom_header' ? item.headerName.trim() : item.headerName || 'Authorization',
     connection_mode: item.connectionMode,
-    allow_http_fallback: item.allowHttpFallback,
+    allow_http_fallback: item.authType === 'none' && item.allowHttpFallback,
     payload_format: item.payloadFormat,
     source: item.source,
   };
@@ -1968,7 +1991,7 @@ function fromServerSiemDestination(item: AttackSimulationSiemDestination): SiemD
     username: item.username,
     headerName: item.header_name || 'Authorization',
     connectionMode: item.connection_mode,
-    allowHttpFallback: item.allow_http_fallback,
+    allowHttpFallback: item.auth_type === 'none' && item.allow_http_fallback,
     payloadFormat: item.payload_format,
     source: item.source,
     savedAt: item.updated_at,
@@ -1995,6 +2018,10 @@ function isSiemHistoryItem(value: unknown): value is SiemDestinationHistoryItem 
   return (
     typeof item.id === 'string' &&
     typeof item.url === 'string' &&
+    typeof item.username === 'string' &&
+    typeof item.headerName === 'string' &&
+    typeof item.allowHttpFallback === 'boolean' &&
+    typeof item.savedAt === 'string' &&
     ['none', 'bearer', 'token', 'basic', 'custom_header'].includes(String(item.authType)) &&
     ['auto', 'direct', 'docker_host'].includes(String(item.connectionMode)) &&
     ['raw_lines', 'per_event', 'json_lines', 'envelope'].includes(String(item.payloadFormat)) &&

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { systemApi } from '@/api/client';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 interface ApiErrorDetail {
   message: string;
@@ -21,6 +22,7 @@ const providerRequirements = [
 ];
 
 export function GlobalErrorPopup() {
+  const canRunSelfTest = useHasPermission('run_analysis');
   const [error, setError] = useState<ApiErrorDetail | null>(null);
   const [popupState, setPopupState] = useState<PopupState>('error');
 
@@ -55,6 +57,7 @@ export function GlobalErrorPopup() {
         setError({ message: 'All correct.', status: 200, url: originalError.url });
         return;
       }
+      if (!canRunSelfTest) return;
       const result = await systemApi.selftest();
       if (result.status === 'ok') {
         const stillMissing = missingRequiredProvider(originalError, result);
@@ -120,7 +123,7 @@ export function GlobalErrorPopup() {
             </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            {!isOk && (
+            {!isOk && (Boolean(error.retry) || canRunSelfTest) && (
               <button
                 type="button"
                 className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"

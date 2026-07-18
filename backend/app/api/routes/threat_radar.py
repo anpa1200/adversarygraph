@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 import hashlib
 from datetime import UTC, datetime
-from typing import Any, Literal
+from collections.abc import Sequence
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
@@ -46,7 +47,7 @@ from app.models.threat_radar import (
     ThreatInventoryProduct,
     ThreatSupplyChainFinding,
 )
-from app.services.auth import TeamUser, analyst
+from app.services.auth import TeamUser, analyst, has_permission, require_permission
 from app.services.exposure_monitoring import (
     classify_exposure_hit,
     ingest_exposure_hit,
@@ -78,6 +79,8 @@ from app.services.unified_model import (
 )
 
 router = APIRouter(prefix="/threat-radar", tags=["Threat Radar"])
+manage_threat_radar = require_permission("manage_intel")
+manage_threat_radar_detections = require_permission("manage_detections")
 
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
 
@@ -397,7 +400,7 @@ async def company_space_metrics(
 async def create_company_space(
     payload: CompanySpaceIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     slug = await _unique_space_slug(session, payload.name)
     space = ThreatCompanySpace(
@@ -435,7 +438,7 @@ async def create_space_asset(
     space_id: str,
     payload: SpaceAssetIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     asset = ThreatSpaceAsset(
@@ -469,7 +472,7 @@ async def create_space_dashboard(
     space_id: str,
     payload: SpaceDashboardIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     dashboard = ThreatSpaceDashboard(
@@ -490,7 +493,7 @@ async def create_space_dashboard(
 async def generate_space_dashboard(
     space_id: str,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     generated = await _build_generated_space_dashboard(session, space)
@@ -520,7 +523,7 @@ async def create_space_monitor(
     space_id: str,
     payload: SpaceMonitorIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     monitor = ThreatSpaceMonitor(
@@ -544,7 +547,7 @@ async def run_space_monitor(
     space_id: str,
     monitor_id: str,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     monitor = await session.get(ThreatSpaceMonitor, _uuid_or_400(monitor_id))
@@ -593,7 +596,7 @@ async def update_alert_status(
     alert_id: str,
     payload: AlertStatusIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     space = await _get_space(session, space_id)
     alert = await session.get(ThreatAlert, _uuid_or_400(alert_id))
@@ -647,7 +650,7 @@ async def list_sources(
 async def create_source(
     payload: ThreatSourceIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     source = ThreatSource(**payload.model_dump())
     session.add(source)
@@ -690,7 +693,7 @@ async def list_signals(
 async def create_signal(
     payload: SignalCreateIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     source_id = await _resolve_source(session, payload, user)
     legal_sensitive = payload.legal_sensitive or payload.signal_type in LEGAL_SENSITIVE_TYPES
@@ -760,7 +763,7 @@ async def triage_signal(
     signal_id: str,
     payload: SignalTriageIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     signal = await _get_signal(session, signal_id)
     signal.status = payload.status
@@ -817,8 +820,10 @@ async def get_case_graph(
 ):
     case = await _get_case(session, case_id)
     links = (await session.execute(select(ThreatCaseLink).where(ThreatCaseLink.case_id == case.id))).scalars().all()
-    nodes = [{"id": str(case.id), "type": "case", "label": case.title, "priority": case.priority}]
-    edges = []
+    nodes: list[dict[str, Any]] = [
+        {"id": str(case.id), "type": "case", "label": case.title, "priority": case.priority}
+    ]
+    edges: list[dict[str, Any]] = []
     if case.signal_id:
         nodes.append({"id": str(case.signal_id), "type": "signal", "label": "Source signal"})
         edges.append({"source": str(case.signal_id), "target": str(case.id), "relationship": "creates-case"})
@@ -833,7 +838,7 @@ async def get_case_graph(
 async def rescore_case(
     case_id: str,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     case = await _get_case(session, case_id)
     signal = await session.get(ThreatSignal, case.signal_id) if case.signal_id else None
@@ -855,7 +860,7 @@ async def rescore_case(
 async def escalate_case(
     case_id: str,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     case = await _get_case(session, case_id)
     case.status = "escalated"
@@ -870,7 +875,7 @@ async def create_evidence(
     signal_id: str | None = None,
     case_id: str | None = None,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     legal_sensitive = payload.legal_sensitive
     evidence = ThreatEvidence(
@@ -896,7 +901,7 @@ async def create_evidence(
 async def create_product_map(
     payload: ProductMapIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     signal = await _get_signal(session, payload.signal_id) if payload.signal_id else None
     case = await _get_case(session, payload.case_id) if payload.case_id else None
@@ -912,22 +917,22 @@ async def create_product_map(
 
 
 @router.post("/cases/{case_id}/create-hunt", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-async def create_hunt(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_hunt(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_threat_radar)):
     return await _create_workflow(session, case_id, "hunt", user)
 
 
 @router.post("/cases/{case_id}/create-psirt-task", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-async def create_psirt(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_psirt(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_threat_radar)):
     return await _create_workflow(session, case_id, "psirt", user)
 
 
 @router.post("/cases/{case_id}/create-ir-escalation", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-async def create_ir(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_ir(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_threat_radar)):
     return await _create_workflow(session, case_id, "ir", user)
 
 
 @router.post("/cases/{case_id}/create-detection-requirement", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-async def create_detection(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_detection(case_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_threat_radar_detections)):
     return await _create_workflow(session, case_id, "detection", user)
 
 
@@ -936,7 +941,7 @@ async def generate_case_report(
     case_id: str,
     payload: ReportGenerateIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     case = await _get_case(session, case_id)
     report = await generate_report(session, case, payload.report_type, user.name)
@@ -987,7 +992,7 @@ async def classify_exposure(payload: ExposureHitIn, _: TeamUser = Depends(analys
 async def ingest_exposure(
     payload: ExposureHitIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_threat_radar),
 ):
     return await ingest_exposure_hit(session, payload.model_dump(), user.name)
 
@@ -1015,7 +1020,7 @@ async def watchlist(
 
 
 @router.get("/queues/{queue}", response_model=list[dict[str, Any]])
-async def workflow_queue(queue: str, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(analyst)):
+async def workflow_queue(queue: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
     models = {
         "hunts": ThreatHuntRequest,
         "psirt": ThreatPSIRTTask,
@@ -1030,6 +1035,8 @@ async def workflow_queue(queue: str, session: AsyncSession = Depends(get_session
     model = models.get(queue)
     if model is None:
         raise HTTPException(404, "Unknown queue")
+    if queue == "audit" and not has_permission(user, "view_audit"):
+        raise HTTPException(403, "Permission required: view_audit")
     rows = await session.execute(select(model).limit(250))
     return [_workflow_obj(row) for row in rows.scalars().all()]
 
@@ -1174,13 +1181,18 @@ def _signal_out(signal: ThreatSignal, mappings: list[ThreatProductMapping], scor
 
 
 def _source_out(source: ThreatSource) -> ThreatSourceOut:
+    valid_tlp = (
+        source.tlp
+        if source.tlp in {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}
+        else "TLP:AMBER"
+    )
     return ThreatSourceOut(
         id=str(source.id),
         name=source.name,
         source_type=source.source_type,
         url=source.url,
         reliability=source.reliability,
-        tlp=source.tlp,
+        tlp=cast(TLP, valid_tlp),
         legal_sensitive=source.legal_sensitive,
         enabled=source.enabled,
         notes=source.notes,
@@ -1311,6 +1323,7 @@ async def _count(session: AsyncSession, model: Any, *criteria: Any) -> int:
     for criterion in criteria:
         stmt = stmt.where(criterion)
     result = await session.execute(stmt)
+    value: Any
     try:
         value = result.scalar_one()
     except Exception:
@@ -2012,7 +2025,7 @@ def _ioc_values(iocs: list[dict[str, Any]]) -> list[str]:
     return values
 
 
-def _asset_terms(assets: list[ThreatSpaceAsset]) -> set[str]:
+def _asset_terms(assets: Sequence[ThreatSpaceAsset]) -> set[str]:
     terms: set[str] = set()
     for asset in assets:
         for value in [

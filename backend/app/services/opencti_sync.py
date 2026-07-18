@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +24,7 @@ OPENCTI_LABEL = "OpenCTI"
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
 NETWORK_FINGERPRINT_VALUE_RE = re.compile(r"^(?=[a-z0-9]{3,32}_)(?=[a-z0-9]*\d)[a-z0-9]{3,32}_[a-f0-9]{8,64}(?:_[a-f0-9]{8,64}){0,3}$", re.IGNORECASE)
+logger = logging.getLogger(__name__)
 
 
 class OpenCTISyncError(RuntimeError):
@@ -105,10 +107,10 @@ async def pull_from_opencti(
         "observables_seen": len(observables),
         "reports_seen": len(reports),
         "reports_imported": report_count,
-        "inserted": int(result.get("inserted", 0)),
-        "updated": int(result.get("updated", 0)),
-        "actor_links": int(result.get("actor_links", 0)),
-        "ttp_enriched": int(enriched.get("updated", 0)),
+        "inserted": _as_int(result.get("inserted")),
+        "updated": _as_int(result.get("updated")),
+        "actor_links": _as_int(result.get("actor_links")),
+        "ttp_enriched": _as_int(enriched.get("updated")),
         "errors": errors,
     }
 
@@ -143,8 +145,13 @@ async def push_to_opencti(
             try:
                 await _graphql(_INDICATOR_ADD_MUTATION, {"input": _minimal_indicator_input(mutation_input)})
                 pushed += 1
-            except Exception as retry_exc:
-                errors.append(f"{indicator.value}: {retry_exc or exc}")
+            except Exception:
+                logger.exception(
+                    "OpenCTI indicator push failed after fallback indicator_id=%s original_error=%r",
+                    indicator.id,
+                    exc,
+                )
+                errors.append(f"indicator {indicator.id}: push failed. See server logs.")
 
     report_pushed = 0
     if include_reports:
@@ -158,14 +165,24 @@ async def push_to_opencti(
         for report in report_rows.scalars().all():
             try:
                 report_input = _analysis_session_to_report_input(report)
+            except Exception:
+                logger.exception("OpenCTI report serialization failed report_id=%s", report.id)
+                errors.append(f"report {report.id}: serialization failed. See server logs.")
+                continue
+            try:
                 await _graphql(_REPORT_ADD_MUTATION, {"input": report_input})
                 report_pushed += 1
             except Exception as exc:
                 try:
                     await _graphql(_REPORT_ADD_MUTATION, {"input": _minimal_report_input(report_input)})
                     report_pushed += 1
-                except Exception as retry_exc:
-                    errors.append(f"report {report.id}: {retry_exc or exc}")
+                except Exception:
+                    logger.exception(
+                        "OpenCTI report push failed after fallback report_id=%s original_error=%r",
+                        report.id,
+                        exc,
+                    )
+                    errors.append(f"report {report.id}: push failed. See server logs.")
 
     await _mark_opencti_source(session, "ok" if not errors else "partial", "; ".join(errors[:3]))
     await session.commit()
@@ -201,12 +218,14 @@ async def _safe_paged_query(
 ) -> list[dict[str, Any]]:
     try:
         return await _paged_query(root, query, limit)
-    except Exception as exc:
-        errors.append(f"{root} full query failed: {exc}")
+    except Exception:
+        logger.exception("OpenCTI full query failed root=%s", root)
+        errors.append(f"{root} full query failed. See server logs.")
     try:
         return await _paged_query(root, fallback_query, limit)
-    except Exception as exc:
-        errors.append(f"{root} fallback query failed: {exc}")
+    except Exception:
+        logger.exception("OpenCTI fallback query failed root=%s", root)
+        errors.append(f"{root} fallback query failed. See server logs.")
         return []
 
 
@@ -216,10 +235,19 @@ async def _paged_query(root: str, query: str, limit: int) -> list[dict[str, Any]
     while len(rows) < limit:
         first = min(100, limit - len(rows))
         payload = await _graphql(query, {"first": first, "after": after})
-        container = payload.get(root) or {}
-        edges = container.get("edges") or []
-        rows.extend([edge.get("node") for edge in edges if isinstance(edge, dict) and isinstance(edge.get("node"), dict)])
-        page_info = container.get("pageInfo") or {}
+        container_value = payload.get(root)
+        if not isinstance(container_value, dict):
+            raise OpenCTISyncError(f"OpenCTI returned an invalid {root} connection")
+        edges_value = container_value.get("edges")
+        edges = edges_value if isinstance(edges_value, list) else []
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node")
+            if isinstance(node, dict):
+                rows.append(node)
+        page_info_value = container_value.get("pageInfo")
+        page_info = page_info_value if isinstance(page_info_value, dict) else {}
         if not page_info.get("hasNextPage") or not page_info.get("endCursor"):
             break
         after = str(page_info["endCursor"])
@@ -233,10 +261,16 @@ async def _graphql(query: str, variables: dict[str, Any] | None = None) -> dict[
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-    async with httpx.AsyncClient(timeout=90, verify=settings.opencti_verify_tls) as client:
+    async with httpx.AsyncClient(
+        timeout=90,
+        verify=settings.opencti_verify_tls,
+        trust_env=False,
+    ) as client:
         response = await client.post(f"{_connect_url()}/graphql", headers=headers, json={"query": query, "variables": variables or {}})
         response.raise_for_status()
         payload = response.json()
+    if not isinstance(payload, dict):
+        raise OpenCTISyncError("OpenCTI returned an invalid GraphQL response")
     if payload.get("errors"):
         messages = "; ".join(str(error.get("message") or error) for error in payload["errors"][:3])
         raise OpenCTISyncError(messages)
@@ -328,6 +362,7 @@ async def _upsert_opencti_report(session: AsyncSession, report: dict[str, Any], 
             llm_provider="opencti",
             model="opencti-sync",
             domain=domain,
+            tlp="TLP:AMBER+STRICT",
         )
         session.add(session_row)
         await session.flush()
@@ -542,7 +577,8 @@ def _file_hash_value(node: dict[str, Any]) -> str:
     for entry in hashes if isinstance(hashes, list) else []:
         if not isinstance(entry, dict):
             continue
-        raw = entry.get("node") if isinstance(entry.get("node"), dict) else entry
+        nested_node = entry.get("node")
+        raw = nested_node if isinstance(nested_node, dict) else entry
         algorithm = str(raw.get("algorithm") or raw.get("hash_type") or raw.get("type") or "").lower()
         value = str(raw.get("hash") or raw.get("value") or "").strip()
         if value:
@@ -556,6 +592,13 @@ def _file_hash_value(node: dict[str, Any]) -> str:
 
 def _extract_attack_ids(value: Any) -> list[str]:
     return _dedupe([match.upper() for match in ATTACK_ID_RE.findall(json.dumps(value, default=str))])
+
+
+def _as_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def _dedupe(values: list[str]) -> list[str]:

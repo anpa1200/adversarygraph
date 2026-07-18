@@ -28,6 +28,10 @@ export function HuntFindingsPanel({
   pending,
   error,
   readOnly,
+  assistantDraft,
+  onAssistantDraftConsumed,
+  onDirtyChange,
+  onOpenAssistant,
 }: {
   findings: ThreatHuntFinding[];
   parentTlp: ThreatHuntTlp;
@@ -38,37 +42,69 @@ export function HuntFindingsPanel({
   pending: boolean;
   error: string;
   readOnly: boolean;
+  assistantDraft: { key: number; draft: Partial<ThreatHuntFindingInput> } | null;
+  onAssistantDraftConsumed: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onOpenAssistant: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ThreatHuntFindingInput>(() => emptyFinding(parentTlp));
+  const [baselineFingerprint, setBaselineFingerprint] = useState(() => findingFingerprint(emptyFinding(parentTlp)));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
   const editingFinding = findings.find(finding => finding.id === editingId);
   const minimumTlp = moreRestrictiveTlp(parentTlp, editingFinding?.tlp);
   const allowedTlps = useMemo(() => tlpsAtLeast(minimumTlp), [minimumTlp]);
+  const findingDirty = open && findingFingerprint(draft) !== baselineFingerprint;
+
+  useEffect(() => {
+    onDirtyChange(findingDirty);
+  }, [findingDirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
   useEffect(() => {
     if (!allowedTlps.includes(draft.tlp)) setDraft(current => ({ ...current, tlp: parentTlp }));
   }, [allowedTlps, draft.tlp, parentTlp]);
 
-  const closeForm = () => {
+  useEffect(() => {
+    if (!assistantDraft) return;
+    const empty = emptyFinding(parentTlp);
+    setEditingId(null);
+    setDraft(safeAssistantFindingDraft(assistantDraft.draft, parentTlp));
+    setBaselineFingerprint(findingFingerprint(empty));
+    setFormError('');
+    setArchiveConfirmId(null);
+    setOpen(true);
+    onAssistantDraftConsumed();
+  }, [assistantDraft, onAssistantDraftConsumed, parentTlp]);
+
+  const closeForm = (force = false) => {
+    if (!force && findingDirty && !window.confirm('Discard unsaved finding changes?')) return;
+    const empty = emptyFinding(parentTlp);
     setOpen(false);
     setEditingId(null);
-    setDraft(emptyFinding(parentTlp));
+    setDraft(empty);
+    setBaselineFingerprint(findingFingerprint(empty));
     setFormError('');
   };
 
   const startCreate = () => {
+    const empty = emptyFinding(parentTlp);
     setEditingId(null);
-    setDraft(emptyFinding(parentTlp));
+    setDraft(empty);
+    setBaselineFingerprint(findingFingerprint(empty));
     setFormError('');
     setOpen(true);
   };
 
   const startEdit = (finding: ThreatHuntFinding) => {
+    if (findingDirty && !window.confirm('Discard unsaved finding changes?')) return;
+    const next = toFindingInput(finding);
     setEditingId(finding.id);
-    setDraft(toFindingInput(finding));
+    setDraft(next);
+    setBaselineFingerprint(findingFingerprint(next));
     setFormError('');
     setArchiveConfirmId(null);
     setOpen(true);
@@ -91,7 +127,7 @@ export function HuntFindingsPanel({
     try {
       if (editingId) await onUpdate(editingId, body);
       else await onCreate(body);
-      closeForm();
+      closeForm(true);
     } catch (caught) {
       setFormError(errorMessage(caught));
     }
@@ -101,7 +137,7 @@ export function HuntFindingsPanel({
     setFormError('');
     try {
       await onArchive(findingId);
-      if (editingId === findingId) closeForm();
+      if (editingId === findingId) closeForm(true);
       setArchiveConfirmId(null);
     } catch (caught) {
       setFormError(errorMessage(caught));
@@ -116,35 +152,46 @@ export function HuntFindingsPanel({
             <h2 className="text-sm font-semibold text-white">Evidence and findings</h2>
             <p className="mt-1 text-xs leading-5 text-gray-500">Record only evidence reviewed during this hunt. A finding can support, refute, or leave the hypothesis unresolved.</p>
           </div>
-          {!readOnly && (
-            <button type="button" className="primary min-h-9" onClick={open ? closeForm : startCreate}>
-              {open ? 'Close form' : 'Add finding'}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="secondary-action min-h-9 border-cyan-800 px-3 text-cyan-100 disabled:opacity-40"
+              disabled={open}
+              title={open ? 'Close the current finding form before opening the AI assistant.' : undefined}
+              onClick={onOpenAssistant}
+            >
+              AI assist findings
             </button>
-          )}
+            {!readOnly && (
+              <button type="button" className="primary min-h-9" onClick={open ? () => closeForm() : startCreate}>
+                {open ? 'Close form' : 'Add finding'}
+              </button>
+            )}
+          </div>
         </div>
 
         {open && (
           <div className="mt-4 grid gap-4 border-t border-gray-800 pt-4 lg:grid-cols-2">
             <div className="lg:col-span-2">
               <h3 className="text-sm font-semibold text-white">{editingId ? 'Correct finding record' : 'Record a finding'}</h3>
-              <p className="mt-1 text-[11px] text-gray-600">Changes are retained until the server confirms the finding was saved.</p>
+              <p className="mt-1 text-[11px] text-gray-600">Changes remain in this form after a failed save. Closing or leaving with unsaved edits requires confirmation.</p>
             </div>
             <Field label="Finding title" required>
               <input className="field" value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} placeholder="What was observed?" />
             </Field>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Status">
-                <select className="field" value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ThreatHuntFindingInput['status'] })}>
+                <select aria-label="Finding status" className="field" value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ThreatHuntFindingInput['status'] })}>
                   {['new', 'reviewed', 'escalated', 'closed'].map(value => <option key={value}>{value}</option>)}
                 </select>
               </Field>
               <Field label="Severity">
-                <select className="field" value={draft.severity} onChange={event => setDraft({ ...draft, severity: event.target.value as ThreatHuntFindingInput['severity'] })}>
+                <select aria-label="Finding severity" className="field" value={draft.severity} onChange={event => setDraft({ ...draft, severity: event.target.value as ThreatHuntFindingInput['severity'] })}>
                   {['informational', 'low', 'medium', 'high', 'critical'].map(value => <option key={value}>{value}</option>)}
                 </select>
               </Field>
               <Field label="Confidence">
-                <input className="field" type="number" min={0} max={100} value={draft.confidence} onChange={event => setDraft({ ...draft, confidence: clamp(Number(event.target.value), 0, 100) })} />
+                <input aria-label="Finding confidence" className="field" type="number" min={0} max={100} value={draft.confidence} onChange={event => setDraft({ ...draft, confidence: clamp(Number(event.target.value), 0, 100) })} />
               </Field>
             </div>
             <Field label="Summary">
@@ -152,29 +199,29 @@ export function HuntFindingsPanel({
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Verdict">
-                <select className="field" value={draft.verdict} onChange={event => setDraft({ ...draft, verdict: event.target.value as ThreatHuntFindingVerdict })}>
+                <select aria-label="Finding verdict" className="field" value={draft.verdict} onChange={event => setDraft({ ...draft, verdict: event.target.value as ThreatHuntFindingVerdict })}>
                   {VERDICTS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </Field>
               <Field label="TLP">
-                <select className="field" value={draft.tlp} onChange={event => setDraft({ ...draft, tlp: event.target.value as ThreatHuntTlp })}>
+                <select aria-label="Finding TLP" className="field" value={draft.tlp} onChange={event => setDraft({ ...draft, tlp: event.target.value as ThreatHuntTlp })}>
                   {allowedTlps.map(value => <option key={value}>{value}</option>)}
                 </select>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Evidence type">
-                <input className="field" value={draft.evidence_type} onChange={event => setDraft({ ...draft, evidence_type: event.target.value })} placeholder="SIEM event, EDR alert, analyst note" />
+                <input aria-label="Finding evidence type" className="field" value={draft.evidence_type} onChange={event => setDraft({ ...draft, evidence_type: event.target.value })} placeholder="SIEM event, EDR alert, analyst note" />
               </Field>
               <Field label="Event time">
-                <input className="field" type="datetime-local" value={toLocalDate(draft.event_time)} onChange={event => setDraft({ ...draft, event_time: toIsoDate(event.target.value) })} />
+                <input aria-label="Finding event time" className="field" type="datetime-local" value={toLocalDate(draft.event_time)} onChange={event => setDraft({ ...draft, event_time: toIsoDate(event.target.value) })} />
               </Field>
             </div>
             <Field label="Evidence reference">
-              <input className="field font-mono text-xs" value={draft.evidence_ref} onChange={event => setDraft({ ...draft, evidence_ref: event.target.value })} placeholder="Case-safe event ID, report URL, or evidence record" />
+              <input aria-label="Finding evidence reference" className="field font-mono text-xs" value={draft.evidence_ref} onChange={event => setDraft({ ...draft, evidence_ref: event.target.value })} placeholder="Case-safe event ID, report URL, or evidence record" />
             </Field>
             <Field label="Observables">
-              <input className="field" value={draft.observables.join(', ')} onChange={event => setDraft({ ...draft, observables: splitList(event.target.value) })} placeholder="host-01, 10.0.0.5, example.com" />
+              <input aria-label="Finding observables" className="field" value={draft.observables.join(', ')} onChange={event => setDraft({ ...draft, observables: splitList(event.target.value) })} placeholder="host-01, 10.0.0.5, example.com" />
             </Field>
             <Field label="ATT&CK techniques">
               <input className="field font-mono uppercase" value={draft.technique_ids.join(', ')} onChange={event => setDraft({ ...draft, technique_ids: splitList(event.target.value) })} placeholder="T1059.001, T1027" />
@@ -276,6 +323,37 @@ function emptyFinding(tlp: ThreatHuntTlp): ThreatHuntFindingInput {
     observables: [],
     technique_ids: [],
     notes: '',
+  };
+}
+
+function findingFingerprint(finding: ThreatHuntFindingInput) {
+  return JSON.stringify(finding);
+}
+
+function safeAssistantFindingDraft(
+  suggestion: Partial<ThreatHuntFindingInput>,
+  parentTlp: ThreatHuntTlp,
+): ThreatHuntFindingInput {
+  const draft = emptyFinding(parentTlp);
+  const severities: ThreatHuntFindingInput['severity'][] = ['informational', 'low', 'medium', 'high', 'critical'];
+  return {
+    ...draft,
+    title: typeof suggestion.title === 'string' ? suggestion.title : '',
+    summary: typeof suggestion.summary === 'string' ? suggestion.summary : '',
+    severity: suggestion.severity && severities.includes(suggestion.severity) ? suggestion.severity : draft.severity,
+    confidence: typeof suggestion.confidence === 'number' ? clamp(suggestion.confidence, 0, 100) : draft.confidence,
+    status: 'new',
+    verdict: 'inconclusive',
+    tlp: parentTlp,
+    evidence_type: 'analysis',
+    evidence_ref: '',
+    event_time: null,
+    observables: [],
+    technique_ids: Array.isArray(suggestion.technique_ids)
+      ? cleanList(suggestion.technique_ids).map(value => value.toUpperCase()).filter(value => /^T\d{4}(?:\.\d{3})?$/.test(value))
+      : [],
+    query_version_id: null,
+    notes: typeof suggestion.notes === 'string' ? suggestion.notes : '',
   };
 }
 

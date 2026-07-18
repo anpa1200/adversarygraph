@@ -199,10 +199,10 @@ async def _normalize_assets(session: AsyncSession, stats: dict[str, Any]) -> Non
 
     changed_matches = 0
     matches = list((await session.execute(select(AssetIntelMatch))).scalars().all())
-    for row in matches:
-        tags = normalize_freeform_tags(row.tags or [])
-        if tags != (row.tags or []):
-            row.tags = tags
+    for match in matches:
+        tags = normalize_freeform_tags(match.tags or [])
+        if tags != (match.tags or []):
+            match.tags = tags
             changed_matches += 1
     _record(stats, "asset_intel_matches", len(matches), changed_matches)
 
@@ -284,11 +284,18 @@ async def _normalize_retrohunt(session: AsyncSession, stats: dict[str, Any]) -> 
                 "cve_ids": row.cve_ids,
                 "product_tags": row.product_tags,
             })
-            row.sector_tags = sector_tags
-            row.tech_tags = tech_tags
-            row.cve_ids = cve_ids
-            row.product_tags = product_tags
-            row.raw_json = raw
+            # RetroHuntSignal currently uses legacy ``Column`` declarations;
+            # apply the normalized mapping dynamically so this migration also
+            # remains compatible once that model moves to typed mappings.
+            normalized_fields = {
+                "sector_tags": sector_tags,
+                "tech_tags": tech_tags,
+                "cve_ids": cve_ids,
+                "product_tags": product_tags,
+                "raw_json": raw,
+            }
+            for field_name, field_value in normalized_fields.items():
+                setattr(row, field_name, field_value)
             changed += 1
     _record(stats, "retrohunt_signals", len(rows), changed)
 
@@ -296,23 +303,33 @@ async def _normalize_retrohunt(session: AsyncSession, stats: dict[str, Any]) -> 
 async def _normalize_sector_intel(session: AsyncSession, stats: dict[str, Any]) -> None:
     changed_profiles = 0
     profiles = list((await session.execute(select(ClientProfile))).scalars().all())
-    for row in profiles:
-        sector = canonical_value("sector", row.sector)
-        technologies = canonical_values("technology", row.technologies or [])
-        if sector != row.sector or technologies != (row.technologies or []):
-            row.sector = sector
-            row.technologies = technologies
+    for profile in profiles:
+        sector = canonical_value("sector", profile.sector)
+        technologies = canonical_values("technology", profile.technologies or [])
+        if sector != profile.sector or technologies != (profile.technologies or []):
+            profile.sector = sector
+            profile.technologies = technologies
             changed_profiles += 1
     _record(stats, "client_profiles", len(profiles), changed_profiles)
 
     changed_observations = 0
     observations = list((await session.execute(select(ActorIntelObservation))).scalars().all())
-    for row in observations:
-        actor_attack_id = canonical_value("actor", row.actor_attack_id) if row.actor_attack_id else row.actor_attack_id
-        normalized_value = _observation_value(row.observation_type, row.normalized_value or row.value)
-        if actor_attack_id != row.actor_attack_id or normalized_value != row.normalized_value:
-            row.actor_attack_id = actor_attack_id
-            row.normalized_value = normalized_value
+    for observation in observations:
+        actor_attack_id = (
+            canonical_value("actor", observation.actor_attack_id)
+            if observation.actor_attack_id
+            else observation.actor_attack_id
+        )
+        normalized_value = _observation_value(
+            observation.observation_type,
+            observation.normalized_value or observation.value,
+        )
+        if (
+            actor_attack_id != observation.actor_attack_id
+            or normalized_value != observation.normalized_value
+        ):
+            observation.actor_attack_id = actor_attack_id
+            observation.normalized_value = normalized_value
             changed_observations += 1
     _record(stats, "actor_intel_observations", len(observations), changed_observations)
 
@@ -320,61 +337,69 @@ async def _normalize_sector_intel(session: AsyncSession, stats: dict[str, Any]) 
 async def _normalize_threat_radar(session: AsyncSession, stats: dict[str, Any]) -> None:
     changed_signals = 0
     signals = list((await session.execute(select(ThreatSignal))).scalars().all())
-    for row in signals:
+    for signal in signals:
         values = {
-            "cve_ids": canonical_values("cve", row.cve_ids or []),
-            "technique_ids": canonical_values("ttp", row.technique_ids or []),
-            "actors": canonical_values("actor", row.actors or []),
-            "sectors": canonical_values("sector", row.sectors or []),
-            "tags": normalize_freeform_tags(row.tags or []),
+            "cve_ids": canonical_values("cve", signal.cve_ids or []),
+            "technique_ids": canonical_values("ttp", signal.technique_ids or []),
+            "actors": canonical_values("actor", signal.actors or []),
+            "sectors": canonical_values("sector", signal.sectors or []),
+            "tags": normalize_freeform_tags(signal.tags or []),
         }
-        if any(getattr(row, key) != value for key, value in values.items()):
-            raw = dict(row.raw_metadata or {})
+        if any(getattr(signal, key) != value for key, value in values.items()):
+            raw = dict(signal.raw_metadata or {})
             raw.setdefault("taxonomy_original", {
-                "cve_ids": row.cve_ids,
-                "technique_ids": row.technique_ids,
-                "actors": row.actors,
-                "sectors": row.sectors,
-                "tags": row.tags,
+                "cve_ids": signal.cve_ids,
+                "technique_ids": signal.technique_ids,
+                "actors": signal.actors,
+                "sectors": signal.sectors,
+                "tags": signal.tags,
             })
             for key, value in values.items():
-                setattr(row, key, value)
-            row.raw_metadata = raw
+                setattr(signal, key, value)
+            signal.raw_metadata = raw
             changed_signals += 1
     _record(stats, "threat_signals", len(signals), changed_signals)
 
     changed_entities = 0
     entities = list((await session.execute(select(ThreatEntity))).scalars().all())
-    for row in entities:
-        tags = normalize_freeform_tags(row.tags or [])
-        if tags != (row.tags or []):
-            metadata = dict(row.metadata_json or {})
-            metadata.setdefault("original_tags", row.tags)
-            row.tags = tags
-            row.metadata_json = metadata
+    for entity in entities:
+        tags = normalize_freeform_tags(entity.tags or [])
+        if tags != (entity.tags or []):
+            metadata = dict(entity.metadata_json or {})
+            metadata.setdefault("original_tags", entity.tags)
+            entity.tags = tags
+            entity.metadata_json = metadata
             changed_entities += 1
     _record(stats, "threat_entities", len(entities), changed_entities)
 
     changed_cases = 0
     cases = list((await session.execute(select(ThreatCase))).scalars().all())
-    for row in cases:
-        tags = normalize_freeform_tags(row.tags or [])
-        if tags != (row.tags or []):
-            row.tags = tags
+    for case in cases:
+        tags = normalize_freeform_tags(case.tags or [])
+        if tags != (case.tags or []):
+            case.tags = tags
             changed_cases += 1
     _record(stats, "threat_cases", len(cases), changed_cases)
 
     changed_mappings = 0
     mappings = list((await session.execute(select(ThreatProductMapping))).scalars().all())
-    for row in mappings:
-        product = canonical_value("product", row.product) if row.product else row.product
-        component = canonical_value("dependency", row.component) if row.component else row.component
-        dependency = canonical_value("dependency", row.dependency) if row.dependency else row.dependency
-        exposure = canonical_value("exposure", row.exposure)
-        environment = canonical_value("environment", row.environment)
+    for mapping in mappings:
+        product = canonical_value("product", mapping.product) if mapping.product else mapping.product
+        component = (
+            canonical_value("dependency", mapping.component)
+            if mapping.component
+            else mapping.component
+        )
+        dependency = (
+            canonical_value("dependency", mapping.dependency)
+            if mapping.dependency
+            else mapping.dependency
+        )
+        exposure = canonical_value("exposure", mapping.exposure)
+        environment = canonical_value("environment", mapping.environment)
         tags = normalize_freeform_tags(
             [
-                *(row.tags or []),
+                *(mapping.tags or []),
                 f"product:{product}" if product else "",
                 f"dependency:{component}" if component else "",
                 f"dependency:{dependency}" if dependency else "",
@@ -383,19 +408,19 @@ async def _normalize_threat_radar(session: AsyncSession, stats: dict[str, Any]) 
             ]
         )
         if (
-            tags != (row.tags or [])
-            or product != row.product
-            or component != row.component
-            or dependency != row.dependency
-            or exposure != row.exposure
-            or environment != row.environment
+            tags != (mapping.tags or [])
+            or product != mapping.product
+            or component != mapping.component
+            or dependency != mapping.dependency
+            or exposure != mapping.exposure
+            or environment != mapping.environment
         ):
-            row.tags = tags
-            row.product = product
-            row.component = component
-            row.dependency = dependency
-            row.exposure = exposure
-            row.environment = environment
+            mapping.tags = tags
+            mapping.product = product
+            mapping.component = component
+            mapping.dependency = dependency
+            mapping.exposure = exposure
+            mapping.environment = environment
             changed_mappings += 1
     _record(stats, "threat_product_mappings", len(mappings), changed_mappings)
 

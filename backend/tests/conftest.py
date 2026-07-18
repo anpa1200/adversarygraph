@@ -212,6 +212,18 @@ def _reset_mock_session():
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limit_state():
+    """Keep integration tests independent while retaining real limiter behavior."""
+    from app.core import rate_limit
+
+    rate_limit._windows.clear()
+    rate_limit._last_cleanup = 0.0
+    yield
+    rate_limit._windows.clear()
+    rate_limit._last_cleanup = 0.0
+
+
+@pytest.fixture(autouse=True)
 def _authenticated_route_user(request, monkeypatch, app):
     """Protected-route tests run as a default analyst; auth-route tests exercise real auth."""
     if Path(str(request.node.fspath)).name == "test_auth_routes.py":

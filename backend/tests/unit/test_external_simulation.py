@@ -1,9 +1,13 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 import json
 from pathlib import Path
 import threading
+from urllib.error import HTTPError, URLError
 
 import pytest
+
+from app.services import external_simulation
 
 from app.services.external_simulation import (
     TELEMETRY_FIDELITY_NOTE,
@@ -470,9 +474,9 @@ def test_validate_siem_destination_translates_localhost_for_docker(monkeypatch):
     monkeypatch.setattr("app.services.external_simulation._running_in_container", lambda: True)
     monkeypatch.setattr("app.services.external_simulation.socket.getaddrinfo", fake_getaddrinfo)
 
-    destination = _validate_siem_destination("https://127.0.0.1:30303/logeye/api/logger.jsp?token=secret")
+    destination = _validate_siem_destination("https://127.0.0.1:30303/logeye/api/logger.jsp?source=web")
 
-    assert destination == "https://host.docker.internal:30303/logeye/api/logger.jsp?token=secret"
+    assert destination == "https://host.docker.internal:30303/logeye/api/logger.jsp?source=web"
 
 
 def test_validate_siem_destination_direct_mode_preserves_loopback_in_docker(monkeypatch):
@@ -498,9 +502,9 @@ def test_validate_siem_destination_maps_wildcard_address_for_docker(monkeypatch)
     monkeypatch.setattr("app.services.external_simulation._running_in_container", lambda: True)
     monkeypatch.setattr("app.services.external_simulation.socket.getaddrinfo", fake_getaddrinfo)
 
-    destination = _validate_siem_destination("https://0.0.0.0:30304/logeye/api/logger.jsp?token=secret")
+    destination = _validate_siem_destination("https://0.0.0.0:30304/logeye/api/logger.jsp?source=web")
 
-    assert destination == "https://host.docker.internal:30304/logeye/api/logger.jsp?token=secret"
+    assert destination == "https://host.docker.internal:30304/logeye/api/logger.jsp?source=web"
 
 
 def test_validate_siem_destination_maps_wildcard_address_for_direct_mode(monkeypatch):
@@ -520,7 +524,155 @@ def test_validate_siem_destination_maps_wildcard_address_for_direct_mode(monkeyp
 def test_redact_siem_destination_hides_sensitive_query_values():
     destination = _redact_siem_destination("https://siem.example/api?token=secret&source=web&api_key=k")
 
-    assert destination == "https://siem.example/api?token=secret&source=web&api_key=REDACTED"
+    assert destination == "https://siem.example/api?token=REDACTED&source=web&api_key=REDACTED"
+
+
+def test_validate_siem_destination_rejects_query_string_credentials():
+    with pytest.raises(ValueError, match="query parameters"):
+        _validate_siem_destination(
+            "https://127.0.0.1:30303/collector?access-token=secret",
+            connection_mode="direct",
+        )
+
+
+def test_authenticated_forward_does_not_downgrade_https(monkeypatch):
+    calls: list[str] = []
+
+    def fail_tls(destination, *_args, **_kwargs):
+        calls.append(destination)
+        raise URLError("wrong version number")
+
+    monkeypatch.setattr(external_simulation, "_post_siem_payload_once", fail_tls)
+    result = forward_telemetry_logs(
+        source="web",
+        run_id="missing-run",
+        destination_url="https://127.0.0.1:30303/collector",
+        auth_type="bearer",
+        token="top-secret",
+        connection_mode="direct",
+        allow_http_fallback=True,
+    )
+
+    assert result["ok"] is False
+    assert result["http_fallback_used"] is False
+    assert calls == ["https://127.0.0.1:30303/collector"]
+
+
+def test_post_siem_payload_sanitizes_success_headers_and_json_preview(monkeypatch):
+    class CollectorResponse:
+        status = 202
+        headers = {
+            "X-Request-ID": "request-123",
+            "Content-Type": "application/json",
+            "Set-Cookie": "session=collector-cookie-secret; HttpOnly",
+            "Authorization": "Bearer collector-header-secret",
+            "X-Collector-Api-Token": "custom-header-secret",
+            "X-Custom-Key": "custom-key-secret",
+            "Location": "https://collector.example/result?token=location-secret&source=siem",
+        }
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self, _limit):
+            return json.dumps(
+                {
+                    "message": "accepted",
+                    "access_token": "response-body-secret",
+                    "nested": {"password": "nested-secret"},
+                    "request_id": "request-123",
+                }
+            ).encode()
+
+    monkeypatch.setattr(external_simulation, "_direct_urlopen", lambda *_args, **_kwargs: CollectorResponse())
+
+    result = external_simulation._post_siem_payload_once(
+        "https://collector.example/events",
+        b"{}",
+        {"Content-Type": "application/json"},
+        0.0,
+        "https://collector.example/events",
+        "direct",
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == 202
+    assert result["response_headers"]["X-Request-ID"] == "request-123"
+    assert result["response_headers"]["Content-Type"] == "application/json"
+    assert "Set-Cookie" not in result["response_headers"]
+    assert result["response_headers"]["Authorization"] == "[redacted]"
+    assert result["response_headers"]["X-Collector-Api-Token"] == "[redacted]"
+    assert result["response_headers"]["X-Custom-Key"] == "[redacted]"
+    assert "location-secret" not in result["response_headers"]["Location"]
+    assert "source=siem" in result["response_headers"]["Location"]
+    assert "response-body-secret" not in result["response_preview"]
+    assert "nested-secret" not in result["response_preview"]
+    assert "request-123" in result["response_preview"]
+    assert result["error"] == ""
+
+
+def test_post_siem_payload_sanitizes_http_error_headers_and_text_preview(monkeypatch):
+    response_headers = {
+        "X-Correlation-ID": "correlation-456",
+        "Set-Cookie": "sid=http-error-cookie-secret",
+        "X-Session-ID": "session-header-secret",
+    }
+    response_body = (
+        b"authorization: Bearer response-auth-secret; token=response-token-secret; "
+        b'password: "two word response secret"; request_id=collector-request-789 ' + b"x" * 800
+    )
+
+    def raise_http_error(*_args, **_kwargs):
+        raise HTTPError(
+            "https://collector.example/events",
+            401,
+            "Unauthorized",
+            response_headers,
+            BytesIO(response_body),
+        )
+
+    monkeypatch.setattr(external_simulation, "_direct_urlopen", raise_http_error)
+
+    result = external_simulation._post_siem_payload_once(
+        "https://collector.example/events",
+        b"{}",
+        {"Content-Type": "application/json"},
+        0.0,
+        "https://collector.example/events",
+        "direct",
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == 401
+    assert result["response_headers"]["X-Correlation-ID"] == "correlation-456"
+    assert "Set-Cookie" not in result["response_headers"]
+    assert result["response_headers"]["X-Session-ID"] == "[redacted]"
+    assert "response-auth-secret" not in result["response_preview"]
+    assert "response-token-secret" not in result["response_preview"]
+    assert "two word response secret" not in result["response_preview"]
+    assert "collector-request-789" in result["response_preview"]
+    assert result["error"] == result["response_preview"]
+    assert len(result["response_preview"]) <= 500
+
+
+def test_siem_response_header_sanitizer_is_bounded_and_prioritizes_request_id():
+    headers = {
+        **{f"X-Safe-{index}": "v" * 1000 for index in range(50)},
+        "X-Request-ID": "request-after-many-headers",
+        "X-Long-Value": "z" * 1000,
+        f"X-{'k' * 200}": "must-be-dropped",
+    }
+
+    sanitized = external_simulation._sanitize_siem_response_headers(headers)
+
+    assert len(sanitized) <= 32
+    assert sanitized["X-Request-ID"] == "request-after-many-headers"
+    assert all(len(name) <= 128 for name in sanitized)
+    assert all(len(value) <= 512 for value in sanitized.values())
+    assert "must-be-dropped" not in sanitized.values()
 
 
 def test_forward_telemetry_blocks_unsafe_destination_scheme():

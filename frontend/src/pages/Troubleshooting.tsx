@@ -3,6 +3,8 @@ import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { systemApi, type SelfTestResult, type TroubleshootingAssistantResponse } from '@/api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const checks = [
   {
@@ -65,6 +67,7 @@ function CodeBlock({ children }: { children: string }) {
 }
 
 export function Troubleshooting() {
+  const canRunAnalysis = useHasPermission('run_analysis');
   const [params] = useSearchParams();
   const error = params.get('error');
   const status = params.get('status');
@@ -81,6 +84,7 @@ export function Troubleshooting() {
   });
 
   const askAssistant = () => {
+    if (!canRunAnalysis) return;
     assistantMutation.mutate({
       provider,
       error_message: error ?? '',
@@ -143,7 +147,7 @@ export function Troubleshooting() {
                 <button
                   type="button"
                   onClick={() => selftestMutation.mutate()}
-                  disabled={selftestMutation.isPending}
+                  disabled={!canRunAnalysis || selftestMutation.isPending}
                   className="secondary-action disabled:cursor-wait disabled:opacity-60"
                 >
                   {selftestMutation.isPending ? 'Running...' : 'Run self-test'}
@@ -151,13 +155,18 @@ export function Troubleshooting() {
                 <button
                   type="button"
                   onClick={askAssistant}
-                  disabled={assistantMutation.isPending}
+                  disabled={!canRunAnalysis || assistantMutation.isPending}
                   className="primary-action disabled:cursor-wait disabled:opacity-60"
                 >
                   {assistantMutation.isPending ? 'Analyzing...' : 'Ask assistant'}
                 </button>
               </div>
             </div>
+            {!canRunAnalysis && (
+              <div className="mt-4">
+                <PermissionNotice permission="run_analysis" action="run self-test or ask the troubleshooting assistant" compact />
+              </div>
+            )}
             <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
               <div className="space-y-3">
                 <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Operator notes</label>

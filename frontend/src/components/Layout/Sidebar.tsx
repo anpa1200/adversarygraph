@@ -7,10 +7,10 @@ import { GlobalSearch } from '@/components/GlobalSearch';
 import { useAppStore } from '@/store';
 import { useState } from 'react';
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
-import { useCurrentUser, hasRole } from '@/hooks/useCurrentUser';
+import { useCurrentUser, hasPermission } from '@/hooks/useCurrentUser';
 import packageMetadata from '../../../package.json';
 
-const nav = [
+const nav: Array<{ to: string; label: string; icon: string; permission?: string; anyPermission?: string[] }> = [
   { to: '/discover',      label: 'Discover',      icon: '⌕' },
   { to: '/navigator',     label: 'Navigator',     icon: '⬡' },
   { to: '/apt',           label: 'ATT&CK Group Library', icon: '◈' },
@@ -18,26 +18,26 @@ const nav = [
   { to: '/reports-research', label: 'Reports / Research', icon: '▤' },
   { to: '/compare',       label: 'Compare',       icon: '⬡' },
   { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
-  { to: '/asset-surface', label: 'Asset Surface', icon: '▥' },
-  { to: '/emb3d',         label: 'EMB3D', icon: '▧' },
-  { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎' },
-  { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡' },
+  { to: '/asset-surface', label: 'Asset Surface', icon: '▥', permission: 'run_analysis' },
+  { to: '/emb3d',         label: 'EMB3D', icon: '▧', permission: 'run_analysis' },
+  { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', permission: 'run_attack_simulation' },
+  { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡', permission: 'run_analysis' },
   { to: '/retrohunt',     label: 'RetroHunt Signals', icon: '↺' },
   { to: '/knowledge',     label: 'Knowledge Library', icon: '◎' },
   { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
-  { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬' },
+  { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬', permission: 'run_analysis' },
   { to: '/cve',           label: 'CVE Library', icon: '▨' },
-  { to: '/threat-radar',  label: 'Threat Radar', icon: '◉' },
-  { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖' },
-  { to: '/feeds',         label: 'Feeds Management', icon: '≋' },
-  { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧' },
-  { to: '/virustotal',    label: 'VirusTotal Lookup', icon: '◇' },
-  { to: '/report',        label: 'Investigation', icon: '▤' },
-  { to: '/operations',    label: 'Operations', icon: '◆' },
-  { to: '/pipeline',      label: 'Pipeline', icon: '⇄' },
-  { to: '/statistics',    label: 'Statistics', icon: '▥' },
-  { to: '/observability', label: 'Observability', icon: '◌' },
-  { to: '/admin',         label: 'Admin Panel', icon: '⚙' },
+  { to: '/threat-radar',  label: 'Threat Radar', icon: '◉', permission: 'run_analysis' },
+  { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', permission: 'run_analysis' },
+  { to: '/feeds',         label: 'Feeds Management', icon: '≋', permission: 'manage_feeds' },
+  { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧', permission: 'run_analysis' },
+  { to: '/virustotal',    label: 'VirusTotal Lookup', icon: '◇', permission: 'run_analysis' },
+  { to: '/report',        label: 'Investigation', icon: '▤', permission: 'run_analysis' },
+  { to: '/operations',    label: 'Operations', icon: '◆', permission: 'run_analysis' },
+  { to: '/pipeline',      label: 'Pipeline', icon: '⇄', permission: 'run_analysis' },
+  { to: '/statistics',    label: 'Statistics', icon: '▥', permission: 'run_analysis' },
+  { to: '/observability', label: 'Observability', icon: '◌', permission: 'view_audit' },
+  { to: '/admin',         label: 'Admin Panel', icon: '⚙', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
   { to: '/examples',      label: 'DFIR Examples', icon: '▦' },
   { to: '/help',          label: 'Help / Local Guide', icon: '?' },
   { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
@@ -79,7 +79,10 @@ export function Sidebar() {
       {/* Navigation */}
       <nav data-testid="sidebar-primary-nav" className="sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-2">
         <div className="sticky top-0 z-10 -mx-3 -mt-2 bg-mitre-navy px-3 pb-2 pt-2"><GlobalSearch /></div>
-        {nav.filter(item => item.to !== '/admin' || hasRole(user, 'admin')).map(({ to, label, icon }) => (
+        {nav.filter(item => (
+          (!item.permission || hasPermission(user, item.permission))
+          && (!item.anyPermission?.length || item.anyPermission.some(permission => hasPermission(user, permission)))
+        )).map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -142,12 +145,12 @@ export function Sidebar() {
         {hasUpdate ? (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-            <NavLink to="/feeds" className="text-[10px] text-amber-400 hover:text-amber-300">ATT&CK update available</NavLink>
+            {hasPermission(user, 'manage_feeds') ? <NavLink to="/feeds" className="text-[10px] text-amber-400 hover:text-amber-300">ATT&CK update available</NavLink> : <span className="text-[10px] text-amber-400">ATT&CK update available</span>}
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-600 shrink-0" />
-            <NavLink to="/feeds" className="text-[10px] text-gray-500 hover:text-gray-300">ATT&CK up to date</NavLink>
+            {hasPermission(user, 'manage_feeds') ? <NavLink to="/feeds" className="text-[10px] text-gray-500 hover:text-gray-300">ATT&CK up to date</NavLink> : <span className="text-[10px] text-gray-500">ATT&CK up to date</span>}
           </div>
         )}
         <div className="text-[10px] text-gray-600 mt-0.5">AdversaryGraph v{packageMetadata.version}</div>

@@ -132,14 +132,18 @@ Open:
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs | http://localhost:3000/docs |
-| Health | http://localhost:3000/api/health |
+| Liveness | http://localhost:3000/api/health |
+| Readiness | http://localhost:3000/api/ready |
 | Reference book | http://localhost:3001/anomaly-detection-atlas/ |
 
 Health should return:
 
 ```json
-{"status":"ok","version":"5.6.0"}
+{"status":"ok","version":"6.0.0"}
 ```
+
+Use `/api/ready` for deployment admission. It verifies database connectivity
+and returns HTTP `503` while the API is not ready for traffic.
 
 Run the built-in deployment self-test after Docker startup:
 
@@ -156,6 +160,10 @@ request context and provides:
 - `Open troubleshooting` to open the internal Docker troubleshooting page
 
 When recheck passes, the popup turns green and shows `All correct.`.
+When authentication is enabled, the container command may prove only
+`/api/ready`; use an authenticated account with `run_analysis` and require the
+full self-test JSON to return `status=ok`. A `degraded` popup is diagnostic, not
+a passing release result.
 
 Internal troubleshooting page:
 
@@ -867,6 +875,7 @@ Common endpoints:
 
 ```text
 GET  /api/health
+GET  /api/ready
 GET  /api/attack/versions
 GET  /api/attack/techniques
 GET  /api/attack/techniques/{attack_id}

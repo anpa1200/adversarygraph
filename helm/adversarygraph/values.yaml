@@ -1,14 +1,18 @@
 global:
-  imagePullPolicy: IfNotPresent
+  imagePullPolicy: Always
 
 image:
-  repository: ghcr.io/anpa1200/adversarygraph-api
-  tag: "5.6.0"
+  repository: ghcr.io/anpa1200/adversarygraph-backend
+  tag: "6.0.0"
+  # Set to a reviewed sha256:... value in production. When present, digest
+  # takes precedence over tag without requiring a chart change.
+  digest: ""
 
 frontend:
   image:
     repository: ghcr.io/anpa1200/adversarygraph-frontend
-    tag: "5.6.0"
+    tag: "6.0.0"
+    digest: ""
   replicas: 1
   service:
     type: ClusterIP
@@ -56,8 +60,16 @@ beat:
 
 postgresql:
   enabled: true
-  image: postgres:16-alpine
+  image:
+    # Compatibility default for chart evaluation. A production rollout must
+    # replace this with the release's adversarygraph-postgres repository and
+    # digest from adversarygraph-images.env.
+    repository: postgres
+    tag: "16-alpine"
+    digest: sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
   storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
   storageSize: 50Gi
   resources:
     requests:
@@ -70,6 +82,7 @@ postgresql:
 redis:
   enabled: true
   image: redis:7-alpine
+  imageDigest: sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
   resources:
     requests:
       cpu: 100m
@@ -82,7 +95,11 @@ malwaregraph:
   enabled: true
   image:
     repository: ghcr.io/anpa1200/adversarygraph-malwaregraph
-    tag: "5.6.0"
+    tag: "6.0.0"
+    digest: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
   storageSize: 20Gi
   resources:
     requests:
@@ -92,12 +109,17 @@ malwaregraph:
       cpu: "2"
       memory: 2Gi
 
-attackLab:
-  enabled: false
-
 persistence:
   attckDataSize: 10Gi
   logsSize: 20Gi
+  attckData:
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+  logs:
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
 
 ingress:
   enabled: false
@@ -105,17 +127,38 @@ ingress:
   host: adversarygraph.example.com
   tlsSecretName: ""
 
+networkPolicy:
+  # Baseline ingress isolation is enabled by default. Egress remains open
+  # because provider/feed destinations and DNS controls are cluster-specific.
+  enabled: true
+  # Each value is a list of additional Kubernetes NetworkPolicy ingress rules.
+  # Use these for monitoring, backup, or ingress-controller paths not covered
+  # by the baseline component relationships.
+  extraIngress:
+    api: []
+    frontend: []
+    malwaregraph: []
+    postgres: []
+    redis: []
+    worker: []
+    beat: []
+
 secrets:
-  existingSecret: ""
+  # Required for installation. Create this Secret out-of-band; the chart does
+  # not render placeholder production credentials by default.
+  existingSecret: adversarygraph-runtime
   dbName: adversarygraph
   dbUser: ag_user
-  dbPassword: "CHANGE_ME"
-  redisPassword: "CHANGE_ME"
+  dbPassword: ""
+  redisPassword: ""
   authBootstrapAdminPassword: ""
+  proxySecret: ""
+  rateLimitProxySecret: ""
   anthropicApiKey: ""
   openaiApiKey: ""
   geminiApiKey: ""
   minimaxApiKey: ""
+  localLlmApiKey: ""
   nvdApiKey: ""
   threatfoxAuthKey: ""
   otxApiKey: ""
@@ -124,11 +167,15 @@ secrets:
   shodanApiKey: ""
   abuseipdbApiKey: ""
   censysApiKey: ""
+  censysOrgId: ""
   openctiUrl: ""
   openctiToken: ""
   malwaregraphApiKey: ""
 
 config:
+  # Set true in reviewed production values. This enables fail-closed Helm
+  # checks for auth/TLS-cookie/CORS/network-policy/secret/image contracts.
+  productionMode: "false"
   authEnabled: true
   authSsoMode: proxy
   authDefaultRole: viewer
@@ -139,13 +186,27 @@ config:
   authPasswordRequireNumber: "false"
   authPasswordRequireSpecial: "false"
   authMfaEnabled: "false"
+  # Set true only for an upgrade where a named permanent admin was verified
+  # before removing bootstrap/proxy credentials from a chart-managed Secret.
+  authExistingAdminConfirmed: "false"
+  secureCookies: "true"
   corsAllowedOrigins: "https://adversarygraph.example.com"
   attckDomains: "enterprise-attack,mobile-attack,ics-attack,atlas"
   autoIocFullSyncOnStartup: "false"
   autoThreatfoxSyncDays: "7"
   logLevel: info
   openaiModel: gpt-4.1
+  geminiModel: gemini-3.5-flash
   minimaxModel: MiniMax-M3
   minimaxBaseUrl: https://api.minimax.io/v1
-  localLlmBaseUrl: http://host.docker.internal:11434/v1
+  # Kubernetes has no portable host.docker.internal mapping. Set this to a
+  # reachable in-cluster Service or reviewed private gateway to enable local AI.
+  localLlmBaseUrl: ""
   localLlmModel: llama3.1:8b
+  threatHuntingAiEnabled: "true"
+  threatHuntingAiCloudEnabled: "false"
+  threatHuntingAiDefaultProvider: local
+  threatHuntingAiTimeoutSeconds: "45"
+  threatHuntingAiSourceCharLimit: "40000"
+  threatHuntingAiMaxCandidates: "3"
+  malwaregraphMaxUploadBytes: "268435456"

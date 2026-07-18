@@ -4,197 +4,226 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.services.auth import TeamUser, admin, analyst, audit
+from app.core.payload_limits import BoundedPayloadModel
+from app.services.auth import TeamUser, audit, current_user, require_permission
 from app.services import evidence_graph as graph
+
+manage_evidence = require_permission("manage_intel")
+export_evidence = require_permission("export_data")
 
 router = APIRouter(prefix="/evidence-graph", tags=["Evidence-to-Detection Graph"])
 
 
-class NodeBody(BaseModel):
+class NodeBody(BoundedPayloadModel):
     node_type: str = Field(..., min_length=2, max_length=50)
     title: str = Field(..., min_length=1, max_length=500)
-    description: str = ""
-    source_type: str = ""
-    source_ref: str = ""
-    raw_excerpt: str = ""
-    normalized_summary: str = ""
+    description: str = Field("", max_length=100_000)
+    source_type: str = Field("", max_length=80)
+    source_ref: str = Field("", max_length=500)
+    raw_excerpt: str = Field("", max_length=250_000)
+    normalized_summary: str = Field("", max_length=100_000)
     timestamp_observed: datetime | None = None
-    statement: str = ""
-    claim_type: str = ""
-    behavior_description: str = ""
-    tactic_hint: str = ""
-    observable_pattern: str = ""
-    framework: str = ""
-    technique_id: str = ""
-    technique_name: str = ""
-    tactic: str = ""
-    mapping_rationale: str = ""
-    data_source: str = ""
-    data_component: str = ""
-    required_fields: list[Any] = Field(default_factory=list)
-    example_sources: list[Any] = Field(default_factory=list)
-    schema_target: str = "raw"
-    availability_status: str = "unknown"
-    gap_description: str = ""
-    detection_hypothesis: str = ""
-    detection_type: str = ""
-    severity: str = "medium"
-    expected_false_positives: str = ""
-    required_telemetry_ids: list[Any] = Field(default_factory=list)
-    status: str = ""
-    rule_format: str = ""
-    rule_body: str = ""
-    rule_version: str = ""
-    backend_assumptions: str = ""
-    test_status: str = "not_tested"
-    deployment_status: str = "draft"
-    scenario_type: str = ""
-    scenario_description: str = ""
-    attack_techniques: list[Any] = Field(default_factory=list)
-    expected_telemetry: str = ""
-    expected_detection_outcome: str = ""
-    safety_boundary: str = ""
-    destination_type: str = ""
-    destination_label: str = ""
-    forwarding_status: str = "not_sent"
-    collector_response: str = ""
-    parsed_fields: dict[str, Any] = Field(default_factory=dict)
+    statement: str = Field("", max_length=100_000)
+    claim_type: str = Field("", max_length=80)
+    behavior_description: str = Field("", max_length=100_000)
+    tactic_hint: str = Field("", max_length=120)
+    observable_pattern: str = Field("", max_length=100_000)
+    framework: str = Field("", max_length=80)
+    technique_id: str = Field("", max_length=40)
+    technique_name: str = Field("", max_length=255)
+    tactic: str = Field("", max_length=120)
+    mapping_rationale: str = Field("", max_length=100_000)
+    data_source: str = Field("", max_length=255)
+    data_component: str = Field("", max_length=255)
+    required_fields: list[Any] = Field(default_factory=list, max_length=2000)
+    example_sources: list[Any] = Field(default_factory=list, max_length=2000)
+    schema_target: str = Field("raw", max_length=80)
+    availability_status: str = Field("unknown", max_length=40)
+    gap_description: str = Field("", max_length=100_000)
+    detection_hypothesis: str = Field("", max_length=100_000)
+    detection_type: str = Field("", max_length=80)
+    severity: str = Field("medium", max_length=40)
+    expected_false_positives: str = Field("", max_length=100_000)
+    required_telemetry_ids: list[Any] = Field(default_factory=list, max_length=2000)
+    status: str = Field("", max_length=80)
+    rule_format: str = Field("", max_length=80)
+    rule_body: str = Field("", max_length=250_000)
+    rule_version: str = Field("", max_length=80)
+    backend_assumptions: str = Field("", max_length=100_000)
+    test_status: str = Field("not_tested", max_length=40)
+    deployment_status: str = Field("draft", max_length=40)
+    scenario_type: str = Field("", max_length=80)
+    scenario_description: str = Field("", max_length=100_000)
+    attack_techniques: list[Any] = Field(default_factory=list, max_length=2000)
+    expected_telemetry: str = Field("", max_length=100_000)
+    expected_detection_outcome: str = Field("", max_length=100_000)
+    safety_boundary: str = Field("", max_length=100_000)
+    destination_type: str = Field("", max_length=80)
+    destination_label: str = Field("", max_length=255)
+    forwarding_status: str = Field("not_sent", max_length=40)
+    collector_response: str = Field("", max_length=100_000)
+    parsed_fields: dict[str, Any] = Field(default_factory=dict, max_length=2000)
     detection_matched: bool = False
     dashboard_updated: bool = False
     correlation_triggered: bool = False
-    failure_reason: str = ""
-    evidence_ref: str = ""
-    decision: str = ""
-    rationale: str = ""
-    reviewer: str = ""
+    failure_reason: str = Field("", max_length=100_000)
+    evidence_ref: str = Field("", max_length=500)
+    decision: str = Field("", max_length=80)
+    rationale: str = Field("", max_length=100_000)
+    reviewer: str = Field("", max_length=255)
     reviewed_at: datetime | None = None
-    next_action: str = ""
-    confidence: int = 50
-    review_status: str = "draft"
+    next_action: str = Field("", max_length=100_000)
+    confidence: int = Field(50, ge=0, le=100)
+    review_status: str = Field("draft", max_length=40)
     ai_generated: bool = False
-    ai_provider: str = ""
-    ai_model: str = ""
-    ai_prompt_version: str = ""
-    tags: list[Any] = Field(default_factory=list)
-    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    ai_provider: str = Field("", max_length=80)
+    ai_model: str = Field("", max_length=120)
+    ai_prompt_version: str = Field("", max_length=80)
+    tags: list[Any] = Field(default_factory=list, max_length=2000)
+    metadata_json: dict[str, Any] = Field(default_factory=dict, max_length=2000)
 
 
-class NodePatch(BaseModel):
-    node_type: str | None = None
-    title: str | None = None
+class NodePatch(BoundedPayloadModel):
+    node_type: str | None = Field(None, min_length=2, max_length=50)
+    title: str | None = Field(None, min_length=1, max_length=500)
     description: str | None = None
-    source_type: str | None = None
-    source_ref: str | None = None
+    source_type: str | None = Field(None, max_length=80)
+    source_ref: str | None = Field(None, max_length=500)
     raw_excerpt: str | None = None
     normalized_summary: str | None = None
     timestamp_observed: datetime | None = None
     statement: str | None = None
-    claim_type: str | None = None
+    claim_type: str | None = Field(None, max_length=80)
     behavior_description: str | None = None
-    tactic_hint: str | None = None
+    tactic_hint: str | None = Field(None, max_length=120)
     observable_pattern: str | None = None
-    framework: str | None = None
-    technique_id: str | None = None
-    technique_name: str | None = None
-    tactic: str | None = None
+    framework: str | None = Field(None, max_length=80)
+    technique_id: str | None = Field(None, max_length=40)
+    technique_name: str | None = Field(None, max_length=255)
+    tactic: str | None = Field(None, max_length=120)
     mapping_rationale: str | None = None
-    data_source: str | None = None
-    data_component: str | None = None
+    data_source: str | None = Field(None, max_length=255)
+    data_component: str | None = Field(None, max_length=255)
     required_fields: list[Any] | None = None
     example_sources: list[Any] | None = None
-    schema_target: str | None = None
-    availability_status: str | None = None
+    schema_target: str | None = Field(None, max_length=80)
+    availability_status: str | None = Field(None, max_length=40)
     gap_description: str | None = None
     detection_hypothesis: str | None = None
-    detection_type: str | None = None
-    severity: str | None = None
+    detection_type: str | None = Field(None, max_length=80)
+    severity: str | None = Field(None, max_length=40)
     expected_false_positives: str | None = None
     required_telemetry_ids: list[Any] | None = None
-    status: str | None = None
-    rule_format: str | None = None
+    status: str | None = Field(None, max_length=80)
+    rule_format: str | None = Field(None, max_length=80)
     rule_body: str | None = None
-    rule_version: str | None = None
+    rule_version: str | None = Field(None, max_length=80)
     backend_assumptions: str | None = None
-    test_status: str | None = None
-    deployment_status: str | None = None
-    scenario_type: str | None = None
+    test_status: str | None = Field(None, max_length=40)
+    deployment_status: str | None = Field(None, max_length=40)
+    scenario_type: str | None = Field(None, max_length=80)
     scenario_description: str | None = None
     attack_techniques: list[Any] | None = None
     expected_telemetry: str | None = None
     expected_detection_outcome: str | None = None
     safety_boundary: str | None = None
-    destination_type: str | None = None
-    destination_label: str | None = None
-    forwarding_status: str | None = None
+    destination_type: str | None = Field(None, max_length=80)
+    destination_label: str | None = Field(None, max_length=255)
+    forwarding_status: str | None = Field(None, max_length=40)
     collector_response: str | None = None
     parsed_fields: dict[str, Any] | None = None
     detection_matched: bool | None = None
     dashboard_updated: bool | None = None
     correlation_triggered: bool | None = None
     failure_reason: str | None = None
-    evidence_ref: str | None = None
-    decision: str | None = None
+    evidence_ref: str | None = Field(None, max_length=500)
+    decision: str | None = Field(None, max_length=80)
     rationale: str | None = None
-    reviewer: str | None = None
+    reviewer: str | None = Field(None, max_length=255)
     reviewed_at: datetime | None = None
     next_action: str | None = None
-    confidence: int | None = None
-    review_status: str | None = None
+    confidence: int | None = Field(None, ge=0, le=100)
+    review_status: str | None = Field(None, max_length=40)
     ai_generated: bool | None = None
-    ai_provider: str | None = None
-    ai_model: str | None = None
-    ai_prompt_version: str | None = None
+    ai_provider: str | None = Field(None, max_length=80)
+    ai_model: str | None = Field(None, max_length=120)
+    ai_prompt_version: str | None = Field(None, max_length=80)
     tags: list[Any] | None = None
     metadata_json: dict[str, Any] | None = None
 
+    @model_validator(mode="after")
+    def reject_nonnullable_nulls(self):
+        nullable = {"timestamp_observed", "reviewed_at"}
+        invalid = sorted(
+            field
+            for field in self.model_fields_set
+            if field not in nullable and getattr(self, field) is None
+        )
+        if invalid:
+            raise ValueError(f"Fields cannot be null: {', '.join(invalid)}")
+        return self
 
-class EdgeBody(BaseModel):
-    source_node_id: str
-    target_node_id: str
-    edge_type: str
-    rationale: str = ""
-    confidence: int = 50
-    review_status: str = "draft"
+
+class EdgeBody(BoundedPayloadModel):
+    source_node_id: str = Field(..., min_length=1, max_length=64)
+    target_node_id: str = Field(..., min_length=1, max_length=64)
+    edge_type: str = Field(..., min_length=1, max_length=80)
+    rationale: str = Field("", max_length=100_000)
+    confidence: int = Field(50, ge=0, le=100)
+    review_status: str = Field("draft", max_length=40)
     ai_generated: bool = False
-    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] = Field(default_factory=dict, max_length=2000)
 
 
-class EdgePatch(BaseModel):
-    source_node_id: str | None = None
-    target_node_id: str | None = None
-    edge_type: str | None = None
+class EdgePatch(BoundedPayloadModel):
+    source_node_id: str | None = Field(None, min_length=1, max_length=64)
+    target_node_id: str | None = Field(None, min_length=1, max_length=64)
+    edge_type: str | None = Field(None, min_length=1, max_length=80)
     rationale: str | None = None
-    confidence: int | None = None
-    review_status: str | None = None
+    confidence: int | None = Field(None, ge=0, le=100)
+    review_status: str | None = Field(None, max_length=40)
     ai_generated: bool | None = None
     metadata_json: dict[str, Any] | None = None
 
+    @model_validator(mode="after")
+    def reject_nulls(self):
+        invalid = sorted(
+            field for field in self.model_fields_set if getattr(self, field) is None
+        )
+        if invalid:
+            raise ValueError(f"Fields cannot be null: {', '.join(invalid)}")
+        return self
+
 
 @router.get("/summary")
-async def summary(db: AsyncSession = Depends(get_session)):
+async def summary(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
     return await graph.summary(db)
 
 
 @router.get("")
 async def query(
-    case_id: str = "",
-    report_id: str = "",
-    technique_id: str = "",
-    ioc_id: str = "",
-    asset_id: str = "",
-    malware_case_id: str = "",
-    validation_status: str = "",
-    review_status: str = "",
-    node_type: str = "",
+    case_id: str = Query("", max_length=255),
+    report_id: str = Query("", max_length=255),
+    technique_id: str = Query("", max_length=40),
+    ioc_id: str = Query("", max_length=255),
+    asset_id: str = Query("", max_length=255),
+    malware_case_id: str = Query("", max_length=255),
+    validation_status: str = Query("", max_length=40),
+    review_status: str = Query("", max_length=40),
+    node_type: str = Query("", max_length=50),
     max_depth: int = Query(6, ge=1, le=20),
     include_ai_suggestions: bool = True,
     include_rejected: bool = False,
-    search: str = "",
+    search: str = Query("", max_length=500),
     db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     # Current implementation keeps entity links in node source refs and metadata.
     # These filters are accepted for API stability and mapped to source/search terms
@@ -216,7 +245,7 @@ async def query(
 
 
 @router.post("/nodes", status_code=201)
-async def create_node(body: NodeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_node(body: NodeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     row = await graph.create_node(db, body.model_dump(), user.name)
     await audit(db, user, "evidence_graph.create_node", "evidence_graph_node", str(row.id), {"node_type": row.node_type})
     await db.commit(); await db.refresh(row)
@@ -224,7 +253,7 @@ async def create_node(body: NodeBody, db: AsyncSession = Depends(get_session), u
 
 
 @router.patch("/nodes/{node_id}")
-async def update_node(node_id: str, body: NodePatch, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def update_node(node_id: str, body: NodePatch, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     row = await graph.update_node(db, node_id, body.model_dump(exclude_unset=True))
     await audit(db, user, "evidence_graph.update_node", "evidence_graph_node", str(row.id), {"node_type": row.node_type})
     await db.commit(); await db.refresh(row)
@@ -232,14 +261,14 @@ async def update_node(node_id: str, body: NodePatch, db: AsyncSession = Depends(
 
 
 @router.delete("/nodes/{node_id}", status_code=204)
-async def delete_node(node_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(admin)):
+async def delete_node(node_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     await graph.delete_node(db, node_id)
     await audit(db, user, "evidence_graph.delete_node", "evidence_graph_node", node_id)
     await db.commit()
 
 
 @router.post("/edges", status_code=201)
-async def create_edge(body: EdgeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_edge(body: EdgeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     row = await graph.create_edge(db, body.model_dump(), user.name)
     await audit(db, user, "evidence_graph.create_edge", "evidence_graph_edge", str(row.id), {"edge_type": row.edge_type})
     await db.commit(); await db.refresh(row)
@@ -247,7 +276,7 @@ async def create_edge(body: EdgeBody, db: AsyncSession = Depends(get_session), u
 
 
 @router.patch("/edges/{edge_id}")
-async def update_edge(edge_id: str, body: EdgePatch, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def update_edge(edge_id: str, body: EdgePatch, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     row = await graph.update_edge(db, edge_id, body.model_dump(exclude_unset=True))
     await audit(db, user, "evidence_graph.update_edge", "evidence_graph_edge", str(row.id), {"edge_type": row.edge_type})
     await db.commit(); await db.refresh(row)
@@ -255,7 +284,7 @@ async def update_edge(edge_id: str, body: EdgePatch, db: AsyncSession = Depends(
 
 
 @router.delete("/edges/{edge_id}", status_code=204)
-async def delete_edge(edge_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(admin)):
+async def delete_edge(edge_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     await graph.delete_edge(db, edge_id)
     await audit(db, user, "evidence_graph.delete_edge", "evidence_graph_edge", edge_id)
     await db.commit()
@@ -263,13 +292,14 @@ async def delete_edge(edge_id: str, db: AsyncSession = Depends(get_session), use
 
 @router.get("/paths")
 async def paths(
-    from_node_id: str = "",
-    to_node_type: str = "",
-    technique_id: str = "",
-    detection_rule_id: str = "",
-    analyst_decision_id: str = "",
+    from_node_id: str = Query("", max_length=64),
+    to_node_type: str = Query("", max_length=50),
+    technique_id: str = Query("", max_length=40),
+    detection_rule_id: str = Query("", max_length=64),
+    analyst_decision_id: str = Query("", max_length=64),
     max_depth: int = Query(12, ge=1, le=20),
     db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
 ):
     return await graph.reasoning_paths(
         db,
@@ -283,12 +313,15 @@ async def paths(
 
 
 @router.get("/gaps")
-async def gaps(db: AsyncSession = Depends(get_session)):
+async def gaps(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
     return await graph.gap_analysis(db)
 
 
 @router.post("/from-report/{report_id}")
-async def from_report(report_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def from_report(report_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_report(db, report_id, user.name)
     await audit(db, user, "evidence_graph.from_report", "report", report_id, result)
     await db.commit()
@@ -296,7 +329,7 @@ async def from_report(report_id: str, db: AsyncSession = Depends(get_session), u
 
 
 @router.post("/from-malware/{case_id}")
-async def from_malware(case_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def from_malware(case_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_malware(db, case_id, user.name)
     await audit(db, user, "evidence_graph.from_malware", "malware_case", case_id, result)
     await db.commit()
@@ -304,7 +337,7 @@ async def from_malware(case_id: str, db: AsyncSession = Depends(get_session), us
 
 
 @router.post("/from-simulation/{simulation_run_id}")
-async def from_simulation(simulation_run_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def from_simulation(simulation_run_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_simulation(db, simulation_run_id, user.name)
     await audit(db, user, "evidence_graph.from_simulation", "simulation_run", simulation_run_id, result)
     await db.commit()
@@ -312,7 +345,7 @@ async def from_simulation(simulation_run_id: str, db: AsyncSession = Depends(get
 
 
 @router.post("/from-ioc/{ioc_id}")
-async def from_ioc(ioc_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def from_ioc(ioc_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_ioc(db, ioc_id, user.name)
     await audit(db, user, "evidence_graph.from_ioc", "ioc", ioc_id, result)
     await db.commit()
@@ -320,7 +353,7 @@ async def from_ioc(ioc_id: str, db: AsyncSession = Depends(get_session), user: T
 
 
 @router.post("/from-asset/{asset_id}")
-async def from_asset(asset_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def from_asset(asset_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_asset(db, asset_id, user.name)
     await audit(db, user, "evidence_graph.from_asset", "asset", asset_id, result)
     await db.commit()
@@ -328,7 +361,7 @@ async def from_asset(asset_id: str, db: AsyncSession = Depends(get_session), use
 
 
 @router.get("/export")
-async def export(fmt: str = Query("json", pattern="^(json|markdown|csv|evidence-pack)$"), db: AsyncSession = Depends(get_session), _: TeamUser = Depends(analyst)):
+async def export(fmt: str = Query("json", pattern="^(json|markdown|csv|evidence-pack)$"), db: AsyncSession = Depends(get_session), _: TeamUser = Depends(export_evidence)):
     media_type, filename, content = await graph.export_graph(db, fmt)
     return Response(
         content=content,

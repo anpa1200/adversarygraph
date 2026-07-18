@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -12,9 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.models.simulation import SimulationAttackFlow, SimulationSiemDestination
 from app.services import external_simulation
-from app.services.auth import TeamUser, analyst, audit
+from app.services.auth import TeamUser, audit, require_permission
 
 router = APIRouter(prefix="/simulation", tags=["Attack Simulation"])
+run_simulation = require_permission("run_attack_simulation")
+forward_siem = require_permission("forward_siem")
+logger = logging.getLogger(__name__)
+
+_DESTINATION_PERSISTENCE_WARNING = (
+    "Delivery completed, but the SIEM destination was not saved because its URL did not pass storage validation."
+)
 
 
 class SimulationRunRequest(BaseModel):
@@ -42,7 +50,7 @@ class ForwardLogsRequest(BaseModel):
     token: str = Field(default="", max_length=4096)
     header_name: str = Field(default="", max_length=80)
     connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
-    allow_http_fallback: bool = Field(default=True)
+    allow_http_fallback: bool = Field(default=False)
     payload_format: str = Field(default="raw_lines", pattern="^(raw_lines|per_event|json_lines|envelope)$")
 
 
@@ -61,7 +69,7 @@ class AiAssistantTelemetryRequest(BaseModel):
     token: str = Field(default="", max_length=4096)
     header_name: str = Field(default="", max_length=80)
     connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
-    allow_http_fallback: bool = Field(default=True)
+    allow_http_fallback: bool = Field(default=False)
     payload_format: str = Field(default="per_event", pattern="^(raw_lines|per_event|json_lines|envelope)$")
 
 
@@ -71,7 +79,7 @@ class SiemDestinationSaveRequest(BaseModel):
     username: str = Field(default="", max_length=256)
     header_name: str = Field(default="", max_length=80)
     connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
-    allow_http_fallback: bool = True
+    allow_http_fallback: bool = False
     payload_format: str = Field(default="raw_lines", pattern="^(raw_lines|per_event|json_lines|envelope)$")
     source: str = Field(default="access", pattern="^(attacked_server|web|run|access|security|error|auth|endpoint)$")
 
@@ -125,29 +133,29 @@ class AttackFlowResendRequest(BaseModel):
     token: str = Field(default="", max_length=4096)
     header_name: str = Field(default="", max_length=80)
     connection_mode: str = Field(default="auto", pattern="^(auto|direct|docker_host)$")
-    allow_http_fallback: bool = Field(default=True)
+    allow_http_fallback: bool = Field(default=False)
     payload_format: str = Field(default="per_event", pattern="^(raw_lines|per_event|json_lines|envelope)$")
 
 
 @router.get("/catalog")
-async def catalog(_: TeamUser = Depends(analyst)) -> list[dict[str, Any]]:
+async def catalog(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
     return external_simulation.list_simulations()
 
 
 @router.get("/targets")
-async def targets(_: TeamUser = Depends(analyst)) -> list[dict[str, Any]]:
+async def targets(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
     return external_simulation.list_targets()
 
 
 @router.get("/ai-assistant/scenarios")
-async def ai_assistant_scenarios(_: TeamUser = Depends(analyst)) -> list[dict[str, Any]]:
+async def ai_assistant_scenarios(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
     return external_simulation.list_ai_assistant_scenarios()
 
 
 @router.get("/attack-flows", response_model=list[AttackFlowOut])
 async def attack_flows(
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_simulation),
 ) -> list[dict[str, Any]]:
     result = await session.execute(
         select(SimulationAttackFlow)
@@ -162,7 +170,7 @@ async def resend_attack_flow(
     flow_id: UUID,
     payload: AttackFlowResendRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(forward_siem),
 ) -> dict[str, Any]:
     row = await session.get(SimulationAttackFlow, flow_id)
     if row is None:
@@ -177,16 +185,15 @@ async def resend_attack_flow(
             token=payload.token,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    row.delivery = delivery
-    row.last_delivery_status = int(delivery.get("status") or 0)
-    row.last_delivery_ok = bool(delivery.get("ok"))
-    row.last_delivery_error = str(delivery.get("error") or "")[:1000]
-    await _upsert_siem_destination(
+    delivery_status = int(delivery.get("status") or 0)
+    delivery_ok = bool(delivery.get("ok"))
+    delivery_error = str(delivery.get("error") or "")[:1000]
+    destination, persistence_warning = await _persist_siem_destination_after_delivery(
         session,
         user,
         SiemDestinationSaveRequest(
@@ -195,15 +202,21 @@ async def resend_attack_flow(
             username=payload.username,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
             source="endpoint",
         ),
-        last_status=row.last_delivery_status,
-        last_ok=row.last_delivery_ok,
+        last_status=delivery_status,
+        last_ok=delivery_ok,
         last_event_count=int(delivery.get("event_count") or 0),
-        last_error=row.last_delivery_error,
+        last_error=delivery_error,
     )
+    if persistence_warning:
+        delivery = {**delivery, "destination_url": ""}
+    row.delivery = delivery
+    row.last_delivery_status = delivery_status
+    row.last_delivery_ok = delivery_ok
+    row.last_delivery_error = delivery_error
     await audit(
         session,
         user,
@@ -217,17 +230,26 @@ async def resend_attack_flow(
             "sent_event_count": delivery.get("sent_event_count", 0),
             "ok": delivery["ok"],
             "status": delivery["status"],
+            "saved_destination_id": str(destination.id) if destination else "",
+            "destination_persistence_warning": persistence_warning,
         },
     )
     await session.commit()
     await session.refresh(row)
-    return {"flow": _attack_flow_out(row), "delivery": delivery}
+    return {
+        "flow": _attack_flow_out(row),
+        "delivery": delivery,
+        "destination_persistence": {
+            "saved": destination is not None,
+            "warning": persistence_warning,
+        },
+    }
 
 
 @router.get("/siem-destinations", response_model=list[SiemDestinationOut])
 async def siem_destinations(
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(forward_siem),
 ) -> list[dict[str, Any]]:
     result = await session.execute(
         select(SimulationSiemDestination)
@@ -241,7 +263,7 @@ async def siem_destinations(
 async def save_siem_destination(
     payload: SiemDestinationSaveRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(forward_siem),
 ) -> dict[str, Any]:
     try:
         row = await _upsert_siem_destination(session, user, payload)
@@ -263,7 +285,7 @@ async def save_siem_destination(
 @router.delete("/siem-destinations")
 async def clear_siem_destinations(
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(forward_siem),
 ) -> dict[str, int]:
     result = await session.execute(delete(SimulationSiemDestination))
     await audit(session, user, "simulation.clear_siem_destinations", "simulation_siem_destination")
@@ -276,7 +298,7 @@ async def logs(
     source: str = "web",
     run_id: str = "",
     limit: int = 100,
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_simulation),
 ) -> dict[str, Any]:
     try:
         return external_simulation.tail_telemetry_logs(source=source, run_id=run_id, limit=limit)
@@ -288,7 +310,7 @@ async def logs(
 async def forward_logs(
     payload: ForwardLogsRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(forward_siem),
 ) -> dict[str, Any]:
     try:
         result = external_simulation.forward_telemetry_logs(
@@ -302,12 +324,12 @@ async def forward_logs(
             token=payload.token,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    destination = await _upsert_siem_destination(
+    destination, persistence_warning = await _persist_siem_destination_after_delivery(
         session,
         user,
         SiemDestinationSaveRequest(
@@ -316,7 +338,7 @@ async def forward_logs(
             username=payload.username,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
             source=payload.source,
         ),
@@ -325,6 +347,8 @@ async def forward_logs(
         last_event_count=int(result.get("event_count") or 0),
         last_error=str(result.get("error") or "")[:1000],
     )
+    if persistence_warning:
+        result = {**result, "destination_url": ""}
     await audit(
         session,
         user,
@@ -338,15 +362,20 @@ async def forward_logs(
             "auth_type": payload.auth_type,
             "auth_header": payload.header_name if payload.auth_type == "custom_header" else "",
             "connection_mode": payload.connection_mode,
-            "http_fallback_allowed": payload.allow_http_fallback,
+            "http_fallback_allowed": payload.allow_http_fallback and payload.auth_type == "none",
             "payload_format": payload.payload_format,
             "event_count": result["event_count"],
             "ok": result["ok"],
             "status": result["status"],
-            "saved_destination_id": str(destination.id),
+            "saved_destination_id": str(destination.id) if destination else "",
+            "destination_persistence_warning": persistence_warning,
         },
     )
     await session.commit()
+    result["destination_persistence"] = {
+        "saved": destination is not None,
+        "warning": persistence_warning,
+    }
     return result
 
 
@@ -354,7 +383,7 @@ async def forward_logs(
 async def ai_assistant_telemetry(
     payload: AiAssistantTelemetryRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_simulation),
 ) -> dict[str, Any]:
     try:
         result = await external_simulation.run_ai_assistant_telemetry_simulation(
@@ -372,14 +401,13 @@ async def ai_assistant_telemetry(
             token=payload.token,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     delivery = result["delivery"]
-    flow = await _save_attack_flow(session, user, result)
-    destination = await _upsert_siem_destination(
+    destination, persistence_warning = await _persist_siem_destination_after_delivery(
         session,
         user,
         SiemDestinationSaveRequest(
@@ -388,7 +416,7 @@ async def ai_assistant_telemetry(
             username=payload.username,
             header_name=payload.header_name,
             connection_mode=payload.connection_mode,
-            allow_http_fallback=payload.allow_http_fallback,
+            allow_http_fallback=payload.allow_http_fallback and payload.auth_type == "none",
             payload_format=payload.payload_format,
             source="endpoint",
         ),
@@ -397,6 +425,10 @@ async def ai_assistant_telemetry(
         last_event_count=int(delivery.get("event_count") or 0),
         last_error=str(delivery.get("error") or "")[:1000],
     )
+    if persistence_warning:
+        delivery = {**delivery, "destination_url": ""}
+        result = {**result, "delivery": delivery}
+    flow = await _save_attack_flow(session, user, result)
     await audit(
         session,
         user,
@@ -413,12 +445,17 @@ async def ai_assistant_telemetry(
             "event_count": delivery["event_count"],
             "ok": delivery["ok"],
             "status": delivery["status"],
-            "saved_destination_id": str(destination.id),
+            "saved_destination_id": str(destination.id) if destination else "",
             "saved_attack_flow_id": str(flow.id),
+            "destination_persistence_warning": persistence_warning,
         },
     )
     await _trim_attack_flows(session)
     await session.commit()
+    result["destination_persistence"] = {
+        "saved": destination is not None,
+        "warning": persistence_warning,
+    }
     return result
 
 
@@ -514,6 +551,43 @@ def _siem_destination_out(row: SimulationSiemDestination) -> dict[str, Any]:
     }
 
 
+async def _persist_siem_destination_after_delivery(
+    session: AsyncSession,
+    user: TeamUser,
+    payload: SiemDestinationSaveRequest,
+    *,
+    last_status: int = 0,
+    last_ok: bool = False,
+    last_event_count: int = 0,
+    last_error: str = "",
+) -> tuple[SimulationSiemDestination | None, str]:
+    """Persist delivery metadata without misreporting an already-sent delivery.
+
+    The send helpers validate destinations before performing I/O. This second
+    validation protects stored metadata if an upstream response returns a
+    different URL. A validation failure at this point must not turn a completed
+    delivery into an API error, so callers receive an explicit persistence
+    warning and continue to report the real delivery result.
+    """
+    try:
+        destination = await _upsert_siem_destination(
+            session,
+            user,
+            payload,
+            last_status=last_status,
+            last_ok=last_ok,
+            last_event_count=last_event_count,
+            last_error=last_error,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "SIEM delivery completed but destination metadata failed storage validation: %s",
+            exc,
+        )
+        return None, _DESTINATION_PERSISTENCE_WARNING
+    return destination, ""
+
+
 async def _upsert_siem_destination(
     session: AsyncSession,
     user: TeamUser,
@@ -546,7 +620,10 @@ async def _upsert_siem_destination(
         session.add(row)
     row.username = payload.username.strip() if payload.auth_type == "basic" else ""
     row.header_name = payload.header_name.strip() if payload.auth_type == "custom_header" else (payload.header_name or "Authorization")
-    row.allow_http_fallback = payload.allow_http_fallback
+    # Never persist an authenticated HTTPS-to-HTTP downgrade preference. Even if
+    # an older client sends `true`, credentials must remain confined to the
+    # operator-selected transport.
+    row.allow_http_fallback = payload.allow_http_fallback and payload.auth_type == "none"
     row.last_status = last_status
     row.last_ok = last_ok
     row.last_event_count = last_event_count
@@ -582,7 +659,7 @@ async def _trim_attack_flows(session: AsyncSession) -> None:
 async def plan(
     payload: SimulationRunRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_simulation),
 ) -> dict[str, Any]:
     try:
         result = external_simulation.build_plan(payload.simulation_id, payload.target_id)
@@ -604,7 +681,7 @@ async def plan(
 async def run(
     payload: SimulationRunRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_simulation),
 ) -> dict[str, Any]:
     try:
         result = external_simulation.run_controlled_record(payload.simulation_id, payload.target_id, payload.analyst_note)
@@ -630,7 +707,7 @@ async def run(
 async def manual_result(
     payload: ManualResultRequest,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_simulation),
 ) -> dict[str, Any]:
     try:
         plan = external_simulation.build_plan(payload.simulation_id, payload.target_id)

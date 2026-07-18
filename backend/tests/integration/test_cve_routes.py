@@ -2,6 +2,17 @@ import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def _fail_if_cve_route_reaches_network(monkeypatch):
+    from app.services import cve_intel
+
+    def unexpected_network_call(*_args, **_kwargs):
+        raise AssertionError("CVE route test attempted a real network request")
+
+    monkeypatch.setattr(cve_intel, "safe_get", unexpected_network_call)
+    monkeypatch.setattr(cve_intel, "safe_post", unexpected_network_call)
+
+
 @pytest.mark.asyncio
 async def test_cve_sources_shape(client: AsyncClient):
     resp = await client.get("/api/cve/sources")
@@ -28,8 +39,6 @@ async def test_missing_cve_returns_404(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_sync_status_includes_cve_source(client: AsyncClient, monkeypatch):
-    from app.services.attck import version_checker
-
     class Status:
         domain = "enterprise-attack"
         current_version = "19.1"
@@ -37,7 +46,10 @@ async def test_sync_status_includes_cve_source(client: AsyncClient, monkeypatch)
         needs_update = False
         last_ingested = "2026-06-30"
 
-    monkeypatch.setattr(version_checker, "get_status", lambda: [Status()])
+    async def fake_status_lookup():
+        return [Status()]
+
+    monkeypatch.setattr("app.api.routes.sync._get_attck_statuses", fake_status_lookup)
     resp = await client.get("/api/sync/status")
     assert resp.status_code == 200
     source_ids = {source["id"] for source in resp.json()["sources"]}
@@ -89,6 +101,36 @@ async def test_nvd_cve_id_enrichment_route(client: AsyncClient, monkeypatch):
     body = resp.json()
     assert body["requested"] == 1
     assert body["updated"] == 1
+
+
+@pytest.mark.asyncio
+async def test_central_cve_sync_uses_isolated_service_contract(
+    client: AsyncClient,
+    monkeypatch,
+):
+    from app.services import cve_intel
+
+    async def fake_sync_all_cve_sources(session, *, days: int):
+        return {
+            "totals": {"inserted": 2, "updated": 3},
+            "sources": [{"source": "fixture", "fetched": 5}],
+            "correlations": {"techniques": 1, "iocs": 0, "actors": 0},
+        }
+
+    monkeypatch.setattr(
+        cve_intel,
+        "sync_all_cve_sources",
+        fake_sync_all_cve_sources,
+    )
+    response = await client.post("/api/sync/cve", params={"days": 3})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "days": 3,
+        "totals": {"inserted": 2, "updated": 3},
+        "sources": [{"source": "fixture", "fetched": 5}],
+        "correlations": {"techniques": 1, "iocs": 0, "actors": 0},
+    }
 
 
 @pytest.mark.asyncio

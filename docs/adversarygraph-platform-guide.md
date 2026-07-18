@@ -1,9 +1,10 @@
 # AdversaryGraph Platform Guide
 
-> Current v6.0.0 platform documentation. AdversaryGraph is an analyst-assistance
-> system: AI mappings, similarity scores, IOC enrichment, malware-analysis
-> output, and generated detections require human validation before operational
-> use.
+> The latest tagged release is v6.0.0. This guide also documents post-v6 work on
+> `main` where identified; verify the checked-out tag or commit before using it
+> as release evidence. AdversaryGraph is an analyst-assistance system: AI
+> mappings, similarity scores, IOC enrichment, malware-analysis output, and
+> generated detections require human validation before operational use.
 
 ## Table of Contents
 
@@ -22,17 +23,17 @@
 
 Platform screenshots are stored in
 [`docs/assets/adversarygraph-v4-platform`](assets/adversarygraph-v4-platform/manifest.md).
-That folder name is historical; the screenshots remain representative of the
-current v5 platform surfaces unless a newer v5-specific screenshot set is listed
-below. The Asset Surface and Discover addendum is stored in
+That folder is historical: the screenshots illustrate stable workflow concepts
+but are not current-`main` release evidence. The Asset Surface and Discover
+addendum is stored in
 [`docs/assets/adversarygraph-v4.1-platform`](assets/adversarygraph-v4.1-platform/manifest.md).
 The malware-analysis screenshot set is stored in
 [`docs/assets/malware-analysis-v4`](assets/malware-analysis-v4/manifest.md).
-Those v4 malware screenshots remain representative for the current v5 Malware
-Analysis workflow.
+Those v4 malware screenshots remain representative for the tagged v6.0.0
+Malware Analysis workflow.
 The v5 Attack Simulation screenshot set is stored in
 [`docs/assets/attack-simulation-v5`](assets/attack-simulation-v5/manifest.md).
-The current v6 release evidence pack is stored in
+The tagged v6.0.0 release evidence pack is stored in
 [`docs/assets/adversarygraph-v6`](assets/adversarygraph-v6/manifest.md).
 
 The screenshot packs include validation metadata. The platform set records

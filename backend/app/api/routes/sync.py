@@ -9,13 +9,16 @@ from __future__ import annotations
 import asyncio
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.auth import TeamUser, audit, current_user, require_permission
+
+manage_sync_feeds = require_permission("manage_feeds")
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,7 @@ CVE_CONTENT = [
     "evidence-backed CVE-to-APT links",
 ]
 
-SUPPORTED_SOURCES = {
+SUPPORTED_SOURCES: dict[str, dict[str, Any]] = {
     "mitre-attack": {
         "label": "MITRE ATT&CK and ATLAS STIX",
         "status": "active",
@@ -144,6 +147,13 @@ SUPPORTED_SOURCES = {
 }
 
 
+async def _get_attck_statuses():
+    """Run the synchronous DB/GitHub version check away from the event loop."""
+    from app.services.attck.version_checker import get_status
+
+    return await asyncio.to_thread(get_status)
+
+
 @router.get("/status", response_model=SyncStatusOut)
 async def sync_status(session: AsyncSession = Depends(get_session), _: TeamUser = Depends(current_user)):
     """
@@ -151,10 +161,7 @@ async def sync_status(session: AsyncSession = Depends(get_session), _: TeamUser 
     The GitHub check is a lightweight API call (no download).
     """
     try:
-        from app.services.attck.version_checker import get_status
-
-        loop = asyncio.get_event_loop()
-        statuses = await loop.run_in_executor(None, get_status)
+        statuses = await _get_attck_statuses()
 
         domains = [
             DomainStatusOut(
@@ -221,7 +228,7 @@ async def sync_status(session: AsyncSession = Depends(get_session), _: TeamUser 
 
 
 @router.post("/trigger", response_model=TriggerOut)
-async def trigger_sync(body: TriggerRequest | None = None, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def trigger_sync(body: TriggerRequest | None = None, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_sync_feeds)):
     """
     Submit a Celery task to download and ingest any out-of-date ATT&CK domains.
     Returns immediately; poll GET /sync/task/{task_id} for progress.
@@ -262,7 +269,7 @@ async def trigger_ioc_sync(
     ai_enrich: bool = Query(False),
     ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_sync_feeds),
 ):
     """Synchronize all configured IOC sources centrally."""
     try:
@@ -279,7 +286,7 @@ async def trigger_ioc_sync(
 async def trigger_cve_sync(
     days: int = Query(7, ge=1, le=120),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_sync_feeds),
 ):
     """Synchronize NVD/CISA CVE feeds and refresh strict CVE correlations."""
     try:
@@ -298,7 +305,7 @@ async def trigger_dynamic_db_sync(
     days: int = Query(7, ge=1, le=7),
     force_attack: bool = Query(False),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_sync_feeds),
 ):
     """Synchronize the dynamic public reference DB immediately."""
     try:

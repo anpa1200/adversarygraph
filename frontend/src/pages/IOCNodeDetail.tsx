@@ -7,12 +7,15 @@ import { aptApi, attackApi, iocApi } from '@/api/client';
 import { useAppStore } from '@/store';
 import { RelationshipGraph } from './IOCInvestigation';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
 const OBSERVABLE_TYPES = new Set(['ioc', 'ip', 'ipv4', 'ipv6', 'domain', 'url', 'email', 'hash', 'md5', 'sha1', 'sha256', ...NETWORK_FINGERPRINT_TYPES]);
 const SEARCHABLE_OBJECT_TYPES = new Set([...OBSERVABLE_TYPES, 'file', 'report', 'collection']);
 
 export function IOCNodeDetail() {
+  const canRunAnalysis = useHasPermission('run_analysis');
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { domain, version, addTechniques, replaceTechniques } = useAppStore();
@@ -39,7 +42,7 @@ export function IOCNodeDetail() {
       ai_summarize: false,
       ai_provider: 'local',
     }),
-    enabled: isObservable && Boolean(value.trim()),
+    enabled: canRunAnalysis && isObservable && Boolean(value.trim()),
     staleTime: 60_000,
     retry: 1,
   });
@@ -213,12 +216,16 @@ export function IOCNodeDetail() {
           {relationshipInvestigation.data && (
             <RelationshipGraph
               result={relationshipInvestigation.data}
+              canRunAnalysis={canRunAnalysis}
               onPivotNode={node => {
                 if (OBSERVABLE_TYPES.has(node.type)) {
                   navigate(`/ioc-node?type=${encodeURIComponent(node.type)}&value=${encodeURIComponent(node.value)}&tier=${node.tier}&sources=${encodeURIComponent(node.sources.join(','))}`);
                 }
               }}
             />
+          )}
+          {!canRunAnalysis && isObservable && (
+            <PermissionNotice permission="run_analysis" action="expand this IOC relationship investigation" />
           )}
         </div>
       </div>

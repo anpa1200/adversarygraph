@@ -1467,6 +1467,12 @@ def _web_request_sequence(simulation_id: str) -> list[dict[str, Any]]:
     return WEB_SIMULATION_REQUESTS.get(simulation_id, WEB_SIMULATION_REQUESTS["sim-t1595-http-fingerprint"])
 
 
+def _direct_urlopen(req: request.Request, *, timeout: int):
+    """Open a validated lab/SIEM request without environment proxy routing."""
+    opener = request.build_opener(request.ProxyHandler({}))
+    return opener.open(req, timeout=timeout)  # nosec B310
+
+
 def _send_lab_web_request(
     run_id: str,
     simulation_id: str,
@@ -1494,20 +1500,20 @@ def _send_lab_web_request(
     req = request.Request(url, data=data, method=method, headers=headers)
     try:
         # URL is the fixed internal lab target URL controlled by the simulator.
-        with request.urlopen(req, timeout=5) as response:  # nosec B310
-            body = response.read(4096)
+        with _direct_urlopen(req, timeout=5) as response:
+            response_body = response.read(4096)
             status = response.status
             response_headers = dict(response.headers.items())
             ok = 200 <= status < 500
             error = ""
     except HTTPError as exc:
-        body = exc.read(4096)
+        response_body = exc.read(4096)
         status = exc.code
         response_headers = dict(exc.headers.items())
         ok = 200 <= status < 500
         error = str(exc)
     except URLError as exc:
-        body = b""
+        response_body = b""
         status = 0
         response_headers = {}
         ok = False
@@ -1529,7 +1535,7 @@ def _send_lab_web_request(
         "status": status,
         "ok": ok,
         "duration_ms": duration_ms,
-        "response_bytes": len(body),
+        "response_bytes": len(response_body),
         "response_headers": response_headers,
         "error": error,
     }
@@ -1918,7 +1924,8 @@ def _format_web_access_line(event: dict[str, Any]) -> str:
     protocol = str(event.get("protocol") or "HTTP/1.1")
     status = int(event.get("status") or 0)
     response_bytes = int(event.get("response_bytes") or 0)
-    headers = event.get("headers") if isinstance(event.get("headers"), dict) else {}
+    headers_value = event.get("headers")
+    headers = headers_value if isinstance(headers_value, dict) else {}
     referer = str(headers.get("Referer") or "-").replace('"', r'\"')
     user_agent = str(headers.get("User-Agent") or "-").replace('"', r'\"')
     run_id = str(event.get("run_id") or "-")
@@ -2203,10 +2210,11 @@ def forward_telemetry_logs(
     token: str = "",
     header_name: str = "",
     connection_mode: str = "auto",
-    allow_http_fallback: bool = True,
+    allow_http_fallback: bool = False,
     payload_format: str = "raw_lines",
 ) -> dict[str, Any]:
     destination = _validate_siem_destination(destination_url, connection_mode=connection_mode)
+    allow_http_fallback = allow_http_fallback and auth_type == "none"
     logs = tail_telemetry_logs(source=source, run_id=run_id, limit=limit)
     if payload_format not in {"raw_lines", "per_event", "json_lines", "envelope"}:
         raise ValueError("Unsupported SIEM payload format")
@@ -2612,7 +2620,7 @@ async def run_ai_assistant_telemetry_simulation(
     token: str = "",
     header_name: str = "",
     connection_mode: str = "auto",
-    allow_http_fallback: bool = True,
+    allow_http_fallback: bool = False,
     payload_format: str = "per_event",
     scenario_id: str = "",
 ) -> dict[str, Any]:
@@ -2669,6 +2677,7 @@ async def run_ai_assistant_telemetry_simulation(
         "returned_at": datetime.now(timezone.utc).isoformat(),
     }
     destination = _validate_siem_destination(destination_url, connection_mode=connection_mode)
+    allow_http_fallback = allow_http_fallback and auth_type == "none"
     headers = {
         "Content-Type": "text/plain; charset=utf-8" if (complicated_attack or payload_format == "raw_lines") else "application/json",
         "User-Agent": "AdversaryGraph-AI-AttackAssistant/1.0",
@@ -2743,7 +2752,7 @@ def resend_ai_assistant_telemetry_events(
     token: str = "",
     header_name: str = "",
     connection_mode: str = "auto",
-    allow_http_fallback: bool = True,
+    allow_http_fallback: bool = False,
     payload_format: str = "per_event",
 ) -> dict[str, Any]:
     events = [event for event in stored_result.get("events", []) if isinstance(event, dict)]
@@ -2751,6 +2760,7 @@ def resend_ai_assistant_telemetry_events(
     if payload_format not in {"raw_lines", "per_event", "json_lines", "envelope"}:
         raise ValueError("Unsupported SIEM payload format")
     destination = _validate_siem_destination(destination_url, connection_mode=connection_mode)
+    allow_http_fallback = allow_http_fallback and auth_type == "none"
     complicated_attack = bool(stored_result.get("complicated_attack"))
     effective_payload_format = "raw_lines" if complicated_attack and payload_format == "raw_lines" else payload_format
     logs = {
@@ -3722,6 +3732,204 @@ def _post_siem_payload(
         }, ""
 
 
+_SIEM_RESPONSE_HEADER_COUNT_LIMIT = 32
+_SIEM_RESPONSE_HEADER_NAME_LIMIT = 128
+_SIEM_RESPONSE_HEADER_VALUE_LIMIT = 512
+_SIEM_RESPONSE_HEADER_SCAN_LIMIT = 128
+_SIEM_RESPONSE_HEADERS_TO_DROP = {"cookie", "set-cookie"}
+_SIEM_RESPONSE_PRIORITY_HEADERS = {
+    "content-type",
+    "date",
+    "request-id",
+    "retry-after",
+    "server",
+    "traceparent",
+    "tracestate",
+    "x-correlation-id",
+    "x-request-id",
+}
+_SIEM_QUOTED_ASSIGNMENT_RE = re.compile(
+    r"(?P<key_quote>['\"]?)(?P<key>[A-Za-z][A-Za-z0-9_.-]{0,127})(?P=key_quote)"
+    r"(?P<separator>\s*[:=]\s*)(?P<value_quote>['\"])(?P<value>.*?)(?P=value_quote)",
+    flags=re.DOTALL,
+)
+_SIEM_UNQUOTED_ASSIGNMENT_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?P<key>[A-Za-z][A-Za-z0-9_.-]{0,127})"
+    r"(?P<separator>\s*(?:=|:(?!//))\s*)"
+    r"(?P<value>(?!['\"])(?:(?:Bearer|Basic)\s+)?[^\s,;&}\]]{1,512})",
+    flags=re.IGNORECASE,
+)
+_SIEM_AUTH_SCHEME_RE = re.compile(
+    r"\b(?P<scheme>Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{3,}",
+    flags=re.IGNORECASE,
+)
+
+
+def _is_secret_like_name(name: str) -> bool:
+    lowered = name.lower()
+    normalized = re.sub(r"[^a-z0-9]", "", lowered)
+    if not normalized:
+        return False
+    tokens = set(re.findall(r"[a-z0-9]+", lowered))
+    if tokens & {
+        "auth",
+        "authorization",
+        "authentication",
+        "credential",
+        "credentials",
+        "cookie",
+        "csrf",
+        "jwt",
+        "key",
+        "passwd",
+        "password",
+        "secret",
+        "session",
+        "signature",
+        "token",
+        "xsrf",
+    }:
+        return True
+    if normalized in {
+        "authorization",
+        "proxyauthorization",
+        "wwwauthenticate",
+        "authenticationinfo",
+        "proxyauthenticationinfo",
+        "apikey",
+        "accesskey",
+        "privatekey",
+        "secretkey",
+        "signature",
+    }:
+        return True
+    if any(
+        marker in normalized
+        for marker in (
+            "authorization",
+            "authentication",
+            "authenticate",
+            "credential",
+            "password",
+            "passwd",
+            "cookie",
+            "session",
+            "secret",
+            "token",
+            "csrf",
+            "xsrf",
+            "jwt",
+        )
+    ):
+        return True
+    return normalized.endswith(("auth", "key", "signature"))
+
+
+def _redact_siem_text_assignments(value: str) -> str:
+    def replace_quoted(match: re.Match[str]) -> str:
+        if not _is_secret_like_name(match.group("key")):
+            return match.group(0)
+        return (
+            f"{match.group('key_quote')}{match.group('key')}{match.group('key_quote')}"
+            f"{match.group('separator')}{match.group('value_quote')}[redacted]{match.group('value_quote')}"
+        )
+
+    def replace_unquoted(match: re.Match[str]) -> str:
+        if not _is_secret_like_name(match.group("key")):
+            return match.group(0)
+        return f"{match.group('key')}{match.group('separator')}[redacted]"
+
+    sanitized = _SIEM_QUOTED_ASSIGNMENT_RE.sub(replace_quoted, value)
+    sanitized = _SIEM_UNQUOTED_ASSIGNMENT_RE.sub(replace_unquoted, sanitized)
+    return _SIEM_AUTH_SCHEME_RE.sub(lambda match: f"{match.group('scheme')} [redacted]", sanitized)
+
+
+def _redact_siem_json_value(value: Any, depth: int = 0) -> tuple[Any, bool]:
+    if depth >= 12:
+        return "[redacted nested data]", True
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        changed = False
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            if _is_secret_like_name(key):
+                sanitized[key] = "[redacted]"
+                changed = True
+                continue
+            sanitized_item, item_changed = _redact_siem_json_value(item, depth + 1)
+            sanitized[key] = sanitized_item
+            changed = changed or item_changed
+        return sanitized, changed
+    if isinstance(value, list):
+        sanitized_items: list[Any] = []
+        changed = False
+        for item in value:
+            sanitized_item, item_changed = _redact_siem_json_value(item, depth + 1)
+            sanitized_items.append(sanitized_item)
+            changed = changed or item_changed
+        return sanitized_items, changed
+    if isinstance(value, str):
+        sanitized = _redact_siem_text_assignments(value)
+        return sanitized, sanitized != value
+    return value, False
+
+
+def _sanitize_siem_response_preview(value: str, *, limit: int = 500) -> str:
+    """Return a bounded preview with common credential material removed."""
+    if limit <= 0:
+        return ""
+    text = "".join(character if character in "\r\n\t" or ord(character) >= 32 else "�" for character in value)
+    try:
+        decoded = json.loads(text)
+    except (TypeError, ValueError):
+        sanitized = _redact_siem_text_assignments(text)
+    else:
+        sanitized_json, changed = _redact_siem_json_value(decoded)
+        sanitized = json.dumps(sanitized_json, ensure_ascii=False, separators=(",", ":")) if changed else text
+        sanitized = _redact_siem_text_assignments(sanitized)
+    return sanitized[:limit]
+
+
+def _sanitize_siem_response_headers(headers: Any) -> dict[str, str]:
+    """Bound collector headers and remove response-side credentials/sessions."""
+    try:
+        header_items = headers.items()
+    except AttributeError:
+        return {}
+
+    priority: list[tuple[str, str]] = []
+    regular: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for index, (raw_name, raw_value) in enumerate(header_items):
+        if index >= _SIEM_RESPONSE_HEADER_SCAN_LIMIT:
+            break
+        name = str(raw_name).strip()
+        normalized_name = name.lower()
+        if (
+            not name
+            or len(name) > _SIEM_RESPONSE_HEADER_NAME_LIMIT
+            or any(ord(character) < 33 or ord(character) == 127 for character in name)
+            or normalized_name in seen
+        ):
+            continue
+        seen.add(normalized_name)
+        if normalized_name in _SIEM_RESPONSE_HEADERS_TO_DROP:
+            continue
+        if _is_secret_like_name(name):
+            sanitized_value = "[redacted]"
+        else:
+            sanitized_value = _sanitize_siem_response_preview(
+                str(raw_value).replace("\r", " ").replace("\n", " "),
+                limit=_SIEM_RESPONSE_HEADER_VALUE_LIMIT,
+            )
+        item = (name, sanitized_value)
+        if normalized_name in _SIEM_RESPONSE_PRIORITY_HEADERS:
+            priority.append(item)
+        else:
+            regular.append(item)
+    return dict((priority + regular)[:_SIEM_RESPONSE_HEADER_COUNT_LIMIT])
+
+
 def _post_siem_payload_once(
     destination: str,
     body: bytes,
@@ -3733,24 +3941,25 @@ def _post_siem_payload_once(
     req = request.Request(destination, data=body, method="POST", headers=headers)
     try:
         # Destination is constrained by _validate_siem_destination before posting.
-        with request.urlopen(req, timeout=10) as response:  # nosec B310
+        with _direct_urlopen(req, timeout=10) as response:
             response_body = response.read(2048).decode("utf-8", errors="replace")
             status = response.status
             ok = 200 <= status < 300
-            response_headers = dict(response.headers.items())
+            response_headers = _sanitize_siem_response_headers(response.headers)
     except HTTPError as exc:
         response_body = exc.read(2048).decode("utf-8", errors="replace")
         status = exc.code
         ok = False
-        response_headers = dict(exc.headers.items())
+        response_headers = _sanitize_siem_response_headers(exc.headers)
+    response_preview = _sanitize_siem_response_preview(response_body)
     return {
         "ok": ok,
         "status": status,
         "destination_url": _redact_siem_destination(destination),
         "connection_mode": connection_mode,
         "duration_ms": round((time.perf_counter() - started) * 1000, 3),
-        "error": "" if ok else response_body[:500],
-        "response_preview": response_body[:500],
+        "error": "" if ok else response_preview,
+        "response_preview": response_preview,
         "response_headers": response_headers,
     }
 
@@ -3996,8 +4205,12 @@ def _validate_siem_destination(destination_url: str, connection_mode: str = "aut
         raise ValueError("SIEM destination host is required")
     if parsed.username or parsed.password:
         raise ValueError("Credentials in SIEM URL are not allowed; use the SIEM authentication fields instead")
+    _reject_siem_query_credentials(parsed)
+    # URL fragments are client-side metadata and are never sent to collectors;
+    # do not retain them in results, audit events, or saved destinations.
+    parsed = parsed._replace(fragment="")
 
-    hostname = parsed.hostname.lower()
+    hostname = (parsed.hostname or "").lower()
     use_docker_host = connection_mode == "docker_host" or (connection_mode == "auto" and _running_in_container())
     if hostname in {"0.0.0.0", "::"}:  # nosec B104
         replacement_host = "host.docker.internal" if use_docker_host else "127.0.0.1"
@@ -4046,17 +4259,46 @@ def normalize_siem_destination_for_storage(destination_url: str) -> str:
         raise ValueError("SIEM destination host is required")
     if parsed.username or parsed.password:
         raise ValueError("Credentials in SIEM URL are not allowed; use the SIEM authentication fields instead")
-    return parse.urlunparse(parsed)
+    _reject_siem_query_credentials(parsed)
+    return parse.urlunparse(parsed._replace(fragment=""))
+
+
+_SIEM_SENSITIVE_QUERY_KEYS = {
+    "apikey",
+    "key",
+    "token",
+    "secret",
+    "password",
+    "pass",
+    "auth",
+    "authorization",
+    "accesstoken",
+    "bearer",
+    "jwt",
+    "signature",
+    "sig",
+    "credential",
+    "credentials",
+}
+
+
+def _siem_query_key_is_sensitive(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    return normalized in _SIEM_SENSITIVE_QUERY_KEYS
+
+
+def _reject_siem_query_credentials(parsed: parse.ParseResult) -> None:
+    if any(_siem_query_key_is_sensitive(key) for key, _ in parse.parse_qsl(parsed.query, keep_blank_values=True)):
+        raise ValueError("Credentials in SIEM URL query parameters are not allowed; use the SIEM authentication fields instead")
 
 
 def _redact_siem_destination(destination: str) -> str:
     parsed = parse.urlparse(destination)
     if not parsed.query:
-        return destination
-    sensitive = {"api_key", "apikey", "key", "secret", "password", "pass", "auth", "access_token", "bearer"}
+        return parse.urlunparse(parsed._replace(fragment=""))
     pairs = parse.parse_qsl(parsed.query, keep_blank_values=True)
-    redacted_pairs = [(key, "REDACTED" if key.lower() in sensitive else value) for key, value in pairs]
-    return parse.urlunparse(parsed._replace(query=parse.urlencode(redacted_pairs)))
+    redacted_pairs = [(key, "REDACTED" if _siem_query_key_is_sensitive(key) else value) for key, value in pairs]
+    return parse.urlunparse(parsed._replace(query=parse.urlencode(redacted_pairs), fragment=""))
 
 
 def _running_in_container() -> bool:

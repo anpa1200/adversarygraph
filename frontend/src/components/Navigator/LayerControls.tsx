@@ -7,6 +7,8 @@
 import { useCallback } from 'react';
 import type { MatrixData } from '@/hooks/useAttackMatrix';
 import type { ComparisonLayer } from '@/store';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 interface Props {
   matrixData: MatrixData;
@@ -51,6 +53,8 @@ export function LayerControls({
   onLoadClick,
   onLoadOverlayClick,
 }: Props) {
+  const canManageLayers = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
   const { parentsWithSubs } = matrixData;
   const comparisonIds = new Set([...overlayTechniques, ...comparisonLayers.flatMap(layer => layer.techniqueIds)]);
   const sharedCount = [...selectedTechniques].filter((id) => comparisonIds.has(id)).length;
@@ -135,7 +139,7 @@ export function LayerControls({
       >
         ⇄ Load compare
       </button>
-      {selectedTechniques.size > 0 && (
+      {selectedTechniques.size > 0 && canManageLayers && (
         <button
           onClick={onSaveClick}
           className="text-gray-400 hover:text-white transition-colors shrink-0"
@@ -144,11 +148,14 @@ export function LayerControls({
           ↓ Save layer
         </button>
       )}
+      {selectedTechniques.size > 0 && !canManageLayers && (
+        <PermissionNotice permission="manage_intel" action="save named layers" compact />
+      )}
 
       <div className="w-px h-4 bg-gray-700 shrink-0" />
 
       {/* ── Export actions ─────────────────────────────────────────────── */}
-      {selectedTechniques.size > 0 && (
+      {selectedTechniques.size > 0 && canExport && (
         <>
           <button
             onClick={onExportPdf}
@@ -172,6 +179,9 @@ export function LayerControls({
             ↓ JSON
           </button>
         </>
+      )}
+      {selectedTechniques.size > 0 && !canExport && (
+        <PermissionNotice permission="export_data" action="download layer exports" compact />
       )}
 
       {/* ── Clear actions ──────────────────────────────────────────────── */}

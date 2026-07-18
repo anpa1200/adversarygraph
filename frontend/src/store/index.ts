@@ -60,10 +60,13 @@ export interface InvestigationWorkspace {
   id: string;
   name: string;
   domain: Domain;
+  version: string | null;
   selectedTechniques: string[];
   coverageTechniques: string[];
   overlayGroupId: string | null;
   overlayGroupName: string;
+  overlayTechniques: string[];
+  comparisonLayers: ComparisonLayer[];
   techniqueAssessments: Record<string, TechniqueAssessment>;
   updatedAt: string;
 }
@@ -77,20 +80,23 @@ export interface ComparisonLayer {
 }
 
 const COMPARISON_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
+const DOMAINS: Domain[] = ['enterprise-attack', 'mobile-attack', 'ics-attack', 'atlas'];
 
 // NOTE: techniqueAssessments (free-text analyst notes) are stored unencrypted
 // in localStorage. This is acceptable for a self-hosted single-operator
 // deployment but should be moved server-side if the instance is shared.
 const STORAGE_KEY = 'adversarygraph-docker-workbench-v1';
-const saved = (() => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'); } catch { return {}; }
-})();
+const saved = loadPersistedState();
 const persist = (state: Partial<AppState>) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    coverageTechniques: [...(state.coverageTechniques ?? [])],
-    techniqueAssessments: state.techniqueAssessments ?? {},
-    workspaces: state.workspaces ?? [],
-  }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      coverageTechniques: [...(state.coverageTechniques ?? [])],
+      techniqueAssessments: state.techniqueAssessments ?? {},
+      workspaces: state.workspaces ?? [],
+    }));
+  } catch {
+    // Storage can be disabled or full. Keep the active in-memory workspace usable.
+  }
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -179,8 +185,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveWorkspace: (name) => set(state => {
     const workspace: InvestigationWorkspace = {
       id: crypto.randomUUID(), name: name.trim() || 'Untitled investigation', domain: state.domain,
+      version: state.version,
       selectedTechniques: [...state.selectedTechniques], coverageTechniques: [...state.coverageTechniques],
       overlayGroupId: state.overlayGroupId, overlayGroupName: state.overlayGroupName,
+      overlayTechniques: [...state.overlayTechniques], comparisonLayers: state.comparisonLayers,
       techniqueAssessments: state.techniqueAssessments, updatedAt: new Date().toISOString(),
     };
     const workspaces = [workspace, ...state.workspaces];
@@ -189,9 +197,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadWorkspace: (id) => set(state => {
     const workspace = state.workspaces.find(item => item.id === id);
     return workspace ? {
-      domain: workspace.domain, selectedTechniques: new Set(workspace.selectedTechniques),
+      domain: workspace.domain, version: workspace.version, selectedTechniques: new Set(workspace.selectedTechniques),
       coverageTechniques: new Set(workspace.coverageTechniques), overlayGroupId: workspace.overlayGroupId,
-      overlayGroupName: workspace.overlayGroupName, techniqueAssessments: workspace.techniqueAssessments,
+      overlayGroupName: workspace.overlayGroupName, overlayTechniques: new Set(workspace.overlayTechniques),
+      comparisonLayers: workspace.comparisonLayers, techniqueAssessments: workspace.techniqueAssessments,
     } : {};
   }),
   deleteWorkspace: (id) => set(state => {
@@ -199,3 +208,82 @@ export const useAppStore = create<AppState>((set, get) => ({
     setTimeout(() => persist({ ...get(), workspaces }), 0); return { workspaces };
   }),
 }));
+
+function loadPersistedState(): {
+  coverageTechniques: string[];
+  techniqueAssessments: Record<string, TechniqueAssessment>;
+  workspaces: InvestigationWorkspace[];
+} {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+    const record = asRecord(value);
+    return {
+      coverageTechniques: stringArray(record.coverageTechniques),
+      techniqueAssessments: sanitizeAssessments(record.techniqueAssessments),
+      workspaces: Array.isArray(record.workspaces)
+        ? record.workspaces.map(sanitizeWorkspace).filter((item): item is InvestigationWorkspace => Boolean(item))
+        : [],
+    };
+  } catch {
+    return { coverageTechniques: [], techniqueAssessments: {}, workspaces: [] };
+  }
+}
+
+function sanitizeWorkspace(value: unknown): InvestigationWorkspace | null {
+  const row = asRecord(value);
+  if (typeof row.id !== 'string' || !row.id || typeof row.name !== 'string') return null;
+  const domain = DOMAINS.includes(row.domain as Domain) ? row.domain as Domain : 'enterprise-attack';
+  return {
+    id: row.id,
+    name: row.name || 'Untitled investigation',
+    domain,
+    version: typeof row.version === 'string' ? row.version : null,
+    selectedTechniques: stringArray(row.selectedTechniques),
+    coverageTechniques: stringArray(row.coverageTechniques),
+    overlayGroupId: typeof row.overlayGroupId === 'string' ? row.overlayGroupId : null,
+    overlayGroupName: typeof row.overlayGroupName === 'string' ? row.overlayGroupName : '',
+    overlayTechniques: stringArray(row.overlayTechniques),
+    comparisonLayers: Array.isArray(row.comparisonLayers)
+      ? row.comparisonLayers.map(sanitizeComparisonLayer).filter((item): item is ComparisonLayer => Boolean(item))
+      : [],
+    techniqueAssessments: sanitizeAssessments(row.techniqueAssessments),
+    updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+  };
+}
+
+function sanitizeComparisonLayer(value: unknown): ComparisonLayer | null {
+  const row = asRecord(value);
+  if (typeof row.id !== 'string' || typeof row.name !== 'string') return null;
+  return {
+    id: row.id,
+    name: row.name,
+    techniqueIds: stringArray(row.techniqueIds),
+    color: typeof row.color === 'string' ? row.color : COMPARISON_COLORS[0],
+    source: typeof row.source === 'string' ? row.source : undefined,
+  };
+}
+
+function sanitizeAssessments(value: unknown): Record<string, TechniqueAssessment> {
+  const rows = asRecord(value);
+  return Object.fromEntries(Object.entries(rows).flatMap(([id, raw]) => {
+    const row = asRecord(raw);
+    if (!/^T\d{4}(?:\.\d{3})?$/i.test(id)) return [];
+    const assessment: TechniqueAssessment = {};
+    if (typeof row.evidence === 'string') assessment.evidence = row.evidence;
+    if (typeof row.source === 'string') assessment.source = row.source;
+    if (typeof row.notes === 'string') assessment.notes = row.notes;
+    if (['low', 'medium', 'high'].includes(String(row.confidence))) assessment.confidence = row.confidence as TechniqueAssessment['confidence'];
+    if (['direct', 'inferred', 'weak'].includes(String(row.mapping))) assessment.mapping = row.mapping as TechniqueAssessment['mapping'];
+    if (['none', 'hunt', 'draft', 'pilot', 'production', 'retired'].includes(String(row.maturity))) assessment.maturity = row.maturity as TechniqueAssessment['maturity'];
+    return [[id.toUpperCase(), assessment]];
+  }));
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((item): item is string => typeof item === 'string' && Boolean(item))));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
