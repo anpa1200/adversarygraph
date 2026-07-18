@@ -5,6 +5,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { attackApi, cveApi, simulationApi } from '@/api/client';
 import { loadTechniqueReferenceIndex, techniqueReferenceUrl, getEcosystemLinks } from '@/config/references';
 import { useAppStore } from '@/store';
@@ -189,6 +190,12 @@ export function TechniquePanel({ attackId, onClose }: Props) {
               </div>
               <button onClick={() => downloadHuntPlan(tech.attack_id, tech.name, tech.tactics, tech.data_sources, resources.map(item => item.url))}
                 className="mt-2 text-xs border border-amber-800 text-amber-400 px-2 py-1 rounded">Export hunt plan</button>
+              <Link
+                to={`/threat-hunting/new?technique=${encodeURIComponent(tech.attack_id)}&source=navigator&source_ref=${encodeURIComponent(tech.attack_id)}`}
+                className="ml-2 mt-2 inline-flex rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-950/40"
+              >
+                Create threat hunt
+              </Link>
             </Section>
 
             <Section title="CVE Crosslinks">

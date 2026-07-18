@@ -18,7 +18,8 @@ import app.models.cve            # noqa: F401 — registers CVE intelligence tab
 import app.models.auth           # noqa: F401 — registers native user/session tables
 import app.models.evidence_graph  # noqa: F401 — registers evidence-to-detection graph tables
 import app.models.threat_radar   # noqa: F401 — registers Threat Radar product-security CTI tables
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_radar
+import app.models.threat_hunting  # noqa: F401 — registers hypothesis-driven threat hunt tables
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_radar
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -200,6 +201,7 @@ app.include_router(system.router, prefix="/api", dependencies=_auth_required)
 app.include_router(observability.router, prefix="/api", dependencies=_auth_required)
 app.include_router(troubleshooting.router, prefix="/api", dependencies=_auth_required)
 app.include_router(threat_radar.router, prefix="/api", dependencies=_auth_required)
+app.include_router(threat_hunting.router, prefix="/api", dependencies=_auth_required)
 
 
 @app.get("/api/health")

@@ -50,6 +50,7 @@ import { Emb3d } from '@/pages/Emb3d';
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
 const Debugger = lazy(() => import('@/pages/Debugger').then(module => ({ default: module.Debugger })));
+const ThreatHunting = lazy(() => import('@/pages/ThreatHunting').then(module => ({ default: module.ThreatHunting })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -117,6 +118,9 @@ function AppShell() {
                   <Route path="/statistics" element={<RoleGate require="analyst"><Statistics /></RoleGate>} />
                   <Route path="/threat-radar" element={<RoleGate require="analyst"><ThreatRadar /></RoleGate>} />
                   <Route path="/threat-radar/assets" element={<RoleGate require="analyst"><ThreatRadarAssets /></RoleGate>} />
+                  <Route path="/threat-hunting" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/new" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/:huntId" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
                   <Route path="/evidence-graph" element={<RoleGate require="analyst"><EvidenceGraph /></RoleGate>} />
                   <Route path="/admin" element={<RoleGate require="admin"><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />

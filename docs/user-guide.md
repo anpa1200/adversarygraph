@@ -10,6 +10,7 @@ Published walkthrough and visual reference:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
+- Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - v6 current UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 reproducible case studies: [`case-studies-v6.md`](case-studies-v6.md)
@@ -58,7 +59,8 @@ For a screenshot-backed walkthrough of every current module, see the
 - Compare and Group vs Group similarity workflows
 - Sector Intel and Sector Packs
 - Asset Attack Surface Mapping for CMDB, scanner, and cloud inventory review
-- RetroHunt and Knowledge Library
+- Threat Hunting for scoped hypotheses, telemetry plans, findings, and reviewed outcomes
+- RetroHunt Signals and Knowledge Library
 - IOC Library, IOC Investigation, IOC Node Detail, and VirusTotal Lookup
 - Feeds Management and Pipeline imports
 - Operations and Investigation Report
@@ -77,6 +79,8 @@ Use the Docker deployment for:
 - Asset inventory attack surface matrices with optional AI enrichment, saved
   local analysis history, and white Navigator layers for inventory-derived TTPs.
 - IOC Intelligence with source-backed actor observables.
+- PostgreSQL-backed Threat Hunting records with versioned query plans,
+  evidence references, lifecycle controls, and Threat Radar handoff.
 - API-driven workflows.
 
 ## Analyst Workflow

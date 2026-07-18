@@ -15,6 +15,7 @@ async def test_threat_radar_signal_to_case_workflow(client: AsyncClient):
             "reliability": 5,
             "tlp": "TLP:CLEAR",
         },
+        "tlp": "TLP:CLEAR",
         "confidence": 90,
         "severity": "critical",
         "cve_ids": ["CVE-2026-34909"],
@@ -72,7 +73,21 @@ async def test_threat_radar_signal_to_case_workflow(client: AsyncClient):
         for item in unified_entities
     )
 
-    for path in ("create-hunt", "create-psirt-task", "create-ir-escalation", "create-detection-requirement"):
+    hunt_response = await client.post(f"/api/threat-radar/cases/{case_id}/create-hunt")
+    assert hunt_response.status_code == 201
+    hunt = hunt_response.json()
+    assert hunt["case_id"] == case_id
+    assert hunt["source_type"] == "threat_radar"
+    assert hunt["source_ref"] == case_id
+    assert hunt["priority"] == body["case"]["priority"]
+    assert hunt["tlp"] == "TLP:CLEAR"
+    assert hunt["owner"] == "local"
+    assert hunt["created_by"] == "local"
+    assert hunt["status"] == "queued"
+    assert hunt["telemetry"]
+    assert hunt["description"] == payload["description"]
+
+    for path in ("create-psirt-task", "create-ir-escalation", "create-detection-requirement"):
         response = await client.post(f"/api/threat-radar/cases/{case_id}/{path}")
         assert response.status_code == 201
         assert response.json()["case_id"] == case_id

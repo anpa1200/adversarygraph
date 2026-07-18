@@ -2,7 +2,7 @@
 
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
-**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
+**Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v6.0.0-blue)](VERSION)
@@ -27,6 +27,7 @@ Core capabilities:
 
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
 - Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, and PSIRT/Hunt/IR/Detection workflows.
+- Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, and auditable Threat Radar handoff. Query examples are copied or exported for analyst-controlled execution; this module does not claim an external SIEM run without connector evidence.
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
 - IOC Library, IOC Investigation pivots, VirusTotal lookup, and feed management.
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
@@ -104,6 +105,7 @@ Local configuration is stored in `.env`; the default persistent database is `${A
 | v6 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](docs/assets/adversarygraph-v6/manifest.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
+| Threat Hunting operational guide | [docs/threat-hunting-guide.md](docs/threat-hunting-guide.md) |
 | EMB3D embedded threat modeling | [docs/emb3d.md](docs/emb3d.md) |
 | CVE Library | [docs/cve-cvss-intelligence.md](docs/cve-cvss-intelligence.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](docs/evidence-to-detection-graph.md) |

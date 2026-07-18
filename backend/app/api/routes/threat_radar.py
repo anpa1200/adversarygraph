@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 import hashlib
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
@@ -79,13 +79,15 @@ from app.services.unified_model import (
 
 router = APIRouter(prefix="/threat-radar", tags=["Threat Radar"])
 
+TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
+
 
 class ThreatSourceIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     source_type: str = "manual"
     url: str = ""
     reliability: int = Field(3, ge=0, le=5)
-    tlp: str = "TLP:AMBER"
+    tlp: TLP = "TLP:AMBER"
     legal_sensitive: bool = False
     enabled: bool = True
     notes: str = ""
@@ -103,7 +105,7 @@ class EvidenceIn(BaseModel):
     summary: str = ""
     url: str = ""
     observed_at: str = ""
-    tlp: str = "TLP:AMBER"
+    tlp: TLP = "TLP:AMBER"
     legal_sensitive: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -113,7 +115,7 @@ class ClaimIn(BaseModel):
     statement: str = ""
     credibility: int = Field(3, ge=0, le=5)
     status: str = "unvalidated"
-    tlp: str = "TLP:AMBER"
+    tlp: TLP = "TLP:AMBER"
     legal_sensitive: bool = False
 
 
@@ -139,7 +141,7 @@ class SignalCreateIn(BaseModel):
     source_name: str = ""
     source_url: str = ""
     source: ThreatSourceIn | None = None
-    tlp: str = "TLP:AMBER"
+    tlp: TLP = "TLP:AMBER"
     legal_sensitive: bool = False
     confidence: int = Field(50, ge=0, le=100)
     severity: str = "unknown"

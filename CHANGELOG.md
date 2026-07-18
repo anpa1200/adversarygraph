@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Added a hypothesis-driven Threat Hunting workspace with lifecycle controls,
+  ATT&CK mappings, telemetry and field requirements, bounded scope, TLP
+  handling, reviewed findings, controlled dispositions, and soft archival.
+- Unified analyst-created and Threat Radar-created hunts on the existing
+  `threat_hunt_requests` record, including an additive upgrade migration and
+  legacy context backfill.
+- Added append-only query revisions with checksums so findings and exports keep
+  reproducible query provenance without claiming that AdversaryGraph executed
+  an external SIEM query.
+- Added a comprehensive threat-hunting guide with a table of contents,
+  governance and telemetry methodology, reusable worksheets and checklists,
+  and twenty worked hunt playbooks using current ATT&CK v19 terminology.
+
 ## v6.0.0 - 2026-07-17
 
 - Promoted release metadata to v6.0.0 across backend, frontend, Helm, README,

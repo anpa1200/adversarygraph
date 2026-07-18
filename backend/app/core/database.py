@@ -47,3 +47,56 @@ async def create_tables() -> None:
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS external_subject VARCHAR(255) DEFAULT ''"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT false"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_secret TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ALTER COLUMN case_id DROP NOT NULL"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS priority VARCHAR(40) DEFAULT 'P3 Monitor'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS owner VARCHAR(255) DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS source_type VARCHAR(80) DEFAULT 'manual'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS source_ref VARCHAR(500) DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS tactics JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS required_fields JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS query_language VARCHAR(40) DEFAULT 'generic'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS query_text TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS time_range_start TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS time_range_end TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS expected_evidence TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS false_positive_notes TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS assumptions TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS result_summary TEXT DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS disposition VARCHAR(60) DEFAULT 'undetermined'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS tlp VARCHAR(20) DEFAULT 'TLP:AMBER'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS created_by VARCHAR(255) DEFAULT 'local'"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ"))
+        await conn.execute(text("""
+            UPDATE threat_hunt_requests AS hunt
+            SET source_type = 'threat_radar',
+                source_ref = hunt.case_id::text,
+                description = COALESCE(NULLIF(hunt.description, ''), threat_case.summary, ''),
+                priority = COALESCE(NULLIF(threat_case.priority, ''), hunt.priority, 'P3 Monitor'),
+                tlp = COALESCE(NULLIF(threat_case.tlp, ''), hunt.tlp, 'TLP:AMBER')
+            FROM threat_cases AS threat_case
+            WHERE hunt.case_id = threat_case.id
+              AND COALESCE(hunt.source_ref, '') = ''
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_status ON threat_hunt_requests (status)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_priority ON threat_hunt_requests (priority)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_owner ON threat_hunt_requests (owner)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_source_type ON threat_hunt_requests (source_type)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_disposition ON threat_hunt_requests (disposition)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_archived_at ON threat_hunt_requests (archived_at)"))
+        await conn.execute(text("""
+            UPDATE threat_hunt_requests
+            SET priority = 'P2 Medium'
+            WHERE priority IS NULL
+               OR priority NOT IN ('P0 Emergency', 'P1 High', 'P2 Medium', 'P3 Monitor', 'P4 Low/Archive')
+        """))
+        await conn.execute(text("""
+            UPDATE threat_hunt_requests
+            SET tlp = 'TLP:RED'
+            WHERE tlp IS NULL
+               OR tlp NOT IN ('TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED')
+        """))

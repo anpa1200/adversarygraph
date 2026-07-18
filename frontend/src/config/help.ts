@@ -144,6 +144,16 @@ export const helpTopics: HelpTopic[] = [
     tips: ['Restricted intelligence must stay sanitized metadata only. Do not store exploit payloads, stolen data, credentials, or illegal-source access instructions.', 'CTI without product exposure and telemetry readiness is only a hypothesis.'],
   },
   {
+    id: 'threat-hunting',
+    title: 'Threat Hunting',
+    route: '/threat-hunting',
+    summary: 'Hypothesis-driven workspace for defining hunt scope, preserving ATT&CK and telemetry context, reviewing findings, and recording an explicit analyst outcome.',
+    whenToUse: ['Turn a CTI, ATT&CK, IOC, asset, or detection lead into a bounded hunt', 'Document queries and evidence reviewed in approved telemetry tools', 'Record no-match, benign, suspicious, malicious, inconclusive, telemetry-gap, or query-failure outcomes'],
+    workflow: ['Start from a template or selected ATT&CK techniques', 'Define a falsifiable hypothesis, scope, telemetry, expected evidence, and false positives', 'Copy the reviewed query into an approved SIEM, EDR, data lake, or telemetry tool', 'Record findings, disposition, limitations, and defensive handoffs'],
+    outputs: ['Versioned hunt plan', 'Query and telemetry requirements', 'Evidence-backed findings', 'Reviewed outcome and exportable hunt record'],
+    tips: ['AdversaryGraph records and reviews hunt work; it does not claim that a stored query was executed.', 'No matches in a bounded query do not prove that an environment is clean. Record searched scope and telemetry gaps.'],
+  },
+  {
     id: 'feeds',
     title: 'Feeds Management',
     route: '/feeds',

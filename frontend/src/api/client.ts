@@ -2347,6 +2347,164 @@ export const retroHuntApi = {
     http.get(`/retrohunt/collect/${taskId}`).then(r => r.data),
 };
 
+// ── Threat Hunting ────────────────────────────────────────────────────────────
+
+export type ThreatHuntStatus = 'queued' | 'draft' | 'planned' | 'running' | 'review' | 'completed' | 'cancelled' | 'archived';
+export type ThreatHuntPriority = 'P0 Emergency' | 'P1 High' | 'P2 Medium' | 'P3 Monitor' | 'P4 Low/Archive';
+export type ThreatHuntDisposition =
+  | 'undetermined'
+  | 'no_matches'
+  | 'benign'
+  | 'benign_policy_relevant'
+  | 'suspicious'
+  | 'confirmed_malicious'
+  | 'inconclusive'
+  | 'telemetry_gap'
+  | 'query_failure';
+export type ThreatHuntQueryLanguage = 'generic' | 'sigma' | 'kql' | 'spl' | 'eql' | 'lucene' | 'sql' | 'osquery' | 'yara' | 'other';
+export type ThreatHuntTlp = 'TLP:CLEAR' | 'TLP:GREEN' | 'TLP:AMBER' | 'TLP:AMBER+STRICT' | 'TLP:RED';
+export type ThreatHuntFindingVerdict = 'supports' | 'refutes' | 'inconclusive' | 'benign';
+
+export interface ThreatHuntInput {
+  title: string;
+  hypothesis: string;
+  description: string;
+  scope: string;
+  status: ThreatHuntStatus;
+  priority: ThreatHuntPriority;
+  owner: string;
+  tlp: ThreatHuntTlp;
+  technique_ids: string[];
+  tactics: string[];
+  telemetry_sources: string[];
+  required_fields: string[];
+  tags: string[];
+  query_language: ThreatHuntQueryLanguage;
+  query_text: string;
+  time_range_start: string | null;
+  time_range_end: string | null;
+  expected_evidence: string;
+  false_positive_notes: string;
+  assumptions: string;
+  result_summary: string;
+  disposition: ThreatHuntDisposition;
+}
+
+export interface ThreatHunt extends ThreatHuntInput {
+  id: string;
+  case_id: string | null;
+  source_type: string;
+  source_ref: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  archived_at: string | null;
+}
+
+export interface ThreatHuntFindingInput {
+  title: string;
+  summary: string;
+  severity: 'informational' | 'low' | 'medium' | 'high' | 'critical';
+  confidence: number;
+  status: 'new' | 'reviewed' | 'escalated' | 'closed';
+  verdict: ThreatHuntFindingVerdict;
+  tlp: ThreatHuntTlp;
+  evidence_type: string;
+  evidence_ref: string;
+  event_time: string | null;
+  observables: string[];
+  technique_ids: string[];
+  query_version_id?: string | null;
+  notes: string;
+}
+
+export interface ThreatHuntFinding extends ThreatHuntFindingInput {
+  id: string;
+  hunt_id: string;
+  analyst: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ThreatHuntDetail extends ThreatHunt {
+  findings: ThreatHuntFinding[];
+  query_versions: ThreatHuntQueryVersion[];
+}
+
+export interface ThreatHuntQueryVersion {
+  id: string;
+  hunt_id: string;
+  version: number;
+  language: string;
+  query_text: string;
+  backend_assumptions: string;
+  checksum: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ThreatHuntTemplate {
+  id: string;
+  title: string;
+  hypothesis: string;
+  description: string;
+  technique_ids: string[];
+  tactics: string[];
+  telemetry_sources: string[];
+  required_fields: string[];
+  query_language: string;
+  query_text: string;
+  query_note: string;
+  expected_evidence: string;
+  false_positive_notes: string;
+  tags: string[];
+}
+
+export interface ThreatHuntStats {
+  total_hunts: number;
+  active_hunts: number;
+  completed_hunts: number;
+  total_findings: number;
+  high_priority_findings: number;
+  by_status: Record<string, number>;
+  by_priority: Record<string, number>;
+}
+
+export const threatHuntingApi = {
+  templates: (): Promise<ThreatHuntTemplate[]> =>
+    http.get('/threat-hunting/templates').then(r => r.data),
+  stats: (): Promise<ThreatHuntStats> =>
+    http.get('/threat-hunting/stats').then(r => r.data),
+  hunts: (params?: { q?: string; status?: string; priority?: string; technique_id?: string }): Promise<ThreatHunt[]> => {
+    const query = new URLSearchParams();
+    if (params?.q) query.set('q', params.q);
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.technique_id) query.set('technique_id', params.technique_id);
+    const suffix = query.toString();
+    return http.get(`/threat-hunting/hunts${suffix ? `?${suffix}` : ''}`).then(r => r.data);
+  },
+  get: (huntId: string): Promise<ThreatHuntDetail> =>
+    http.get(`/threat-hunting/hunts/${huntId}`).then(r => r.data),
+  create: (body: ThreatHuntInput): Promise<ThreatHunt> =>
+    http.post('/threat-hunting/hunts', body).then(r => r.data),
+  update: (huntId: string, body: Partial<ThreatHuntInput>): Promise<ThreatHunt> =>
+    http.patch(`/threat-hunting/hunts/${huntId}`, body).then(r => r.data),
+  archive: (huntId: string): Promise<ThreatHunt> =>
+    http.post(`/threat-hunting/hunts/${huntId}/archive`).then(r => r.data),
+  findings: (huntId: string): Promise<ThreatHuntFinding[]> =>
+    http.get(`/threat-hunting/hunts/${huntId}/findings`).then(r => r.data),
+  createFinding: (huntId: string, body: ThreatHuntFindingInput): Promise<ThreatHuntFinding> =>
+    http.post(`/threat-hunting/hunts/${huntId}/findings`, body).then(r => r.data),
+  updateFinding: (huntId: string, findingId: string, body: Partial<ThreatHuntFindingInput>): Promise<ThreatHuntFinding> =>
+    http.patch(`/threat-hunting/hunts/${huntId}/findings/${findingId}`, body).then(r => r.data),
+  archiveFinding: (huntId: string, findingId: string): Promise<ThreatHuntFinding> =>
+    http.post(`/threat-hunting/hunts/${huntId}/findings/${findingId}/archive`).then(r => r.data),
+  exportUrl: (huntId: string) => `/api/threat-hunting/hunts/${huntId}/export`,
+};
+
 // ── Knowledge Library ─────────────────────────────────────────────────────────
 
 export interface KnowledgeArticle {

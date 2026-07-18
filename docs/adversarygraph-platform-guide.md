@@ -1,6 +1,6 @@
 # AdversaryGraph Platform Guide
 
-> Current v5.0.0 platform documentation. AdversaryGraph is an analyst-assistance
+> Current v6.0.0 platform documentation. AdversaryGraph is an analyst-assistance
 > system: AI mappings, similarity scores, IOC enrichment, malware-analysis
 > output, and generated detections require human validation before operational
 > use.
@@ -14,8 +14,9 @@
 5. [Asset Attack Surface Mapping](#asset-attack-surface-mapping)
 6. [Attack Simulation](#attack-simulation)
 7. [Evidence-to-Detection Graph](#evidence-to-detection-graph)
-8. [Malware Analysis Extension](#malware-analysis-extension)
-9. [Operating Notes](#operating-notes)
+8. [Threat Hunting](#threat-hunting)
+9. [Malware Analysis Extension](#malware-analysis-extension)
+10. [Operating Notes](#operating-notes)
 
 ## Visual Evidence
 
@@ -59,6 +60,7 @@ report / IOC / malware sample / feed source
   -> analyst validation
   -> actor, campaign, sector, and IOC pivots
   -> comparison and detection-gap review
+  -> hypothesis-driven threat hunt and reviewed outcome
   -> evidence-to-detection reasoning graph
   -> investigation report, exports, and operational handoff
 ```
@@ -81,6 +83,7 @@ AI assistant should remain traceable back to evidence.
 | Asset Surface | Upload or paste asset inventories; normalize assets, exposure, ports, technologies, and owners; create saved attack-surface cases; build an AI-assisted matrix with risk levels, entry points, ATT&CK candidates, priority actions, validation gaps, and cross-asset findings. |
 | Attack Simulation | Select ATT&CK TTPs, run safe lab simulations, view real-time attacked-server logs, forward telemetry to SIEM collectors, save recent destinations, generate AI-assisted multi-phase attack stories, review attack-chain graphs, and explain validation logic. |
 | Evidence Graph | Preserve evidence-to-detection reasoning paths: Evidence, Claim, Behavior, ATT&CK Technique, Required Telemetry, Detection Candidate, Detection Rule, Validation Scenario, SIEM Result, and Analyst Decision. |
+| Threat Hunting | Turn Threat Radar, Navigator, CTI, exposure, incident, or manual triggers into falsifiable hypotheses, bounded scopes, current ATT&CK mappings, telemetry requirements, versioned query plans, reviewed findings, and explicit dispositions. |
 | RetroHunt | Search historical local intelligence, reports, indicators, techniques, and evidence for repeated patterns. |
 | Knowledge Library | Browse stored reports, references, entities, and investigation source material. |
 | IOC Library | Search observables, source attribution, freshness, enrichment fields, mapped TTPs, and actor links. |
@@ -181,6 +184,26 @@ MISP Galaxy evidence.
 
 RetroHunt searches local historical intelligence for repeated indicators,
 techniques, tool names, actor references, and evidence fragments.
+
+### Threat Hunting
+
+Threat Hunting is the operational workspace for hypothesis-driven searches in
+organization-owned telemetry. It keeps analyst-created and Threat Radar-created
+hunts in one queue, preserves TLP, source context, scope, ATT&CK techniques,
+required telemetry and fields, false-positive considerations, findings, and a
+reviewed outcome.
+
+Queries are stored as append-only revisions with checksums. Analysts copy them
+to an approved telemetry backend and attach evidence references; the module does
+not claim that AdversaryGraph executed an external SIEM query. Completed,
+cancelled, and archived hunts are read-only, and archive actions preserve the
+record instead of deleting it. Navigator can prefill a hunt from a selected
+technique, while Threat Radar writes directly into the same canonical queue.
+
+See the comprehensive
+[`Threat Hunting: From Hypothesis to Defensible Detection`](threat-hunting-guide.md)
+guide for program design, telemetry engineering, execution controls, templates,
+checklists, and twenty worked playbooks.
 
 ### Knowledge Library
 

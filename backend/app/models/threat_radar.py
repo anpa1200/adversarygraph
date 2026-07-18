@@ -430,13 +430,45 @@ class ThreatHuntRequest(Base):
     __tablename__ = "threat_hunt_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    case_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(500))
     hypothesis: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(Text, default="")
+    priority: Mapped[str] = mapped_column(String(40), default="P3 Monitor", index=True)
+    owner: Mapped[str] = mapped_column(String(255), default="", index=True)
+    source_type: Mapped[str] = mapped_column(String(80), default="manual", index=True)
+    source_ref: Mapped[str] = mapped_column(String(500), default="")
     telemetry: Mapped[list[str]] = mapped_column(JSONB, default=list)
     technique_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
-    status: Mapped[str] = mapped_column(String(60), default="queued")
+    tactics: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    required_fields: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    query_language: Mapped[str] = mapped_column(String(40), default="generic")
+    query_text: Mapped[str] = mapped_column(Text, default="")
+    time_range_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    time_range_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expected_evidence: Mapped[str] = mapped_column(Text, default="")
+    false_positive_notes: Mapped[str] = mapped_column(Text, default="")
+    assumptions: Mapped[str] = mapped_column(Text, default="")
+    result_summary: Mapped[str] = mapped_column(Text, default="")
+    disposition: Mapped[str] = mapped_column(String(60), default="undetermined", index=True)
+    tlp: Mapped[str] = mapped_column(String(20), default="TLP:AMBER")
+    status: Mapped[str] = mapped_column(String(60), default="queued", index=True)
+    created_by: Mapped[str] = mapped_column(String(255), default="local")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    @property
+    def telemetry_sources(self) -> list[str]:
+        """Expose the legacy telemetry column through the canonical hunt name."""
+        return self.telemetry or []
+
+    @telemetry_sources.setter
+    def telemetry_sources(self, values: list[str]) -> None:
+        self.telemetry = values
 
 
 class ThreatIREscalation(Base):

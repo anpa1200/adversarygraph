@@ -47,6 +47,49 @@ SIGNAL_TYPES = {
     "internal_telemetry_anomaly",
 }
 
+HUNT_PRIORITIES = {
+    "P0 Emergency",
+    "P1 High",
+    "P2 Medium",
+    "P3 Monitor",
+    "P4 Low/Archive",
+}
+HUNT_TLPS = {
+    "TLP:CLEAR",
+    "TLP:GREEN",
+    "TLP:AMBER",
+    "TLP:AMBER+STRICT",
+    "TLP:RED",
+}
+
+
+def _bounded_text(value: Any, limit: int) -> str:
+    return str(value or "").strip()[:limit]
+
+
+def _bounded_strings(values: Any, *, count: int, length: int) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    cleaned = dict.fromkeys(
+        item
+        for value in values
+        if (item := _bounded_text(value, length))
+    )
+    return list(cleaned)[:count]
+
+
+def _canonical_hunt_priority(value: Any) -> str:
+    candidate = _bounded_text(value, 40)
+    return candidate if candidate in HUNT_PRIORITIES else "P2 Medium"
+
+
+def _canonical_hunt_tlp(value: Any) -> str:
+    candidate = _bounded_text(value, 20).upper()
+    if not candidate:
+        return "TLP:AMBER"
+    # Unknown legacy labels fail closed so conversion cannot silently lower handling.
+    return candidate if candidate in HUNT_TLPS else "TLP:RED"
+
 LEGAL_SENSITIVE_TYPES = {
     "exploit_sale_claim",
     "darknet_provider_mention",
@@ -253,12 +296,41 @@ async def create_case_from_signal(
 
 async def create_action(session: AsyncSession, case: ThreatCase, action_type: str, actor: str = "local") -> Any:
     if action_type == "hunt":
+        telemetry = _bounded_strings(_telemetry_for_case(case), count=100, length=500)
+        techniques = _techniques_for_case(case)[:100]
+        owner = _bounded_text(actor, 255) or "local"
         obj = ThreatHuntRequest(
             case_id=case.id,
-            title=f"Hunt: {case.title}",
-            hypothesis=f"Activity related to {case.title} may be visible in product, identity, endpoint, network, or CI/CD telemetry.",
-            telemetry=_telemetry_for_case(case),
-            technique_ids=_techniques_for_case(case),
+            title=_bounded_text(f"Hunt: {case.title}", 500),
+            hypothesis=_bounded_text(
+                f"Activity related to {case.title} may be visible in product, identity, endpoint, network, or CI/CD telemetry.",
+                10_000,
+            ),
+            description=_bounded_text(case.summary, 20_000),
+            scope="Validate the mapped product and environment context against organization-owned telemetry.",
+            priority=_canonical_hunt_priority(case.priority),
+            owner=owner,
+            source_type="threat_radar",
+            source_ref=str(case.id),
+            telemetry=telemetry,
+            technique_ids=techniques,
+            tactics=[],
+            required_fields=[],
+            tags=_bounded_strings(case.tags, count=100, length=500),
+            query_language="generic",
+            query_text="",
+            expected_evidence=(
+                "Correlated product, identity, endpoint, network, or CI/CD telemetry that supports or weakens the hypothesis."
+            ),
+            false_positive_notes=(
+                "Validate expected administrative, maintenance, deployment, monitoring, and security-tool activity before escalation."
+            ),
+            assumptions="Threat Radar context is a hunt trigger and must be validated against local telemetry before disposition.",
+            result_summary="",
+            disposition="undetermined",
+            tlp=_canonical_hunt_tlp(case.tlp),
+            status="queued",
+            created_by=owner,
         )
     elif action_type == "psirt":
         product = (case.product_context or [{}])[0]
@@ -537,8 +609,16 @@ def _telemetry_for_case(case: ThreatCase) -> list[str]:
 def _techniques_for_case(case: ThreatCase) -> list[str]:
     techniques = set()
     for item in case.product_context or []:
-        techniques.update(str(t).upper() for t in item.get("technique_ids", []) if t)
-    techniques.update(str(tag).upper() for tag in case.tags or [] if re.fullmatch(r"T\d{4}(?:\.\d{3})?", str(tag), re.I))
+        techniques.update(
+            str(value).upper()
+            for value in item.get("technique_ids", [])
+            if value and re.fullmatch(r"T\d{4}(?:\.\d{3})?", str(value), re.I)
+        )
+    techniques.update(
+        str(tag).upper()
+        for tag in case.tags or []
+        if re.fullmatch(r"T\d{4}(?:\.\d{3})?", str(tag), re.I)
+    )
     return sorted(techniques)
 
 

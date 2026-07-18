@@ -22,6 +22,12 @@ const DefaultFallback = () => (
   </div>
 );
 
+const LoadingFallback = () => (
+  <div role="status" className="flex h-full items-center justify-center p-8 text-sm text-gray-500">
+    Verifying access…
+  </div>
+);
+
 /**
  * Renders children when the current user has the required role.
  * Falls back to a "read-only access" screen for under-privileged users.
@@ -30,8 +36,7 @@ const DefaultFallback = () => (
 export function RoleGate({ require, children, fallback }: RoleGateProps) {
   const { data: user, isLoading } = useCurrentUser();
 
-  // While loading, render children optimistically — the backend is authoritative.
-  if (isLoading) return <>{children}</>;
+  if (isLoading) return <LoadingFallback />;
 
   if (user?.auth_enabled === false) {
     return <>{children}</>;
