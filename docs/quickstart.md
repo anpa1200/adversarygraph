@@ -12,6 +12,7 @@ the 1200km mirror or Medium publication:
 
 - Docker Engine and Docker Compose v2.
 - 8 GB RAM available to Docker.
+- OpenSSL or another cryptographically secure secret generator.
 - At least one LLM provider key for AI report extraction.
 
 The public browser workspace at <https://1200km.com/threat-matrix/> does not require Docker, but it also does not process private reports or store backend analyses.
@@ -29,7 +30,24 @@ cd adversarygraph
 cp .env.example .env
 ```
 
-Edit `.env` and set at least one provider key:
+Before starting any container, configure the three required local secrets with
+different random values:
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 32
+openssl rand -hex 32
+```
+
+Copy the first generated value to `DB_PASS` and the second to
+`REDIS_PASSWORD`. Copy the third to `RATE_LIMIT_PROXY_SECRET`; it authenticates
+the frontend's direct TCP-peer IP header to the API. With direct frontend
+access that peer is the client; behind a TLS gateway it is normally the
+gateway, so enforce per-client throttling there as well. The frontend
+overwrites browser-supplied forwarding headers. Do not reuse any value or leave
+the `CHANGE_ME...` examples in place.
+
+Then set at least one provider key for AI features:
 
 ```env
 ANTHROPIC_API_KEY=
@@ -56,6 +74,35 @@ After startup, open <http://localhost:3000/auth-guide> for the local
 authentication setup guide. Sign in with the bootstrap admin, create permanent
 named admin users from **Admin Panel**, then clear
 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
+
+For a production-overlay deployment, authentication is mandatory. Set an
+HTTPS `CORS_ALLOWED_ORIGINS`, keep `SECURE_COOKIES=true`, and configure either
+a strong one-time bootstrap administrator or a trusted OIDC/SAML proxy with a
+strong `PROXY_SECRET`. An upgrade with an already verified permanent named
+administrator may use the one-shot
+`AUTH_EXISTING_ADMIN_CONFIRMED=true` override. Validate before rollout:
+
+```bash
+./scripts/validate-production-env.sh
+make prod
+```
+
+Production deployment also requires all seven `ADVERSARYGRAPH_*_IMAGE` values
+from the exact release's attached `adversarygraph-images.env`. Each value is an
+immutable `repository@sha256:...` reference; `make prod` deliberately uses
+`--no-build` so the deployed artifacts remain the ones covered by the release
+scan evidence.
+
+The manifest is produced by the post-v6 tag workflow and is not attached to the
+historical `v6.0.0` GitHub release. Do not invent digest values or transfer scan
+evidence from another build. Use the next successfully gated semantic release,
+or retain an independently built, scanned, and pinned artifact set under an
+equivalent local release process.
+
+For that one-shot upgrade override, run
+`AUTH_EXISTING_ADMIN_CONFIRMED=true make prod` only after confirming the named
+administrator can sign in. Do not persist the override as an authentication
+substitute.
 
 Optional IOC enrichment providers:
 
@@ -137,21 +184,26 @@ data into PostgreSQL. This can take several minutes.
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs | http://localhost:3000/docs |
-| Health | http://localhost:3000/api/health |
+| Liveness | http://localhost:3000/api/health |
+| Readiness | http://localhost:3000/api/ready |
 | Anomaly Detection Atlas | http://localhost:3001/anomaly-detection-atlas/ |
 
 ## 5. Smoke Test
 
 ```bash
 curl http://localhost:3000/api/health
+curl http://localhost:3000/api/ready
 curl "http://localhost:3000/api/attack/versions"
 ```
 
 Expected health response:
 
 ```json
-{"status":"ok","version":"5.6.0"}
+{"status":"ok","version":"6.0.0"}
 ```
+
+The readiness response is `200` with `status: "ready"` when the database can
+serve traffic and `503` with `status: "not_ready"` otherwise.
 
 Run the deployment self-test:
 
@@ -167,6 +219,12 @@ secret values. The same check is available in the UI through error-popup
 ```text
 http://localhost:3000/troubleshooting
 ```
+
+When authentication is enabled, the container command may fall back to
+database-backed `/api/ready` because `/api/system/selftest` is protected. Sign
+in with a user that has `run_analysis` and confirm the full result is
+`status=ok`; `degraded` means at least one warning still needs remediation or
+explicit risk acceptance.
 
 The API service is intentionally not published as `localhost:8000` by the
 default Compose file. Use the frontend proxy at `localhost:3000/api/...` unless

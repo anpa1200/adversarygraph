@@ -3,13 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.config import settings
 from app.core.observability import observability_state
+from app.core.redaction import redact_sensitive_text
+from app.services.auth import require_permission
 
-router = APIRouter(prefix="/observability", tags=["Observability"])
-
+router = APIRouter(
+    prefix="/observability",
+    tags=["Observability"],
+    dependencies=[Depends(require_permission("view_audit"))],
+)
 
 def _tail_lines(path: Path, limit: int) -> list[str]:
     if not path.exists() or not path.is_file():
@@ -23,20 +28,7 @@ def _tail_lines(path: Path, limit: int) -> list[str]:
 
 
 def _redact_log_line(line: str) -> str:
-    redacted = line
-    markers = ("token=", "api_key=", "apikey=", "password=", "secret=", "Authorization:")
-    for marker in markers:
-        lower = redacted.lower()
-        idx = lower.find(marker.lower())
-        while idx >= 0:
-            start = idx + len(marker)
-            end = start
-            while end < len(redacted) and not redacted[end].isspace():
-                end += 1
-            redacted = f"{redacted[:start]}[REDACTED]{redacted[end:]}"
-            lower = redacted.lower()
-            idx = lower.find(marker.lower(), start + len("[REDACTED]"))
-    return redacted
+    return redact_sensitive_text(line)
 
 
 @router.get("/summary")

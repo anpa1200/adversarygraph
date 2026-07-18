@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -17,8 +17,10 @@ import {
 } from '@/api/client';
 import { CodeEditor } from '@/components/ui/code-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { HuntAIAssistant, type HuntAIAssistantMode } from './HuntAIAssistant';
 import { HuntFindingsPanel } from './HuntFindingsPanel';
 import { HuntPriorityPill, HuntStatusPill } from './HuntStatusPill';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const PRIORITIES: ThreatHuntPriority[] = ['P0 Emergency', 'P1 High', 'P2 Medium', 'P3 Monitor', 'P4 Low/Archive'];
 const TLP_OPTIONS: ThreatHuntTlp[] = ['TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED'];
@@ -56,6 +58,8 @@ export function HuntWorkspace({
   initialTechniques,
   initialSourceType,
   initialSourceRef,
+  initialSourceSessionId,
+  initialAssistantMode,
   defaultOwner,
   loading,
   loadError,
@@ -68,6 +72,8 @@ export function HuntWorkspace({
   initialTechniques: string[];
   initialSourceType: string;
   initialSourceRef: string;
+  initialSourceSessionId: string;
+  initialAssistantMode: HuntAIAssistantMode | '';
   defaultOwner: string;
   loading: boolean;
   loadError: string;
@@ -75,22 +81,33 @@ export function HuntWorkspace({
   onCreated: (id: string) => void;
 }) {
   const qc = useQueryClient();
+  const canExport = useHasPermission('export_data');
+  const canRunSimulation = useHasPermission('run_attack_simulation');
   const initialized = useRef('');
   const [draft, setDraft] = useState<ThreatHuntInput>(() => emptyHunt(defaultOwner));
+  const [savedFingerprint, setSavedFingerprint] = useState(() => draftFingerprint(emptyHunt(defaultOwner)));
+  const [findingFormDirty, setFindingFormDirty] = useState(false);
   const [tab, setTab] = useState('plan');
   const [validationError, setValidationError] = useState('');
   const [copyState, setCopyState] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMode, setAssistantMode] = useState<HuntAIAssistantMode>(initialAssistantMode || 'plan');
+  const [assistantFindingDraft, setAssistantFindingDraft] = useState<{ key: number; draft: Partial<ThreatHuntFindingInput> } | null>(null);
+  const initialAssistantOpened = useRef('');
   const initialTechniquesKey = initialTechniques.join('\u0000');
 
   useEffect(() => {
-    const key = hunt ? `hunt:${hunt.id}` : `new:${initialTemplateId}:${initialTechniquesKey}:${initialSourceType}:${initialSourceRef}`;
+    const key = hunt ? `hunt:${hunt.id}` : `new:${initialTemplateId}:${initialTechniquesKey}:${initialSourceType}:${initialSourceRef}:${initialSourceSessionId}`;
     if (initialized.current === key) return;
     if (!hunt && initialTemplateId && !templates.length) return;
     initialized.current = key;
 
     if (hunt) {
-      setDraft(toInput(hunt));
+      const next = toInput(hunt);
+      setDraft(next);
+      setSavedFingerprint(draftFingerprint(next));
+      setFindingFormDirty(false);
       return;
     }
 
@@ -105,7 +122,18 @@ export function HuntWorkspace({
       ...(initialSourceRef ? [`context-ref:${initialSourceRef.trim().slice(0, 488)}`] : []),
     ]);
     setDraft(next);
-  }, [defaultOwner, hunt, initialSourceRef, initialSourceType, initialTechniquesKey, initialTemplateId, templates]);
+    setSavedFingerprint(draftFingerprint(emptyHunt(defaultOwner)));
+    setFindingFormDirty(false);
+  }, [defaultOwner, hunt, initialSourceRef, initialSourceSessionId, initialSourceType, initialTechniquesKey, initialTemplateId, templates]);
+
+  useEffect(() => {
+    if (!initialAssistantMode) return;
+    const key = `${initialAssistantMode}:${initialSourceSessionId}:${initialSourceRef}`;
+    if (initialAssistantOpened.current === key) return;
+    initialAssistantOpened.current = key;
+    setAssistantMode(initialAssistantMode);
+    setAssistantOpen(true);
+  }, [initialAssistantMode, initialSourceRef, initialSourceSessionId]);
 
   const invalidate = async (huntId?: string) => {
     await Promise.all([
@@ -118,6 +146,9 @@ export function HuntWorkspace({
   const createHunt = useMutation({
     mutationFn: (body: ThreatHuntInput) => threatHuntingApi.create(body),
     onSuccess: async created => {
+      const next = toInput(created);
+      setDraft(next);
+      setSavedFingerprint(draftFingerprint(next));
       await invalidate(created.id);
       onCreated(created.id);
     },
@@ -125,14 +156,18 @@ export function HuntWorkspace({
   const updateHunt = useMutation({
     mutationFn: (body: ThreatHuntInput) => threatHuntingApi.update(hunt!.id, body),
     onSuccess: async updated => {
-      setDraft(toInput(updated));
+      const next = toInput(updated);
+      setDraft(next);
+      setSavedFingerprint(draftFingerprint(next));
       await invalidate(updated.id);
     },
   });
   const archiveHunt = useMutation({
     mutationFn: () => threatHuntingApi.archive(hunt!.id),
     onSuccess: async updated => {
-      setDraft(toInput(updated));
+      const next = toInput(updated);
+      setDraft(next);
+      setSavedFingerprint(draftFingerprint(next));
       setConfirmArchive(false);
       await invalidate(updated.id);
     },
@@ -159,6 +194,9 @@ export function HuntWorkspace({
   const huntTlpOptions = useMemo(() => hunt ? tlpsAtLeast(hunt.tlp) : TLP_OPTIONS, [hunt]);
   const disposition = DISPOSITIONS.find(item => item.value === draft.disposition) ?? DISPOSITIONS[0];
   const readiness = useMemo(() => readinessChecks(draft), [draft]);
+  const huntDraftDirty = draftFingerprint(draft) !== savedFingerprint;
+  const unsavedChanges = huntDraftDirty || findingFormDirty;
+  const confirmDiscard = useUnsavedChangesGuard(unsavedChanges);
 
   const save = (next = draft) => {
     const error = validate(next, next.status);
@@ -191,6 +229,15 @@ export function HuntWorkspace({
     window.setTimeout(() => setCopyState(''), 2000);
   };
 
+  const openAssistant = (mode: HuntAIAssistantMode) => {
+    setAssistantMode(mode);
+    setAssistantOpen(true);
+  };
+
+  const applyAssistantPatch = (patch: Partial<ThreatHuntInput>, stage: HuntAIAssistantMode) => {
+    setDraft(current => applySafeAssistantPatch(current, patch, stage));
+  };
+
   if (loading) return <WorkspaceState text="Loading threat hunt…" onBack={onBack} />;
   if (loadError) return <WorkspaceState text={loadError} onBack={onBack} error />;
 
@@ -200,7 +247,15 @@ export function HuntWorkspace({
         <section className="rounded-lg border border-gray-800 bg-gray-900/60">
           <div className="flex flex-wrap items-start justify-between gap-4 p-4">
             <div className="min-w-0">
-              <button type="button" onClick={onBack} className="text-xs text-gray-500 hover:text-white">← Hunt queue</button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmDiscard()) onBack();
+                }}
+                className="text-xs text-gray-500 hover:text-white"
+              >
+                ← Hunt queue
+              </button>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <HuntStatusPill status={draft.status} />
                 <HuntPriorityPill priority={draft.priority} />
@@ -212,7 +267,8 @@ export function HuntWorkspace({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {!isNew && <a className="secondary-action inline-flex min-h-9 items-center px-3" href={threatHuntingApi.exportUrl(hunt.id)} download>Export JSON</a>}
+              {unsavedChanges && <span role="status" className="text-xs font-medium text-amber-300">Unsaved changes</span>}
+              {!isNew && canExport && <a className="secondary-action inline-flex min-h-9 items-center px-3" href={threatHuntingApi.exportUrl(hunt.id)} download>Export JSON</a>}
               {statusActions.map(action => (
                 <button
                   key={action.status}
@@ -256,7 +312,15 @@ export function HuntWorkspace({
             <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-white">Start from a template</summary>
             <div className="grid gap-2 border-t border-gray-800 p-4 md:grid-cols-2 xl:grid-cols-3">
               {templates.map(template => (
-                <button key={template.id} type="button" onClick={() => setDraft(applyTemplate(draft, template))} className="rounded border border-gray-800 bg-gray-950 p-3 text-left hover:border-cyan-700">
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => {
+                    if (templateWouldOverwriteDraft(draft, template) && !window.confirm('Replace the entered hunt fields with this template? Existing scalar text will be discarded.')) return;
+                    setDraft(current => applyTemplate(current, template));
+                  }}
+                  className="rounded border border-gray-800 bg-gray-950 p-3 text-left hover:border-cyan-700"
+                >
                   <b className="text-xs text-white">{template.title}</b>
                   <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-gray-600">{template.hypothesis}</p>
                 </button>
@@ -274,6 +338,13 @@ export function HuntWorkspace({
           </TabsList>
 
           <TabsContent value="plan" className="p-5">
+            <StageAssistantHeader
+              title="Plan and scope"
+              description="Develop the hypothesis, scope, ATT&CK context, telemetry requirements, and limitations."
+              onAssist={() => openAssistant('plan')}
+              secondaryLabel="Generate hypothesis from report / research"
+              onSecondary={() => openAssistant('hypothesis')}
+            />
             {terminal && <ReadOnlyNotice status={draft.status} />}
             <fieldset disabled={terminal} className="mt-4 grid gap-5 disabled:opacity-70 xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="grid gap-4 lg:grid-cols-2">
@@ -326,6 +397,7 @@ export function HuntWorkspace({
                     <p className="mt-1 text-[11px] text-gray-600">Store and review the query here, then copy it into an approved telemetry tool.</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button type="button" className="secondary-action min-h-8 px-3" onClick={() => openAssistant('query')}>AI assist query</button>
                     <select disabled={terminal} aria-label="Query language" className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 disabled:opacity-60" value={draft.query_language} onChange={event => setDraft({ ...draft, query_language: event.target.value as ThreatHuntQueryLanguage })}>
                       {QUERY_LANGUAGES.map(value => <option key={value}>{value}</option>)}
                     </select>
@@ -374,6 +446,10 @@ export function HuntWorkspace({
                 pending={createFinding.isPending || updateFinding.isPending || archiveFinding.isPending}
                 error={errorMessage(createFinding.error || updateFinding.error || archiveFinding.error)}
                 readOnly={terminal}
+                assistantDraft={assistantFindingDraft}
+                onAssistantDraftConsumed={() => setAssistantFindingDraft(null)}
+                onDirtyChange={setFindingFormDirty}
+                onOpenAssistant={() => openAssistant('findings')}
                 onCreate={async body => {
                   updateFinding.reset();
                   archiveFinding.reset();
@@ -394,6 +470,11 @@ export function HuntWorkspace({
           </TabsContent>
 
           <TabsContent value="outcome" className="p-5">
+            <StageAssistantHeader
+              title="Outcome and handoff"
+              description="Review the result summary, limitations, evidence gaps, and defensive follow-up without changing the analyst disposition."
+              onAssist={() => openAssistant('outcome')}
+            />
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
               <fieldset disabled={terminal} className="space-y-4 disabled:opacity-70">
                 <Field label="Reviewed disposition">
@@ -414,7 +495,13 @@ export function HuntWorkspace({
                   <div className="grid gap-2 p-4">
                     <a className="secondary-action flex min-h-10 items-center justify-between px-3" href="/operations"><span>Open Operations</span><span>Investigation / detection →</span></a>
                     <a className="secondary-action flex min-h-10 items-center justify-between px-3" href="/evidence-graph"><span>Open Evidence Graph</span><span>Preserve reasoning →</span></a>
-                    <a className="secondary-action flex min-h-10 items-center justify-between px-3" href="/attack-simulation"><span>Open Attack Simulation</span><span>Validate telemetry →</span></a>
+                    {canRunSimulation ? (
+                      <a className="secondary-action flex min-h-10 items-center justify-between px-3" href="/attack-simulation"><span>Open Attack Simulation</span><span>Validate telemetry →</span></a>
+                    ) : (
+                      <p className="rounded border border-gray-800 bg-gray-950/50 px-3 py-2 text-[11px] leading-5 text-gray-500">
+                        Attack Simulation handoff requires the <code className="text-gray-400">run_attack_simulation</code> permission.
+                      </p>
+                    )}
                     <p className="mt-2 text-[11px] leading-5 text-gray-600">Handoffs open the destination workspace. Record the resulting object ID in the result summary, finding notes, or an analyst context tag.</p>
                   </div>
                 </Panel>
@@ -422,9 +509,115 @@ export function HuntWorkspace({
             </div>
           </TabsContent>
         </Tabs>
+
+      <HuntAIAssistant
+        key={hunt?.id || `new:${initialSourceSessionId}:${initialSourceRef}`}
+        open={assistantOpen}
+          mode={assistantMode}
+          huntId={hunt?.id}
+          context={draft}
+          readOnly={terminal}
+          initialSourceSessionId={initialSourceSessionId}
+          initialSourceType={initialSourceType}
+          onOpenChange={setAssistantOpen}
+          onApplyPatch={applyAssistantPatch}
+          onUseFindingDraft={findingDraft => {
+            setAssistantFindingDraft({ key: Date.now(), draft: findingDraft });
+            setTab('findings');
+          }}
+        />
       </div>
     </main>
   );
+}
+
+function StageAssistantHeader({
+  title,
+  description,
+  onAssist,
+  secondaryLabel,
+  onSecondary,
+}: {
+  title: string;
+  description: string;
+  onAssist: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded border border-cyan-900/50 bg-cyan-950/10 p-3">
+      <div>
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {secondaryLabel && onSecondary && (
+          <button type="button" className="secondary-action min-h-9 px-3" onClick={onSecondary}>{secondaryLabel}</button>
+        )}
+        <button type="button" className="secondary-action min-h-9 border-cyan-800 px-3 text-cyan-100" onClick={onAssist}>AI assist {title.toLowerCase()}</button>
+      </div>
+    </div>
+  );
+}
+
+const SAFE_ASSISTANT_SCALARS: Record<HuntAIAssistantMode, Array<keyof ThreatHuntInput>> = {
+  hypothesis: ['title', 'hypothesis', 'description', 'scope', 'query_text', 'expected_evidence', 'false_positive_notes', 'assumptions'],
+  plan: ['title', 'hypothesis', 'description', 'scope', 'expected_evidence', 'false_positive_notes', 'assumptions'],
+  query: ['query_text', 'expected_evidence', 'false_positive_notes', 'assumptions'],
+  findings: [],
+  outcome: ['result_summary', 'assumptions'],
+};
+
+const SAFE_ASSISTANT_ARRAYS: Record<HuntAIAssistantMode, Array<keyof ThreatHuntInput>> = {
+  hypothesis: ['technique_ids', 'tactics', 'telemetry_sources', 'required_fields', 'tags'],
+  plan: ['technique_ids', 'tactics', 'telemetry_sources', 'required_fields', 'tags'],
+  query: ['telemetry_sources', 'required_fields'],
+  findings: [],
+  outcome: [],
+};
+
+function applySafeAssistantPatch(
+  current: ThreatHuntInput,
+  patch: Partial<ThreatHuntInput>,
+  stage: HuntAIAssistantMode,
+) {
+  const next = { ...current };
+  const currentRecord = current as unknown as Record<string, unknown>;
+  const patchRecord = patch as unknown as Record<string, unknown>;
+  const nextRecord = next as unknown as Record<string, unknown>;
+
+  for (const field of SAFE_ASSISTANT_SCALARS[stage]) {
+    const existing = currentRecord[field];
+    const proposed = patchRecord[field];
+    if (typeof existing === 'string' && !existing.trim() && typeof proposed === 'string' && proposed.trim()) {
+      nextRecord[field] = proposed.trim();
+    }
+  }
+
+  for (const field of SAFE_ASSISTANT_ARRAYS[stage]) {
+    const existing = Array.isArray(currentRecord[field])
+      ? currentRecord[field].filter((value): value is string => typeof value === 'string')
+      : [];
+    const proposed = Array.isArray(patchRecord[field])
+      ? patchRecord[field].filter((value): value is string => typeof value === 'string')
+      : [];
+    const combined = unique([...existing, ...proposed]);
+    nextRecord[field] = field === 'technique_ids'
+      ? combined.map(value => value.toUpperCase()).filter(value => /^T\d{4}(?:\.\d{3})?$/.test(value))
+      : combined;
+  }
+
+  if (
+    (stage === 'hypothesis' || stage === 'query')
+    && current.query_language === 'generic'
+    && !current.query_text.trim()
+    && typeof patch.query_language === 'string'
+    && QUERY_LANGUAGES.includes(patch.query_language as ThreatHuntQueryLanguage)
+  ) {
+    next.query_language = patch.query_language as ThreatHuntQueryLanguage;
+  }
+
+  return next;
 }
 
 function emptyHunt(owner: string): ThreatHuntInput {
@@ -497,6 +690,73 @@ function applyTemplate(current: ThreatHuntInput, template: ThreatHuntTemplate): 
     false_positive_notes: template.false_positive_notes,
     tags: unique([...current.tags, ...template.tags, `template:${template.id}`]),
   };
+}
+
+function templateWouldOverwriteDraft(current: ThreatHuntInput, template: ThreatHuntTemplate) {
+  const scalarPairs: Array<[string, string]> = [
+    [current.title, template.title],
+    [current.hypothesis, template.hypothesis],
+    [current.description, template.description],
+    [current.query_text, template.query_text],
+    [current.expected_evidence, template.expected_evidence],
+    [current.false_positive_notes, template.false_positive_notes],
+  ];
+  if (current.query_language !== 'generic' && current.query_language !== template.query_language) return true;
+  return scalarPairs.some(([existing, proposed]) => Boolean(existing.trim()) && existing !== proposed);
+}
+
+function draftFingerprint(draft: ThreatHuntInput) {
+  return JSON.stringify(draft);
+}
+
+function useUnsavedChangesGuard(dirty: boolean) {
+  const dirtyRef = useRef(dirty);
+  const allowNextNavigation = useRef(false);
+
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  const confirmDiscard = useCallback(() => {
+    if (!dirtyRef.current) return true;
+    const accepted = window.confirm('Discard unsaved threat-hunt changes and leave this workspace?');
+    if (accepted) {
+      allowNextNavigation.current = true;
+      window.setTimeout(() => {
+        allowNextNavigation.current = false;
+      }, 1000);
+    }
+    return accepted;
+  }, []);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current || allowNextNavigation.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const captureNavigation = (event: MouseEvent) => {
+      if (!dirtyRef.current || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>('a[href]');
+      if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+      if (confirmDiscard()) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    window.addEventListener('beforeunload', beforeUnload);
+    document.addEventListener('click', captureNavigation, true);
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      document.removeEventListener('click', captureNavigation, true);
+    };
+  }, [confirmDiscard]);
+
+  return confirmDiscard;
 }
 
 function normalize(input: ThreatHuntInput): ThreatHuntInput {

@@ -11,11 +11,18 @@ import { ReportReferences } from '@/components/ReportReferences';
 import { safeHref } from '@/utils/url';
 import { TtpLink } from '@/utils/ctiLinks';
 import { RelatedCvesPanel } from '@/components/CVE/RelatedCvesPanel';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type GroupTab = 'overview' | 'techniques' | 'campaigns' | 'reports' | 'iocs' | 'cves';
 
 export function APTLibrary() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canUploadFiles = useHasPermission('upload_files');
+  const canExport = useHasPermission('export_data');
   const navigate = useNavigate();
   const { domain, version, addTechniques, replaceTechniques, setOverlayGroup } = useAppStore();
   const [search, setSearch] = useState('');
@@ -215,9 +222,9 @@ export function APTLibrary() {
                   </button>
                   <button onClick={() => navigator.clipboard.writeText(`${location.origin}/apt?group=${groupDetail.attack_id}`)}
                     className="actor-header-action border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white">Copy link</button>
-                  <button onClick={() => trackActor.mutate()} className="actor-header-action border border-purple-800 text-purple-300 hover:border-purple-500">
+                  {canManageIntel && <button onClick={() => trackActor.mutate()} className="actor-header-action border border-purple-800 text-purple-300 hover:border-purple-500">
                     {trackActor.isSuccess ? 'Snapshot tracked' : 'Track changes'}
-                  </button>
+                  </button>}
                   <button
                     onClick={() => addTechniques(groupDetail.techniques.map((t) => t.attack_id))}
                     className="actor-header-action border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white"
@@ -475,6 +482,11 @@ export function APTLibrary() {
                   uploadingReport={uploadReportIocs.isPending}
                   reportResult={uploadReportIocs.data ?? null}
                   reportError={errorMessage(uploadReportIocs.error)}
+                  canManageFeeds={canManageFeeds}
+                  canManageIntel={canManageIntel}
+                  canRunAnalysis={canRunAnalysis}
+                  canUploadFiles={canUploadFiles}
+                  canExport={canExport}
                   onSync={() => syncThreatFox.mutate()}
                   onEnrichActor={() => enrichActorOtx.mutate()}
                   onUploadReport={(file) => uploadReportIocs.mutate(file)}
@@ -535,6 +547,11 @@ function ActorIOCs({
   onShowTechniques,
   onOpenDetail,
   onInvestigate,
+  canManageFeeds,
+  canManageIntel,
+  canRunAnalysis,
+  canUploadFiles,
+  canExport,
 }: {
   actorId: string;
   actorName: string;
@@ -579,6 +596,11 @@ function ActorIOCs({
   onShowTechniques: (ids: string[]) => void;
   onOpenDetail: (id: number) => void;
   onInvestigate: (indicator: string) => void;
+  canManageFeeds: boolean;
+  canManageIntel: boolean;
+  canRunAnalysis: boolean;
+  canUploadFiles: boolean;
+  canExport: boolean;
 }) {
   const [feedLabel, setFeedLabel] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
@@ -591,6 +613,13 @@ function ActorIOCs({
 
   return (
     <div className="space-y-4">
+      {(!canManageFeeds || !canManageIntel || !canRunAnalysis || !canUploadFiles || !canExport) && <div className="grid gap-2 lg:grid-cols-3">
+        {!canManageFeeds && <PermissionNotice permission="manage_feeds" action="add or synchronize actor IOC feeds" compact />}
+        {!canManageIntel && <PermissionNotice permission="manage_intel" action="enrich actor intelligence or import IOC evidence" compact />}
+        {!canRunAnalysis && <PermissionNotice permission="run_analysis" action="investigate or enrich individual IOCs" compact />}
+        {!canUploadFiles && <PermissionNotice permission="upload_files" action="upload actor reports" compact />}
+        {!canExport && <PermissionNotice permission="export_data" action="export actor IOC data" compact />}
+      </div>}
       <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
         <div className="rounded border border-gray-800 bg-gray-900/50 p-4">
           <h3 className="text-sm font-semibold text-white">Current Actor IOCs</h3>
@@ -614,15 +643,15 @@ function ActorIOCs({
         </div>
         <div className="rounded border border-gray-800 bg-gray-900/50 p-4 xl:w-80">
           <div className="flex flex-wrap gap-2">
-            <button onClick={onSync} disabled={syncing} className="primary-action">
+            <button onClick={onSync} disabled={!canManageFeeds || syncing} className="primary-action">
               {syncing ? 'Syncing...' : 'Sync ThreatFox'}
             </button>
-            <button onClick={onEnrichActor} disabled={enriching} className="secondary-action">
+            <button onClick={onEnrichActor} disabled={!canManageIntel || enriching} className="secondary-action">
               {enriching ? 'Enriching...' : 'Enrich actor'}
             </button>
-            <a href={iocApi.actorCsvUrl(actorId, 180, true)} className="secondary-action">
+            {canExport && <a href={iocApi.actorCsvUrl(actorId, 180, true)} className="secondary-action">
               Export CSV
-            </a>
+            </a>}
             <button
               onClick={() => onAddTechniques(iocTechniqueIds)}
               disabled={!iocTechniqueIds.length}
@@ -678,7 +707,7 @@ function ActorIOCs({
               type="file"
               accept=".pdf,.docx,.txt,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               className="hidden"
-              disabled={uploadingReport}
+              disabled={!canManageIntel || !canUploadFiles || uploadingReport}
               onChange={event => {
                 const file = event.currentTarget.files?.[0];
                 if (file) onUploadReport(file);
@@ -712,18 +741,20 @@ function ActorIOCs({
         </p>
         <div className="mt-3 grid gap-2 lg:grid-cols-[180px_1fr_140px_auto]">
           <input
+            disabled={!canManageFeeds}
             value={feedLabel}
             onChange={event => setFeedLabel(event.target.value)}
             placeholder="Feed label"
             className="field"
           />
           <input
+            disabled={!canManageFeeds}
             value={feedUrl}
             onChange={event => setFeedUrl(event.target.value)}
             placeholder="https://example.local/iocs.json"
             className="field"
           />
-          <select value={feedKind} onChange={event => setFeedKind(event.target.value as typeof feedKind)} className="field">
+          <select disabled={!canManageFeeds} value={feedKind} onChange={event => setFeedKind(event.target.value as typeof feedKind)} className="field">
             <option value="custom-json">JSON</option>
             <option value="custom-csv">CSV</option>
             <option value="custom-txt">TXT</option>
@@ -735,7 +766,7 @@ function ActorIOCs({
               setFeedLabel('');
               setFeedUrl('');
             }}
-            disabled={!feedLabel.trim() || !feedUrl.trim()}
+            disabled={!canManageFeeds || !feedLabel.trim() || !feedUrl.trim()}
             className="primary-action disabled:opacity-40"
           >
             Add Feed
@@ -761,7 +792,7 @@ function ActorIOCs({
                 <button
                   type="button"
                   onClick={() => onSyncSource(source.source_id)}
-                  disabled={sourceSyncingId === source.source_id}
+                  disabled={!canManageFeeds || sourceSyncingId === source.source_id}
                   className="secondary-action"
                 >
                   {sourceSyncingId === source.source_id ? 'Syncing' : 'Sync'}
@@ -852,12 +883,12 @@ function ActorIOCs({
                   <div className="mt-1 text-[10px] uppercase text-gray-600">{item.tlp}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => onInvestigate(item.value)} className="primary-action">
+                  {canRunAnalysis && <button type="button" onClick={() => onInvestigate(item.value)} className="primary-action">
                     Investigate IOC
-                  </button>
-                  <button type="button" onClick={() => openEnrichment(item.value)} className="primary-action">
+                  </button>}
+                  {canRunAnalysis && <button type="button" onClick={() => openEnrichment(item.value)} className="primary-action">
                     Enrichment
-                  </button>
+                  </button>}
                   <button type="button" onClick={() => onOpenDetail(item.id)} className="secondary-action">
                     Open detail
                   </button>
@@ -898,7 +929,7 @@ function AttackText({ text }: { text: string }) {
   const parts = parseAttackText(text);
   return <>{parts.map((part, idx) => {
     if (part.kind === 'link') {
-      return <a key={idx} href={part.url} target="_blank" rel="noreferrer" className="text-mitre-accent hover:underline">{part.text}</a>;
+      return <a key={idx} href={safeHref(part.url)} target="_blank" rel="noreferrer" className="text-mitre-accent hover:underline">{part.text}</a>;
     }
     if (part.kind === 'citation') {
       return <span key={idx} className="mx-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500">{part.text}</span>;

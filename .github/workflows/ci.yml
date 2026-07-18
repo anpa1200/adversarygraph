@@ -7,12 +7,15 @@ on:
     branches: [main, "release/**"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   version-consistency:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Check release metadata
         run: ./scripts/check-version-consistency.sh
 
@@ -23,8 +26,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -46,8 +49,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install ruff
@@ -62,8 +65,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install bandit
@@ -78,8 +81,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install pip-audit
@@ -94,8 +97,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -112,8 +115,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -130,8 +133,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -152,8 +155,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -163,65 +166,136 @@ jobs:
       - name: Audit
         run: npm audit --audit-level=high
 
+  anomaly-docs-audit:
+    name: Anomaly docs build and dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: anomaly_detection/docs-site
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: anomaly_detection/docs-site/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit
+        run: npm audit --audit-level=high
+      - name: Production build
+        run: npm run build
+
   docker-build:
     name: Docker build check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Validate Compose config
         env:
-          DB_PASS: ci_test_password
-          REDIS_PASSWORD: ci_redis_password
-          AUTH_ENABLED: "false"
+          DB_PASS: ci_validation_database_password
+          REDIS_PASSWORD: ci_validation_redis_password
+          RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
+          CORS_ALLOWED_ORIGINS: https://adversarygraph.example.com
+          AUTH_ENABLED: "true"
+          AUTH_EXISTING_ADMIN_CONFIRMED: "true"
+          SECURE_COOKIES: "true"
           AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
           ATTCK_DOMAINS: enterprise-attack
+          ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_FRONTEND_IMAGE: example.invalid/adversarygraph-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_MALWAREGRAPH_IMAGE: example.invalid/adversarygraph-malwaregraph@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE: example.invalid/adversarygraph-attack-lab-web@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_ATTACK_LAB_ENDPOINT_IMAGE: example.invalid/adversarygraph-attack-lab-endpoint@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE: example.invalid/adversarygraph-anomaly-docs@sha256:0000000000000000000000000000000000000000000000000000000000000000
         run: |
           docker compose config --quiet
           docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+          ./scripts/validate-production-env.sh
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
       - name: Validate Helm chart
         run: |
           helm lint helm/adversarygraph
           helm template adversarygraph helm/adversarygraph >/tmp/adversarygraph-rendered.yaml
+          helm template adversarygraph helm/adversarygraph --set malwaregraph.enabled=false >/tmp/adversarygraph-no-malwaregraph.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --set 'malwaregraph.accessModes={ReadWriteMany}' \
+            --set malwaregraph.storageClassName=shared-rwx \
+            --set 'persistence.attckData.accessModes={ReadWriteMany}' \
+            --set persistence.attckData.storageClassName=shared-rwx \
+            --set 'persistence.logs.accessModes={ReadWriteMany}' \
+            --set persistence.logs.storageClassName=shared-rwx \
+            >/tmp/adversarygraph-shared-storage.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --set-string config.productionMode=true \
+            --set postgresql.image.repository=example.invalid/adversarygraph-postgres \
+            --set-string postgresql.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            >/tmp/adversarygraph-production.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --set secrets.existingSecret= \
+            --set secrets.dbPassword=helm_validation_db_password \
+            --set secrets.redisPassword=helm_validation_redis_password \
+            --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
+            --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
+            >/tmp/adversarygraph-managed-secret.yaml
+          if helm template adversarygraph helm/adversarygraph --set secrets.existingSecret= >/dev/null 2>&1; then
+            echo "Helm chart accepted missing managed credentials." >&2
+            exit 1
+          fi
+          if helm template adversarygraph helm/adversarygraph --set-string config.productionMode=true >/dev/null 2>&1; then
+            echo "Helm chart accepted production mode without release image digests." >&2
+            exit 1
+          fi
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build PostgreSQL image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/postgres/Dockerfile
+          push: false
+          tags: adversarygraph-postgres:ci
       - name: Build backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: backend
           push: false
           tags: adversarygraph-backend:ci
       - name: Build frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: frontend
           push: false
           tags: adversarygraph-frontend:ci
       - name: Build MalwareGraph service image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/malwaregraph/Dockerfile
           push: false
           tags: adversarygraph-malwaregraph:ci
       - name: Build anomaly docs image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: anomaly_detection/docs-site/Dockerfile
           push: false
           tags: adversarygraph-anomaly-docs:ci
       - name: Build attack lab web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/attack-lab-web/Dockerfile
           push: false
           tags: adversarygraph-attack-lab-web:ci
       - name: Build attack lab endpoint image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/attack-lab-endpoint/Dockerfile
@@ -233,11 +307,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
         env:
           DB_PASS: ci_test_password
           REDIS_PASSWORD: ci_redis_password
+          RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
           AUTH_ENABLED: "false"
           AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
           ATTCK_DOMAINS: enterprise-attack
@@ -246,6 +321,7 @@ jobs:
         env:
           DB_PASS: ci_test_password
           REDIS_PASSWORD: ci_redis_password
+          RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
           AUTH_ENABLED: "false"
           AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
           ATTCK_DOMAINS: enterprise-attack
@@ -264,6 +340,10 @@ jobs:
       fail-fast: false
       matrix:
         image:
+          - name: postgres
+            context: .
+            file: docker/postgres/Dockerfile
+            tag: adversarygraph-postgres:scan
           - name: backend
             context: backend
             file: backend/Dockerfile
@@ -289,21 +369,45 @@ jobs:
             file: anomaly_detection/docs-site/Dockerfile
             tag: adversarygraph-anomaly-docs:scan
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build ${{ matrix.image.name }} image for scan
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.file }}
           push: false
           load: true
+          pull: true
+          no-cache: true
           tags: ${{ matrix.image.tag }}
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image.tag }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+  pinned-container-scan:
+    name: Pinned stack scan (${{ matrix.image.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: redis
+            ref: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+          - name: busybox-tools
+            ref: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          - name: anomaly-docs-nginx
+            ref: nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
+    steps:
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image.ref }}
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
@@ -313,9 +417,9 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

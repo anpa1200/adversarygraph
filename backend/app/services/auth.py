@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -88,6 +88,12 @@ def hash_password(password: str, salt: bytes | None = None) -> str:
     return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
 
 
+_DUMMY_PASSWORD_HASH = hash_password(
+    "adversarygraph-invalid-account-password",
+    salt=b"\x00" * 16,
+)
+
+
 def verify_password(password: str, stored_hash: str) -> bool:
     try:
         scheme, iterations, salt_hex, digest_hex = stored_hash.split("$", 3)
@@ -130,6 +136,137 @@ def permissions_for(role: str, extra_permissions: list[str] | None = None) -> li
     return sorted(permissions)
 
 
+def account_has_permission(user: UserAccount, permission: str) -> bool:
+    return permission in ROLE_PERMISSIONS.get(user.role, set()) or permission in set(
+        user.permissions or []
+    )
+
+
+def effective_account_permissions(
+    role: str,
+    extra_permissions: list[str] | None = None,
+) -> set[str]:
+    """Return the effective grant represented by one managed account."""
+    return set(ROLE_PERMISSIONS.get(role, set())) | set(extra_permissions or [])
+
+
+def effective_team_permissions(user: TeamUser) -> set[str]:
+    """Return a request principal's effective permissions defensively.
+
+    ``TeamUser.permissions`` normally already contains the expanded role grant,
+    but trusted-proxy identities and tests may construct the object directly.
+    Including every declared role keeps the authorization ceiling fail-safe.
+    """
+    if "admin" in user.roles:
+        return set(ALL_PERMISSIONS)
+    permissions = set(user.permissions or [])
+    for role in user.roles:
+        permissions.update(ROLE_PERMISSIONS.get(role, set()))
+    return permissions
+
+
+def validate_user_grant_scope(
+    actor: TeamUser,
+    *,
+    role: str,
+    permissions: list[str],
+) -> None:
+    """Prevent delegated user managers from granting authority they do not own."""
+    if "admin" in actor.roles:
+        return
+    if role == "admin":
+        raise HTTPException(403, "Only an administrator can assign the admin role")
+
+    proposed = effective_account_permissions(role, permissions)
+    actor_permissions = effective_team_permissions(actor)
+    if "manage_auth" in proposed and "manage_auth" not in actor_permissions:
+        raise HTTPException(
+            403,
+            "The manage_auth permission can only be granted by a principal that has manage_auth",
+        )
+    if not proposed.issubset(actor_permissions):
+        raise HTTPException(
+            403,
+            "Cannot grant a role or permission outside your own effective permissions",
+        )
+
+
+def validate_user_target_scope(actor: TeamUser, target: UserAccount) -> None:
+    """Prevent lifecycle or authentication takeover of a more privileged user."""
+    if "admin" in actor.roles:
+        return
+    if target.role == "admin":
+        raise HTTPException(403, "Only an administrator can manage an admin account")
+
+    target_permissions = effective_account_permissions(
+        target.role,
+        list(target.permissions or []),
+    )
+    actor_permissions = effective_team_permissions(actor)
+    if "manage_auth" in target_permissions and "manage_auth" not in actor_permissions:
+        raise HTTPException(
+            403,
+            "The target account requires manage_auth authority",
+        )
+    if not target_permissions.issubset(actor_permissions):
+        raise HTTPException(
+            403,
+            "Cannot manage an account above your own effective permissions",
+        )
+
+
+def normalize_identity_name(
+    value: str,
+    *,
+    max_length: int,
+    status_code: int = 422,
+    label: str = "Username",
+) -> str:
+    normalized = value.strip()
+    if not normalized or len(normalized) > max_length or not normalized.isprintable():
+        raise HTTPException(
+            status_code,
+            f"{label} must be 1-{max_length} printable characters after trimming",
+        )
+    return normalized
+
+
+async def ensure_user_management_continuity(
+    db: AsyncSession,
+    target: UserAccount,
+    *,
+    proposed_role: str,
+    proposed_permissions: list[str],
+    proposed_enabled: bool,
+) -> None:
+    """Prevent concurrent mutations from removing the final user manager."""
+    if proposed_enabled and (
+        "manage_users" in ROLE_PERMISSIONS.get(proposed_role, set())
+        or "manage_users" in proposed_permissions
+    ):
+        return
+
+    rows = await db.execute(
+        select(UserAccount)
+        .where(UserAccount.enabled.is_(True))
+        .order_by(UserAccount.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    enabled_users = rows.scalars().all()
+    locked_target = next((user for user in enabled_users if user.id == target.id), None)
+    if locked_target is None or not account_has_permission(locked_target, "manage_users"):
+        return
+    enabled_managers = [
+        user for user in enabled_users if account_has_permission(user, "manage_users")
+    ]
+    if len(enabled_managers) <= 1:
+        raise HTTPException(
+            409,
+            "At least one enabled account with user-management permission must remain",
+        )
+
+
 def user_to_team_user(user: UserAccount, auth_source: str = "native") -> TeamUser:
     return TeamUser(
         name=user.username,
@@ -147,8 +284,10 @@ def password_policy() -> dict:
         "require_lower": settings.auth_password_require_lower,
         "require_number": settings.auth_password_require_number,
         "require_special": settings.auth_password_require_special,
-        "mfa_available": True,
-        "mfa_required": settings.auth_mfa_enabled,
+        # AUTH_MFA_ENABLED is a feature/enrollment toggle. Per-user
+        # ``mfa_enabled`` remains the source of truth for login enforcement.
+        "mfa_available": settings.auth_mfa_enabled,
+        "mfa_required": False,
     }
 
 
@@ -177,7 +316,12 @@ async def bootstrap_admin_if_configured(db: AsyncSession) -> bool:
         return False
     if await user_count(db) > 0:
         return False
-    username = settings.auth_bootstrap_admin_username.strip() or "admin"
+    validate_password_policy(settings.auth_bootstrap_admin_password)
+    username = normalize_identity_name(
+        settings.auth_bootstrap_admin_username or "admin",
+        max_length=120,
+        label="Bootstrap username",
+    )
     db.add(UserAccount(
         username=username,
         display_name="Bootstrap Administrator",
@@ -191,10 +335,17 @@ async def bootstrap_admin_if_configured(db: AsyncSession) -> bool:
 
 
 async def authenticate_credentials(db: AsyncSession, username: str, password: str) -> UserAccount:
-    row = await db.scalar(select(UserAccount).where(UserAccount.username == username.strip()))
-    if not row or not row.enabled or not verify_password(password, row.password_hash):
+    try:
+        normalized = normalize_identity_name(username, max_length=120)
+    except HTTPException:
+        normalized = ""
+    row = await db.scalar(select(UserAccount).where(UserAccount.username == normalized))
+    password_valid = verify_password(
+        password,
+        row.password_hash if row is not None else _DUMMY_PASSWORD_HASH,
+    )
+    if not row or not row.enabled or not password_valid:
         raise HTTPException(401, "Invalid username or password")
-    row.last_login_at = datetime.now(timezone.utc)
     return row
 
 
@@ -219,16 +370,18 @@ def verify_totp(secret: str, code: str, window: int = 1) -> bool:
 
 
 async def create_session(db: AsyncSession, user: UserAccount, request: Request) -> tuple[str, AuthSession]:
+    now = datetime.now(timezone.utc)
+    await cleanup_auth_sessions(db, now=now)
     token = new_session_token()
     session = AuthSession(
         user_id=user.id,
         token_hash=hash_token(token),
         user_agent=request.headers.get("user-agent", "")[:2000],
         ip_address=(request.client.host if request.client else "")[:120],
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=max(15, settings.auth_session_minutes)),
+        expires_at=now + timedelta(minutes=max(15, settings.auth_session_minutes)),
     )
     db.add(session)
-    await db.commit()
+    await db.flush()
     await db.refresh(session)
     return token, session
 
@@ -258,7 +411,7 @@ async def revoke_session(db: AsyncSession, token: str) -> None:
     session = await db.scalar(select(AuthSession).where(AuthSession.token_hash == hash_token(token)))
     if session and not session.revoked_at:
         session.revoked_at = datetime.now(timezone.utc)
-        await db.commit()
+        await db.flush()
 
 
 async def revoke_user_sessions(db: AsyncSession, user_id: UUID, keep_token: str = "") -> int:
@@ -271,8 +424,32 @@ async def revoke_user_sessions(db: AsyncSession, user_id: UUID, keep_token: str 
             continue
         session.revoked_at = revoked_at
         count += 1
-    await db.commit()
+    await db.flush()
     return count
+
+
+async def cleanup_auth_sessions(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+    retention_days: int = 30,
+    limit: int = 1000,
+) -> None:
+    """Delete a bounded batch of long-expired or long-revoked sessions."""
+    current = now or datetime.now(timezone.utc)
+    cutoff = current - timedelta(days=max(1, retention_days))
+    stale_ids = (
+        select(AuthSession.id)
+        .where(
+            or_(
+                AuthSession.expires_at < cutoff,
+                AuthSession.revoked_at < cutoff,
+            )
+        )
+        .order_by(AuthSession.expires_at.asc())
+        .limit(max(1, min(limit, 5000)))
+    )
+    await db.execute(delete(AuthSession).where(AuthSession.id.in_(stale_ids)))
 
 
 async def audit_event(
@@ -295,23 +472,53 @@ async def current_user(
     x_auth_roles: str | None = Header(default=None),
     x_internal_proxy_secret: str | None = Header(default=None),
 ) -> TeamUser:
-    # If a proxy_secret is configured, verify it via constant-time comparison
-    # before trusting any X-Auth-* headers. Requests with wrong/missing secret
-    # are treated as anonymous unless native bearer/cookie auth succeeds.
-    if settings.proxy_secret:
-        provided = x_internal_proxy_secret or ""
-        if not hmac.compare_digest(provided, settings.proxy_secret):
-            x_auth_user = None
-            x_auth_roles = None
+    # Proxy identity headers are authentication credentials, not hints. Trust
+    # them only when the operator configured a shared secret and the proxy
+    # supplied it. In particular, an empty PROXY_SECRET must never turn
+    # client-controlled X-Auth-* headers into an authentication bypass.
+    proxy_identity_verified = bool(
+        settings.proxy_secret
+        and hmac.compare_digest(x_internal_proxy_secret or "", settings.proxy_secret)
+    )
+    if not proxy_identity_verified:
+        x_auth_user = None
+        x_auth_roles = None
 
     if x_auth_user:
-        roles = [role.strip() for role in (x_auth_roles or settings.auth_default_role).split(",") if role.strip()]
-        primary_role = roles[0] if roles else settings.auth_default_role
+        try:
+            identity = normalize_identity_name(
+                x_auth_user,
+                max_length=255,
+                status_code=401,
+                label="Trusted proxy username",
+            )
+            requested_roles = [
+                normalize_role(role)
+                for role in (x_auth_roles or settings.auth_default_role).split(",")
+                if role.strip()
+            ]
+        except HTTPException as exc:
+            raise HTTPException(401, "Invalid trusted proxy identity") from exc
+        if not requested_roles:
+            try:
+                requested_roles = [normalize_role(settings.auth_default_role)]
+            except HTTPException as exc:
+                raise HTTPException(401, "Invalid trusted proxy identity") from exc
+        effective_roles = sorted(
+            {effective for role in requested_roles for effective in roles_for(role)}
+        )
+        effective_permissions = sorted(
+            {
+                permission
+                for role in requested_roles
+                for permission in permissions_for(role)
+            }
+        )
         return TeamUser(
-            name=x_auth_user,
-            roles=roles_for(primary_role),
+            name=identity,
+            roles=effective_roles,
             auth_source=settings.auth_sso_mode,
-            permissions=permissions_for(primary_role),
+            permissions=effective_permissions,
         )
 
     token = ""
@@ -342,6 +549,21 @@ def require_permission(permission: str):
         if settings.auth_enabled and not has_permission(user, permission):
             raise HTTPException(403, f"Permission required: {permission}")
         return user
+    return dependency
+
+
+def require_any_permission(*permissions: str):
+    required = tuple(dict.fromkeys(permissions))
+    if not required:
+        raise ValueError("At least one permission is required")
+
+    async def dependency(user: TeamUser = Depends(current_user)) -> TeamUser:
+        if settings.auth_enabled and not any(
+            has_permission(user, permission) for permission in required
+        ):
+            raise HTTPException(403, f"One permission required: {', '.join(required)}")
+        return user
+
     return dependency
 
 

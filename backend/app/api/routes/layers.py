@@ -16,9 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.analysis import UserLayer
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.auth import TeamUser, audit, current_user, require_permission
 
 router = APIRouter(prefix="/layers", tags=["Saved Layers"])
+manage_layers = require_permission("manage_intel")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ async def list_layers(
 async def save_layer(
     body: LayerCreate,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_layers),
 ):
     layer = UserLayer(
         name=body.name,
@@ -126,7 +127,7 @@ async def get_layer(
 async def delete_layer(
     layer_id: str,
     db: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_layers),
 ):
     try:
         lid = uuid.UUID(layer_id)

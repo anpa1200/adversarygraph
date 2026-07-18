@@ -22,11 +22,13 @@ external scanner output, service inventories, and plain hostname/IP lists.
 9. Reopen previous runs from **Saved Cases** when comparing inventories or
    refining an exposure review.
 
-## Current Screenshots
+## Versioned Screenshots
 
-The current screenshots are captured from the local Docker-served UI and
+Representative v4.1 screenshots captured from the local Docker-served UI are
 listed in
 [`assets/adversarygraph-v4.1-platform/manifest.md`](assets/adversarygraph-v4.1-platform/manifest.md).
+They illustrate the workflow but are not evidence for the post-v6 `main`
+branch.
 
 | Workflow | Screenshot |
 |---|---|

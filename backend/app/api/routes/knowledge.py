@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.knowledge import KnowledgeArticle
+from app.services.auth import TeamUser, require_permission
 from app.services.knowledge_seeder import seed_knowledge
 
 router = APIRouter(prefix="/knowledge", tags=["Knowledge"])
@@ -104,5 +105,8 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
 
 
 @router.post("/seed")
-async def trigger_seed(db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def trigger_seed(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(require_permission("manage_feeds")),
+) -> dict[str, Any]:
     return await seed_knowledge(db)

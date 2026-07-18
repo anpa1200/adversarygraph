@@ -61,7 +61,7 @@ def test_parse_uppercase_attack_id():
 
 def test_parse_extracts_first_json_from_noisy_output():
     raw = "Here is the analysis:\n" + _valid_payload() + "\nLet me know if you need more."
-    result = _parse_response(raw, "gemini", "gemini-2.0-flash")
+    result = _parse_response(raw, "gemini", "gemini-3.5-flash")
     # Should still parse the embedded JSON
     assert len(result.techniques) >= 1
 

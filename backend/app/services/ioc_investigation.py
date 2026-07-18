@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+import logging
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 from app.services.virustotal import IndicatorTarget, classify_indicator, lookup_virustotal_ioc
+
+logger = logging.getLogger(__name__)
 
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 HASH_RE = re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
@@ -152,7 +155,8 @@ async def investigate_ioc(
         try:
             ai_summary = await _ai_summary(report_input, options)
         except Exception as exc:
-            ai_error = f"{type(exc).__name__}: {exc}"
+            logger.exception("IOC investigation AI summary failed provider=%s", options.ai_provider)
+            ai_error = "AI summarization failed. See server logs."
 
     return {
         "artifact": normalized,
@@ -200,13 +204,14 @@ async def _expand_local_tier(
 async def _safe_source(name: str, fn) -> dict[str, Any]:
     try:
         return await fn()
-    except Exception as exc:
-        msg = str(exc) or f"{type(exc).__name__}"
+    except Exception:
+        logger.warning("IOC enrichment source failed source=%s", name, exc_info=True)
+        msg = f"{name} enrichment failed. See server logs."
         return {
             "source": name,
             "status": "error",
             "error": msg,
-            "summary": f"{name} enrichment failed: {msg}",
+            "summary": msg,
             "relationships": [],
             "technique_ids": [],
             "actors": [],
@@ -432,17 +437,33 @@ async def _urlscan_activity_analysis(
         )
         raw = await adapter._raw_complete(system, user)
         data = _extract_json_object(raw)
-        findings = data.get("findings") if isinstance(data.get("findings"), list) else []
-        technique_ids = _dedupe([*heuristic.get("technique_ids", []), *[str(item) for item in data.get("technique_ids", [])]])
+        findings_value = data.get("findings")
+        findings = findings_value if isinstance(findings_value, list) else []
+        ai_technique_value = data.get("technique_ids")
+        ai_techniques = ai_technique_value if isinstance(ai_technique_value, list) else []
+        heuristic_technique_value = heuristic.get("technique_ids")
+        heuristic_techniques = (
+            heuristic_technique_value if isinstance(heuristic_technique_value, list) else []
+        )
+        heuristic_findings_value = heuristic.get("findings")
+        heuristic_findings = (
+            heuristic_findings_value if isinstance(heuristic_findings_value, list) else []
+        )
+        technique_ids = _dedupe([
+            *[str(item) for item in heuristic_techniques],
+            *[str(item) for item in ai_techniques],
+        ])
         return {
             "mode": f"ai:{options.ai_provider}",
             "summary": str(data.get("summary") or heuristic.get("summary") or ""),
-            "findings": [item for item in findings if isinstance(item, dict)][:12] or heuristic.get("findings", []),
+            "findings": [item for item in findings if isinstance(item, dict)][:12]
+            or heuristic_findings,
             "technique_ids": technique_ids,
-            "heuristic_findings": heuristic.get("findings", []),
+            "heuristic_findings": heuristic_findings,
         }
-    except Exception as exc:
-        return {**heuristic, "mode": "heuristic", "ai_error": str(exc)}
+    except Exception:
+        logger.exception("urlscan AI analysis failed provider=%s", options.ai_provider)
+        return {**heuristic, "mode": "heuristic", "ai_error": "AI analysis failed. See server logs."}
 
 
 def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
@@ -682,14 +703,15 @@ async def _censys_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
             headers={**base_headers, "Accept": "application/json"},
         )
     except RuntimeError as exc:
+        logger.warning("Censys broad search unavailable for host=%s", host, exc_info=True)
         return {
             "source": "censys",
             "status": "ok",
-            "summary": f"Censys web property lookup returned {len(web_resources)} record(s) for {host}; broader search was unavailable: {exc}",
+            "summary": f"Censys web property lookup returned {len(web_resources)} record(s) for {host}; broader search was unavailable.",
             "relationships": relationships,
             "technique_ids": technique_ids,
             "actors": [],
-            "raw": _compact_raw({"webproperty": web_payload, "search_error": str(exc)}),
+            "raw": _compact_raw({"webproperty": web_payload, "search_error": "Censys search failed. See server logs."}),
         }
     hits = _censys_hits(payload)
     for hit in hits[:10]:
@@ -835,23 +857,41 @@ def _row_relationships(root: str, row: dict[str, Any], source: str) -> list[dict
 
 def _censys_host_relationships(root: str, resource: dict[str, Any]) -> list[dict[str, Any]]:
     relationships: list[dict[str, Any]] = []
-    location = resource.get("location") or {}
-    autonomous_system = resource.get("autonomous_system") or {}
-    whois = resource.get("whois") or {}
-    dns = resource.get("dns") or {}
+    location_value = resource.get("location")
+    location = location_value if isinstance(location_value, dict) else {}
+    autonomous_system_value = resource.get("autonomous_system")
+    autonomous_system = (
+        autonomous_system_value if isinstance(autonomous_system_value, dict) else {}
+    )
+    whois_value = resource.get("whois")
+    whois = whois_value if isinstance(whois_value, dict) else {}
+    dns_value = resource.get("dns")
+    dns = dns_value if isinstance(dns_value, dict) else {}
+    whois_organization_value = whois.get("organization")
+    whois_organization = (
+        whois_organization_value if isinstance(whois_organization_value, dict) else {}
+    )
+    whois_network_value = whois.get("network")
+    whois_network = whois_network_value if isinstance(whois_network_value, dict) else {}
 
     for candidate, kind, evidence in [
         (location.get("country") or location.get("country_code"), "country", "Censys host location"),
         (location.get("city"), "city", "Censys host location"),
         (autonomous_system.get("name") or autonomous_system.get("description"), "asn", "Censys autonomous system"),
         (autonomous_system.get("asn"), "asn", "Censys ASN"),
-        (((whois.get("organization") or {}).get("name")), "organization", "Censys WHOIS organization"),
-        (((whois.get("network") or {}).get("name")), "network", "Censys WHOIS network"),
+        (whois_organization.get("name"), "organization", "Censys WHOIS organization"),
+        (whois_network.get("name"), "network", "Censys WHOIS network"),
     ]:
         if candidate:
             relationships.append(_relationship(root, str(candidate), kind, "censys", 1, evidence))
 
-    for name in _dedupe([*(dns.get("names") or []), *((dns.get("reverse_dns") or {}).get("names") or [])]):
+    names_value = dns.get("names")
+    names = names_value if isinstance(names_value, list) else []
+    reverse_dns_value = dns.get("reverse_dns")
+    reverse_dns = reverse_dns_value if isinstance(reverse_dns_value, dict) else {}
+    reverse_names_value = reverse_dns.get("names")
+    reverse_names = reverse_names_value if isinstance(reverse_names_value, list) else []
+    for name in _dedupe([*[str(item) for item in names], *[str(item) for item in reverse_names]]):
         relationships.append(_relationship(root, str(name), "domain", "censys", 1, "Censys DNS name"))
 
     for service in resource.get("services") or []:
@@ -862,15 +902,24 @@ def _censys_host_relationships(root: str, resource: dict[str, Any]) -> list[dict
         if port:
             label = f"{service_name or 'service'}:{port}"
             relationships.append(_relationship(root, label, "service-port", "censys", 1, "Censys exposed service"))
-        for software in service.get("software") or []:
+        software_value = service.get("software")
+        software_rows = software_value if isinstance(software_value, list) else []
+        for software in software_rows:
             if isinstance(software, dict):
-                name = software.get("name") or software.get("product") or software.get("vendor")
-                if name:
-                    relationships.append(_relationship(root, str(name), "software", "censys", 1, "Censys service software"))
-        tls = service.get("tls") or {}
-        certs = tls.get("certificates") or {}
-        leaf = certs.get("leaf_data") or certs.get("leaf") or {}
-        for name in leaf.get("names") or []:
+                software_name = (
+                    software.get("name") or software.get("product") or software.get("vendor")
+                )
+                if software_name:
+                    relationships.append(_relationship(root, str(software_name), "software", "censys", 1, "Censys service software"))
+        tls_value = service.get("tls")
+        tls = tls_value if isinstance(tls_value, dict) else {}
+        certs_value = tls.get("certificates")
+        certs = certs_value if isinstance(certs_value, dict) else {}
+        leaf_value = certs.get("leaf_data") or certs.get("leaf")
+        leaf = leaf_value if isinstance(leaf_value, dict) else {}
+        leaf_names_value = leaf.get("names")
+        leaf_names = leaf_names_value if isinstance(leaf_names_value, list) else []
+        for name in leaf_names:
             relationships.append(_relationship(root, str(name), "domain", "censys", 1, "Censys TLS certificate name"))
         for hash_key in ("fingerprint_sha256", "fingerprint_sha1"):
             if leaf.get(hash_key):
@@ -879,7 +928,8 @@ def _censys_host_relationships(root: str, resource: dict[str, Any]) -> list[dict
 
 
 def _censys_hits(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    result = payload.get("result") or {}
+    result_value = payload.get("result")
+    result = result_value if isinstance(result_value, dict) else {}
     for key in ("hits", "resources", "results"):
         value = result.get(key) or payload.get(key)
         if isinstance(value, list):
@@ -895,7 +945,8 @@ def _censys_webproperty_resources(payload: dict[str, Any]) -> list[dict[str, Any
     for item in result if isinstance(result, list) else []:
         if not isinstance(item, dict):
             continue
-        resource = item.get("resource") if isinstance(item.get("resource"), dict) else item
+        nested_resource = item.get("resource")
+        resource = nested_resource if isinstance(nested_resource, dict) else item
         resources.append(resource)
     return resources
 
@@ -940,22 +991,32 @@ def _extract_values(value: Any, keys: set[str]) -> list[Any]:
 
 def _censys_search_relationships(root: str, hit: dict[str, Any]) -> list[dict[str, Any]]:
     relationships: list[dict[str, Any]] = []
-    host = hit.get("host") if isinstance(hit.get("host"), dict) else hit
+    nested_host = hit.get("host")
+    host = nested_host if isinstance(nested_host, dict) else hit
     ip = host.get("ip") or hit.get("ip")
     if ip:
         relationships.append(_relationship(root, str(ip), "ip", "censys", 1, "Censys host search result"))
-    location = host.get("location") or {}
-    autonomous_system = host.get("autonomous_system") or {}
+    location_value = host.get("location")
+    location = location_value if isinstance(location_value, dict) else {}
+    autonomous_system_value = host.get("autonomous_system")
+    autonomous_system = (
+        autonomous_system_value if isinstance(autonomous_system_value, dict) else {}
+    )
     for candidate, kind, evidence in [
         (location.get("country") or location.get("country_code"), "country", "Censys search host location"),
         (autonomous_system.get("name") or autonomous_system.get("description"), "asn", "Censys search autonomous system"),
     ]:
         if candidate:
             relationships.append(_relationship(root, str(candidate), kind, "censys", 1, evidence))
-    dns = host.get("dns") or {}
-    for name in dns.get("names") or []:
+    dns_value = host.get("dns")
+    dns = dns_value if isinstance(dns_value, dict) else {}
+    dns_names_value = dns.get("names")
+    dns_names = dns_names_value if isinstance(dns_names_value, list) else []
+    for name in dns_names:
         relationships.append(_relationship(root, str(name), "domain", "censys", 1, "Censys search DNS name"))
-    for service in host.get("services") or []:
+    services_value = host.get("services")
+    services = services_value if isinstance(services_value, list) else []
+    for service in services:
         if isinstance(service, dict) and service.get("port"):
             relationships.append(_relationship(root, f"{service.get('service_name') or 'service'}:{service['port']}", "service-port", "censys", 1, "Censys search exposed service"))
     return relationships

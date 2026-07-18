@@ -56,8 +56,8 @@ export function Observability() {
           <section className="grid gap-4 md:grid-cols-4">
             <Metric label="API uptime" value={data ? formatUptime(data.uptime_seconds) : 'loading'} />
             <Metric label="Requests" value={String(data?.requests_total ?? 0)} />
-            <Metric label="Average latency" value={`${data?.latency.avg_ms ?? 0} ms`} />
-            <Metric label="Max latency" value={`${data?.latency.max_ms ?? 0} ms`} tone={(data?.latency.max_ms ?? 0) > 1500 ? 'warn' : 'ok'} />
+            <Metric label="Average latency" value={`${data?.latency?.avg_ms ?? 0} ms`} />
+            <Metric label="Max latency" value={`${data?.latency?.max_ms ?? 0} ms`} tone={(data?.latency?.max_ms ?? 0) > 1500 ? 'warn' : 'ok'} />
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -74,9 +74,9 @@ export function Observability() {
 
             <Panel title="Log File">
               <div className="space-y-3 p-4 text-xs text-gray-300">
-                <Info label="Path" value={data?.log_file.path ?? '-'} />
-                <Info label="Exists" value={data?.log_file.exists ? 'yes' : 'no'} />
-                <Info label="Size" value={`${data?.log_file.size_bytes ?? 0} bytes`} />
+                <Info label="Path" value={data?.log_file?.path ?? '-'} />
+                <Info label="Exists" value={data?.log_file?.exists ? 'yes' : 'no'} />
+                <Info label="Size" value={`${data?.log_file?.size_bytes ?? 0} bytes`} />
                 <a
                   className="secondary-action block text-center"
                   href="/api/observability/metrics"
@@ -102,7 +102,7 @@ export function Observability() {
                     <span className="text-right text-mitre-accent">{route.count}</span>
                   </div>
                 ))}
-                {!data?.top_routes.length && <p className="p-3 text-sm text-gray-500">No routes observed yet.</p>}
+                {!data?.top_routes?.length && <p className="p-3 text-sm text-gray-500">No routes observed yet.</p>}
               </div>
             </Panel>
           </section>

@@ -12,14 +12,14 @@ Published walkthrough and visual reference:
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
 - Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
-- v6 current UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
+- Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 reproducible case studies: [`case-studies-v6.md`](case-studies-v6.md)
 - Asset Surface screenshot addendum: [`assets/adversarygraph-v4.1-platform/manifest.md`](assets/adversarygraph-v4.1-platform/manifest.md)
 - Platform screenshot manifest: [`assets/adversarygraph-v4-platform/manifest.md`](assets/adversarygraph-v4-platform/manifest.md)
 - Malware screenshot manifest: [`assets/malware-analysis-v4/manifest.md`](assets/malware-analysis-v4/manifest.md)
 - 1200km mirror: <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>
 - Medium article: <https://medium.com/@1200km/adversarygraph-v2-5-new-name-new-release-full-ai-cti-platform-capability-map-93cd9224127e>
-- Local screenshot and infographic appendix: [`full-guide-v2.md#24-visual-appendix`](full-guide-v2.md#24-visual-appendix)
+- Local screenshot and infographic appendix: [`full-guide-v2.md#25-visual-appendix`](full-guide-v2.md#25-visual-appendix)
 
 ## Core Concepts
 
@@ -49,7 +49,7 @@ Do not upload private reports to public demos.
 
 ## Current Platform Modules
 
-For a screenshot-backed walkthrough of every current module, see the
+For a platform walkthrough with clearly versioned screenshot packs, see the
 [AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). It covers:
 
 - Discover and workflow entry points
@@ -59,7 +59,9 @@ For a screenshot-backed walkthrough of every current module, see the
 - Compare and Group vs Group similarity workflows
 - Sector Intel and Sector Packs
 - Asset Attack Surface Mapping for CMDB, scanner, and cloud inventory review
-- Threat Hunting for scoped hypotheses, telemetry plans, findings, and reviewed outcomes
+- Threat Hunting for scoped hypotheses, telemetry plans, findings, reviewed
+  outcomes, and governed AI suggestions from stored reports or current hunt
+  context
 - RetroHunt Signals and Knowledge Library
 - IOC Library, IOC Investigation, IOC Node Detail, and VirusTotal Lookup
 - Feeds Management and Pipeline imports
@@ -80,7 +82,8 @@ Use the Docker deployment for:
   local analysis history, and white Navigator layers for inventory-derived TTPs.
 - IOC Intelligence with source-backed actor observables.
 - PostgreSQL-backed Threat Hunting records with versioned query plans,
-  evidence references, lifecycle controls, and Threat Radar handoff.
+  evidence references, lifecycle controls, Threat Radar handoff, and governed
+  AI-assistance provenance.
 - API-driven workflows.
 
 ## Analyst Workflow
@@ -115,6 +118,62 @@ For every mapping, check:
 - Is a sub-technique more accurate?
 - Is the mapping based on actor attribution rather than observed behavior?
 - Is the confidence justified?
+
+### Optional: Create a Governed AI-Assisted Hunt
+
+Threat Hunting AI works from a completed report or research session with source
+text already stored in the self-hosted workspace, or from the current hunt
+context. It does not fetch a new report, search a SIEM, or execute a generated
+query.
+
+1. Open the stored report and confirm that analysis is completed, source text
+   is available, and it uses the Enterprise ATT&CK domain. Mobile, ICS, and
+   ATLAS reports are not supported by the governed hunting assistant in the
+   current post-v6.0.0 implementation on `main`.
+2. Confirm the report's authoritative handling marking. New and repaired legacy
+   reports default conservatively to `TLP:AMBER+STRICT`. Only a user with
+   `manage_intel` may deliberately change the stored marking after reviewing
+   the source and organizational policy. An assistant request may raise that
+   marking for the request, but it cannot lower it.
+3. Use the default operator-configured local provider. Cloud providers are
+   unavailable until an operator enables cloud use and the analyst explicitly
+   acknowledges that bounded source content will leave the deployment.
+   `TLP:AMBER+STRICT` and `TLP:RED` are always local-only.
+4. Choose the assistant task: `hypothesis`, `plan`, `query`, `findings`, or
+   `outcome`.
+5. Review the generated fields, exact-matched source citations, and any
+   dropped-citation or truncation warning. If the source or saved hunt changes
+   while the provider is generating, the request is rejected as a stale-context
+   conflict; retry against the current data.
+6. Use **Apply safe fields** or **Apply safe suggestions** only after review.
+   These actions copy permitted values into blank fields and merge permitted
+   lists in the unsaved hunt form. For a proposed finding, **Open editable
+   draft** opens the normal unsaved finding form with status `new`, verdict
+   `inconclusive`, inherited hunt TLP, evidence type `analysis`, and no evidence
+   reference, event time, observables, or query-version link. Add canonical
+   evidence yourself.
+7. Review the resulting form and use the ordinary Save action. Generation and
+   safe application do not independently change the hunt, create a finding,
+   save a query version, select a disposition, or advance lifecycle state.
+
+AI output is a suggestion, not report evidence and not proof of activity in the
+local environment. A report citation establishes source context only. A
+finding still needs a case-safe event or evidence reference, and a query still
+needs analyst-controlled execution in the approved telemetry platform.
+
+The append-only AI-assistance record stores the optional hunt and stored-session
+IDs, task/stage, `suggested` lifecycle, provider/model, prompt version, effective
+TLP, sanitized source references and citation metadata, the recorded
+remote-processing acknowledgment state, input/output checksums, bounded
+server-validated citation excerpts of at most 300 characters each,
+validated structured suggestion, warnings, and generation actor/time. It does
+not store the full raw report, raw prompt, raw provider response, credentials,
+or provider exception. Applying a suggestion does not mark this record
+accepted; it copies safe content into an unsaved form. If the report or hunt
+changes after generation, treat the earlier suggestion as stale and regenerate
+or review it manually. For saved hunts, coverage warnings also disclose when
+the bounded request omits older query versions or findings, or truncates query,
+summary, note, or backend-assumption text.
 
 ### 4. Compare With Groups and Campaigns
 
@@ -196,6 +255,11 @@ OpenAI, Gemini, or MiniMax providers, but the output remains review material.
 - ATT&CK is not attribution evidence.
 - Tool names do not automatically imply techniques.
 - LLM output is untrusted until reviewed.
+- Threat Hunting AI output is not evidence and cannot decide finding verdict,
+  disposition, completion, escalation, containment, or detection publication.
+- Review citation and truncation warnings before transferring an AI suggestion
+  into a hunt field. Retry any stale-context conflict, and compare an older
+  suggestion manually after a later source or hunt edit.
 - Similarity scores should be explained in prose.
 - Low-confidence mappings should remain in a backlog, not in final findings.
 - IOC links should cite source and freshness; stale or weakly attributed IOCs

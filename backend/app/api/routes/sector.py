@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from typing import Any
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.services.auth import TeamUser, require_permission
 from app.services.sector_intel import (
     RelevanceInput,
     list_regions,
@@ -19,6 +21,7 @@ from app.services.sector_intel import (
 )
 
 router = APIRouter(prefix="/sector", tags=["Sector Intelligence"])
+logger = logging.getLogger(__name__)
 
 
 class IntelSourceOut(BaseModel):
@@ -94,11 +97,15 @@ async def sources(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/sync/misp-galaxy", response_model=SyncOut)
-async def sync_misp(session: AsyncSession = Depends(get_session)):
+async def sync_misp(
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(require_permission("manage_feeds")),
+):
     try:
         return await sync_misp_galaxy(session)
     except Exception as exc:
-        raise HTTPException(502, f"MISP Galaxy sync failed: {exc}") from exc
+        logger.exception("MISP Galaxy sync failed")
+        raise HTTPException(502, "MISP Galaxy sync failed. See server logs.") from exc
 
 
 @router.get("/sectors", response_model=list[SectorOut])

@@ -14,6 +14,8 @@ import { getTechniqueReports, getTechniqueResources } from '@/config/intelligenc
 import { ReportReferences } from '@/components/ReportReferences';
 import { safeHref } from '@/utils/url';
 import { RelatedCvesPanel } from '@/components/CVE/RelatedCvesPanel';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 interface Props {
   attackId: string;
@@ -21,6 +23,9 @@ interface Props {
 }
 
 export function TechniquePanel({ attackId, onClose }: Props) {
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canRunSimulation = useHasPermission('run_attack_simulation');
+  const canExportData = useHasPermission('export_data');
   const { domain, version, selectedTechniques, toggleTechnique, techniqueAssessments, updateTechniqueAssessment } = useAppStore();
   const isSelected = selectedTechniques.has(attackId);
 
@@ -40,6 +45,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
   const { data: simulationCatalog = [] } = useQuery({
     queryKey: ['simulation-catalog'],
     queryFn: simulationApi.catalog,
+    enabled: canRunSimulation,
     staleTime: 5 * 60 * 1000,
   });
   const { data: relatedCves = [], isLoading: relatedCvesLoading } = useQuery({
@@ -188,14 +194,24 @@ export function TechniquePanel({ attackId, onClose }: Props) {
                 <span className="block text-[10px] uppercase text-amber-500 mb-1">Hunt hypothesis</span>
                 <p className="text-xs text-gray-300">If an adversary is using {tech.name}, telemetry should reveal activity inconsistent with the expected user, process, host, workload, or network context.</p>
               </div>
-              <button onClick={() => downloadHuntPlan(tech.attack_id, tech.name, tech.tactics, tech.data_sources, resources.map(item => item.url))}
-                className="mt-2 text-xs border border-amber-800 text-amber-400 px-2 py-1 rounded">Export hunt plan</button>
-              <Link
-                to={`/threat-hunting/new?technique=${encodeURIComponent(tech.attack_id)}&source=navigator&source_ref=${encodeURIComponent(tech.attack_id)}`}
-                className="ml-2 mt-2 inline-flex rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-950/40"
-              >
-                Create threat hunt
-              </Link>
+              {canExportData && (
+                <button onClick={() => downloadHuntPlan(tech.attack_id, tech.name, tech.tactics, tech.data_sources, resources.map(item => item.url))}
+                  className="mt-2 text-xs border border-amber-800 text-amber-400 px-2 py-1 rounded">Export hunt plan</button>
+              )}
+              {canRunAnalysis && (
+                <Link
+                  to={`/threat-hunting/new?technique=${encodeURIComponent(tech.attack_id)}&source=navigator&source_ref=${encodeURIComponent(tech.attack_id)}`}
+                  className="ml-2 mt-2 inline-flex rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-950/40"
+                >
+                  Create threat hunt
+                </Link>
+              )}
+              {!canExportData && (
+                <div className="mt-2"><PermissionNotice permission="export_data" action="download hunt plans" compact /></div>
+              )}
+              {!canRunAnalysis && (
+                <div className="mt-2"><PermissionNotice permission="run_analysis" action="create threat hunts" compact /></div>
+              )}
             </Section>
 
             <Section title="CVE Crosslinks">
@@ -237,7 +253,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
                   {techniqueReferences.map(reference => (
                     <a
                       key={`${reference.path}-${reference.anchor}`}
-                      href={techniqueReferenceUrl(reference)}
+                      href={safeHref(techniqueReferenceUrl(reference))}
                       target="_blank"
                       rel="noreferrer"
                       className="block group"
@@ -259,7 +275,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
                 {getEcosystemLinks(attackId).map(link => (
                   <a
                     key={link.url}
-                    href={link.url}
+                    href={safeHref(link.url)}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-2 group hover:bg-gray-800 rounded px-2 py-1.5 -mx-2 transition-colors"
@@ -273,7 +289,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
               </div>
             </Section>
 
-            {resources.length > 0 && <Section title="1200km Practical Resources"><div className="space-y-2">{resources.map(item => <a key={item.url} href={item.url} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 px-2 py-1.5 hover:border-gray-600"><small className="block text-[10px] uppercase text-gray-600">{item.kind} · {item.source}</small><span className="text-xs text-blue-400">{item.label} ↗</span></a>)}</div></Section>}
+            {resources.length > 0 && <Section title="1200km Practical Resources"><div className="space-y-2">{resources.map(item => <a key={item.url} href={safeHref(item.url)} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 px-2 py-1.5 hover:border-gray-600"><small className="block text-[10px] uppercase text-gray-600">{item.kind} · {item.source}</small><span className="text-xs text-blue-400">{item.label} ↗</span></a>)}</div></Section>}
             {reports.length > 0 && <Section title={`Correlated CTI / IR Reports (${reports.length})`}><ReportReferences reports={reports} /></Section>}
 
             {/* Sub-technique indicator */}

@@ -295,6 +295,7 @@ async def create_case_from_signal(
 
 
 async def create_action(session: AsyncSession, case: ThreatCase, action_type: str, actor: str = "local") -> Any:
+    obj: Any
     if action_type == "hunt":
         telemetry = _bounded_strings(_telemetry_for_case(case), count=100, length=500)
         techniques = _techniques_for_case(case)[:100]
@@ -607,7 +608,7 @@ def _telemetry_for_case(case: ThreatCase) -> list[str]:
 
 
 def _techniques_for_case(case: ThreatCase) -> list[str]:
-    techniques = set()
+    techniques: set[str] = set()
     for item in case.product_context or []:
         techniques.update(
             str(value).upper()

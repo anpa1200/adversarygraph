@@ -25,6 +25,14 @@ HUNT_TRANSITIONS: dict[str, set[str]] = {
     "cancelled": {"archived"},
     "archived": set(),
 }
+FINDING_TRANSITIONS: dict[str, set[str]] = {
+    "new": {"reviewed", "escalated", "closed"},
+    "reviewed": {"escalated", "closed"},
+    "escalated": {"reviewed", "closed"},
+    "closed": set(),
+}
+EVIDENCE_REVIEW_STATUSES = {"reviewed", "escalated", "closed"}
+EVIDENCE_VERDICTS = {"supports", "refutes"}
 MUTABLE_HUNT_STATUSES = {"queued", "draft", "planned", "running", "review"}
 COMPLETION_DISPOSITIONS = {
     "no_matches",
@@ -311,22 +319,25 @@ async def update_hunt(
         if unresolved:
             raise HTTPException(422, "Review or archive all new findings before completing the hunt")
         if proposed_disposition in {"suspicious", "confirmed_malicious"}:
-            supporting = (
+            supporting_candidates = (
                 await db.execute(
-                    select(ThreatHuntFinding.id)
+                    select(ThreatHuntFinding)
                     .where(
                         ThreatHuntFinding.hunt_id == hunt.id,
                         ThreatHuntFinding.archived_at.is_(None),
                         ThreatHuntFinding.verdict == "supports",
                         ThreatHuntFinding.status.in_(["reviewed", "escalated", "closed"]),
                     )
-                    .limit(1)
                 )
-            ).scalar_one_or_none()
+            ).scalars().all()
+            supporting = any(
+                (item.evidence_ref or "").strip() and (item.summary or "").strip()
+                for item in supporting_candidates
+            )
             if not supporting:
                 raise HTTPException(
                     422,
-                    "Suspicious or malicious dispositions require a reviewed supporting finding",
+                    "Suspicious or malicious dispositions require a reviewed supporting finding with an evidence reference and summary",
                 )
 
     query_changed = any(
@@ -405,13 +416,21 @@ async def append_query_version(
     return revision
 
 
-async def list_query_versions(db: AsyncSession, hunt_id: UUID) -> list[ThreatHuntQueryVersion]:
+async def list_query_versions(
+    db: AsyncSession,
+    hunt_id: UUID,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[ThreatHuntQueryVersion]:
     await get_hunt(db, hunt_id)
     statement = (
         select(ThreatHuntQueryVersion)
         .where(ThreatHuntQueryVersion.hunt_id == hunt_id)
         .order_by(ThreatHuntQueryVersion.version.desc())
     )
+    if limit is not None:
+        statement = statement.limit(max(1, min(limit, 500))).offset(max(offset, 0))
     return list((await db.execute(statement)).scalars().all())
 
 
@@ -430,12 +449,16 @@ async def list_findings(
     hunt_id: UUID,
     *,
     include_archived: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[ThreatHuntFinding]:
     await get_hunt(db, hunt_id)
     statement = select(ThreatHuntFinding).where(ThreatHuntFinding.hunt_id == hunt_id)
     if not include_archived:
         statement = statement.where(ThreatHuntFinding.archived_at.is_(None))
     statement = statement.order_by(ThreatHuntFinding.created_at.desc())
+    if limit is not None:
+        statement = statement.limit(max(1, min(limit, 500))).offset(max(offset, 0))
     return list((await db.execute(statement)).scalars().all())
 
 
@@ -444,6 +467,13 @@ async def create_finding(db: AsyncSession, hunt_id: UUID, data: dict[str, Any], 
     _ensure_mutable(hunt)
     now = datetime.now(timezone.utc)
     finding_data = dict(data)
+    requested_status = str(finding_data.get("status") or "new")
+    if requested_status != "new":
+        raise HTTPException(
+            422,
+            "New findings must start with status new; use the update endpoint for review transitions",
+        )
+    finding_data["status"] = "new"
     finding_data["tlp"] = finding_data.get("tlp") or hunt.tlp
     _prevent_tlp_downgrade(hunt.tlp, finding_data["tlp"])
     query_version_id = finding_data.get("query_version_id")
@@ -455,6 +485,12 @@ async def create_finding(db: AsyncSession, hunt_id: UUID, data: dict[str, Any], 
         version = await _latest_query_version(db, hunt.id)
         finding_data["query_version_id"] = version.id if version else None
     finding_data["analyst"] = analyst
+    _validate_finding_review_evidence(
+        status=str(finding_data.get("status") or "new"),
+        verdict=str(finding_data.get("verdict") or "inconclusive"),
+        evidence_ref=str(finding_data.get("evidence_ref") or ""),
+        summary=str(finding_data.get("summary") or ""),
+    )
     finding = ThreatHuntFinding(
         **finding_data,
         hunt_id=hunt.id,
@@ -483,6 +519,18 @@ async def update_finding(
     hunt = await get_hunt(db, hunt_id, for_update=True)
     _ensure_mutable(hunt)
     finding = await get_finding(db, hunt_id, finding_id)
+    proposed_status = str(data.get("status", finding.status))
+    proposed_verdict = str(data.get("verdict", finding.verdict))
+    proposed_evidence_ref = str(data.get("evidence_ref", finding.evidence_ref) or "")
+    proposed_summary = str(data.get("summary", finding.summary) or "")
+    if proposed_status != finding.status and proposed_status not in FINDING_TRANSITIONS.get(finding.status, set()):
+        raise HTTPException(409, f"Invalid finding transition: {finding.status} -> {proposed_status}")
+    _validate_finding_review_evidence(
+        status=proposed_status,
+        verdict=proposed_verdict,
+        evidence_ref=proposed_evidence_ref,
+        summary=proposed_summary,
+    )
     if "tlp" in data and data["tlp"] is not None:
         _prevent_tlp_downgrade(hunt.tlp, data["tlp"])
         _prevent_tlp_downgrade(finding.tlp, data["tlp"])
@@ -496,6 +544,27 @@ async def update_finding(
     finding.updated_at = datetime.now(timezone.utc)
     await db.flush()
     return finding
+
+
+def _validate_finding_review_evidence(
+    *,
+    status: str,
+    verdict: str,
+    evidence_ref: str,
+    summary: str,
+) -> None:
+    if status not in EVIDENCE_REVIEW_STATUSES or verdict not in EVIDENCE_VERDICTS:
+        return
+    missing: list[str] = []
+    if not evidence_ref.strip():
+        missing.append("evidence_ref")
+    if not summary.strip():
+        missing.append("summary")
+    if missing:
+        raise HTTPException(
+            422,
+            f"Reviewed supporting or refuting findings require nonblank {', '.join(missing)}",
+        )
 
 
 async def archive_finding(

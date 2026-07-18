@@ -10,10 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.asset_surface import AssetRegistryItem
-from app.services.auth import TeamUser, analyst, audit
+from app.services.auth import TeamUser, audit, require_permission
 from app.services.emb3d import assess_assets_with_emb3d, catalog_summary, load_emb3d_knowledge_base
 
 router = APIRouter(prefix="/emb3d", tags=["EMB3D"])
+run_emb3d_assessment = require_permission("run_analysis")
 
 
 class Emb3dAssessIn(BaseModel):
@@ -22,7 +23,7 @@ class Emb3dAssessIn(BaseModel):
 
 
 @router.get("/catalog")
-async def emb3d_catalog(_: TeamUser = Depends(analyst)):
+async def emb3d_catalog(_: TeamUser = Depends(run_emb3d_assessment)):
     kb = load_emb3d_knowledge_base()
     return {
         **catalog_summary(kb),
@@ -35,7 +36,7 @@ async def emb3d_asset_report(
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_emb3d_assessment),
 ):
     kb = load_emb3d_knowledge_base()
     rows = (
@@ -62,7 +63,7 @@ async def emb3d_asset_report(
 async def emb3d_assess_assets(
     payload: Emb3dAssessIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_emb3d_assessment),
 ):
     kb = load_emb3d_knowledge_base()
     stmt = select(AssetRegistryItem).order_by(AssetRegistryItem.last_seen_at.desc()).limit(payload.limit)
@@ -86,7 +87,7 @@ async def emb3d_assess_assets(
 
 
 @router.post("/preview")
-async def emb3d_preview_asset(asset: dict[str, Any], _: TeamUser = Depends(analyst)):
+async def emb3d_preview_asset(asset: dict[str, Any], _: TeamUser = Depends(run_emb3d_assessment)):
     kb = load_emb3d_knowledge_base()
     registry_asset = AssetRegistryItem(
         inventory_asset_id=str(asset.get("inventory_asset_id") or asset.get("asset_id") or asset.get("name") or "preview"),

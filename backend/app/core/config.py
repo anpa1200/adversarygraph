@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1"
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
     minimax_api_key: str = ""
     minimax_model: str = "MiniMax-M3"
     minimax_base_url: str = "https://api.minimax.io/v1"
@@ -27,12 +28,23 @@ class Settings(BaseSettings):
     local_llm_api_key: str = "local"
     local_llm_model: str = "llama3.1:8b"
 
+    # Threat Hunting AI is an advisory-only feature. Cloud processing remains
+    # disabled until an operator explicitly enables it and the analyst confirms
+    # the data-processing boundary for each request.
+    threat_hunting_ai_enabled: bool = True
+    threat_hunting_ai_cloud_enabled: bool = False
+    threat_hunting_ai_default_provider: str = "local"
+    threat_hunting_ai_timeout_seconds: float = 45.0
+    threat_hunting_ai_source_char_limit: int = 40_000
+    threat_hunting_ai_max_candidates: int = 3
+
     # MalwareGraph integration
     malwaregraph_url: str = "http://malwaregraph:8100"
     malwaregraph_api_key: str = ""
     malwaregraph_request_timeout_seconds: int = 30
     malwaregraph_upload_timeout_seconds: int = 180
     malwaregraph_long_timeout_seconds: int = 300
+    malwaregraph_max_upload_bytes: int = 256 * 1024 * 1024
     malwaregraph_storage_dir: str = "/malwaregraph-storage"
 
     # ATT&CK ingestion
@@ -101,6 +113,11 @@ class Settings(BaseSettings):
     # X-Internal-Proxy-Secret with this value; requests that fail the check are
     # treated as anonymous regardless of AUTH_ENABLED.
     proxy_secret: str = ""
+    # Separate secret used only by the bundled reverse proxy to authenticate
+    # X-Forwarded-For for rate-limit client attribution.  Do not reuse the
+    # trusted-identity proxy secret above: these headers have different trust
+    # boundaries and are consumed for different security decisions.
+    rate_limit_proxy_secret: str = ""
     # Set to false when running behind an HTTP-only reverse proxy in local dev.
     # Must be true in production deployments served over HTTPS.
     secure_cookies: bool = True

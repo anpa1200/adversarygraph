@@ -6,8 +6,14 @@ import { aptApi, attackApi, iocApi, simulationApi, syncApi, systemApi, type Self
 import { loadReportIndex } from '@/config/intelligence';
 import { useAppStore } from '@/store';
 import { Header } from '@/components/Layout/Header';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
+import { safeHref } from '@/utils/url';
 
 export function Discover() {
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canRunSimulation = useHasPermission('run_attack_simulation');
+  const canManageFeeds = useHasPermission('manage_feeds');
   const {
     domain,
     version,
@@ -33,6 +39,7 @@ export function Discover() {
   const { data: simulationCatalog = [] } = useQuery({
     queryKey: ['simulation-catalog'],
     queryFn: simulationApi.catalog,
+    enabled: canRunSimulation,
     staleTime: 5 * 60 * 1000,
   });
   const { data: sources = [] } = useQuery({ queryKey: ['discover-ioc-sources'], queryFn: iocApi.sources });
@@ -70,6 +77,7 @@ export function Discover() {
   const staleSources = enabledSources.filter(source => source.sync_status && !['ok', 'configured', 'active'].includes(source.sync_status));
 
   const runIocLookup = () => {
+    if (!canRunAnalysis) return;
     const value = iocInput.trim();
     if (!value) return;
     navigate(`/ioc-investigation?indicator=${encodeURIComponent(value)}`);
@@ -97,19 +105,19 @@ export function Discover() {
               </p>
               <div className="grid gap-3 md:grid-cols-4">
                 <Start title="Investigate actor" text="Profiles, campaigns, reports, aliases, behavior, and IOCs." onClick={() => navigate('/apt')} />
-                <Start title="Analyze report with AI" text="Extract ATT&CK evidence using your configured LLM." onClick={() => navigate('/analyze')} />
+                {canRunAnalysis && <Start title="Analyze report with AI" text="Extract ATT&CK evidence using your configured LLM." onClick={() => navigate('/analyze')} />}
                 <Start title="Reports / research" text="Open analyzed reports tagged by TTP, IOC, CVE, actor, sector, and infrastructure." onClick={() => navigate('/reports-research')} />
-                <Start title="Threat radar" text="Collect early-warning CTI signals, score product exposure, and open PSIRT, Hunt, IR, and Detection workflows." onClick={() => navigate('/threat-radar')} />
-                <Start title="Threat hunting" text="Turn a hypothesis into a scoped telemetry plan, reviewed findings, and an explicit outcome." onClick={() => navigate('/threat-hunting')} />
-                <Start title="Analyze malware" text="Create cases, upload samples, extract IOCs, strings, TTPs, and AI summaries." onClick={() => navigate('/malware-analysis')} />
-                <Start title="Map asset surface" text="Upload CMDB, scanner, or cloud inventory and map exposed assets to ATT&CK." onClick={() => navigate('/asset-surface')} />
-                <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />
-                <Start title="Evidence graph" text="Trace evidence to claims, behavior, ATT&CK, telemetry, detections, validation, and decisions." onClick={() => navigate('/evidence-graph')} />
+                {canRunAnalysis && <Start title="Threat radar" text="Collect early-warning CTI signals, score product exposure, and open PSIRT, Hunt, IR, and Detection workflows." onClick={() => navigate('/threat-radar')} />}
+                {canRunAnalysis && <Start title="Threat hunting" text="Turn a hypothesis into a scoped telemetry plan, reviewed findings, and an explicit outcome." onClick={() => navigate('/threat-hunting')} />}
+                {canRunAnalysis && <Start title="Analyze malware" text="Create cases, upload samples, extract IOCs, strings, TTPs, and AI summaries." onClick={() => navigate('/malware-analysis')} />}
+                {canRunAnalysis && <Start title="Map asset surface" text="Upload CMDB, scanner, or cloud inventory and map exposed assets to ATT&CK." onClick={() => navigate('/asset-surface')} />}
+                {canRunSimulation && <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />}
+                {canRunAnalysis && <Start title="Evidence graph" text="Trace evidence to claims, behavior, ATT&CK, telemetry, detections, validation, and decisions." onClick={() => navigate('/evidence-graph')} />}
                 <Start title="Compare behavior" text="Rank group, campaign, and stored-report overlap." onClick={() => navigate('/compare')} />
-                <Start title="Statistics" text="Compare actors, reports, sectors, TTP usage, CVEs, and IOC datasets." onClick={() => navigate('/statistics')} />
+                {canRunAnalysis && <Start title="Statistics" text="Compare actors, reports, sectors, TTP usage, CVEs, and IOC datasets." onClick={() => navigate('/statistics')} />}
                 <Start title="Review coverage" text="Prioritize selected techniques without coverage." onClick={() => navigate('/navigator')} />
-                <Start title="Debug malware" text="Open the decompilation/debug IDE for function stepping and AI explanations." onClick={() => navigate('/malware-debug')} />
-                <Start title="Unpack sample" text="Plan static/runtime unpacking and continue into strings, debug, and analysis." onClick={() => navigate('/malware-unpacker')} />
+                {canRunAnalysis && <Start title="Debug malware" text="Open the decompilation/debug IDE for function stepping and AI explanations." onClick={() => navigate('/malware-debug')} />}
+                {canRunAnalysis && <Start title="Unpack sample" text="Plan static/runtime unpacking and continue into strings, debug, and analysis." onClick={() => navigate('/malware-unpacker')} />}
               </div>
             </div>
             <Panel title="IOC quick actions">
@@ -124,16 +132,19 @@ export function Discover() {
                   className="field w-full"
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={runIocLookup} disabled={!iocInput.trim()} className="primary-action disabled:opacity-40">
+                  <button type="button" onClick={runIocLookup} disabled={!canRunAnalysis || !iocInput.trim()} className="primary-action disabled:opacity-40">
                     Investigate
                   </button>
                   <button type="button" onClick={runIocSearch} className="secondary-action">
                     Search library
                   </button>
                 </div>
+                {!canRunAnalysis && (
+                  <PermissionNotice permission="run_analysis" action="run IOC investigations" compact />
+                )}
                 <ActionLink label="Open IOC Library" detail="Search, sort, enrich, export STIX." onClick={() => navigate('/ioc-library')} />
-                <ActionLink label="Open IOC Investigation" detail="Tier 1/2/3 pivots, graph, saved sessions, TTPs, actors, AI summary." onClick={() => navigate('/ioc-investigation')} />
-                <ActionLink label="Manage feeds" detail={`${enabledSources.length} enabled sources${staleSources.length ? `, ${staleSources.length} need attention` : ''}.`} onClick={() => navigate('/feeds')} />
+                {canRunAnalysis && <ActionLink label="Open IOC Investigation" detail="Tier 1/2/3 pivots, graph, saved sessions, TTPs, actors, AI summary." onClick={() => navigate('/ioc-investigation')} />}
+                {canManageFeeds && <ActionLink label="Manage feeds" detail={`${enabledSources.length} enabled sources${staleSources.length ? `, ${staleSources.length} need attention` : ''}.`} onClick={() => navigate('/feeds')} />}
               </div>
             </Panel>
           </section>
@@ -152,24 +163,24 @@ export function Discover() {
               <div className="grid gap-2 p-2 md:grid-cols-2 xl:grid-cols-3">
                 <ActionLink label="Sector intelligence" detail="Filter relevant actors by sector, region, technology, and recency." onClick={() => navigate('/sector-intel')} />
                 <ActionLink label="Reports / research collection" detail="Browse analyzed reports with tags for TTPs, IOCs, CVEs, actors, sectors, and infrastructure." onClick={() => navigate('/reports-research')} />
-                <ActionLink label="Threat Radar" detail="Score CVE, zero-day, supplier, hardware, package, and telemetry signals against product exposure and create PSIRT/Hunt/IR work." onClick={() => navigate('/threat-radar')} />
-                <ActionLink label="Threat Hunting" detail="Plan hypothesis-driven hunts, preserve queries and evidence, review findings, and record defensive handoffs." onClick={() => navigate('/threat-hunting')} />
-                <ActionLink label="Asset attack surface" detail="Normalize inventories, score exposure, map entry points to ATT&CK, and save TTP layers." onClick={() => navigate('/asset-surface')} />
-                <ActionLink label="Attack Simulation" detail="Choose a TTP first, then configure target validation and evidence capture." onClick={() => navigate('/attack-simulation')} />
-                <ActionLink label="Evidence-to-Detection Graph" detail="Preserve the full reasoning path from evidence through SIEM result and analyst decision." onClick={() => navigate('/evidence-graph')} />
-                <ActionLink label="Malware Analysis" detail="Upload malware safely, review first analysis, hashes, files, strings, IOCs, TTPs, and family leads." onClick={() => navigate('/malware-analysis')} />
-                <ActionLink label="String Analyzer" detail="Extract strings, commands, URLs, registry keys, APIs, and IOC/TTP leads from samples." onClick={() => navigate('/string-analyzer')} />
-                <ActionLink label="Decompilation & Debug IDE" detail="Step through functions, inspect pseudocode/disassembly, and get AI explanations per function." onClick={() => navigate('/malware-debug')} />
-                <ActionLink label="Malware Unpacker" detail="Analyze packers, unpack layers, deobfuscate strings/code, and continue into debugger tools." onClick={() => navigate('/malware-unpacker')} />
-                <ActionLink label="Dynamic analysis" detail="Review safe runtime workflow output, process/file/registry/network/API events, and AI summaries." onClick={() => navigate('/dynamic-analysis')} />
+                {canRunAnalysis && <ActionLink label="Threat Radar" detail="Score CVE, zero-day, supplier, hardware, package, and telemetry signals against product exposure and create PSIRT/Hunt/IR work." onClick={() => navigate('/threat-radar')} />}
+                {canRunAnalysis && <ActionLink label="Threat Hunting" detail="Plan hypothesis-driven hunts, preserve queries and evidence, review findings, and record defensive handoffs." onClick={() => navigate('/threat-hunting')} />}
+                {canRunAnalysis && <ActionLink label="Asset attack surface" detail="Normalize inventories, score exposure, map entry points to ATT&CK, and save TTP layers." onClick={() => navigate('/asset-surface')} />}
+                {canRunSimulation && <ActionLink label="Attack Simulation" detail="Choose a TTP first, then configure target validation and evidence capture." onClick={() => navigate('/attack-simulation')} />}
+                {canRunAnalysis && <ActionLink label="Evidence-to-Detection Graph" detail="Preserve the full reasoning path from evidence through SIEM result and analyst decision." onClick={() => navigate('/evidence-graph')} />}
+                {canRunAnalysis && <ActionLink label="Malware Analysis" detail="Upload malware safely, review first analysis, hashes, files, strings, IOCs, TTPs, and family leads." onClick={() => navigate('/malware-analysis')} />}
+                {canRunAnalysis && <ActionLink label="String Analyzer" detail="Extract strings, commands, URLs, registry keys, APIs, and IOC/TTP leads from samples." onClick={() => navigate('/string-analyzer')} />}
+                {canRunAnalysis && <ActionLink label="Decompilation & Debug IDE" detail="Step through functions, inspect pseudocode/disassembly, and get AI explanations per function." onClick={() => navigate('/malware-debug')} />}
+                {canRunAnalysis && <ActionLink label="Malware Unpacker" detail="Analyze packers, unpack layers, deobfuscate strings/code, and continue into debugger tools." onClick={() => navigate('/malware-unpacker')} />}
+                {canRunAnalysis && <ActionLink label="Dynamic analysis" detail="Review safe runtime workflow output, process/file/registry/network/API events, and AI summaries." onClick={() => navigate('/dynamic-analysis')} />}
                 <ActionLink label="Group vs Group" detail="Compare two adversaries and their overlapping behavior inside Compare." onClick={() => navigate('/compare?mode=group-vs-group')} />
-                <ActionLink label="Statistics" detail="Build statistical views from actors, reports, sectors, TTP usage, CVE usage, and IOC coverage." onClick={() => navigate('/statistics')} />
-                <ActionLink label="Detection pipeline" detail="Connect Sigma, YARA, YARA-L, sandbox behavior, and AI rule generation." onClick={() => navigate('/pipeline')} />
+                {canRunAnalysis && <ActionLink label="Statistics" detail="Build statistical views from actors, reports, sectors, TTP usage, CVE usage, and IOC coverage." onClick={() => navigate('/statistics')} />}
+                {canRunAnalysis && <ActionLink label="Detection pipeline" detail="Connect Sigma, YARA, YARA-L, sandbox behavior, and AI rule generation." onClick={() => navigate('/pipeline')} />}
                 <ActionLink label="DFIR examples" detail="Open downloaded public report examples and mapped TTPs." onClick={() => navigate('/examples')} />
-                <ActionLink label="Build report" detail="Create investigation output from selected TTPs and evidence." onClick={() => navigate('/report')} />
-                <ActionLink label="Operations" detail="Use operational task views for analyst workflow." onClick={() => navigate('/operations')} />
+                {canRunAnalysis && <ActionLink label="Build report" detail="Create investigation output from selected TTPs and evidence." onClick={() => navigate('/report')} />}
+                {canRunAnalysis && <ActionLink label="Operations" detail="Use operational task views for analyst workflow." onClick={() => navigate('/operations')} />}
                 <ActionLink label="Troubleshooting" detail="Check deployment, API keys, sync failures, and recovery steps." onClick={() => navigate('/troubleshooting')} />
-                <ActionLink label="Feed management" detail="Sync ATT&CK, ATLAS, IOC, MISP, TAXII/STIX, YARA, Sigma, and sandbox feeds." onClick={() => navigate('/feeds')} />
+                {canManageFeeds && <ActionLink label="Feed management" detail="Sync ATT&CK, ATLAS, IOC, MISP, TAXII/STIX, YARA, Sigma, and sandbox feeds." onClick={() => navigate('/feeds')} />}
                 <ActionLink label="ATT&CK Navigator" detail="Open matrix view for selected, covered, and actor-overlay TTPs." onClick={() => navigate('/navigator')} />
                 <button
                   type="button"
@@ -177,12 +188,15 @@ export function Discover() {
                     setShowSelfTestReport(true);
                     selfTest.mutate();
                   }}
-                  disabled={selfTest.isPending}
+                  disabled={!canRunAnalysis || selfTest.isPending}
                   className="rounded border border-gray-800 bg-gray-950/40 p-3 text-left hover:border-mitre-accent hover:bg-gray-900 disabled:cursor-wait disabled:opacity-60"
                 >
                   <b className="block text-sm text-white">{selfTest.isPending ? 'Running self-test...' : 'Run self-test'}</b>
                   <span className="mt-1 block text-xs leading-5 text-gray-500">Check API, database, Redis, ATT&CK data, API keys, and IOC sync.</span>
                 </button>
+                {!canRunAnalysis && (
+                  <PermissionNotice permission="run_analysis" action="run the platform self-test" compact />
+                )}
               </div>
             </Panel>
 
@@ -200,13 +214,17 @@ export function Discover() {
                     Show matrix
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/threat-hunting/new${selectedCount ? `?technique=${encodeURIComponent(Array.from(selectedTechniques).join(','))}&source=navigator` : ''}`)}
-                  className="secondary-action w-full py-2"
-                >
-                  {selectedCount ? `Create hunt from ${selectedCount} selected TTPs` : 'Open Threat Hunting'}
-                </button>
+                {canRunAnalysis ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/threat-hunting/new${selectedCount ? `?technique=${encodeURIComponent(Array.from(selectedTechniques).join(','))}&source=navigator` : ''}`)}
+                    className="secondary-action w-full py-2"
+                  >
+                    {selectedCount ? `Create hunt from ${selectedCount} selected TTPs` : 'Open Threat Hunting'}
+                  </button>
+                ) : (
+                  <PermissionNotice permission="run_analysis" action="create or open threat hunts" compact />
+                )}
                 <input
                   value={workspaceName}
                   onChange={event => setWorkspaceName(event.target.value)}
@@ -256,7 +274,7 @@ export function Discover() {
             <Panel title="Recent public intelligence">
               {recent.map(item => (
                 <div key={item.url} className="list-row">
-                  <a href={item.url} target="_blank" rel="noreferrer" className="min-w-0 hover:text-mitre-accent">
+                  <a href={safeHref(item.url)} target="_blank" rel="noreferrer" className="min-w-0 hover:text-mitre-accent">
                     <b>{item.title}</b>
                     <small>{item.date} · {item.publisher}</small>
                   </a>
@@ -279,7 +297,7 @@ export function Discover() {
                 ['Insider Threat Detection Guide', 'https://1200km.com/insider-threat-detection/'],
                 ['Medium Research', 'https://medium.com/@1200km'],
               ].map(([label, url]) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" className="list-row">
+                <a key={url} href={safeHref(url)} target="_blank" rel="noreferrer" className="list-row">
                   <span><b>{label} ↗</b></span>
                 </a>
               ))}

@@ -117,8 +117,8 @@ class LLMAdapter(ABC):
         ...
 
     @abstractmethod
-    async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
-        """Yield response text chunks as they arrive."""
+    def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
+        """Return an async iterator that yields response text chunks."""
         ...
 
     async def extract(self, text: str, domain: str = "enterprise-attack") -> ExtractionResult:

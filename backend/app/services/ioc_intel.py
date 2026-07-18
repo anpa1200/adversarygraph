@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import asyncio
 import json
+import logging
 import re
 from io import StringIO
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from app.models.ioc import IOCActorLink, IOCIndicator, IOCSource
 from app.services.ai.factory import get_adapter
 from app.services.sector_intel import normalize_label
 from app.services.taxonomy import normalize_freeform_tags
+
+logger = logging.getLogger(__name__)
 
 THREATFOX_API_URL = "https://threatfox-api.abuse.ch/api/v1/"
 OTX_API_URL = "https://otx.alienvault.com/api/v1"
@@ -226,7 +229,7 @@ async def list_ioc_library(
         base = base.where(*filters)
         count_stmt = count_stmt.where(*filters)
 
-    sort_map = {
+    sort_map: dict[str, Any] = {
         "last_seen_asc": IOCIndicator.last_seen.asc().nulls_last(),
         "first_seen_desc": IOCIndicator.first_seen.desc().nulls_last(),
         "first_seen_asc": IOCIndicator.first_seen.asc().nulls_last(),
@@ -239,7 +242,7 @@ async def list_ioc_library(
         "confidence_desc": IOCIndicator.confidence.desc(),
         "confidence_asc": IOCIndicator.confidence.asc(),
     }
-    order = sort_map.get(sort, IOCIndicator.last_seen.desc().nulls_last())
+    order: Any = sort_map.get(sort, IOCIndicator.last_seen.desc().nulls_last())
     if sort == "actor_asc":
         base = base.outerjoin(IOCActorLink, IOCActorLink.indicator_id == IOCIndicator.id) if not actor_terms else base
         order = IOCActorLink.actor_name.asc().nulls_last()
@@ -427,11 +430,13 @@ async def sync_custom_source(
         items = _parse_custom_feed(response.text, source.kind, source_id, source.url)
     except ValueError as exc:
         # SSRF guard blocked the URL
-        await _mark_existing_source(session, source, "error", str(exc))
+        logger.warning("Custom IOC source URL rejected source_id=%s", source_id, exc_info=True)
+        await _mark_existing_source(session, source, "error", "Custom IOC source URL was rejected. See server logs.")
         await session.commit()
         raise
     except Exception as exc:
-        await _mark_existing_source(session, source, "error", str(exc))
+        logger.exception("Custom IOC source sync failed source_id=%s", source_id)
+        await _mark_existing_source(session, source, "error", "Custom IOC source sync failed. See server logs.")
         await session.commit()
         raise
 
@@ -477,47 +482,68 @@ async def sync_all_ioc_sources(
     totals = {"inserted": 0, "updated": 0, "actor_links": 0, "ttp_enriched": 0}
 
     try:
-        result = await sync_threatfox(session, days=days, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
-        results.append({**result, "status": "ok"})
-        totals["inserted"] += int(result.get("inserted", 0))
-        totals["updated"] += int(result.get("updated", 0))
-        totals["actor_links"] += int(result.get("actor_links", 0))
-        totals["ttp_enriched"] += int(result.get("ttp_enriched", 0))
-    except Exception as exc:
-        results.append({"source": THREATFOX_SOURCE_ID, "status": "error", "error": str(exc)})
+        threatfox_result = await sync_threatfox(
+            session,
+            days=days,
+            domain=domain,
+            ai_enrich=ai_enrich,
+            ai_provider=ai_provider,
+        )
+        results.append({**threatfox_result, "status": "ok"})
+        totals["inserted"] += _safe_int(threatfox_result.get("inserted"), 0)
+        totals["updated"] += _safe_int(threatfox_result.get("updated"), 0)
+        totals["actor_links"] += _safe_int(threatfox_result.get("actor_links"), 0)
+        totals["ttp_enriched"] += _safe_int(threatfox_result.get("ttp_enriched"), 0)
+    except Exception:
+        logger.exception("ThreatFox sync failed during all-source sync")
+        results.append({"source": THREATFOX_SOURCE_ID, "status": "error", "error": "ThreatFox sync failed. See server logs."})
 
     try:
-        result = await sync_malpedia_families(session, domain=domain)
-        results.append({**result, "status": "ok"})
-        totals["inserted"] += int(result.get("inserted", 0))
-        totals["updated"] += int(result.get("updated", 0))
-        totals["actor_links"] += int(result.get("actor_links", 0))
-        totals["ttp_enriched"] += int(result.get("ttp_enriched", 0))
-    except Exception as exc:
-        results.append({"source": MALPEDIA_SOURCE_ID, "status": "error", "error": str(exc)})
+        malpedia_result = await sync_malpedia_families(session, domain=domain)
+        results.append({**malpedia_result, "status": "ok"})
+        totals["inserted"] += _safe_int(malpedia_result.get("inserted"), 0)
+        totals["updated"] += _safe_int(malpedia_result.get("updated"), 0)
+        totals["actor_links"] += _safe_int(malpedia_result.get("actor_links"), 0)
+        totals["ttp_enriched"] += _safe_int(malpedia_result.get("ttp_enriched"), 0)
+    except Exception:
+        logger.exception("Malpedia sync failed during all-source sync")
+        results.append({"source": MALPEDIA_SOURCE_ID, "status": "error", "error": "Malpedia sync failed. See server logs."})
 
     try:
-        result = await sync_otx_subscribed_pulses(session, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
-        results.append({**result, "status": str(result.get("status") or "ok")})
-        totals["inserted"] += int(result.get("inserted", 0))
-        totals["updated"] += int(result.get("updated", 0))
-        totals["actor_links"] += int(result.get("actor_links", 0))
-        totals["ttp_enriched"] += int(result.get("ttp_enriched", 0))
-    except Exception as exc:
-        results.append({"source": OTX_SOURCE_ID, "status": "error", "error": str(exc)})
+        otx_result = await sync_otx_subscribed_pulses(
+            session,
+            domain=domain,
+            ai_enrich=ai_enrich,
+            ai_provider=ai_provider,
+        )
+        results.append({**otx_result, "status": str(otx_result.get("status") or "ok")})
+        totals["inserted"] += _safe_int(otx_result.get("inserted"), 0)
+        totals["updated"] += _safe_int(otx_result.get("updated"), 0)
+        totals["actor_links"] += _safe_int(otx_result.get("actor_links"), 0)
+        totals["ttp_enriched"] += _safe_int(otx_result.get("ttp_enriched"), 0)
+    except Exception:
+        logger.exception("OTX sync failed during all-source sync")
+        results.append({"source": OTX_SOURCE_ID, "status": "error", "error": "OTX sync failed. See server logs."})
 
     for source in sources:
         if not source.enabled or source.kind not in CUSTOM_FEED_KINDS:
             continue
         try:
-            result = await sync_custom_source(session, source_id=source.source_id, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
-            results.append({**result, "status": "ok"})
-            totals["inserted"] += int(result.get("inserted", 0))
-            totals["updated"] += int(result.get("updated", 0))
-            totals["actor_links"] += int(result.get("actor_links", 0))
-            totals["ttp_enriched"] += int(result.get("ttp_enriched", 0))
-        except Exception as exc:
-            results.append({"source": source.source_id, "status": "error", "error": str(exc)})
+            custom_result = await sync_custom_source(
+                session,
+                source_id=source.source_id,
+                domain=domain,
+                ai_enrich=ai_enrich,
+                ai_provider=ai_provider,
+            )
+            results.append({**custom_result, "status": "ok"})
+            totals["inserted"] += _safe_int(custom_result.get("inserted"), 0)
+            totals["updated"] += _safe_int(custom_result.get("updated"), 0)
+            totals["actor_links"] += _safe_int(custom_result.get("actor_links"), 0)
+            totals["ttp_enriched"] += _safe_int(custom_result.get("ttp_enriched"), 0)
+        except Exception:
+            logger.exception("Custom IOC source failed during all-source sync source_id=%s", source.source_id)
+            results.append({"source": source.source_id, "status": "error", "error": "Custom IOC source sync failed. See server logs."})
 
     return {"days": max(1, min(days, 7)), "totals": totals, "sources": results}
 
@@ -531,7 +557,8 @@ async def sync_malpedia_families(
     try:
         payload = await _malpedia_get_families()
     except Exception as exc:
-        await _mark_ioc_source(session, MALPEDIA_SOURCE_ID, "error", str(exc))
+        logger.exception("Malpedia family sync failed")
+        await _mark_ioc_source(session, MALPEDIA_SOURCE_ID, "error", "Malpedia sync failed. See server logs.")
         await session.commit()
         raise
 
@@ -613,7 +640,8 @@ async def sync_otx_actor_pulses(
             try:
                 pulses = await _otx_search_pulses(alias, limit=pulses_per_alias)
             except Exception as exc:
-                await _mark_ioc_source(session, OTX_SOURCE_ID, "error", str(exc))
+                logger.exception("OTX actor pulse search failed")
+                await _mark_ioc_source(session, OTX_SOURCE_ID, "error", "OTX sync failed. See server logs.")
                 await session.commit()
                 raise
             for pulse in pulses:
@@ -737,7 +765,9 @@ async def sync_otx_subscribed_pulses(
     try:
         pulses = await _otx_subscribed_pulses(limit=limit)
     except TransientOTXError as exc:
-        await _mark_ioc_source(session, OTX_SOURCE_ID, "degraded", str(exc))
+        logger.warning("OTX subscribed pulse sync degraded", exc_info=True)
+        public_error = "OTX is temporarily unavailable. See server logs."
+        await _mark_ioc_source(session, OTX_SOURCE_ID, "degraded", public_error)
         await session.commit()
         return {
             "source": OTX_SOURCE_ID,
@@ -749,10 +779,11 @@ async def sync_otx_subscribed_pulses(
             "pulses": 0,
             "matched_pulses": 0,
             "ttp_enriched": 0,
-            "error": str(exc),
+            "error": public_error,
         }
     except Exception as exc:
-        await _mark_ioc_source(session, OTX_SOURCE_ID, "error", str(exc))
+        logger.exception("OTX subscribed pulse sync failed")
+        await _mark_ioc_source(session, OTX_SOURCE_ID, "error", "OTX sync failed. See server logs.")
         await session.commit()
         raise
 
@@ -825,7 +856,8 @@ async def sync_threatfox(
             raise RuntimeError(_threatfox_error_message(response, payload))
         response.raise_for_status()
     except Exception as exc:
-        await _mark_ioc_source(session, THREATFOX_SOURCE_ID, "error", str(exc))
+        logger.exception("ThreatFox sync failed")
+        await _mark_ioc_source(session, THREATFOX_SOURCE_ID, "error", "ThreatFox sync failed. See server logs.")
         await session.commit()
         raise
 

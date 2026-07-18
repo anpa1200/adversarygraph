@@ -1,8 +1,13 @@
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+
 WORKDIR /app
 
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends nginx ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -g nogroup -d /app -s /usr/sbin/nologin labweb \
@@ -18,5 +23,8 @@ RUN chmod +x /app/entrypoint.sh \
 
 USER labweb
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
 
 CMD ["/app/entrypoint.sh"]

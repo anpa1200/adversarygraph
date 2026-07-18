@@ -13,8 +13,11 @@ import {
   type ThreatSpaceMonitor,
 } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
+import { PermissionNotice } from '@/components/PermissionNotice';
 import { useAttackMatrix, type MatrixData } from '@/hooks/useAttackMatrix';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 import type { TechniqueListItem } from '@/types/attack';
+import { safeHref } from '@/utils/url';
 
 const INVENTORY_TEMPLATES = [
   ['Assets', '/templates/threat-radar/asset_inventory_template.csv'],
@@ -44,6 +47,7 @@ type AlertRow = Record<string, unknown> & {
 };
 
 export function ThreatRadar() {
+  const canManage = useHasPermission('manage_intel');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
@@ -186,6 +190,7 @@ export function ThreatRadar() {
           <Declaration />
 
           <SetupPanel
+            canManage={canManage}
             spaces={spaces.data ?? []}
             selectedSpaceId={selectedSpaceId}
             setSelectedSpaceId={id => {
@@ -211,6 +216,7 @@ export function ThreatRadar() {
           <StatusStrip summary={summary} feedCoverage={feedCoverage} />
           <AssetTtpMatrixWidget matrixData={matrixData} coverage={assetTtpCoverage} selectedSpaceId={selectedSpaceId} />
           <AlertCenter
+            canManage={canManage}
             selectedSpaceId={selectedSpaceId}
             loading={alerts.isLoading || selectedSpace.isLoading}
             rows={alertRows}
@@ -272,6 +278,7 @@ function Declaration() {
 }
 
 function SetupPanel({
+  canManage,
   spaces,
   selectedSpaceId,
   setSelectedSpaceId,
@@ -290,6 +297,7 @@ function SetupPanel({
   monitorCount,
   metrics,
 }: {
+  canManage: boolean;
   spaces: ThreatCompanySpace[];
   selectedSpaceId: string;
   setSelectedSpaceId: (id: string) => void;
@@ -310,6 +318,7 @@ function SetupPanel({
 }) {
   return (
     <Panel title="Start Here">
+      {!canManage&&<div className="border-b border-gray-800 p-4"><PermissionNotice permission="manage_intel" action="create spaces, upload inventory, run monitors, or change alert status" compact /></div>}
       <div className="grid gap-4 p-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)_minmax(260px,360px)]">
         <div className="space-y-3">
           <label className="block text-xs text-gray-400">
@@ -319,7 +328,7 @@ function SetupPanel({
               {spaces.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}
             </select>
           </label>
-          <details className="rounded border border-gray-800 bg-gray-950">
+          {canManage&&<details className="rounded border border-gray-800 bg-gray-950">
             <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-300">Create new space</summary>
             <div className="space-y-3 border-t border-gray-800 p-3">
               <label className="block text-xs text-gray-400">Name<input className="field mt-1 w-full" value={newSpaceName} onChange={event => setNewSpaceName(event.target.value)} /></label>
@@ -328,7 +337,7 @@ function SetupPanel({
                 {createPending ? 'Creating...' : 'Create space'}
               </button>
             </div>
-          </details>
+          </details>}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
@@ -337,7 +346,7 @@ function SetupPanel({
             title="Upload inventory"
             description={`${assetCount} assets loaded`}
             primary="Upload files"
-            disabled={!selectedSpaceId}
+            disabled={!canManage || !selectedSpaceId}
             onPrimary={onUpload}
             secondaryHref={`/threat-radar/assets?space_id=${encodeURIComponent(selectedSpaceId)}`}
             secondary="View inventory"
@@ -347,7 +356,7 @@ function SetupPanel({
             title="Create monitor"
             description={`${monitorCount} monitors configured`}
             primary={createMonitorPending ? 'Adding...' : 'Add monitor'}
-            disabled={!selectedSpaceId || createMonitorPending}
+            disabled={!canManage || !selectedSpaceId || createMonitorPending}
             onPrimary={onCreateMonitor}
           />
           <ActionStep
@@ -355,7 +364,7 @@ function SetupPanel({
             title="Check feeds"
             description="Generate matching alerts"
             primary={refreshPending ? 'Checking...' : 'Run now'}
-            disabled={!selectedSpaceId || refreshPending}
+            disabled={!canManage || !selectedSpaceId || refreshPending}
             onPrimary={onRefresh}
           />
         </div>
@@ -617,6 +626,7 @@ function AssetTechniqueCell({
 }
 
 function AlertCenter({
+  canManage,
   selectedSpaceId,
   loading,
   rows,
@@ -626,6 +636,7 @@ function AlertCenter({
   onUpdateAlert,
   updatePending,
 }: {
+  canManage: boolean;
   selectedSpaceId: string;
   loading: boolean;
   rows: AlertRow[];
@@ -700,8 +711,8 @@ function AlertCenter({
                   <td className="pr-3 py-3">
                     <div className="flex flex-col gap-2">
                       {row.signal_id && <button className="secondary-action min-h-8 text-xs" onClick={() => onOpenSignal(String(row.signal_id))}>Open signal</button>}
-                      {row.id && <button className="secondary-action min-h-8 text-xs" disabled={updatePending} onClick={() => onUpdateAlert(String(row.id), 'investigating')}>Investigate</button>}
-                      {row.id && <button className="secondary-action min-h-8 text-xs" disabled={updatePending} onClick={() => onUpdateAlert(String(row.id), 'resolved')}>Resolve</button>}
+                      {canManage&&row.id && <button className="secondary-action min-h-8 text-xs" disabled={updatePending} onClick={() => onUpdateAlert(String(row.id), 'investigating')}>Investigate</button>}
+                      {canManage&&row.id && <button className="secondary-action min-h-8 text-xs" disabled={updatePending} onClick={() => onUpdateAlert(String(row.id), 'resolved')}>Resolve</button>}
                     </div>
                   </td>
                 </tr>
@@ -776,7 +787,7 @@ function SignalInspector({ signal, loading, recentSignals, onSelect }: { signal:
           <TagLinks values={signal.technique_ids} type="ttp" />
           <TagLinks values={signal.actors} type="actor" />
           <TagList tags={signal.tags} />
-          {signal.source_url && <a className="secondary-action inline-flex min-h-9 items-center" href={signal.source_url} target="_blank" rel="noreferrer">Open source</a>}
+          {safeHref(signal.source_url) && <a className="secondary-action inline-flex min-h-9 items-center" href={safeHref(signal.source_url)} target="_blank" rel="noreferrer">Open source</a>}
         </div>
       )}
       {!loading && !signal && (
@@ -870,7 +881,7 @@ function FeedGroup({ title, rows }: { title: string; rows: Array<{ id: string; t
               </div>
               <StatusPill value={row.status} />
             </div>
-            {row.url && <a className="mt-2 inline-block text-[11px] text-mitre-accent hover:underline" href={row.url} target="_blank" rel="noreferrer">source</a>}
+            {safeHref(row.url) && <a className="mt-2 inline-block text-[11px] text-mitre-accent hover:underline" href={safeHref(row.url)} target="_blank" rel="noreferrer">source</a>}
           </div>
         ))}
         {!rows.length && <p className="text-xs text-gray-500">No sources registered.</p>}

@@ -55,6 +55,10 @@ curl http://localhost:3000/api/health
 ./scripts/selftest.sh
 ```
 
+If authentication is enabled, the script may fall back to `/api/ready`. Also
+sign in with `run_analysis`, rerun the full self-test, and confirm
+`status=ok` rather than `degraded`.
+
 ## Fresh Clone Flow
 
 ```bash

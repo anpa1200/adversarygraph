@@ -1,25 +1,28 @@
 import asyncio
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.core.rate_limit import RateLimitMiddleware
 
-import app.models.sector_packs  # noqa: F401 — registers SectorPack with Base metadata
-import app.models.retrohunt     # noqa: F401 — registers RetroHuntSignal with Base metadata
-import app.models.knowledge      # noqa: F401 — registers KnowledgeArticle with Base metadata
-import app.models.asset_surface  # noqa: F401 — registers AssetSurfaceCase with Base metadata
-import app.models.simulation     # noqa: F401 — registers simulation persistence tables
-import app.models.cve            # noqa: F401 — registers CVE intelligence tables
-import app.models.auth           # noqa: F401 — registers native user/session tables
-import app.models.evidence_graph  # noqa: F401 — registers evidence-to-detection graph tables
-import app.models.threat_radar   # noqa: F401 — registers Threat Radar product-security CTI tables
-import app.models.threat_hunting  # noqa: F401 — registers hypothesis-driven threat hunt tables
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_radar
+import app.models.sector_packs as _sector_packs_models  # noqa: F401 — register Base metadata
+import app.models.retrohunt as _retrohunt_models  # noqa: F401 — register Base metadata
+import app.models.knowledge as _knowledge_models  # noqa: F401 — register Base metadata
+import app.models.asset_surface as _asset_surface_models  # noqa: F401 — register Base metadata
+import app.models.simulation as _simulation_models  # noqa: F401 — register Base metadata
+import app.models.cve as _cve_models  # noqa: F401 — register Base metadata
+import app.models.auth as _auth_models  # noqa: F401 — register Base metadata
+import app.models.evidence_graph as _evidence_graph_models  # noqa: F401 — register Base metadata
+import app.models.threat_radar as _threat_radar_models  # noqa: F401 — register Base metadata
+import app.models.threat_hunting as _threat_hunting_models  # noqa: F401 — register Base metadata
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -30,6 +33,24 @@ from app.services.startup_status import startup_status
 
 configure_logging()
 logger = logging.getLogger(__name__)
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+
+def _safe_request_id(value: str | None) -> str:
+    """Accept a compact log-safe caller ID or generate a new correlation ID."""
+    candidate = value or ""
+    if candidate == candidate.strip() and _REQUEST_ID_RE.fullmatch(candidate):
+        return candidate
+    return str(uuid4())
+
+
+def _observability_route(request: Request) -> str:
+    """Return a bounded route template, never a caller-controlled raw path."""
+    route = request.scope.get("route")
+    path = getattr(route, "path_format", None) or getattr(route, "path", None)
+    if not isinstance(path, str) or not path.startswith("/"):
+        return "<unmatched>"
+    return path[:512]
 
 
 async def _startup_ioc_sync() -> None:
@@ -83,6 +104,7 @@ async def _startup_reference_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    reference_task: asyncio.Task[None] | None = None
     startup_status.set_platform_message("Preparing API, database tables, and authentication bootstrap.")
     if not settings.auth_enabled:
         logger.warning(
@@ -97,9 +119,26 @@ async def lifespan(app: FastAPI):
             logger.info("Bootstrapped native admin user from AUTH_BOOTSTRAP_ADMIN_* settings")
 
     startup_status.set_platform_message("API is serving requests while reference ingestion completes in the background.")
-    asyncio.create_task(_startup_reference_jobs())
+    reference_task = asyncio.create_task(
+        _startup_reference_jobs(),
+        name="adversarygraph-reference-ingestion",
+    )
+    # Retain a strong reference for observability and deterministic shutdown.
+    app.state.reference_jobs_task = reference_task
 
-    yield
+    try:
+        yield
+    finally:
+        if reference_task is not None:
+            if not reference_task.done():
+                reference_task.cancel()
+            try:
+                await reference_task
+            except asyncio.CancelledError:
+                logger.info("Background reference ingestion stopped during API shutdown")
+            except Exception:
+                logger.exception("Background reference ingestion ended unexpectedly")
+        app.state.reference_jobs_task = None
 
 
 app = FastAPI(
@@ -112,17 +151,18 @@ app = FastAPI(
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request_id = _safe_request_id(request.headers.get("X-Request-ID"))
     started = time.perf_counter()
     client = request.client.host if request.client else "-"
     try:
         response = await call_next(request)
     except Exception as exc:
+        route_path = _observability_route(request)
         duration_ms = round(monotonic_ms_since(started), 2)
         observability_state.record_request(
             request_id=request_id,
             method=request.method,
-            path=request.url.path,
+            path=route_path,
             status_code=500,
             duration_ms=duration_ms,
             client=client,
@@ -131,18 +171,19 @@ async def request_logging_middleware(request: Request, call_next):
         logger.exception(
             "request failed method=%s path=%s duration_ms=%s error=%r",
             request.method,
-            request.url.path,
+            route_path,
             duration_ms,
             exc,
             extra={"request_id": request_id},
         )
         raise
+    route_path = _observability_route(request)
     duration_ms = round(monotonic_ms_since(started), 2)
     response.headers["X-Request-ID"] = request_id
     observability_state.record_request(
         request_id=request_id,
         method=request.method,
-        path=request.url.path,
+        path=route_path,
         status_code=response.status_code,
         duration_ms=duration_ms,
         client=client,
@@ -151,7 +192,7 @@ async def request_logging_middleware(request: Request, call_next):
     log(
         "request complete method=%s path=%s status=%s duration_ms=%s",
         request.method,
-        request.url.path,
+        route_path,
         response.status_code,
         duration_ms,
         extra={"request_id": request_id},
@@ -202,8 +243,32 @@ app.include_router(observability.router, prefix="/api", dependencies=_auth_requi
 app.include_router(troubleshooting.router, prefix="/api", dependencies=_auth_required)
 app.include_router(threat_radar.router, prefix="/api", dependencies=_auth_required)
 app.include_router(threat_hunting.router, prefix="/api", dependencies=_auth_required)
+app.include_router(threat_hunting_ai.router, prefix="/api", dependencies=_auth_required)
 
 
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": app.version, "startup": startup_status.snapshot()}
+
+
+@app.get("/api/ready")
+async def readiness():
+    """Database-backed readiness check; liveness remains ``/api/health``."""
+    try:
+        async with async_session_factory() as session:
+            await asyncio.wait_for(session.execute(text("SELECT 1")), timeout=3.0)
+    except Exception as exc:
+        logger.warning("readiness check failed: %s", type(exc).__name__)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "version": app.version,
+                "checks": {"database": "error"},
+            },
+        )
+    return {
+        "status": "ready",
+        "version": app.version,
+        "checks": {"database": "ok"},
+    }

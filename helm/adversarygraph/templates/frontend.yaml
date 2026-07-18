@@ -17,25 +17,62 @@ spec:
         {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: {{ include "adversarygraph.componentImage" .Values.frontend.image | quote }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: API_UPSTREAM
+              value: "{{ include "adversarygraph.fullname" . }}-api:{{ .Values.api.service.port }}"
+            - name: RATE_LIMIT_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adversarygraph.secretName" . }}
+                  key: RATE_LIMIT_PROXY_SECRET
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           readinessProbe:
             httpGet:
               path: /
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

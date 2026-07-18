@@ -10,8 +10,8 @@ Relevant links:
 
 - GitHub repository: https://github.com/anpa1200/adversarygraph
 - Official documentation: https://1200km.com/adversarygraph-docs/
-- Getting started guide: https://1200km.com/adversarygraph-docs/get-started.html
-- Capabilities overview: https://1200km.com/adversarygraph-docs/capabilities.html
+- Getting started guide: https://1200km.com/adversarygraph-docs/getting-started/
+- Capabilities overview: https://1200km.com/adversarygraph-docs/capabilities/
 - Public project page: https://1200km.com/adversarygraph/
 - 1200km research ecosystem: https://1200km.com/
 - Medium publication: https://medium.com/@1200km

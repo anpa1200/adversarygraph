@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { layersApi } from '@/api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 interface Props {
   techniqueIds: string[];
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export function SaveLayerModal({ techniqueIds, domain, onClose, onSaved }: Props) {
+  const canManageIntel = useHasPermission('manage_intel');
   const [name, setName] = useState('');
   const qc = useQueryClient();
 
@@ -39,11 +42,15 @@ export function SaveLayerModal({ techniqueIds, domain, onClose, onSaved }: Props
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && name.trim()) save.mutate(); }}
+          onKeyDown={e => { if (canManageIntel && e.key === 'Enter' && name.trim()) save.mutate(); }}
           placeholder="e.g. MuddyWater CTI analysis"
           maxLength={255}
           className="w-full bg-gray-800 text-sm text-gray-200 px-3 py-2 rounded border border-gray-600 focus:border-mitre-accent outline-none mb-4"
         />
+
+        {!canManageIntel && (
+          <div className="mb-4"><PermissionNotice permission="manage_intel" action="save named layers" compact /></div>
+        )}
 
         {save.isError && (
           <p className="text-xs text-red-400 mb-3">Save failed — try again.</p>
@@ -58,7 +65,7 @@ export function SaveLayerModal({ techniqueIds, domain, onClose, onSaved }: Props
           </button>
           <button
             onClick={() => save.mutate()}
-            disabled={!name.trim() || save.isPending}
+            disabled={!canManageIntel || !name.trim() || save.isPending}
             className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-4 py-1.5 rounded font-medium transition-colors"
           >
             {save.isPending ? 'Saving…' : 'Save'}

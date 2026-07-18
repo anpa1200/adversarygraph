@@ -9,7 +9,7 @@ from app.models.attack import (
     AptGroup, AptGroupTechnique, AptGroupCampaign,
     AttackVersion, Campaign, CampaignTechnique, Technique,
 )
-from app.services.auth import TeamUser, analyst, current_user
+from app.services.auth import TeamUser, current_user, require_permission
 from app.services.comparison_explainer import (
     Subject,
     TechniqueContext,
@@ -17,6 +17,7 @@ from app.services.comparison_explainer import (
 )
 
 router = APIRouter(prefix="/apt", tags=["ATT&CK Group Profiles"])
+run_apt_analysis = require_permission("run_analysis")
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -258,9 +259,9 @@ async def compare_ttps(
     req: CompareRequest,
     domain: str = Query("enterprise-attack"),
     version: str | None = Query(None),
-    top_n: int = Query(10, le=50),
+    top_n: int = Query(10, ge=1, le=50),
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_apt_analysis),
 ):
     """
     Given a list of ATT&CK technique IDs, return the top-N group profiles
@@ -309,7 +310,7 @@ async def explain_ttp_overlap(
     domain: str = Query("enterprise-attack"),
     version: str | None = Query(None),
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_apt_analysis),
 ):
     """Return an auditable, caveated explanation for a supplied TTP-overlap result."""
     ver_id = await _resolve_version_id(session, domain, version)
@@ -504,9 +505,9 @@ async def compare_campaigns(
     req: CampaignCompareRequest,
     domain: str = Query("enterprise-attack"),
     version: str | None = Query(None),
-    top_n: int = Query(20, le=100),
+    top_n: int = Query(20, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(run_apt_analysis),
 ):
     """
     Given a list of technique IDs, rank every ATT&CK campaign (DB 1)

@@ -19,6 +19,12 @@ go/no-go criteria, and a complete v5-to-v6 reviewer handoff. See the
 [case studies](docs/case-studies-v6.md), and
 [screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
+The current `main` branch also contains the post-v6.0.0 work listed under
+[Unreleased](CHANGELOG.md): the governed Threat Hunting workspace and AI
+assistant, finer-grained authorization, safer file and network boundaries,
+frontend resilience work, and deployment/validation hardening. These changes
+are not part of the existing `v6.0.0` tag until a new immutable release is cut.
+
 ## What It Does
 
 AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerability context, malware-analysis leads, asset inventories, and validation telemetry into reviewed ATT&CK/ATLAS mappings and detection engineering work items.
@@ -27,7 +33,7 @@ Core capabilities:
 
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
 - Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, and PSIRT/Hunt/IR/Detection workflows.
-- Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, and auditable Threat Radar handoff. Query examples are copied or exported for analyst-controlled execution; this module does not claim an external SIEM run without connector evidence.
+- Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, auditable Threat Radar handoff, and governed AI suggestions from stored reports or hunt context. Report-to-hunt AI on current `main` supports Enterprise ATT&CK. The assistant can draft hypotheses, plans, queries, finding summaries, and outcome summaries, but it does not create evidence, execute a query, or make lifecycle and disposition decisions.
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
 - IOC Library, IOC Investigation pivots, VirusTotal lookup, and feed management.
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
@@ -40,7 +46,7 @@ Core capabilities:
 
 ## What It Is Not
 
-AdversaryGraph is not a managed SaaS, not a multi-tenant security platform, and not a replacement for analyst validation. LLM mappings, generated detections, actor similarity, malware-analysis findings, and synthetic SIEM telemetry are analyst-assistance outputs.
+AdversaryGraph is not a managed SaaS, not a multi-tenant security platform, and not a replacement for analyst validation. LLM mappings, Threat Hunting AI suggestions, generated detections, actor similarity, malware-analysis findings, and synthetic SIEM telemetry are analyst-assistance outputs, not evidence or autonomous decisions.
 
 Attack Simulation has two different telemetry modes:
 
@@ -83,7 +89,8 @@ docker compose up -d --build
 Open:
 
 - Frontend: `http://localhost:3000`
-- API health: `http://localhost:3000/api/health`
+- API liveness: `http://localhost:3000/api/health`
+- API readiness: `http://localhost:3000/api/ready`
 - API docs: `http://localhost:3000/docs`
 
 The default Compose deployment binds the public UI and reference docs to localhost and keeps the API, Redis, malware-analysis service, and lab fixtures on the internal Compose network.
@@ -163,6 +170,9 @@ The main platform stores structured CTI and workflow data. Malware samples are h
 - Use TLS, authentication, restricted networks, backups, monitoring, and secret rotation for controlled production deployments.
 - Native username/password login, role-based access, user management, and trusted reverse-proxy auth are documented in [Authentication and User Management](docs/authentication-and-users.md).
 - Treat LLM output and generated detections as untrusted until reviewed.
+- Threat Hunting AI defaults to the operator-configured local provider. Cloud use
+  is disabled by default and requires operator enablement plus explicit analyst
+  acknowledgment; `TLP:AMBER+STRICT` and `TLP:RED` inputs remain local-only.
 - Use only approved lab targets for Attack Simulation.
 - Keep malware runtime execution in disposable isolated profiles only.
 
@@ -174,7 +184,10 @@ Local validation commands:
 ./scripts/release-readiness.sh --full
 ```
 
-CI runs backend tests, backend lint, backend SAST, backend dependency audit, frontend build, frontend dependency audit, Docker Compose validation, Docker image builds, container scanning, secret scanning, and version consistency checks.
+CI runs backend tests, backend lint, backend SAST, backend dependency audit,
+frontend build and dependency audit, the Anomaly Detection Atlas documentation
+build and dependency audit, Docker Compose and Helm validation, Docker image
+builds, container scanning, secret scanning, and version consistency checks.
 
 ## License
 

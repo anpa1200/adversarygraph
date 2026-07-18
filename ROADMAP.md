@@ -4,6 +4,30 @@ Current release: **v6.0.0** — Operational evidence and controlled self-hosted 
 
 For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md).
 
+## Unreleased — Governed Hunting and Platform Hardening
+
+- [x] Add a hypothesis-driven Threat Hunting workspace with query revisions,
+  evidence-preserving findings, reviewed dispositions, exports, and Threat
+  Radar handoff
+- [x] Add advisory AI assistance at planning, query, findings, and outcome
+  stages, including source-bound report-to-hypothesis generation
+- [x] Enforce explicit backend and frontend permissions for analysis, uploads,
+  intelligence, detections, feeds, exports, simulation, SIEM, auth, users, and
+  audit access
+- [x] Add decoded upload/response limits, bounded request schemas, safer archive
+  extraction, SSRF-hardened outbound fetches, and explicit residual egress
+  controls
+- [x] Harden authentication, MFA enrollment, session administration, rate-limit
+  identity, request observability, and background-task shutdown behavior
+- [x] Improve frontend authentication recovery, request cancellation, stale
+  response suppression, safe external links, route-level permissions, error
+  handling, persistence, deep links, and route code splitting
+- [x] Harden Compose, Helm, container users and filesystems, production preflight,
+  CI action pinning, tag-only publication, backup/restore, seven-image release
+  publication, and ten-image stack scanning
+- [ ] Assign the next semantic version, update release artifacts, and cut a new
+  immutable tag after the complete release gate passes
+
 ## v6.0 — Operational Evidence and Production Readiness
 
 - [x] Consolidate and correct the complete v5 release history
@@ -64,7 +88,7 @@ For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md)
 - [x] Add route-level integration tests for high-risk mutating Operations and Pipeline endpoints
 - [x] Publish reviewer guide and demo dataset
 - [x] Document Starlette transitive dependency version and CVE status
-- [ ] Raise backend coverage gate from the current conservative baseline
+- [x] Raise the backend coverage gate to an enforced 60% baseline
 - [ ] Add frontend unit tests for Attack Simulation and Asset Surface critical flows
 
 ## v5.1 — Review Hardening

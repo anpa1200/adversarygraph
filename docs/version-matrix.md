@@ -11,11 +11,16 @@ This file is the canonical reference for AdversaryGraph release history and feat
 | Theme | Operational evidence and controlled self-hosted production readiness |
 | Status | Stable for controlled self-hosted deployments |
 
+`main` may contain the post-v6 changes recorded under
+[Unreleased](../CHANGELOG.md). In this file, “current release” and the feature
+gate labels refer to the immutable `v6.0.0` tag unless a row explicitly says
+otherwise.
+
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
-| v6.0.0 | Operational Evidence and Production Readiness | Reproducible release gate, corrected v5 history, current screenshot evidence, local case studies, deployment go/no-go criteria, version-derived UI metadata, and reviewer handoff material |
+| v6.0.0 | Operational Evidence and Production Readiness | Reproducible release gate, corrected v5 history, tagged screenshot evidence, local case studies, deployment go/no-go criteria, version-derived UI metadata, and reviewer handoff material |
 | v5.9.1 | JA3/JA4+ Network Fingerprint IOC Workflows | JA3/JA3S/JA4/JA4S/JA4H/JA4L/JA4LS/JA4X/JA4SSH/JA4T IOC types, report-text extraction, normalized import tagging, IOC Library filtering, IOC Detail context, IOC node detail support, and IOC Investigation pivots |
 | v5.9.0 | EMB3D and Threat Radar Asset Workflows | EMB3D API/service/UI/documentation, unified product/component/dependency/asset modeling, full asset-inventory import templates, product-security sample datasets, and Threat Radar asset review pages |
 | v5.8.0 | Threat Radar Product-Security CTI | Threat Radar module, scored CVE/KEV/PoC/zero-day/supplier/package/hardware/customer/internal telemetry signals, product/component/dependency exposure mappings, case graph, sanitized legal-sensitive evidence handling, PSIRT/Hunt/IR/Detection queues, watchlists, and generated reports |

@@ -10,6 +10,8 @@ import {
 } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { EntityGraph } from '@/components/ui/graph';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const NODE_LABELS: Record<EvidenceGraphNodeType, string> = {
   evidence: 'Evidence',
@@ -51,6 +53,8 @@ const NEXT_STEP: Partial<Record<EvidenceGraphNodeType, { node_type: EvidenceGrap
 
 export function EvidenceGraph() {
   const qc = useQueryClient();
+  const canManage = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
   const [tab, setTab] = useState<'overview' | 'path' | 'gaps' | 'review'>('overview');
   const [selectedId, setSelectedId] = useState<string>('');
   const [filters, setFilters] = useState({ search: '', node_type: '', review_status: '', technique_id: '', onlyGaps: false, onlyAi: false });
@@ -98,6 +102,7 @@ export function EvidenceGraph() {
   const flowEdges = useMemo<Edge[]>(() => buildFlowEdges(edges), [edges]);
 
   const createEvidence = () => {
+    if (!canManage) return;
     const title = newEvidenceTitle.trim();
     if (!title) return;
     createNode.mutate({
@@ -115,6 +120,7 @@ export function EvidenceGraph() {
   };
 
   const createNextStep = async (node: EvidenceGraphNode) => {
+    if (!canManage) return;
     const spec = NEXT_STEP[node.node_type];
     if (!spec) return;
     const created = await createNode.mutateAsync({
@@ -152,11 +158,11 @@ export function EvidenceGraph() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(['json', 'markdown', 'csv', 'evidence-pack'] as const).map(format => (
+                  {canExport ? (['json', 'markdown', 'csv', 'evidence-pack'] as const).map(format => (
                     <a key={format} href={evidenceGraphApi.exportUrl(format)} className="secondary-action px-3 py-2 text-xs">
                       Export {format}
                     </a>
-                  ))}
+                  )) : <PermissionNotice permission="export_data" action="export evidence graph data" compact />}
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
@@ -203,11 +209,13 @@ export function EvidenceGraph() {
                 <div className="rounded border border-gray-800 bg-gray-950/40 p-4">
                   <h3 className="font-semibold text-white">Manual Evidence</h3>
                   <p className="mt-1 text-xs leading-5 text-gray-500">Create a draft evidence node from analyst notes. This does not auto-approve any claim.</p>
-                  <input className="field mt-3 w-full" placeholder="Evidence title" value={newEvidenceTitle} onChange={event => setNewEvidenceTitle(event.target.value)} />
-                  <textarea className="field mt-2 h-32 w-full" placeholder="Raw excerpt or analyst note" value={newEvidenceText} onChange={event => setNewEvidenceText(event.target.value)} />
-                  <button className="primary-action mt-3 w-full" disabled={!newEvidenceTitle.trim() || createNode.isPending} onClick={createEvidence}>
-                    Create Evidence
-                  </button>
+                  {canManage ? <>
+                    <input className="field mt-3 w-full" placeholder="Evidence title" value={newEvidenceTitle} onChange={event => setNewEvidenceTitle(event.target.value)} />
+                    <textarea className="field mt-2 h-32 w-full" placeholder="Raw excerpt or analyst note" value={newEvidenceText} onChange={event => setNewEvidenceText(event.target.value)} />
+                    <button className="primary-action mt-3 w-full" disabled={!newEvidenceTitle.trim() || createNode.isPending} onClick={createEvidence}>
+                      Create Evidence
+                    </button>
+                  </> : <div className="mt-3"><PermissionNotice permission="manage_intel" action="create or review evidence graph records" compact /></div>}
                   <WarningBox />
                 </div>
               </section>
@@ -215,12 +223,13 @@ export function EvidenceGraph() {
 
             {tab === 'path' && <PathView paths={paths.data?.paths ?? graph.data?.grouped_paths?.map(item => item.steps) ?? []} />}
             {tab === 'gaps' && <GapTable gaps={visibleGaps} onSelect={setSelectedId} />}
-            {tab === 'review' && <ReviewQueue nodes={reviewQueue} onSelect={setSelectedId} onApprove={id => updateNode.mutate({ id, body: { review_status: 'analyst_reviewed' } })} onReject={id => updateNode.mutate({ id, body: { review_status: 'rejected' } })} />}
+            {tab === 'review' && <ReviewQueue canManage={canManage} nodes={reviewQueue} onSelect={setSelectedId} onApprove={id => updateNode.mutate({ id, body: { review_status: 'analyst_reviewed' } })} onReject={id => updateNode.mutate({ id, body: { review_status: 'rejected' } })} />}
           </main>
 
           <aside className="space-y-4">
             <NodeDetail
               node={selected}
+              canManage={canManage}
               edges={edges.filter(edge => selected && (edge.source_node_id === selected.id || edge.target_node_id === selected.id))}
               onApprove={node => updateNode.mutate({ id: node.id, body: { review_status: 'analyst_reviewed' } })}
               onReject={node => updateNode.mutate({ id: node.id, body: { review_status: 'rejected' } })}
@@ -359,7 +368,7 @@ function GapTable({ gaps, onSelect }: { gaps: EvidenceGraphGap[]; onSelect: (id:
   );
 }
 
-function ReviewQueue({ nodes, onSelect, onApprove, onReject }: { nodes: EvidenceGraphNode[]; onSelect: (id: string) => void; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+function ReviewQueue({ canManage, nodes, onSelect, onApprove, onReject }: { canManage: boolean; nodes: EvidenceGraphNode[]; onSelect: (id: string) => void; onApprove: (id: string) => void; onReject: (id: string) => void }) {
   return (
     <section className="rounded border border-gray-800 bg-gray-950/40 p-4">
       <h3 className="font-semibold text-white">Analyst Review Queue</h3>
@@ -372,10 +381,10 @@ function ReviewQueue({ nodes, onSelect, onApprove, onReject }: { nodes: Evidence
               <span className="block text-sm font-semibold text-white">{node.title}</span>
               <span className="text-xs text-gray-400">{node.review_status}{node.ai_generated ? ' · AI-generated draft' : ''}</span>
             </button>
-            <div className="mt-3 flex gap-2">
+            {canManage && <div className="mt-3 flex gap-2">
               <button className="secondary-action px-3 py-1 text-xs" onClick={() => onApprove(node.id)}>Approve</button>
               <button className="secondary-action px-3 py-1 text-xs text-red-200" onClick={() => onReject(node.id)}>Reject</button>
-            </div>
+            </div>}
           </div>
         ))}
       </div>
@@ -383,7 +392,7 @@ function ReviewQueue({ nodes, onSelect, onApprove, onReject }: { nodes: Evidence
   );
 }
 
-function NodeDetail({ node, edges, onApprove, onReject, onNeedsEvidence, onNext }: { node?: EvidenceGraphNode; edges: EvidenceGraphEdge[]; onApprove: (node: EvidenceGraphNode) => void; onReject: (node: EvidenceGraphNode) => void; onNeedsEvidence: (node: EvidenceGraphNode) => void; onNext: (node: EvidenceGraphNode) => void }) {
+function NodeDetail({ node, edges, canManage, onApprove, onReject, onNeedsEvidence, onNext }: { node?: EvidenceGraphNode; edges: EvidenceGraphEdge[]; canManage: boolean; onApprove: (node: EvidenceGraphNode) => void; onReject: (node: EvidenceGraphNode) => void; onNeedsEvidence: (node: EvidenceGraphNode) => void; onNext: (node: EvidenceGraphNode) => void }) {
   if (!node) {
     return <section className="rounded border border-gray-800 bg-gray-950/40 p-4 text-sm text-gray-500">Select a graph node to inspect details.</section>;
   }
@@ -406,12 +415,12 @@ function NodeDetail({ node, edges, onApprove, onReject, onNeedsEvidence, onNext 
       </div>
       <TextBlock title="Description" text={node.description || node.statement || node.behavior_description || node.detection_hypothesis || node.mapping_rationale || node.raw_excerpt || node.normalized_summary} />
       <TextBlock title="Evidence excerpt" text={node.raw_excerpt} />
-      <div className="mt-4 flex flex-wrap gap-2">
+      {canManage ? <div className="mt-4 flex flex-wrap gap-2">
         <button className="secondary-action px-3 py-2 text-xs" onClick={() => onApprove(node)}>Approve</button>
         <button className="secondary-action px-3 py-2 text-xs" onClick={() => onNeedsEvidence(node)}>Needs evidence</button>
         <button className="secondary-action px-3 py-2 text-xs text-red-200" onClick={() => onReject(node)}>Reject</button>
         {NEXT_STEP[node.node_type] && <button className="primary-action px-3 py-2 text-xs" onClick={() => onNext(node)}>Create next-step node</button>}
-      </div>
+      </div> : <div className="mt-4"><PermissionNotice permission="manage_intel" action="review this node or create its next reasoning step" compact /></div>}
       <div className="mt-5">
         <h4 className="text-xs font-semibold uppercase text-gray-500">Linked edges</h4>
         <div className="mt-2 space-y-1">

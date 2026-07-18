@@ -6,7 +6,8 @@ AdversaryGraph now exposes an operator-facing observability layer for controlled
 
 | Surface | Path | Purpose |
 |---|---|---|
-| Health | `/api/health` | Lightweight liveness/version check |
+| Liveness | `/api/health` | Lightweight process/version check; does not prove database readiness |
+| Readiness | `/api/ready` | Deployment acceptance check; returns `503` when the database is unavailable |
 | Self-test | `/api/system/selftest` | Database, Redis, ATT&CK/ATLAS, IOC feed, CVE feed, CPU, memory, and provider-key readiness |
 | Dashboard | `/observability` | UI view for API uptime, request counts, latency, recent traces, top routes, log tail, and metrics preview |
 | Summary API | `/api/observability/summary` | JSON snapshot for dashboards and automation |
@@ -27,7 +28,11 @@ The API log records:
 - request duration
 - exception class for failed requests
 
-The observability log-tail endpoint redacts common credential markers such as `token=`, `api_key=`, `password=`, `secret=`, and `Authorization:`.
+Console and rotating-file handlers redact common credential markers such as
+`token=`, `api_key=`, `password=`, `secret=`, URL userinfo, and
+`Authorization:` before persistence. The observability log-tail endpoint
+reapplies the same filter as defense in depth. Redaction is best effort; do not
+log request bodies or credentials.
 
 Do not treat this as a full SIEM audit replacement. It is an operator dashboard and troubleshooting layer. Security-relevant user actions are still stored through the platform audit-event model where implemented.
 
@@ -53,6 +58,15 @@ Run the local security validation wrapper:
 make security-scan
 ```
 
+That target is a best-effort developer check and reports optional host tools as
+skipped. A release requires the fail-closed variant:
+
+```bash
+make security-scan-strict
+# or, as part of the complete gate:
+./scripts/release-readiness.sh --full
+```
+
 The wrapper runs:
 
 | Check | Tool |
@@ -61,32 +75,40 @@ The wrapper runs:
 | Backend SAST | `bandit` at medium/high severity |
 | Backend dependency audit | `pip-audit` |
 | Frontend dependency audit | `npm audit --audit-level=high` |
-| Secret scan | `gitleaks` when installed |
-| Compose validation | `docker compose config --quiet` |
-| Container scan | `trivy` when installed |
+| Anomaly docs dependency audit | `npm audit --audit-level=high` |
+| Anomaly docs production validation | `npm run build` with broken-link and anchor failures enabled |
+| Secret scan | `gitleaks` |
+| Deployment validation | default/development/production Docker Compose render and Helm lint/render |
+| Container scan | `trivy` across seven custom images (PostgreSQL, backend, frontend, MalwareGraph, both attack-lab images, and anomaly docs) plus pinned Redis, BusyBox, and docs Nginx |
 
-CI installs and runs the required hosted tools for dependency audit, SAST, secret scanning, container scanning, Docker builds, frontend build, backend tests, and version consistency.
+Strict mode requires Bandit, pip-audit, Gitleaks, Trivy, and Helm to be present.
+Missing tools or failed checks stop the command. CI installs and runs the
+required hosted tools for dependency audit, SAST, secret scanning, container
+scanning, Docker builds, frontend and anomaly-docs builds, backend tests, and
+version consistency.
 
-## Latest Local Validation Snapshot
+## Release Evidence Record
 
-The current local validation run completed with:
+Store the dated output or CI URL for each release. At minimum it must show:
 
-- `ruff check .`: passed
-- `bandit -q -r app -x "tests,app/data" --severity-level medium --confidence-level medium`: passed
-- `pip-audit -r requirements.txt`: no known vulnerabilities found
-- `npm audit --audit-level=high`: found 0 vulnerabilities
-- `docker compose config --quiet`: passed
-- focused backend route tests: 22 passed
-- frontend production build: passed
+- version consistency and patch hygiene passed;
+- backend lint/tests, Bandit, and pip-audit passed;
+- frontend lint/build/browser tests and npm audit passed;
+- Gitleaks passed with reviewed configuration;
+- all three Compose configurations and the Helm chart rendered successfully;
+- all seven release images and all three pinned stack images passed the
+  configured Trivy gate.
 
-Local host note: `gitleaks` and `trivy` were not installed on the workstation during this run, so the local wrapper skipped those two host-tool checks. GitHub Actions still runs gitleaks and Trivy in CI.
+Do not present best-effort output containing `SKIP` as release evidence.
 
 ## Validation Examples
 
 Recommended evidence to capture for release validation:
 
 1. `/observability` dashboard showing request volume, status counters, traces, and log tail.
-2. `/troubleshooting` self-test popup or self-test report.
+2. Authenticated `/troubleshooting` self-test popup or report showing
+   `status=ok` rather than `degraded`; a readiness-only fallback is not full
+   self-test evidence.
 3. Attack Simulation real-time telemetry page after a lab scenario.
 4. SIEM forwarding result after sending lab telemetry.
 5. CVE Library feed status and correlation detail.

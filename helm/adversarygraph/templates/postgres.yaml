@@ -18,11 +18,17 @@ spec:
         {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
+      automountServiceAccountToken: false
       securityContext:
-        fsGroup: 999
+        runAsUser: 70
+        runAsGroup: 70
+        runAsNonRoot: true
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
-          image: {{ .Values.postgresql.image | quote }}
+          image: {{ include "adversarygraph.componentImage" .Values.postgresql.image | quote }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: POSTGRES_DB
@@ -31,6 +37,8 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ include "adversarygraph.secretName" . }}, key: DB_USER}}
             - name: POSTGRES_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ include "adversarygraph.secretName" . }}, key: DB_PASS}}
+            - name: PGHOST
+              value: /var/run/postgresql
           ports:
             - name: postgres
               containerPort: 5432
@@ -39,17 +47,34 @@ spec:
               command: ["sh", "-lc", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-lc", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 20
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: postgres-run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "adversarygraph.fullname" . }}-postgres
+        - name: postgres-run
+          emptyDir:
+            medium: Memory
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

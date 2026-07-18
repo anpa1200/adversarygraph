@@ -16,12 +16,14 @@ from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelations
 from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
-from app.services.auth import TeamUser, admin, audit
+from app.services.auth import TeamUser, audit, require_permission
 from app.services.cve_intel import ensure_cve_sources
 from app.services.startup_status import startup_status
 from app.services.taxonomy_migration import normalize_existing_taxonomy, taxonomy_normalization_status
 
 router = APIRouter(prefix="/system", tags=["System"])
+manage_taxonomy = require_permission("manage_feeds")
+run_selftest = require_permission("run_analysis")
 
 
 class SelfTestCheck(BaseModel):
@@ -45,12 +47,12 @@ async def startup() -> dict[str, Any]:
 
 
 @router.get("/taxonomy/status")
-async def taxonomy_status(db=Depends(get_session), _: TeamUser = Depends(admin)) -> dict[str, Any]:
+async def taxonomy_status(db=Depends(get_session), _: TeamUser = Depends(manage_taxonomy)) -> dict[str, Any]:
     return await taxonomy_normalization_status(db)
 
 
 @router.post("/taxonomy/normalize")
-async def normalize_taxonomy(db=Depends(get_session), user: TeamUser = Depends(admin)) -> dict[str, Any]:
+async def normalize_taxonomy(db=Depends(get_session), user: TeamUser = Depends(manage_taxonomy)) -> dict[str, Any]:
     result = await normalize_existing_taxonomy(db, commit=False)
     await audit(
         db,
@@ -356,7 +358,7 @@ def _taxonomy_normalization_check(status: dict[str, Any]) -> SelfTestCheck:
     return _check_status(
         "taxonomy_normalized",
         "warning",
-        "Some sampled rows still contain raw unnamespaced tags. Run /api/system/taxonomy/normalize as admin.",
+        "Some sampled rows still contain raw unnamespaced tags. Use Normalize Taxonomy in the self-test or run /api/system/taxonomy/normalize with manage_feeds permission.",
         status,
     )
 
@@ -387,7 +389,7 @@ async def _service_health_check(name: str, base_url: str, *, timeout_seconds: fl
     url = base_url.rstrip("/") + "/health"
     started = perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds, trust_env=False) as client:
             response = await client.get(url)
         duration_ms = int((perf_counter() - started) * 1000)
         ok = 200 <= response.status_code < 300
@@ -416,7 +418,7 @@ async def _malwaregraph_health_check() -> SelfTestCheck:
     url = settings.malwaregraph_url.rstrip("/") + "/api/health"
     started = perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=3.0, trust_env=False) as client:
             response = await client.get(url, headers={"X-API-Key": settings.malwaregraph_api_key} if settings.malwaregraph_api_key else None)
         duration_ms = int((perf_counter() - started) * 1000)
         ok = 200 <= response.status_code < 300
@@ -571,7 +573,7 @@ def _memory_usage_details(
 
 
 @router.get("/selftest", response_model=SelfTestResult)
-async def selftest() -> SelfTestResult:
+async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
     started = perf_counter()
     checks: list[SelfTestCheck] = []
 
@@ -699,7 +701,8 @@ async def selftest() -> SelfTestResult:
                 _check_status(
                     "ioc_sync",
                     "degraded" if degraded_sources else "ok",
-                    f"IOC sources checked: {len(enabled_sources)} enabled, {sum(item['indicator_count'] for item in sources)} indicators stored.",
+                    f"IOC sources checked: {len(enabled_sources)} enabled, "
+                    f"{sum(int(item.get('indicator_count') or 0) for item in sources)} indicators stored.",
                     {
                         "auto_full_sync_on_startup": settings.auto_ioc_full_sync_on_startup,
                         "startup_sync_days": max(1, min(7, settings.auto_threatfox_sync_days)),

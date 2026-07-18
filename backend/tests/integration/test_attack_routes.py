@@ -8,6 +8,7 @@ for these particular tests since we verify the API shape and error responses).
 import pytest
 from httpx import AsyncClient
 
+import main as main_module
 from main import app
 
 
@@ -22,6 +23,55 @@ async def test_health(client: AsyncClient):
     assert body["version"] == app.version
     assert body["startup"]["status"] in {"starting", "ready", "degraded"}
     assert body["startup"]["reference_ingestion"]["status"] in {"pending", "running", "complete", "failed"}
+
+
+@pytest.mark.asyncio
+async def test_readiness_checks_database(client: AsyncClient, monkeypatch):
+    class Session:
+        async def execute(self, _statement):
+            return None
+
+    class Factory:
+        async def __aenter__(self):
+            return Session()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(main_module, "async_session_factory", Factory)
+    response = await client.get("/api/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "version": app.version,
+        "checks": {"database": "ok"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_readiness_failure_is_stable_and_does_not_leak_detail(client: AsyncClient, monkeypatch):
+    class Session:
+        async def execute(self, _statement):
+            raise RuntimeError("postgresql://user:secret@db/internal")
+
+    class Factory:
+        async def __aenter__(self):
+            return Session()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(main_module, "async_session_factory", Factory)
+    response = await client.get("/api/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "version": app.version,
+        "checks": {"database": "error"},
+    }
+    assert "secret" not in response.text
 
 
 @pytest.mark.asyncio
@@ -138,20 +188,32 @@ async def test_compare_no_data_returns_404(client: AsyncClient):
 # ── /api/sync/status ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_sync_status_shape(client: AsyncClient):
+async def test_sync_status_shape(client: AsyncClient, monkeypatch):
+    from app.services.attck.version_checker import DomainStatus
+
+    async def fake_statuses():
+        return [
+            DomainStatus(
+                domain="enterprise-attack",
+                current_version="19.1",
+                latest_version="19.1",
+                needs_update=False,
+                last_ingested="2026-07-18T00:00:00+00:00",
+            )
+        ]
+
+    monkeypatch.setattr("app.api.routes.sync._get_attck_statuses", fake_statuses)
     resp = await client.get("/api/sync/status")
-    # May return 500 without psycopg2/GitHub — acceptable in unit-test environment
-    assert resp.status_code in (200, 500)
-    if resp.status_code == 200:
-        body = resp.json()
-        assert "sources" in body
-        assert "domains" in body
-        assert "any_updates_needed" in body
-        for domain_info in body["domains"]:
-            assert domain_info["source"] == "mitre-attack"
-            assert "domain" in domain_info
-            assert "current_version" in domain_info
-            assert "content" in domain_info
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "sources" in body
+    assert "domains" in body
+    assert "any_updates_needed" in body
+    for domain_info in body["domains"]:
+        assert domain_info["source"] == "mitre-attack"
+        assert "domain" in domain_info
+        assert "current_version" in domain_info
+        assert "content" in domain_info
 
 
 @pytest.mark.asyncio

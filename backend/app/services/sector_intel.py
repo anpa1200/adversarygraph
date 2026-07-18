@@ -361,9 +361,9 @@ async def rank_actor_relevance(session: AsyncSession, params: RelevanceInput) ->
         )
     )
     observations_by_actor: dict[str, list[ActorIntelObservation]] = defaultdict(list)
-    for obs in obs_rows.scalars().all():
-        key = obs.actor_attack_id or obs.actor_name
-        observations_by_actor[key].append(obs)
+    for observation in obs_rows.scalars().all():
+        key = observation.actor_attack_id or observation.actor_name
+        observations_by_actor[key].append(observation)
 
     campaign_rows = await session.execute(
         select(AptGroup.attack_id, Campaign.name, Campaign.attack_id, Campaign.first_seen, Campaign.last_seen)
@@ -380,10 +380,13 @@ async def rank_actor_relevance(session: AsyncSession, params: RelevanceInput) ->
 
     results = []
     for group in groups:
-        obs = observations_by_actor.get(group.attack_id, []) + observations_by_actor.get(group.name, [])
+        actor_observations = (
+            observations_by_actor.get(group.attack_id, [])
+            + observations_by_actor.get(group.name, [])
+        )
         sector_hits = [
             o
-            for o in obs
+            for o in actor_observations
             if o.observation_type == "sector"
             and any(_sector_matches(sector, o.normalized_value) for sector in sectors)
         ]
@@ -391,12 +394,16 @@ async def rank_actor_relevance(session: AsyncSession, params: RelevanceInput) ->
         broad_sector_hits = [o for o in sector_hits if o.normalized_value == "private sector"]
         region_hits = [
             o
-            for o in obs
+            for o in actor_observations
             if regions
             and o.observation_type == "region"
             and any(region in o.normalized_value or o.normalized_value in region for region in regions)
         ]
-        motivation_hits = [o for o in obs if o.observation_type == "motivation"]
+        motivation_hits = [
+            observation
+            for observation in actor_observations
+            if observation.observation_type == "motivation"
+        ]
         campaigns = campaigns_by_actor.get(group.attack_id, [])
         recent_campaigns = [c for c in campaigns if c["seen"] and c["seen"] >= cutoff]
         strict_sector_hits = sector_hits if sectors == {"private sector"} else direct_sector_hits
@@ -416,7 +423,7 @@ async def rank_actor_relevance(session: AsyncSession, params: RelevanceInput) ->
                 for usage in (group.technique_usages or [])
                 if usage.technique and (not tech_filter or _technique_matches(usage, tech_filter))
             ],
-            key=lambda item: item["attack_id"],
+            key=lambda item: str(item["attack_id"]),
         )
         if tech_filter and not techniques:
             continue

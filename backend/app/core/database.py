@@ -33,6 +33,11 @@ async def get_session() -> AsyncSession:
 
 
 async def create_tables() -> None:
+    """Create and upgrade schema objects in one transaction.
+
+    Referential-integrity preflights deliberately abort on legacy orphan rows;
+    startup never deletes or rewrites investigation data implicitly.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS created VARCHAR(50) DEFAULT ''"))
@@ -41,12 +46,30 @@ async def create_tables() -> None:
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS contributors JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS external_references JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE analysis_sessions ADD COLUMN IF NOT EXISTS source_text TEXT DEFAULT ''"))
+        await conn.execute(text(
+            "ALTER TABLE analysis_sessions ADD COLUMN IF NOT EXISTS "
+            "tlp VARCHAR(20) DEFAULT 'TLP:AMBER+STRICT'"
+        ))
+        await conn.execute(text("""
+            UPDATE analysis_sessions
+            SET tlp = 'TLP:AMBER+STRICT'
+            WHERE tlp IS NULL
+               OR tlp NOT IN ('TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED')
+        """))
+        await conn.execute(text(
+            "ALTER TABLE analysis_sessions ALTER COLUMN tlp "
+            "SET DEFAULT 'TLP:AMBER+STRICT'"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE analysis_sessions ALTER COLUMN tlp SET NOT NULL"
+        ))
         await conn.execute(text("ALTER TABLE ioc_indicators ADD COLUMN IF NOT EXISTS technique_ids JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local'"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS external_subject VARCHAR(255) DEFAULT ''"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT false"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_secret TEXT DEFAULT ''"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_auth_sessions_revoked_at ON auth_sessions (revoked_at)"))
         await conn.execute(text("ALTER TABLE threat_hunt_requests ALTER COLUMN case_id DROP NOT NULL"))
         await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''"))
         await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT ''"))
@@ -88,6 +111,94 @@ async def create_tables() -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_source_type ON threat_hunt_requests (source_type)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_disposition ON threat_hunt_requests (disposition)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_archived_at ON threat_hunt_requests (archived_at)"))
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM threat_hunt_ai_assistance AS assistance
+                    WHERE assistance.source_session_id IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM analysis_sessions AS source
+                          WHERE source.id = assistance.source_session_id
+                      )
+                ) THEN
+                    RAISE EXCEPTION USING MESSAGE =
+                        'Legacy orphan threat_hunt_ai_assistance rows block the source-session foreign key; back up and repair them before startup';
+                END IF;
+            END
+            $$
+        """))
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'threat_hunt_ai_assistance'::regclass
+                      AND contype = 'f'
+                      AND pg_get_constraintdef(oid) LIKE
+                          'FOREIGN KEY (source_session_id) REFERENCES analysis_sessions(id)%'
+                ) THEN
+                    ALTER TABLE threat_hunt_ai_assistance
+                    ADD CONSTRAINT fk_threat_hunt_ai_source_session
+                    FOREIGN KEY (source_session_id) REFERENCES analysis_sessions(id)
+                    ON DELETE SET NULL;
+                END IF;
+            END
+            $$
+        """))
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM evidence_graph_edges AS edge
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM evidence_graph_nodes AS node
+                        WHERE node.id = edge.source_node_id
+                    )
+                       OR NOT EXISTS (
+                        SELECT 1 FROM evidence_graph_nodes AS node
+                        WHERE node.id = edge.target_node_id
+                    )
+                ) THEN
+                    RAISE EXCEPTION USING MESSAGE =
+                        'Legacy orphan evidence_graph_edges rows block graph foreign keys; back up and repair them before startup';
+                END IF;
+            END
+            $$
+        """))
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'evidence_graph_edges'::regclass
+                      AND contype = 'f'
+                      AND pg_get_constraintdef(oid) LIKE
+                          'FOREIGN KEY (source_node_id) REFERENCES evidence_graph_nodes(id)%'
+                ) THEN
+                    ALTER TABLE evidence_graph_edges
+                    ADD CONSTRAINT fk_evidence_graph_edge_source
+                    FOREIGN KEY (source_node_id) REFERENCES evidence_graph_nodes(id)
+                    ON DELETE CASCADE;
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'evidence_graph_edges'::regclass
+                      AND contype = 'f'
+                      AND pg_get_constraintdef(oid) LIKE
+                          'FOREIGN KEY (target_node_id) REFERENCES evidence_graph_nodes(id)%'
+                ) THEN
+                    ALTER TABLE evidence_graph_edges
+                    ADD CONSTRAINT fk_evidence_graph_edge_target
+                    FOREIGN KEY (target_node_id) REFERENCES evidence_graph_nodes(id)
+                    ON DELETE CASCADE;
+                END IF;
+            END
+            $$
+        """))
         await conn.execute(text("""
             UPDATE threat_hunt_requests
             SET priority = 'P2 Medium'

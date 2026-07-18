@@ -30,7 +30,7 @@ class SimulationSiemDestination(Base):
     username: Mapped[str] = mapped_column(String(256), default="")
     header_name: Mapped[str] = mapped_column(String(80), default="")
     connection_mode: Mapped[str] = mapped_column(String(30), default="auto")
-    allow_http_fallback: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_http_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
     payload_format: Mapped[str] = mapped_column(String(30), default="raw_lines")
     source: Mapped[str] = mapped_column(String(30), default="access")
     last_status: Mapped[int] = mapped_column(Integer, default=0)

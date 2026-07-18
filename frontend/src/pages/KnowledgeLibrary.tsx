@@ -7,6 +7,8 @@ import { knowledgeApi } from '@/api/client';
 import type { KnowledgeArticle, KnowledgeArticleDetail } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import clsx from 'clsx';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const CATEGORIES: Array<{ id: string; label: string; icon: string }> = [
   { id: '',               label: 'All',           icon: '◉' },
@@ -143,6 +145,7 @@ function ArticleCard({ article, onClick }: { article: KnowledgeArticle; onClick:
 
 export function KnowledgeLibrary() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
   const [params] = useSearchParams();
   const [category, setCategory] = useState('');
   const [q, setQ] = useState('');
@@ -197,18 +200,19 @@ export function KnowledgeLibrary() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {!canManageFeeds && <PermissionNotice permission="manage_feeds" action="seed or re-seed the knowledge library" compact />}
               {seed.data && (
                 <span className="text-xs text-green-400">
                   ✓ Seeded {seed.data.inserted} new / {seed.data.skipped} existing
                 </span>
               )}
-              <button
+              {canManageFeeds && <button
                 onClick={() => seed.mutate()}
                 disabled={seed.isPending}
                 className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:border-gray-400 disabled:opacity-50"
               >
                 {seed.isPending ? 'Seeding…' : stats?.total === 0 ? 'Seed from files' : 'Re-seed'}
-              </button>
+              </button>}
             </div>
           </div>
 
@@ -252,13 +256,13 @@ export function KnowledgeLibrary() {
               <div className="text-sm text-gray-500 mb-4">
                 Click "Seed from files" above to load 39 NVIDIA intelligence articles.
               </div>
-              <button
+              {canManageFeeds ? <button
                 onClick={() => seed.mutate()}
                 disabled={seed.isPending}
                 className="primary"
               >
                 {seed.isPending ? 'Seeding…' : 'Seed Knowledge Base'}
-              </button>
+              </button> : <PermissionNotice permission="manage_feeds" action="seed the knowledge library" compact />}
             </div>
           )}
 

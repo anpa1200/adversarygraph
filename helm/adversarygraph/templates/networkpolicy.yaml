@@ -1,0 +1,199 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-frontend
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes: [Ingress]
+  ingress:
+    # Ingress controllers are frequently deployed in another namespace and
+    # use cluster-specific labels. Expose only the frontend HTTP port here;
+    # installations can replace or supplement this rule in a policy overlay.
+    - ports:
+        - protocol: TCP
+          port: 8080
+    {{- with .Values.networkPolicy.extraIngress.frontend }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-api
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+    {{- with .Values.networkPolicy.extraIngress.api }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-worker
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes: [Ingress]
+  ingress:
+    {{- with .Values.networkPolicy.extraIngress.worker }}
+    {{- toYaml . | nindent 4 }}
+    {{- else }} []
+    {{- end }}
+{{- if .Values.beat.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-beat
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: beat
+  policyTypes: [Ingress]
+  ingress:
+    {{- with .Values.networkPolicy.extraIngress.beat }}
+    {{- toYaml . | nindent 4 }}
+    {{- else }} []
+    {{- end }}
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-postgres
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: worker
+        {{- if .Values.beat.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: beat
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- with .Values.networkPolicy.extraIngress.postgres }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-redis
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: worker
+        {{- if .Values.beat.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: beat
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- with .Values.networkPolicy.extraIngress.redis }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if .Values.malwaregraph.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-malwaregraph
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: malwaregraph
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: malwaregraph
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              {{- include "adversarygraph.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: worker
+      ports:
+        - protocol: TCP
+          port: 8100
+    {{- with .Values.networkPolicy.extraIngress.malwaregraph }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

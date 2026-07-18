@@ -6,6 +6,8 @@ import type { ActorRelevance } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { useAppStore } from '@/store';
 import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const windows = [
   { label: 'Quarter', days: 90 },
@@ -15,6 +17,7 @@ const windows = [
 
 export function SectorIntel() {
   const qc = useQueryClient();
+  const canManageFeeds = useHasPermission('manage_feeds');
   const navigate = useNavigate();
   const { replaceTechniques, setOverlayGroup } = useAppStore();
   const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
@@ -110,9 +113,13 @@ export function SectorIntel() {
                 <p className="text-sm text-gray-400">
                   Sync MISP Galaxy threat-actor metadata into the local database. This adds evidence-backed actor sector, victim geography, origin, motivation, refs, and alias observations.
                 </p>
-                <button onClick={() => sync.mutate()} disabled={sync.isPending} className="primary">
-                  {sync.isPending ? 'Syncing...' : 'Sync MISP Galaxy'}
-                </button>
+                {canManageFeeds ? (
+                  <button onClick={() => sync.mutate()} disabled={sync.isPending} className="primary">
+                    {sync.isPending ? 'Syncing...' : 'Sync MISP Galaxy'}
+                  </button>
+                ) : (
+                  <PermissionNotice permission="manage_feeds" action="synchronize MISP Galaxy intelligence" compact />
+                )}
                 {sync.data && (
                   <div className="rounded border border-green-900 bg-green-950/30 p-3 text-xs text-green-300">
                     Synced {sync.data.actors} actors, matched {sync.data.matched} to ATT&amp;CK groups, stored {sync.data.observations} observations.

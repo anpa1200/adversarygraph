@@ -8,7 +8,9 @@ import { MatrixDiff } from '@/components/Compare/MatrixDiff';
 import { TacticBreakdown } from '@/components/Compare/TacticBreakdown';
 import { Header } from '@/components/Layout/Header';
 import { TechniqueModal } from '@/components/TechniqueModal';
+import { PermissionNotice } from '@/components/PermissionNotice';
 import { GroupCompare } from '@/pages/GroupCompare';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 import type { CampaignResult, CompareResult, OverlapExplanationRequest, ReportSession, TechniqueUsage } from '@/types/attack';
 import { TtpLink } from '@/utils/ctiLinks';
 
@@ -20,6 +22,9 @@ export function Compare() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canManageIntel = useHasPermission('manage_intel');
+  const canExportData = useHasPermission('export_data');
 
   const [techModalId, setTechModalId] = useState<string | null>(null);
 
@@ -150,7 +155,7 @@ export function Compare() {
 
   // PDF export (groups mode)
   const exportPdf = async () => {
-    if (!activeGroup) return;
+    if (!activeGroup || !canRunAnalysis || !canExportData) return;
     setExporting(true);
     try {
       const fd = new FormData();
@@ -191,7 +196,8 @@ export function Compare() {
                      r.group_attack_id.toLowerCase().includes(reportSearch.toLowerCase())
   );
 
-  const canRun = selectedTechniques.size > 0;
+  const hasSelectedTechniques = selectedTechniques.size > 0;
+  const canRun = hasSelectedTechniques && canRunAnalysis;
 
   const buildTacticDistribution = (
     subjectAIds: Set<string>,
@@ -212,7 +218,7 @@ export function Compare() {
   };
 
   const explainGroupOverlap = () => {
-    if (!activeGroup || !groupDetail) return;
+    if (!canRunAnalysis || !activeGroup || !groupDetail) return;
     const subjectAIds = new Set(Array.from(selectedTechniques));
     const subjectBIds = new Set(groupDetail.techniques.map(item => item.attack_id));
     const sharedIds = new Set(activeGroup.shared_techniques);
@@ -228,7 +234,7 @@ export function Compare() {
   };
 
   const explainCampaignOverlap = () => {
-    if (!activeCampaign || !activeCampaignDetail) return;
+    if (!canRunAnalysis || !activeCampaign || !activeCampaignDetail) return;
     const subjectAIds = new Set(Array.from(selectedTechniques));
     const subjectBIds = new Set(activeCampaignDetail.techniques.map(item => item.attack_id));
     const sharedIds = new Set(activeCampaign.shared_techniques);
@@ -244,7 +250,7 @@ export function Compare() {
   };
 
   const explainReportOverlap = () => {
-    if (!selectedReport || !activeReportMatch || !activeReportResult || !activeReportGroupDetail) return;
+    if (!canRunAnalysis || !selectedReport || !activeReportMatch || !activeReportResult || !activeReportGroupDetail) return;
     const subjectAIds = new Set(activeReportResult.techniques.map(item => item.attack_id));
     const subjectBIds = new Set(activeReportGroupDetail.techniques.map((item: TechniqueUsage) => item.attack_id));
     const sharedIds = new Set(activeReportMatch.shared_techniques);
@@ -316,7 +322,7 @@ export function Compare() {
         {/* Run button */}
         {mode !== 'reports' && mode !== 'group-vs-group' && (
           <div className="flex items-center gap-2 shrink-0">
-            {!canRun && (
+            {!hasSelectedTechniques && (
               <button
                 onClick={() => navigate('/navigator')}
                 className="text-xs text-gray-400 hover:text-white border border-gray-700 px-3 py-1.5 rounded transition-colors"
@@ -340,6 +346,12 @@ export function Compare() {
         )}
       </div>
 
+      {!canRunAnalysis && mode !== 'group-vs-group' && (
+        <div className="shrink-0 border-b border-gray-800 px-6 py-2">
+          <PermissionNotice permission="run_analysis" action="run comparisons or generate overlap explanations" compact />
+        </div>
+      )}
+
       {mode === 'group-vs-group' && (
         <div className="min-h-0 flex-1 overflow-hidden">
           <GroupCompare embedded />
@@ -349,7 +361,12 @@ export function Compare() {
       {/* ── Mode: Groups ──────────────────────────────────────────────────── */}
       {mode === 'groups' && (
         groupResults.length === 0 ? (
-          <EmptyState canRun={canRun} onRun={() => compareGroupsMutation.mutate()} isPending={compareGroupsMutation.isPending} />
+          <EmptyState
+            hasSelection={hasSelectedTechniques}
+            canRun={canRun}
+            onRun={() => compareGroupsMutation.mutate()}
+            isPending={compareGroupsMutation.isPending}
+          />
         ) : (
           <div className="flex flex-1 overflow-hidden">
             {/* Rankings */}
@@ -414,13 +431,21 @@ export function Compare() {
                       >
                         Overlay in Navigator
                       </button>
-                      <button onClick={exportPdf} disabled={exporting}
+                      <button
+                        onClick={exportPdf}
+                        disabled={exporting || !canRunAnalysis || !canExportData}
+                        title={!canExportData ? 'export_data permission required' : !canRunAnalysis ? 'run_analysis permission required' : undefined}
                         className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
                       >
                         {exporting ? 'Exporting…' : '↓ PDF Report'}
                       </button>
                     </div>
                   </div>
+                  {!canExportData && (
+                    <div className="mt-3">
+                      <PermissionNotice permission="export_data" action="download comparison reports" compact />
+                    </div>
+                  )}
                   <div className="flex gap-5 mt-4 text-xs border-b border-gray-800 pb-0">
                     {([
                       ['overview', 'Overview'],
@@ -458,7 +483,7 @@ export function Compare() {
                       markdown={explanation}
                       isPending={explainOverlapMutation.isPending}
                       onGenerate={explainGroupOverlap}
-                      disabled={!groupDetail}
+                      disabled={!groupDetail || !canRunAnalysis}
                     />
                   )}
                 </div>
@@ -471,7 +496,13 @@ export function Compare() {
       {/* ── Mode: Campaigns (DB 1) ─────────────────────────────────────────── */}
       {mode === 'campaigns' && (
         campaignResults.length === 0 ? (
-          <EmptyState canRun={canRun} onRun={() => compareCampaignsMutation.mutate()} isPending={compareCampaignsMutation.isPending} label="Compare your TTPs against MITRE named campaigns (operations)." />
+          <EmptyState
+            hasSelection={hasSelectedTechniques}
+            canRun={canRun}
+            onRun={() => compareCampaignsMutation.mutate()}
+            isPending={compareCampaignsMutation.isPending}
+            label="Compare your TTPs against MITRE named campaigns (operations)."
+          />
         ) : (
           <div className="flex flex-1 overflow-hidden">
             {/* Campaign rankings */}
@@ -555,7 +586,7 @@ export function Compare() {
                     markdown={explanation}
                     isPending={explainOverlapMutation.isPending}
                     onGenerate={explainCampaignOverlap}
-                    disabled={!activeCampaignDetail}
+                    disabled={!activeCampaignDetail || !canRunAnalysis}
                     compact
                   />
                 </div>
@@ -615,6 +646,21 @@ export function Compare() {
               <div className="text-[10px] text-gray-600">
                 Click a report to compare its TTP mapping against known group profiles.
               </div>
+              {!canRunAnalysis && (
+                <div className="mt-3">
+                  <PermissionNotice permission="run_analysis" action="compare stored reports with actor profiles" compact />
+                </div>
+              )}
+              {!canExportData && (
+                <div className="mt-2">
+                  <PermissionNotice permission="export_data" action="download stored report PDFs" compact />
+                </div>
+              )}
+              {!canManageIntel && (
+                <div className="mt-2">
+                  <PermissionNotice permission="manage_intel" action="remove stored reports" compact />
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {sessionsLoading ? (
@@ -638,12 +684,14 @@ export function Compare() {
                     {/* Clickable session body */}
                     <button
                       onClick={() => {
+                        if (!canRunAnalysis) return;
                         setSelectedReport(s);
                         setReportMatches([]);
                         setActiveReportMatch(null);
                         setExplanation('');
                         compareReportMutation.mutate(s.session_id);
                       }}
+                      disabled={!canRunAnalysis}
                       className="w-full text-left px-4 pt-3 pb-1"
                     >
                       <div className="text-sm font-medium text-white truncate">
@@ -658,25 +706,29 @@ export function Compare() {
                     </button>
                     {/* Action buttons */}
                     <div className="flex items-center gap-2 px-4 pb-2 pt-1">
-                      <a
-                        href={exportApi.analysisUrl(s.session_id)}
-                        download={`analysis-${s.session_id.slice(0, 8)}.pdf`}
-                        onClick={e => e.stopPropagation()}
-                        className="text-[10px] text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-2 py-0.5 rounded transition-colors"
-                      >
-                        ↓ PDF
-                      </a>
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (window.confirm('Delete this report session?')) {
-                            deleteReportMutation.mutate(s.session_id);
-                          }
-                        }}
-                        className="text-[10px] text-red-500 hover:text-red-300 border border-red-900 hover:border-red-700 px-2 py-0.5 rounded transition-colors"
-                      >
-                        ✕ Remove
-                      </button>
+                      {canExportData && (
+                        <a
+                          href={exportApi.analysisUrl(s.session_id)}
+                          download={`analysis-${s.session_id.slice(0, 8)}.pdf`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-[10px] text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-2 py-0.5 rounded transition-colors"
+                        >
+                          ↓ PDF
+                        </a>
+                      )}
+                      {canManageIntel && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (window.confirm('Delete this report session?')) {
+                              deleteReportMutation.mutate(s.session_id);
+                            }
+                          }}
+                          className="text-[10px] text-red-500 hover:text-red-300 border border-red-900 hover:border-red-700 px-2 py-0.5 rounded transition-colors"
+                        >
+                          ✕ Remove
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -781,7 +833,7 @@ export function Compare() {
                         markdown={explanation}
                         isPending={explainOverlapMutation.isPending}
                         onGenerate={explainReportOverlap}
-                        disabled={!activeReportResult || !activeReportGroupDetail}
+                        disabled={!activeReportResult || !activeReportGroupDetail || !canRunAnalysis}
                       />
                     </div>
                   </div>
@@ -798,9 +850,9 @@ export function Compare() {
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function EmptyState({
-  canRun, onRun, isPending, label,
+  hasSelection, canRun, onRun, isPending, label,
 }: {
-  canRun: boolean; onRun: () => void; isPending: boolean; label?: string;
+  hasSelection: boolean; canRun: boolean; onRun: () => void; isPending: boolean; label?: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -850,13 +902,13 @@ function EmptyState({
           </div>
         </div>
 
-      {canRun ? (
+      {hasSelection ? (
         <>
           <p className="text-gray-400 mb-4">{label ?? 'Run comparison to rank group profiles against your TTP selection.'}</p>
-          <button onClick={onRun} disabled={isPending}
+          <button onClick={onRun} disabled={!canRun || isPending}
             className="bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-6 py-2 rounded font-medium text-sm transition-colors"
           >
-            {isPending ? 'Comparing…' : 'Run comparison'}
+            {isPending ? 'Comparing…' : canRun ? 'Run comparison' : 'Analysis permission required'}
           </button>
         </>
       ) : (

@@ -6,6 +6,7 @@ import { threatHuntingApi } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { HuntDashboard, type HuntFilters } from '@/components/ThreatHunting/HuntDashboard';
 import { HuntWorkspace } from '@/components/ThreatHunting/HuntWorkspace';
+import type { HuntAIAssistantMode } from '@/components/ThreatHunting/HuntAIAssistant';
 import { hasRole, useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppStore } from '@/store';
 
@@ -25,6 +26,10 @@ export function ThreatHunting() {
   const { selectedTechniques } = useAppStore();
   const currentUser = useCurrentUser();
   const canReadHunts = hasRole(currentUser.data, 'analyst');
+  const requestedAssistant = searchParams.get('assistant') || '';
+  const initialAssistantMode: HuntAIAssistantMode | '' = ['hypothesis', 'plan', 'query', 'findings', 'outcome'].includes(requestedAssistant)
+    ? requestedAssistant as HuntAIAssistantMode
+    : '';
 
   const templates = useQuery({
     queryKey: ['threat-hunting-templates'],
@@ -85,6 +90,8 @@ export function ThreatHunting() {
           initialTechniques={initialTechniques}
           initialSourceType={searchParams.get('source') || ''}
           initialSourceRef={searchParams.get('source_ref') || ''}
+          initialSourceSessionId={searchParams.get('source_session_id') || ''}
+          initialAssistantMode={initialAssistantMode}
           defaultOwner={currentUser.data?.name ?? ''}
           loading={Boolean(huntId) && detail.isLoading}
           loadError={errorMessage(detail.error)}

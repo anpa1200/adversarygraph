@@ -88,7 +88,9 @@ POST /api/system/taxonomy/normalize
 
 The self-test includes `taxonomy_normalized`; a degraded result means legacy
 free-text tags still exist and should be migrated. The migration preserves
-original source labels in raw metadata fields where practical.
+original source labels in raw metadata fields where practical. A user with
+`manage_feeds` can select **Normalize Taxonomy** in the self-test popup or call
+the `POST` endpoint above, then rerun the self-test and require `status=ok`.
 
 All AI-assisted extraction prompts include the same taxonomy instruction block:
 new reports, asset inventories, IOC enrichment, attack simulation planning, and

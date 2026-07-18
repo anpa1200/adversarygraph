@@ -5,51 +5,51 @@ import { useQuery } from '@tanstack/react-query';
 import { authApi, healthApi, type StartupStatus } from '@/api/client';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { AppFooter } from '@/components/Layout/AppFooter';
-import { Navigator } from '@/pages/Navigator';
-import { APTLibrary } from '@/pages/APTLibrary';
-import { Analyze } from '@/pages/Analyze';
-import { Compare } from '@/pages/Compare';
-import { Discover } from '@/pages/Discover';
-import { InvestigationReport } from '@/pages/InvestigationReport';
-import { Operations } from '@/pages/Operations';
-import { Pipeline } from '@/pages/Pipeline';
-import { Examples } from '@/pages/Examples';
-import { SectorIntel } from '@/pages/SectorIntel';
-import { AssetSurface } from '@/pages/AssetSurface';
-import { KnowledgeLibrary } from '@/pages/KnowledgeLibrary';
-import SectorPacks from '@/pages/SectorPacks';
-import RetroHunt from '@/pages/RetroHunt';
-import { Troubleshooting } from '@/pages/Troubleshooting';
-import { VirusTotalLookup } from '@/pages/VirusTotalLookup';
-import { IOCInvestigation } from '@/pages/IOCInvestigation';
-import { IOCLibrary } from '@/pages/IOCLibrary';
-import { IOCDetail } from '@/pages/IOCDetail';
-import { IOCNodeDetail } from '@/pages/IOCNodeDetail';
-import { FeedsManagement } from '@/pages/FeedsManagement';
-import { MalwareAnalysis } from '@/pages/MalwareAnalysis';
-import { StringAnalyzer } from '@/pages/StringAnalyzer';
-import { MalwareUnpacker } from '@/pages/MalwareUnpacker';
-import { DynamicAnalysis } from '@/pages/DynamicAnalysis';
 import { SystemSelfTestPopup } from '@/components/SystemSelfTestPopup';
 import { GlobalErrorPopup } from '@/components/GlobalErrorPopup';
 import { RoleGate } from '@/components/RoleGate';
 import { UIProvider } from '@/components/ui/provider';
 import { Login } from '@/pages/Login';
-import { AdminUsers } from '@/pages/AdminUsers';
 import { AuthGuide } from '@/pages/AuthGuide';
-import { Observability } from '@/pages/Observability';
-import { EvidenceGraph } from '@/pages/EvidenceGraph';
-import { HelpGuide } from '@/pages/HelpGuide';
-import { Statistics } from '@/pages/Statistics';
-import { LinkedReport } from '@/pages/LinkedReport';
-import { ReportsResearch } from '@/pages/ReportsResearch';
-import { ThreatRadar } from '@/pages/ThreatRadar';
-import { ThreatRadarAssets } from '@/pages/ThreatRadarAssets';
-import { Emb3d } from '@/pages/Emb3d';
 
+const Discover = lazy(() => import('@/pages/Discover').then(module => ({ default: module.Discover })));
+const Navigator = lazy(() => import('@/pages/Navigator').then(module => ({ default: module.Navigator })));
+const APTLibrary = lazy(() => import('@/pages/APTLibrary').then(module => ({ default: module.APTLibrary })));
+const Analyze = lazy(() => import('@/pages/Analyze').then(module => ({ default: module.Analyze })));
+const LinkedReport = lazy(() => import('@/pages/LinkedReport').then(module => ({ default: module.LinkedReport })));
+const ReportsResearch = lazy(() => import('@/pages/ReportsResearch').then(module => ({ default: module.ReportsResearch })));
+const Compare = lazy(() => import('@/pages/Compare').then(module => ({ default: module.Compare })));
+const InvestigationReport = lazy(() => import('@/pages/InvestigationReport').then(module => ({ default: module.InvestigationReport })));
+const Operations = lazy(() => import('@/pages/Operations').then(module => ({ default: module.Operations })));
+const Pipeline = lazy(() => import('@/pages/Pipeline').then(module => ({ default: module.Pipeline })));
+const Observability = lazy(() => import('@/pages/Observability').then(module => ({ default: module.Observability })));
+const Statistics = lazy(() => import('@/pages/Statistics').then(module => ({ default: module.Statistics })));
+const ThreatRadar = lazy(() => import('@/pages/ThreatRadar').then(module => ({ default: module.ThreatRadar })));
+const ThreatRadarAssets = lazy(() => import('@/pages/ThreatRadarAssets').then(module => ({ default: module.ThreatRadarAssets })));
+const EvidenceGraph = lazy(() => import('@/pages/EvidenceGraph').then(module => ({ default: module.EvidenceGraph })));
+const AdminUsers = lazy(() => import('@/pages/AdminUsers').then(module => ({ default: module.AdminUsers })));
+const HelpGuide = lazy(() => import('@/pages/HelpGuide').then(module => ({ default: module.HelpGuide })));
+const Examples = lazy(() => import('@/pages/Examples').then(module => ({ default: module.Examples })));
+const SectorIntel = lazy(() => import('@/pages/SectorIntel').then(module => ({ default: module.SectorIntel })));
+const AssetSurface = lazy(() => import('@/pages/AssetSurface').then(module => ({ default: module.AssetSurface })));
+const Emb3d = lazy(() => import('@/pages/Emb3d').then(module => ({ default: module.Emb3d })));
 const AttackSimulation = lazy(() => import('@/pages/AttackSimulation').then(module => ({ default: module.AttackSimulation })));
+const SectorPacks = lazy(() => import('@/pages/SectorPacks'));
+const KnowledgeLibrary = lazy(() => import('@/pages/KnowledgeLibrary').then(module => ({ default: module.KnowledgeLibrary })));
+const RetroHunt = lazy(() => import('@/pages/RetroHunt'));
+const IOCLibrary = lazy(() => import('@/pages/IOCLibrary').then(module => ({ default: module.IOCLibrary })));
+const IOCDetail = lazy(() => import('@/pages/IOCDetail').then(module => ({ default: module.IOCDetail })));
+const IOCNodeDetail = lazy(() => import('@/pages/IOCNodeDetail').then(module => ({ default: module.IOCNodeDetail })));
 const CVEIntelligence = lazy(() => import('@/pages/CVEIntelligence').then(module => ({ default: module.CVEIntelligence })));
+const FeedsManagement = lazy(() => import('@/pages/FeedsManagement').then(module => ({ default: module.FeedsManagement })));
+const MalwareAnalysis = lazy(() => import('@/pages/MalwareAnalysis').then(module => ({ default: module.MalwareAnalysis })));
+const MalwareUnpacker = lazy(() => import('@/pages/MalwareUnpacker').then(module => ({ default: module.MalwareUnpacker })));
+const StringAnalyzer = lazy(() => import('@/pages/StringAnalyzer').then(module => ({ default: module.StringAnalyzer })));
 const Debugger = lazy(() => import('@/pages/Debugger').then(module => ({ default: module.Debugger })));
+const DynamicAnalysis = lazy(() => import('@/pages/DynamicAnalysis').then(module => ({ default: module.DynamicAnalysis })));
+const Troubleshooting = lazy(() => import('@/pages/Troubleshooting').then(module => ({ default: module.Troubleshooting })));
+const VirusTotalLookup = lazy(() => import('@/pages/VirusTotalLookup').then(module => ({ default: module.VirusTotalLookup })));
+const IOCInvestigation = lazy(() => import('@/pages/IOCInvestigation').then(module => ({ default: module.IOCInvestigation })));
 const ThreatHunting = lazy(() => import('@/pages/ThreatHunting').then(module => ({ default: module.ThreatHunting })));
 
 const queryClient = new QueryClient({
@@ -89,6 +89,10 @@ function AppShell() {
     return <StartupSplash error={status.error instanceof Error ? status.error : null} onRetry={() => status.refetch()} />;
   }
 
+  if (status.data?.auth_enabled && me.isLoading) {
+    return <SessionSplash />;
+  }
+
   if (status.data?.auth_enabled && me.isError) {
     return <Login status={status.data} />;
   }
@@ -111,26 +115,26 @@ function AppShell() {
                   <Route path="/reports-research" element={<ReportsResearch />} />
                   <Route path="/compare" element={<Compare />} />
                   <Route path="/group-compare" element={<Navigate to="/compare?mode=group-vs-group" replace />} />
-                  <Route path="/report" element={<InvestigationReport />} />
-                  <Route path="/operations" element={<RoleGate require="analyst"><Operations /></RoleGate>} />
-                  <Route path="/pipeline" element={<RoleGate require="analyst"><Pipeline /></RoleGate>} />
-                  <Route path="/observability" element={<RoleGate require="analyst"><Observability /></RoleGate>} />
-                  <Route path="/statistics" element={<RoleGate require="analyst"><Statistics /></RoleGate>} />
-                  <Route path="/threat-radar" element={<RoleGate require="analyst"><ThreatRadar /></RoleGate>} />
-                  <Route path="/threat-radar/assets" element={<RoleGate require="analyst"><ThreatRadarAssets /></RoleGate>} />
-                  <Route path="/threat-hunting" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
-                  <Route path="/threat-hunting/new" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
-                  <Route path="/threat-hunting/:huntId" element={<RoleGate require="analyst"><ThreatHunting /></RoleGate>} />
-                  <Route path="/evidence-graph" element={<RoleGate require="analyst"><EvidenceGraph /></RoleGate>} />
-                  <Route path="/admin" element={<RoleGate require="admin"><AdminUsers /></RoleGate>} />
+                  <Route path="/report" element={<RoleGate permission="run_analysis"><InvestigationReport /></RoleGate>} />
+                  <Route path="/operations" element={<RoleGate permission="run_analysis"><Operations /></RoleGate>} />
+                  <Route path="/pipeline" element={<RoleGate permission="run_analysis"><Pipeline /></RoleGate>} />
+                  <Route path="/observability" element={<RoleGate permission="view_audit"><Observability /></RoleGate>} />
+                  <Route path="/statistics" element={<RoleGate permission="run_analysis"><Statistics /></RoleGate>} />
+                  <Route path="/threat-radar" element={<RoleGate permission="run_analysis"><ThreatRadar /></RoleGate>} />
+                  <Route path="/threat-radar/assets" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
+                  <Route path="/threat-hunting" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/new" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/:huntId" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/evidence-graph" element={<RoleGate permission="run_analysis"><EvidenceGraph /></RoleGate>} />
+                  <Route path="/admin" element={<RoleGate anyPermission={['manage_users', 'manage_auth', 'view_audit']}><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />
                   <Route path="/help" element={<HelpGuide />} />
                   <Route path="/examples" element={<Examples />} />
                   <Route path="/sector-intel" element={<SectorIntel />} />
-                  <Route path="/asset-surface" element={<AssetSurface />} />
-                  <Route path="/emb3d" element={<RoleGate require="analyst"><Emb3d /></RoleGate>} />
-                  <Route path="/attack-simulation" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
-                  <Route path="/attack-simulation/:simulationId" element={<RoleGate require="analyst"><AttackSimulation /></RoleGate>} />
+                  <Route path="/asset-surface" element={<RoleGate permission="run_analysis"><AssetSurface /></RoleGate>} />
+                  <Route path="/emb3d" element={<RoleGate permission="run_analysis"><Emb3d /></RoleGate>} />
+                  <Route path="/attack-simulation" element={<RoleGate permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
+                  <Route path="/attack-simulation/:simulationId" element={<RoleGate permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
                   <Route path="/external-simulation" element={<Navigate to="/attack-simulation" replace />} />
                   <Route path="/sector-packs" element={<SectorPacks />} />
                   <Route path="/knowledge" element={<KnowledgeLibrary />} />
@@ -139,16 +143,17 @@ function AppShell() {
                   <Route path="/ioc-library/:id" element={<IOCDetail />} />
                   <Route path="/ioc-node" element={<IOCNodeDetail />} />
                   <Route path="/cve" element={<CVEIntelligence />} />
-                  <Route path="/feeds" element={<RoleGate require="analyst"><FeedsManagement /></RoleGate>} />
-                  <Route path="/malware-analysis" element={<MalwareAnalysis />} />
-                  <Route path="/malware-unpacker" element={<MalwareUnpacker />} />
-                  <Route path="/string-analyzer" element={<StringAnalyzer />} />
-                  <Route path="/malware-debug" element={<Debugger />} />
-                  <Route path="/debugger" element={<Debugger />} />
-                  <Route path="/dynamic-analysis" element={<DynamicAnalysis />} />
+                  <Route path="/feeds" element={<RoleGate permission="manage_feeds"><FeedsManagement /></RoleGate>} />
+                  <Route path="/malware-analysis" element={<RoleGate permission="run_analysis"><MalwareAnalysis /></RoleGate>} />
+                  <Route path="/malware-unpacker" element={<RoleGate permission="run_analysis"><MalwareUnpacker /></RoleGate>} />
+                  <Route path="/string-analyzer" element={<RoleGate permission="run_analysis"><StringAnalyzer /></RoleGate>} />
+                  <Route path="/malware-debug" element={<RoleGate permission="run_analysis"><Debugger /></RoleGate>} />
+                  <Route path="/debugger" element={<RoleGate permission="run_analysis"><Debugger /></RoleGate>} />
+                  <Route path="/dynamic-analysis" element={<RoleGate permission="run_analysis"><DynamicAnalysis /></RoleGate>} />
                   <Route path="/troubleshooting" element={<Troubleshooting />} />
-                  <Route path="/virustotal" element={<VirusTotalLookup />} />
-                  <Route path="/ioc-investigation" element={<IOCInvestigation />} />
+                  <Route path="/virustotal" element={<RoleGate permission="run_analysis"><VirusTotalLookup /></RoleGate>} />
+                  <Route path="/ioc-investigation" element={<RoleGate permission="run_analysis"><IOCInvestigation /></RoleGate>} />
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </div>
@@ -160,6 +165,30 @@ function AppShell() {
         <SystemSelfTestPopup />
       </div>
     </BrowserRouter>
+  );
+}
+
+function SessionSplash() {
+  return (
+    <div role="status" className="flex min-h-screen items-center justify-center bg-mitre-dark px-6 text-gray-300">
+      <div className="rounded-lg border border-gray-800 bg-gray-950/70 px-8 py-6 text-center shadow-2xl">
+        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-transparent border-t-mitre-accent" />
+        <p className="mt-4 text-sm font-semibold text-white">Verifying your session…</p>
+        <p className="mt-1 text-xs text-gray-500">Protected workspaces stay closed until access is confirmed.</p>
+      </div>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-8">
+      <div className="max-w-md rounded-lg border border-gray-800 bg-gray-950/60 p-8 text-center">
+        <h1 className="text-lg font-semibold text-white">Workspace not found</h1>
+        <p className="mt-2 text-sm leading-6 text-gray-500">The requested AdversaryGraph route does not exist or the link is no longer current.</p>
+        <a href="/discover" className="primary-action mt-5 inline-flex px-4 py-2">Open Discover</a>
+      </div>
+    </div>
   );
 }
 

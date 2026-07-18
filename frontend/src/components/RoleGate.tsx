@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
-import { useCurrentUser, hasRole } from '@/hooks/useCurrentUser';
+import { useCurrentUser, hasPermission, hasRole } from '@/hooks/useCurrentUser';
 
 interface RoleGateProps {
   /** Minimum role required. 'analyst' covers analyst + admin. */
-  require: 'analyst' | 'admin';
+  require?: 'analyst' | 'admin';
+  /** Effective permission accepted by the corresponding backend endpoint. */
+  permission?: string;
+  /** Grants access when any listed effective permission is present. */
+  anyPermission?: string[];
   children: ReactNode;
   /** Shown in place of children when the user lacks the role. */
   fallback?: ReactNode;
@@ -15,9 +19,9 @@ const DefaultFallback = () => (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
         d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
-    <p className="text-sm font-medium text-gray-400">Read-only access</p>
+    <p className="text-sm font-medium text-gray-400">Access unavailable</p>
     <p className="text-xs text-center max-w-xs">
-      Your account has viewer permissions. Contact an administrator to request analyst access.
+      Your account does not have the permission required for this workspace. Contact an administrator if you need access.
     </p>
   </div>
 );
@@ -33,7 +37,7 @@ const LoadingFallback = () => (
  * Falls back to a "read-only access" screen for under-privileged users.
  * When AUTH_ENABLED=false (local dev), role checks are skipped.
  */
-export function RoleGate({ require, children, fallback }: RoleGateProps) {
+export function RoleGate({ require, permission, anyPermission, children, fallback }: RoleGateProps) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return <LoadingFallback />;
@@ -42,7 +46,14 @@ export function RoleGate({ require, children, fallback }: RoleGateProps) {
     return <>{children}</>;
   }
 
-  if (!hasRole(user, require)) {
+  const allowed = anyPermission?.length
+    ? anyPermission.some(item => hasPermission(user, item))
+    : permission
+      ? hasPermission(user, permission)
+      : require
+        ? hasRole(user, require)
+        : false;
+  if (!allowed) {
     return <>{fallback ?? <DefaultFallback />}</>;
   }
 

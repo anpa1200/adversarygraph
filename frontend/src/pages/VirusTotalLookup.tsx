@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { iocApi, type VirusTotalLookupResult } from '@/api/client';
 import { useAppStore } from '@/store';
+import { safeHref } from '@/utils/url';
 
 export function VirusTotalLookup() {
   const navigate = useNavigate();
@@ -303,9 +304,9 @@ function ResultSummary({ result }: { result: VirusTotalLookupResult }) {
           </div>
           <p className="mt-2 text-sm text-gray-300">{result.summary}</p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <a href={result.virustotal_url} target="_blank" rel="noreferrer" className="rounded border border-gray-700 px-2 py-1 text-gray-300 hover:border-gray-500 hover:text-white">VirusTotal report ↗</a>
-            {result.permalink && result.permalink !== result.virustotal_url && (
-              <a href={result.permalink} target="_blank" rel="noreferrer" className="rounded border border-gray-700 px-2 py-1 text-gray-300 hover:border-gray-500 hover:text-white">Permalink ↗</a>
+            {safeHref(result.virustotal_url) && <a href={safeHref(result.virustotal_url)} target="_blank" rel="noreferrer" className="rounded border border-gray-700 px-2 py-1 text-gray-300 hover:border-gray-500 hover:text-white">VirusTotal report ↗</a>}
+            {safeHref(result.permalink) && result.permalink !== result.virustotal_url && (
+              <a href={safeHref(result.permalink)} target="_blank" rel="noreferrer" className="rounded border border-gray-700 px-2 py-1 text-gray-300 hover:border-gray-500 hover:text-white">Permalink ↗</a>
             )}
           </div>
         </div>

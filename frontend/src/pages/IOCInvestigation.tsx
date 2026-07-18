@@ -9,9 +9,13 @@ import { useAppStore } from '@/store';
 import { TtpLink } from '@/utils/ctiLinks';
 import clsx from 'clsx';
 import * as d3 from 'd3';
+import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 export function IOCInvestigation() {
   const navigate = useNavigate();
+  const canRunAnalysis = useHasPermission('run_analysis');
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const { domain, replaceTechniques, addTechniques } = useAppStore();
@@ -108,21 +112,23 @@ export function IOCInvestigation() {
                   expands Tier 1, Tier 2, and Tier 3 relationships, maps TTP/actor leads, and prepares an AI-ready investigation summary.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
+                  {!canRunAnalysis && <PermissionNotice permission="run_analysis" action="run or delete IOC investigations" compact />}
                   <input
+                    disabled={!canRunAnalysis}
                     value={artifact}
                     onChange={event => setArtifact(event.target.value)}
                     onKeyDown={event => {
-                      if (event.key === 'Enter' && artifact.trim()) mutation.mutate(undefined);
+                      if (canRunAnalysis && event.key === 'Enter' && artifact.trim()) mutation.mutate(undefined);
                     }}
                     placeholder="IP, domain, URL, MD5, SHA1, SHA256, or artifact..."
                     className="min-w-[360px] flex-1 rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 outline-none focus:border-mitre-accent"
                   />
-                  <select value={depth} onChange={event => setDepth(Number(event.target.value))} className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200">
+                  <select disabled={!canRunAnalysis} value={depth} onChange={event => setDepth(Number(event.target.value))} className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200">
                     <option value={1}>Tier 1 only</option>
                     <option value={2}>Tier 1 + Tier 2</option>
                     <option value={3}>Tier 1 + Tier 2 + Tier 3</option>
                   </select>
-                  <select value={provider} onChange={event => setProvider(event.target.value as typeof provider)} disabled={!aiSummarize} className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 disabled:opacity-50">
+                  <select value={provider} onChange={event => setProvider(event.target.value as typeof provider)} disabled={!canRunAnalysis || !aiSummarize} className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 disabled:opacity-50">
                     <option value="local">Local LLM</option>
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
@@ -130,12 +136,12 @@ export function IOCInvestigation() {
                     <option value="minimax">MiniMax</option>
                   </select>
                   <label className="inline-flex items-center gap-2 rounded border border-gray-700 px-3 py-2 text-sm text-gray-300">
-                    <input type="checkbox" checked={aiSummarize} onChange={event => setAiSummarize(event.target.checked)} />
+                    <input type="checkbox" disabled={!canRunAnalysis} checked={aiSummarize} onChange={event => setAiSummarize(event.target.checked)} />
                     AI summary
                   </label>
                   <button
                     type="button"
-                    disabled={!artifact.trim() || mutation.isPending}
+                    disabled={!canRunAnalysis || !artifact.trim() || mutation.isPending}
                     onClick={() => mutation.mutate(undefined)}
                     className="rounded bg-mitre-accent px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -161,6 +167,7 @@ export function IOCInvestigation() {
                   activeSessionId={result?.session_id ?? null}
                   loadingSessionId={loadInvestigation.variables ?? null}
                   deletingSessionId={deleteInvestigation.variables ?? null}
+                  canDelete={canRunAnalysis}
                   onOpen={sessionId => loadInvestigation.mutate(sessionId)}
                   onDelete={sessionId => {
                     if (window.confirm('Delete this IOC investigation?')) {
@@ -181,6 +188,7 @@ export function IOCInvestigation() {
                   <SourceResults result={result} />
                   <RelationshipGraph
                     result={result}
+                    canRunAnalysis={canRunAnalysis}
                     onPivotNode={node => {
                       setLoadedResult(null);
                       mutation.mutate(node.value);
@@ -403,6 +411,7 @@ function PreviousInvestigations({
   activeSessionId,
   loadingSessionId,
   deletingSessionId,
+  canDelete,
   onOpen,
   onDelete,
 }: {
@@ -411,6 +420,7 @@ function PreviousInvestigations({
   activeSessionId: string | null;
   loadingSessionId: string | null;
   deletingSessionId: string | null;
+  canDelete: boolean;
   onOpen: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
 }) {
@@ -454,14 +464,14 @@ function PreviousInvestigations({
               </button>
               <div className="mt-2 flex items-center gap-2">
                 <span className="truncate text-[10px] text-gray-600">{new Date(item.created_at).toLocaleString()}</span>
-                <button
+                {canDelete && <button
                   type="button"
                   onClick={() => onDelete(item.session_id)}
                   disabled={isDeleting}
                   className="ml-auto text-[10px] text-gray-600 hover:text-red-400 disabled:opacity-40"
                 >
                   {isDeleting ? 'Deleting...' : 'Delete'}
-                </button>
+                </button>}
               </div>
             </div>
           );
@@ -726,9 +736,11 @@ function clamp(value: number, min: number, max: number) {
 export function RelationshipGraph({
   result,
   onPivotNode,
+  canRunAnalysis,
 }: {
   result: IOCInvestigationResult;
   onPivotNode: (node: GraphNode) => void;
+  canRunAnalysis: boolean;
 }) {
   const navigate = useNavigate();
   const { domain } = useAppStore();
@@ -889,7 +901,7 @@ export function RelationshipGraph({
         setSelectedNodeId(graphNode.id);
         setSelectedEdgeIndex(null);
         setFocusNodeId(graphNode.id);
-        if (isInvestigableNode(graphNode) && !expandedResults[graphNode.id]) {
+        if (canRunAnalysis && isInvestigableNode(graphNode) && !expandedResults[graphNode.id]) {
           expandNode.mutate(graphNode);
         }
       })
@@ -952,7 +964,7 @@ export function RelationshipGraph({
     return () => {
       simulation.stop();
     };
-  }, [edges, expandNode, expandedResults, navigate, nodes, selectedNodeId]);
+  }, [canRunAnalysis, edges, expandNode, expandedResults, navigate, nodes, selectedNodeId]);
 
   return (
     <section className="rounded-lg border border-gray-800 bg-gray-900/60">
@@ -1022,10 +1034,11 @@ export function RelationshipGraph({
             setSelectedNodeId(node.id);
             setSelectedEdgeIndex(null);
             setFocusNodeId(node.id);
-            if (isInvestigableNode(node) && !expandedResults[node.id]) {
+            if (canRunAnalysis && isInvestigableNode(node) && !expandedResults[node.id]) {
               expandNode.mutate(node);
             }
           }}
+          canRunAnalysis={canRunAnalysis}
           onInvestigateNode={onPivotNode}
         />
       </div>
@@ -1045,7 +1058,7 @@ export function RelationshipGraph({
                     setSelectedNodeId(node.id);
                     setSelectedEdgeIndex(null);
                     setFocusNodeId(node.id);
-                    if (isInvestigableNode(node) && !expandedResults[node.id]) {
+                    if (canRunAnalysis && isInvestigableNode(node) && !expandedResults[node.id]) {
                       expandNode.mutate(node);
                     }
                   }}
@@ -1060,7 +1073,7 @@ export function RelationshipGraph({
                 </button>
                 <div className="mt-2 flex flex-wrap gap-1">
                   <button type="button" onClick={() => navigate(nodeDetailUrl(node))} className="rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:border-mitre-accent">Open</button>
-                  {isInvestigableNode(node) && (
+                  {canRunAnalysis && isInvestigableNode(node) && (
                     <button type="button" onClick={() => onPivotNode(node)} className="rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:border-mitre-accent">Investigate</button>
                   )}
                 </div>
@@ -1103,6 +1116,7 @@ function GraphInspector({
   onOpenNode,
   onFocusNode,
   onInvestigateNode,
+  canRunAnalysis,
 }: {
   result: IOCInvestigationResult;
   node: GraphNode | null;
@@ -1111,6 +1125,7 @@ function GraphInspector({
   onOpenNode: (node: GraphNode) => void;
   onFocusNode: (node: GraphNode) => void;
   onInvestigateNode: (node: GraphNode) => void;
+  canRunAnalysis: boolean;
 }) {
   if (edge) {
     const explanation = explainEdge(edge, result);
@@ -1157,7 +1172,7 @@ function GraphInspector({
         <button type="button" onClick={() => onFocusNode(node)} className="rounded bg-mitre-accent px-3 py-2 text-xs font-semibold text-white hover:bg-red-600">
           Show connected nodes
         </button>
-        {isInvestigableNode(node) && (
+        {canRunAnalysis && isInvestigableNode(node) && (
           <button type="button" onClick={() => onInvestigateNode(node)} className="rounded border border-gray-700 px-3 py-2 text-xs font-semibold text-gray-200 hover:border-mitre-accent">
             Investigate from this node
           </button>
@@ -1607,7 +1622,7 @@ function TtpPanel({ result }: { result: IOCInvestigationResult }) {
       <h3 className="text-sm font-semibold text-white">ATT&CK TTP Leads ({result.techniques.length})</h3>
       <div className="mt-3 space-y-2">
         {result.techniques.map(tech => (
-          <a key={tech.attack_id} href={tech.url} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 bg-black/20 p-2 hover:border-mitre-accent">
+          <a key={tech.attack_id} href={safeHref(tech.url)} target="_blank" rel="noreferrer" className="block rounded border border-gray-800 bg-black/20 p-2 hover:border-mitre-accent">
             <div className="font-mono text-xs text-mitre-accent">{tech.attack_id}</div>
             <div className="text-sm text-white">{tech.name || 'Technique lead'}</div>
             <div className="text-[11px] text-gray-500">{tech.tactics.join(', ') || 'tactic pending'}</div>

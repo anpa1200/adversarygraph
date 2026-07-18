@@ -1,5 +1,10 @@
+from urllib.parse import parse_qsl, urlsplit
+
 import pytest
 from httpx import AsyncClient
+
+from app.models.pipeline import CollectionSource
+from tests import conftest
 
 
 @pytest.mark.asyncio
@@ -24,6 +29,10 @@ async def test_sandbox_behaviors_route_shape(client: AsyncClient):
     response = await client.get("/api/pipeline/sandbox/behaviors")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+    assert (
+        await client.get("/api/pipeline/sandbox/behaviors", params={"limit": 0})
+    ).status_code == 422
 
 
 @pytest.mark.asyncio
@@ -75,6 +84,60 @@ async def test_source_invalid_kind_rejected(client: AsyncClient):
         json={"name": "Bad kind", "kind": "ftp", "url": "https://example.com"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_source_listing_redacts_nested_secret_config(client: AsyncClient):
+    source = CollectionSource(
+        name="Credentialed feed",
+        kind="rss",
+        url=(
+            "https://feed-user:feed-password@example.test/feed"
+            "?topic=apt&api_key=query-secret&cursor=123"
+            "#access_token=fragment-secret"
+        ),
+        enabled=True,
+        interval_minutes=60,
+        config={
+            "limit": 25,
+            "api_key": "top-secret",
+            "nested": {"access_token": "nested-secret", "region": "eu"},
+        },
+    )
+    conftest._mock_session.add(source)
+
+    response = await client.get("/api/pipeline/sources")
+
+    assert response.status_code == 200
+    config = response.json()[0]["config"]
+    assert config["limit"] == 25
+    assert config["api_key"] == "[REDACTED]"
+    assert config["nested"] == {"access_token": "[REDACTED]", "region": "eu"}
+    safe_url = urlsplit(response.json()[0]["url"])
+    assert safe_url.username is None
+    assert safe_url.password is None
+    assert safe_url.netloc == "example.test"
+    assert safe_url.fragment == ""
+    assert dict(parse_qsl(safe_url.query)) == {
+        "topic": "apt",
+        "api_key": "[REDACTED]",
+        "cursor": "123",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pipeline_rejects_unbounded_payload_and_provider_values(client: AsyncClient):
+    oversized = await client.post(
+        "/api/pipeline/detections/validate",
+        json={"format": "sigma", "content": "x" * 250_001},
+    )
+    invalid_provider = await client.post(
+        "/api/pipeline/observables/11111111-1111-4111-8111-111111111111/enrich",
+        params={"provider": "attacker-selected"},
+    )
+
+    assert oversized.status_code == 422
+    assert invalid_provider.status_code == 422
 
 
 # ── Observable create ─────────────────────────────────────────────────────────

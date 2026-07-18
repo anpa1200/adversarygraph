@@ -28,7 +28,7 @@ def extract_observables(text: str) -> list[dict]:
 
 
 async def fetch_rss(url: str) -> list[dict]:
-    # async_safe_get validates scheme and resolves the IP to block SSRF
+    # async_safe_get validates the URL and pins a public IP at connect time.
     response = await async_safe_get(url, timeout=20, headers={"User-Agent": "AdversaryGraph/0.8"})
     response.raise_for_status()
     root = ET.fromstring(response.content)

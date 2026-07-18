@@ -8,7 +8,7 @@ from app.services.ai.base import LLMAdapter
 _DEFAULTS: dict[str, str] = {
     "claude": "claude-opus-4-8",
     "openai": settings.openai_model,
-    "gemini": "gemini-2.0-flash",
+    "gemini": settings.gemini_model,
     "minimax": settings.minimax_model,
     "local": settings.local_llm_model,
 }

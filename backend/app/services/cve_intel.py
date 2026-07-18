@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,8 @@ from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETe
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ioc_intel import _dedupe_attack_ids
 from app.services.taxonomy import canonical_tags
+
+logger = logging.getLogger(__name__)
 
 NVD_SOURCE_ID = "nvd-cve-2.0"
 CISA_KEV_SOURCE_ID = "cisa-kev"
@@ -122,7 +125,7 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
     for item in items:
         cve_id = item.cve_id.upper()
         existing = await session.scalar(select(CVERecord).where(CVERecord.cve_id == cve_id))
-        values = {
+        values: dict[str, Any] = {
             "cve_id": cve_id,
             "source_id": item.source_id,
             "description": item.description,
@@ -171,8 +174,9 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
 
             result["asset_retrohunt"] = await retrohunt_assets(session)
             await session.commit()
-        except Exception as exc:
-            result["asset_retrohunt_error"] = str(exc)[:500]
+        except Exception:
+            logger.exception("Asset retrohunt failed after CVE upsert")
+            result["asset_retrohunt_error"] = "Asset retrohunt failed. See server logs."
     return result
 
 
@@ -204,10 +208,11 @@ async def sync_nvd_recent(session: AsyncSession, *, days: int = 7, limit: int = 
             source.sync_error = ""
         await session.commit()
         return {"source": NVD_SOURCE_ID, "days": days, "fetched": len(items), **result}
-    except Exception as exc:
+    except Exception:
+        logger.exception("NVD recent CVE sync failed")
         if source:
             source.sync_status = "error"
-            source.sync_error = str(exc)[:500]
+            source.sync_error = "NVD sync failed. See server logs."
             await session.commit()
         raise
 
@@ -246,8 +251,9 @@ async def sync_nvd_cve_ids(session: AsyncSession, cve_ids: list[str], *, limit: 
             result = await upsert_cves(session, parsed)
             inserted += int(result.get("inserted", 0) or 0)
             updated += int(result.get("updated", 0) or 0)
-        except Exception as exc:
-            errors.append(f"{cve_id}: {exc}")
+        except Exception:
+            logger.exception("NVD CVE enrichment failed cve_id=%s", cve_id)
+            errors.append(f"{cve_id}: enrichment failed. See server logs.")
 
     if source:
         source.last_synced_at = datetime.now(timezone.utc)
@@ -295,10 +301,11 @@ async def sync_cisa_kev(session: AsyncSession) -> dict[str, Any]:
             source.sync_error = ""
         await session.commit()
         return {"source": CISA_KEV_SOURCE_ID, "fetched": len(items), **result}
-    except Exception as exc:
+    except Exception:
+        logger.exception("CISA KEV sync failed")
         if source:
             source.sync_status = "error"
-            source.sync_error = str(exc)[:500]
+            source.sync_error = "CISA KEV sync failed. See server logs."
             await session.commit()
         raise
 
@@ -346,10 +353,11 @@ async def sync_github_advisories(session: AsyncSession, *, ecosystem: str = "", 
             "imported_cves": len(parsed),
             **result,
         }
-    except Exception as exc:
+    except Exception:
+        logger.exception("GitHub advisory sync failed")
         if source:
             source.sync_status = "error"
-            source.sync_error = str(exc)[:500]
+            source.sync_error = "GitHub advisory sync failed. See server logs."
             await session.commit()
         raise
 
@@ -405,8 +413,9 @@ async def sync_epss_scores(session: AsyncSession, *, limit: int = 500) -> dict[s
                 cve.raw = raw
                 cve.tags = canonical_tags("tag", tags)
                 updated += 1
-        except Exception as exc:
-            errors.append(str(exc)[:200])
+        except Exception:
+            logger.exception("EPSS batch sync failed")
+            errors.append("EPSS batch sync failed. See server logs.")
 
     if source:
         source.last_synced_at = datetime.now(timezone.utc)
@@ -453,6 +462,7 @@ async def sync_osv_packages(session: AsyncSession, packages: list[dict[str, Any]
                         try:
                             detail = _fetch_osv_vuln_detail(str(vuln["id"]))
                         except Exception:
+                            logger.exception("OSV detail fetch failed advisory_id=%s", vuln.get("id"))
                             detail = None
                         if detail:
                             parsed = _parse_osv_vuln(detail, package)
@@ -463,8 +473,12 @@ async def sync_osv_packages(session: AsyncSession, packages: list[dict[str, Any]
         if imported_cve_ids:
             try:
                 nvd_enrichment = await sync_nvd_cve_ids(session, imported_cve_ids, limit=min(len(imported_cve_ids), 50))
-            except Exception as exc:
-                nvd_enrichment = {"status": "error", "error": str(exc)[:500]}
+            except Exception:
+                logger.exception("NVD enrichment failed after OSV package sync")
+                nvd_enrichment = {
+                    "status": "error",
+                    "error": "NVD enrichment failed. See server logs.",
+                }
         if source:
             source.last_synced_at = datetime.now(timezone.utc)
             source.sync_status = "ok"
@@ -480,10 +494,11 @@ async def sync_osv_packages(session: AsyncSession, packages: list[dict[str, Any]
             "nvd_enrichment": nvd_enrichment,
             **upsert,
         }
-    except Exception as exc:
+    except Exception:
+        logger.exception("OSV package sync failed")
         if source:
             source.sync_status = "error"
-            source.sync_error = str(exc)[:500]
+            source.sync_error = "OSV package sync failed. See server logs."
             await session.commit()
         raise
 
@@ -498,8 +513,9 @@ async def sync_all_cve_sources(session: AsyncSession, *, days: int = 7) -> dict[
     ):
         try:
             item = await syncer()
-        except Exception as exc:
-            item = {"status": "error", "error": str(exc)}
+        except Exception:
+            logger.exception("CVE source sync failed")
+            item = {"status": "error", "error": "CVE source sync failed. See server logs."}
         results["sources"].append(item)
         results["totals"]["inserted"] += int(item.get("inserted", 0) or 0)
         results["totals"]["updated"] += int(item.get("updated", 0) or 0)
@@ -570,16 +586,16 @@ async def get_cve_detail(session: AsyncSession, cve_id: str) -> dict[str, Any] |
             "source": link.source_id,
         })
     iocs = []
-    for link in cve.ioc_links:
-        indicator = await session.get(IOCIndicator, link.indicator_id)
+    for ioc_link in cve.ioc_links:
+        indicator = await session.get(IOCIndicator, ioc_link.indicator_id)
         iocs.append({
-            "indicator_id": link.indicator_id,
+            "indicator_id": ioc_link.indicator_id,
             "value": indicator.value if indicator else "",
             "type": indicator.indicator_type if indicator else "",
-            "relationship": link.relationship_type,
-            "confidence": link.confidence,
-            "evidence": link.evidence,
-            "source": link.source_id,
+            "relationship": ioc_link.relationship_type,
+            "confidence": ioc_link.confidence,
+            "evidence": ioc_link.evidence,
+            "source": ioc_link.source_id,
         })
     actors = [
         {
@@ -776,7 +792,7 @@ async def correlate_cves(session: AsyncSession) -> dict[str, int]:
                 session,
                 cve.cve_id,
                 attack_id,
-                cve.source_id,
+                str(cve.source_id or "unknown"),
                 "explicit ATT&CK technique ID appears in CVE source text/reference",
                 confidence=85,
             )

@@ -25,7 +25,14 @@ async def test_compare_top_n_capped(client: AsyncClient):
         json={"technique_ids": ["T1566"]},
         params={"domain": "enterprise-attack", "top_n": 999},
     )
-    assert resp.status_code in (404, 422)
+    assert resp.status_code == 422
+
+    negative = await client.post(
+        "/api/apt/compare",
+        json={"technique_ids": ["T1566"]},
+        params={"domain": "enterprise-attack", "top_n": -1},
+    )
+    assert negative.status_code == 422
 
 
 # ── /api/export/layer (PDF) ───────────────────────────────────────────────────
@@ -43,7 +50,7 @@ async def test_export_layer_no_attck_data(client: AsyncClient):
         "/api/export/layer",
         json={"technique_ids": ["T1566", "T1059"], "domain": "enterprise-attack"},
     )
-    assert resp.status_code in (200, 404)
+    assert resp.status_code == 404
 
 
 # ── /api/export/analysis/{id} ─────────────────────────────────────────────────

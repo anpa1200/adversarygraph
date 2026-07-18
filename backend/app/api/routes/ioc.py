@@ -2,27 +2,22 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import re
 import uuid
 from datetime import datetime
 from typing import Any
 
-import logging
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-
-logger = logging.getLogger(__name__)
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sql_delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.safe_http import require_body_size
-
-_limit_10mb = require_body_size(10 * 1024 * 1024)
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.core.safe_http import read_upload_limited, require_body_size
 from app.models.ioc import IOCInvestigationSession
+from app.services.auth import TeamUser, audit, current_user, require_permission
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
 from app.services.ioc_intel import (
@@ -55,6 +50,17 @@ from app.services.opencti_sync import (
     push_to_opencti,
     sync_opencti,
 )
+
+logger = logging.getLogger(__name__)
+
+_limit_10mb = require_body_size(10 * 1024 * 1024)
+MAX_REPORT_UPLOAD_BYTES = 50 * 1024 * 1024
+
+investigate_ioc = require_permission("run_analysis")
+manage_ioc_feeds = require_permission("manage_feeds")
+manage_ioc_intel = require_permission("manage_intel")
+export_ioc = require_permission("export_data")
+upload_ioc_files = require_permission("upload_files")
 
 router = APIRouter(prefix="/ioc", tags=["IOC Intelligence"])
 
@@ -420,7 +426,7 @@ async def sources(session: AsyncSession = Depends(get_session), _: TeamUser = De
 
 
 @router.post("/virustotal/lookup", response_model=VirusTotalLookupOut)
-async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(analyst)):
+async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(investigate_ioc)):
     try:
         return await lookup_virustotal_ioc(session, payload.indicator, domain=payload.domain)
     except ValueError as exc:
@@ -447,7 +453,7 @@ async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession =
 
 
 @router.post("/investigate", response_model=IOCInvestigationOut)
-async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc)):
     try:
         result = await investigate_ioc(
             session,
@@ -533,7 +539,7 @@ async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends
 
 
 @router.delete("/investigations/{session_id}", status_code=204)
-async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc)):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
@@ -546,7 +552,7 @@ async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depe
 
 
 @router.post("/sources", response_model=IOCSourceOut)
-async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)):
     try:
         result = await create_ioc_source(
             session,
@@ -563,7 +569,7 @@ async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depe
 
 
 @router.patch("/sources/{source_id}", response_model=IOCSourceOut)
-async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)):
     try:
         result = await update_ioc_source(
             session,
@@ -580,7 +586,7 @@ async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: Asy
 
 
 @router.delete("/sources/{source_id}", status_code=204)
-async def delete_source(source_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def delete_source(source_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)):
     try:
         await audit(session, user, "ioc.delete_source", "ioc_source", source_id)
         await delete_ioc_source(session, source_id=source_id)
@@ -641,7 +647,7 @@ async def export_ioc_library_stix_route(
     ),
     limit: int = Query(5000, ge=1, le=5000),
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(export_ioc),
 ):
     import json
 
@@ -671,7 +677,7 @@ async def import_ioc_stix_route(
     source_label: str = Query("STIX IOC Import", max_length=255),
     source_url: str = Query("", max_length=1000),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_intel),
 ):
     try:
         result = await import_ioc_stix_bundle(session, bundle, source_label=source_label, source_url=source_url)
@@ -686,7 +692,7 @@ async def import_ioc_stix_route(
 async def import_ioc_taxii_route(
     payload: TAXIIImportIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_intel),
 ):
     try:
         result = await import_taxii_collection(
@@ -721,7 +727,7 @@ async def opencti_pull_route(
     limit: int = Query(500, ge=1, le=5000),
     domain: str = Query("enterprise-attack"),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await pull_from_opencti(session, limit=limit, domain=domain)
@@ -741,7 +747,7 @@ async def opencti_push_route(
     source_id: str = Query("", max_length=120),
     include_reports: bool = Query(True),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await push_to_opencti(session, limit=limit, source_id=source_id, include_reports=include_reports)
@@ -761,7 +767,7 @@ async def opencti_sync_route(
     domain: str = Query("enterprise-attack"),
     include_reports: bool = Query(True),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await sync_opencti(session, limit=limit, domain=domain, include_reports=include_reports)
@@ -782,7 +788,7 @@ async def sync_threatfox_route(
     ai_enrich: bool = Query(False),
     ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await sync_threatfox(session, days=days, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
@@ -816,7 +822,7 @@ async def sync_otx_route(
     aliases_per_group: int = Query(4, ge=1, le=8),
     pulses_per_alias: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         if mode == "subscribed":
@@ -841,7 +847,7 @@ async def sync_otx_route(
 async def sync_malpedia_route(
     domain: str = Query("enterprise-attack"),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await sync_malpedia_families(session, domain=domain)
@@ -859,7 +865,7 @@ async def sync_source_route(
     ai_enrich: bool = Query(False),
     ai_provider: str = Query("local", pattern="^(local|claude|openai|gemini|minimax)$"),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_feeds),
 ):
     try:
         result = await sync_custom_source(session, source_id=source_id, domain=domain, ai_enrich=ai_enrich, ai_provider=ai_provider)
@@ -889,7 +895,7 @@ async def enrich_ioc_ttps_route(
     domain: str = Query("enterprise-attack"),
     limit: int = Query(500, ge=1, le=20000),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_intel),
 ):
     try:
         result = await enrich_ioc_ttp_mappings(
@@ -919,7 +925,7 @@ async def enrich_ioc_ttps_route(
 
 
 @router.post("/import", response_model=SyncOut)
-async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
+async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_intel), _body=Depends(_limit_10mb)):
     items = [
         IOCImportItem(
             value=item.value,
@@ -954,9 +960,10 @@ async def import_iocs_from_report(
     confidence: int = Form(default=65),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_intel),
+    _: TeamUser = Depends(upload_ioc_files),
 ):
-    content = await file.read()
+    content = await read_upload_limited(file, MAX_REPORT_UPLOAD_BYTES)
     if not content:
         raise HTTPException(400, "Uploaded report is empty")
     try:
@@ -1029,7 +1036,7 @@ async def enrich_actor_otx_route(
     aliases_per_group: int = Query(6, ge=1, le=10),
     pulses_per_alias: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_ioc_intel),
 ):
     try:
         result = await enrich_actor_from_otx(
@@ -1063,7 +1070,7 @@ async def actor_ioc_csv_route(
     days: int = Query(180, ge=1, le=1825),
     active_only: bool = Query(True),
     session: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(export_ioc),
 ):
     rows = await actor_iocs(session, actor_id, days=days, active_only=active_only, limit=1000)
     output = io.StringIO()

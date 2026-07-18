@@ -1,6 +1,9 @@
 import pytest
 from httpx import AsyncClient
 
+from app.core.config import settings
+from app.services.auth import TeamUser, current_user
+
 
 @pytest.mark.asyncio
 async def test_threat_radar_signal_to_case_workflow(client: AsyncClient):
@@ -350,3 +353,36 @@ async def test_exposure_monitoring_ingest_creates_case_and_sanitizes(client: Asy
     marketplace = await client.get("/api/threat-radar/queues/marketplace")
     assert marketplace.status_code == 200
     assert any(item["signal_id"] == body["signal_id"] for item in marketplace.json())
+
+
+@pytest.mark.asyncio
+async def test_detection_engineer_cannot_mutate_cti_or_read_radar_audit(app, client, monkeypatch):
+    async def detection_engineer():
+        return TeamUser(
+            name="detection-engineer",
+            roles=["detection_engineer", "analyst", "viewer"],
+            permissions=["read", "run_analysis", "manage_detections", "export_data"],
+        )
+
+    previous = app.dependency_overrides.get(current_user)
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[current_user] = detection_engineer
+    try:
+        assert (await client.get("/api/threat-radar/sources")).status_code == 200
+        denied_source = await client.post(
+            "/api/threat-radar/sources",
+            json={"name": "Unauthorized feed", "source_type": "manual"},
+        )
+        assert denied_source.status_code == 403
+        assert (await client.get("/api/threat-radar/queues/audit")).status_code == 403
+
+        # The detection permission passes; validation then rejects the fake case ID.
+        detection = await client.post(
+            "/api/threat-radar/cases/not-a-uuid/create-detection-requirement"
+        )
+        assert detection.status_code == 400
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(current_user, None)
+        else:
+            app.dependency_overrides[current_user] = previous

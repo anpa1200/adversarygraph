@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
 import { analyzeApi, reportsApi, type LinkedAnalysisReport, type ReportCollectionItem, type ReportCollectionTag } from '@/api/client';
 import { useAppStore } from '@/store';
 import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const TAG_BUCKETS = [
   ['reports', 'Reports'],
@@ -17,9 +19,14 @@ const TAG_BUCKETS = [
   ['infrastructure', 'Infrastructure'],
 ] as const;
 
+const REPORT_PAGE_SIZE = 50;
+
 export function ReportsResearch() {
   const { domain } = useAppStore();
   const queryClient = useQueryClient();
+  const canManageIntel = useHasPermission('manage_intel');
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canUploadFiles = useHasPermission('upload_files');
   const [queryText, setQueryText] = useState('');
   const [activeBucket, setActiveBucket] = useState<string>('all');
   const [researchTitle, setResearchTitle] = useState('');
@@ -28,11 +35,16 @@ export function ReportsResearch() {
   const [urlTitle, setUrlTitle] = useState('');
   const [urlParseWithAi, setUrlParseWithAi] = useState(true);
   const [parseWithAi, setParseWithAi] = useState(true);
+  const canUploadFile = canUploadFiles && (parseWithAi ? canRunAnalysis : canManageIntel);
   const [provider, setProvider] = useState('claude');
   const [lastUpload, setLastUpload] = useState<{ session_id: string; title: string; parsed: boolean; source_url?: string } | null>(null);
-  const collection = useQuery({
+  const collection = useInfiniteQuery({
     queryKey: ['report-research-collection'],
-    queryFn: () => analyzeApi.reportCollection(150, 0),
+    queryFn: ({ pageParam }) => analyzeApi.reportCollection(REPORT_PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: lastPage => lastPage.items.length === REPORT_PAGE_SIZE
+      ? lastPage.offset + lastPage.items.length
+      : undefined,
     staleTime: 30_000,
   });
   const uploadMutation = useMutation({
@@ -78,7 +90,10 @@ export function ReportsResearch() {
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
     },
   });
-  const items = useMemo(() => collection.data?.items ?? [], [collection.data?.items]);
+  const items = useMemo(
+    () => collection.data?.pages.flatMap(page => page.items) ?? [],
+    [collection.data?.pages],
+  );
   const filtered = useMemo(() => filterReports(items, queryText, activeBucket), [items, queryText, activeBucket]);
   const totals = useMemo(() => collectionTotals(items), [items]);
 
@@ -95,7 +110,7 @@ export function ReportsResearch() {
                   IOCs, CVEs, threat actors, target sectors, and infrastructure indicators, then linked back into the platform.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <Metric label="Reports" value={String(items.length)} />
+                  <Metric label="Reports loaded" value={String(items.length)} />
                   <Metric label="TTP tags" value={String(totals.ttps)} />
                   <Metric label="IOC tags" value={String(totals.iocs)} />
                   <Metric label="CVE tags" value={String(totals.cves)} />
@@ -106,16 +121,19 @@ export function ReportsResearch() {
             </Panel>
             <Panel title="Add research">
               <div className="space-y-3 p-4">
+                {!canManageIntel && <PermissionNotice permission="manage_intel" action="ingest report URLs or manage stored research" compact />}
                 <div className="rounded border border-gray-800 bg-gray-950/60 p-3">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Upload from URL</div>
                   <div className="space-y-2">
                     <input
+                      disabled={!canManageIntel}
                       value={researchUrl}
                       onChange={event => setResearchUrl(event.target.value)}
                       placeholder="https://vendor.example/report.html or report.pdf"
                       className="field w-full"
                     />
                     <input
+                      disabled={!canManageIntel}
                       value={urlTitle}
                       onChange={event => setUrlTitle(event.target.value)}
                       placeholder="Optional report title"
@@ -124,6 +142,7 @@ export function ReportsResearch() {
                     <label className="flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-300">
                       <input
                         type="checkbox"
+                        disabled={!canManageIntel}
                         checked={urlParseWithAi}
                         onChange={event => setUrlParseWithAi(event.target.checked)}
                         className="mt-1"
@@ -134,7 +153,7 @@ export function ReportsResearch() {
                       </span>
                     </label>
                     {urlParseWithAi && (
-                      <select value={provider} onChange={event => setProvider(event.target.value)} className="field w-full">
+                      <select disabled={!canManageIntel} value={provider} onChange={event => setProvider(event.target.value)} className="field w-full">
                         <option value="claude">Claude</option>
                         <option value="openai">OpenAI</option>
                         <option value="gemini">Gemini</option>
@@ -145,7 +164,7 @@ export function ReportsResearch() {
                     <button
                       type="button"
                       onClick={() => urlMutation.mutate()}
-                      disabled={!researchUrl.trim() || urlMutation.isPending}
+                      disabled={!canManageIntel || !researchUrl.trim() || urlMutation.isPending}
                       className="primary-action w-full disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {urlMutation.isPending ? 'Fetching report URL...' : 'Upload from URL'}
@@ -158,7 +177,9 @@ export function ReportsResearch() {
                   </div>
                 </div>
                 <div className="border-t border-gray-800 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Upload file</div>
+                {!canUploadFiles && <PermissionNotice permission="upload_files" action="upload research files" compact />}
                 <input
+                  disabled={!canUploadFile}
                   value={researchTitle}
                   onChange={event => setResearchTitle(event.target.value)}
                   placeholder="Research title"
@@ -169,6 +190,7 @@ export function ReportsResearch() {
                   <span>PDF, DOCX, TXT, MD, CSV, or report export.</span>
                   <input
                     type="file"
+                    disabled={!canUploadFile}
                     accept=".pdf,.docx,.txt,.md,.markdown,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv"
                     className="sr-only"
                     onChange={event => setResearchFile(event.target.files?.[0] ?? null)}
@@ -178,6 +200,7 @@ export function ReportsResearch() {
                 <label className="flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-300">
                   <input
                     type="checkbox"
+                    disabled={!canRunAnalysis && !canManageIntel}
                     checked={parseWithAi}
                     onChange={event => setParseWithAi(event.target.checked)}
                     className="mt-1"
@@ -188,7 +211,7 @@ export function ReportsResearch() {
                   </span>
                 </label>
                 {parseWithAi && (
-                  <select value={provider} onChange={event => setProvider(event.target.value)} className="field w-full">
+                  <select disabled={!canRunAnalysis} value={provider} onChange={event => setProvider(event.target.value)} className="field w-full">
                     <option value="claude">Claude</option>
                     <option value="openai">OpenAI</option>
                     <option value="gemini">Gemini</option>
@@ -199,11 +222,12 @@ export function ReportsResearch() {
                 <button
                   type="button"
                   onClick={() => uploadMutation.mutate()}
-                  disabled={!researchFile || uploadMutation.isPending}
+                  disabled={!canUploadFile || !researchFile || uploadMutation.isPending}
                   className="primary-action w-full disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {uploadMutation.isPending ? (parseWithAi ? 'Parsing research...' : 'Storing research...') : 'Upload research'}
                 </button>
+                {canUploadFiles && !canUploadFile && <PermissionNotice permission={parseWithAi ? 'run_analysis' : 'manage_intel'} action={parseWithAi ? 'upload and parse research with AI' : 'store research without AI parsing'} compact />}
                 {uploadMutation.isError && (
                   <div className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">
                     {uploadMutation.error instanceof Error ? uploadMutation.error.message : 'Upload failed.'}
@@ -228,7 +252,7 @@ export function ReportsResearch() {
                 <input
                   value={queryText}
                   onChange={event => setQueryText(event.target.value)}
-                  placeholder="Search title, summary, TTP, IOC, CVE, actor, sector..."
+                  placeholder="Search loaded reports by title, summary, TTP, IOC, CVE, actor, sector..."
                   className="field w-full"
                 />
                 <select value={activeBucket} onChange={event => setActiveBucket(event.target.value)} className="field w-full">
@@ -238,6 +262,9 @@ export function ReportsResearch() {
                 <div className="rounded border border-blue-500/30 bg-blue-950/20 p-3 text-xs leading-relaxed text-blue-100">
                   Tagging is deterministic from stored analysis, report intake metadata, CVE/IOC extraction, and conservative sector/infrastructure keyword matching.
                 </div>
+                <p className="text-xs leading-5 text-gray-500">
+                  {items.length} report{items.length === 1 ? '' : 's'} loaded. Filters and metrics cover loaded pages; load older reports to expand the collection.
+                </p>
               </div>
             </Panel>
             <Panel title="Research workflow">
@@ -255,6 +282,18 @@ export function ReportsResearch() {
           <div className="grid gap-4">
             {filtered.map(item => <ReportCard key={item.session_id} item={item} provider={provider} />)}
           </div>
+          {collection.hasNextPage && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                className="secondary-action min-w-48"
+                disabled={collection.isFetchingNextPage}
+                onClick={() => void collection.fetchNextPage()}
+              >
+                {collection.isFetchingNextPage ? 'Loading older reports…' : 'Load older reports'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -263,6 +302,9 @@ export function ReportsResearch() {
 
 function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: string }) {
   const queryClient = useQueryClient();
+  const canManageIntel = useHasPermission('manage_intel');
+  const canRunAnalysis = useHasPermission('run_analysis');
+  const canExport = useHasPermission('export_data');
   const sourceHref = safeHref(item.source_url);
   const reparseMutation = useMutation({
     mutationFn: () => analyzeApi.reparseLinkedReport(item.session_id, { provider }),
@@ -302,15 +344,18 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
           <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-400">{item.summary || 'No summary stored.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link to={`/analyze/${item.session_id}/report`} className="primary-action">Open linked report</Link>
-            <Link to="/analyze" className="secondary-action">AI Analysis</Link>
-            <Link to="/operations" className="secondary-action">Report intake</Link>
+            {canRunAnalysis && item.status === 'completed' && item.source_text_available && item.domain === 'enterprise-attack' && (
+              <Link to={huntHypothesisUrl(item.session_id)} className="secondary-action border-cyan-800 text-cyan-100">Create AI hunt hypothesis</Link>
+            )}
+            {canRunAnalysis && <Link to="/analyze" className="secondary-action">AI Analysis</Link>}
+            {canRunAnalysis && <Link to="/operations" className="secondary-action">Report intake</Link>}
             {sourceHref && <a href={sourceHref} target="_blank" rel="noreferrer" className="secondary-action">Source</a>}
-            <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
+            {canManageIntel && <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
               {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
-            </button>
-            <button type="button" onClick={() => downloadReport('raw')} className="secondary-action">Download raw</button>
-            <button type="button" onClick={() => downloadReport('parsed')} className="secondary-action">Download parsed</button>
-            <button
+            </button>}
+            {canExport && <button type="button" onClick={() => downloadReport('raw')} className="secondary-action">Download raw</button>}
+            {canExport && <button type="button" onClick={() => downloadReport('parsed')} className="secondary-action">Download parsed</button>}
+            {canManageIntel && <button
               type="button"
               onClick={() => {
                 if (window.confirm(`Delete report "${item.title}"?`)) deleteMutation.mutate();
@@ -319,7 +364,8 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
               className="secondary-action border-red-900/70 text-red-300 hover:border-red-500 disabled:opacity-40"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </button>
+            </button>}
+            {!canManageIntel && <PermissionNotice permission="manage_intel" action="reparse or delete this report" compact />}
           </div>
           {(reparseMutation.isError || deleteMutation.isError) && (
             <div className="mt-3 rounded border border-red-800 bg-red-950/30 p-2 text-xs text-red-200">
@@ -352,6 +398,7 @@ function buildParsedExport(report: LinkedAnalysisReport) {
     provider: report.provider,
     model: report.model,
     domain: report.domain,
+    tlp: report.tlp,
     created_at: report.created_at,
     summary: report.summary,
     techniques: report.techniques,
@@ -376,6 +423,15 @@ function downloadText(filename: string, content: string, type: string) {
 
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'report';
+}
+
+function huntHypothesisUrl(sessionId: string) {
+  return `/threat-hunting/new?${new URLSearchParams({
+    assistant: 'hypothesis',
+    source: 'report',
+    source_session_id: sessionId,
+    source_ref: sessionId,
+  }).toString()}`;
 }
 
 function TagBucket({ title, tags, empty }: { title: string; tags: ReportCollectionTag[]; empty: string }) {

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.payload_limits import BoundedPayloadModel
 from app.core.safe_http import require_body_size
 
 _limit_10mb = require_body_size(10 * 1024 * 1024)
@@ -16,7 +21,7 @@ from app.models.operations import ReportIntake
 from app.models.pipeline import AuditEvent, CollectionRun, CollectionSource, DetectionVersion, EnrichmentResult, Observable
 from app.services.asset_intel import retrohunt_assets
 from app.services.atlas import normalize_atlas
-from app.services.auth import TeamUser, analyst, audit, current_user
+from app.services.auth import TeamUser, audit, current_user, require_permission
 from app.services.collection import extract_observables, fetch_rss, misp_reports, stix_reports
 from app.services.detection_feeds import ensure_default_detection_feeds, sync_detection_rule_feed
 from app.services.detections import generate_detection, generate_detection_with_ai, validate_detection
@@ -25,45 +30,133 @@ from app.services.sandbox_feeds import list_sandbox_behaviors, sync_sandbox_feed
 from app.services.taxonomy import normalize_freeform_tags
 
 router = APIRouter(prefix="/pipeline", tags=["Collection and Detection Pipeline"])
+logger = logging.getLogger(__name__)
+manage_pipeline_feeds = require_permission("manage_feeds")
+manage_pipeline_intel = require_permission("manage_intel")
+manage_pipeline_detections = require_permission("manage_detections")
 
 
-class SourceBody(BaseModel):
+class SourceBody(BoundedPayloadModel):
     name: str = Field(..., min_length=1, max_length=255)
     kind: str = Field(..., pattern="^(rss|taxii|misp|atlas|sigma|yara|sandbox)$")
-    url: str = ""
+    url: str = Field("", max_length=1000)
     enabled: bool = True
     interval_minutes: int = Field(default=60, ge=5, le=10080)
-    config: dict = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict, max_length=1000)
 
 
-class ObservableBody(BaseModel):
+class ObservableBody(BoundedPayloadModel):
     type: str = Field(..., min_length=2, max_length=30)
     value: str = Field(..., min_length=1, max_length=2000)
-    status: str = "new"
+    status: str = Field("new", max_length=30)
     confidence: int = Field(default=0, ge=0, le=100)
-    tags: list[str] = Field(default_factory=list)
-    source_refs: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list, max_length=500)
+    source_refs: list[str] = Field(default_factory=list, max_length=1000)
 
 
-class DetectionBody(BaseModel):
+class DetectionBody(BoundedPayloadModel):
     title: str = Field(..., min_length=1, max_length=500)
     technique_id: str = Field(..., min_length=2, max_length=30)
-    format: str = "sigma"
-    telemetry: list[str] = Field(default_factory=list)
-    detection_id: str | None = None
+    format: str = Field("sigma", pattern="^(sigma|yara|yaral|kql|spl|eql)$")
+    telemetry: list[str] = Field(default_factory=list, max_length=500)
+    detection_id: str | None = Field(default=None, max_length=36)
     use_ai: bool = False
     provider: str = Field(default="local", pattern="^(local|claude|openai|gemini|minimax)$")
     model: str | None = Field(default=None, max_length=100)
     context: str = Field(default="", max_length=12000)
 
 
-class ValidationBody(BaseModel):
-    format: str
-    content: str
+class ValidationBody(BoundedPayloadModel):
+    format: str = Field(..., max_length=30)
+    content: str = Field(..., max_length=250_000)
 
 
 def out(row):
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
+
+
+_SENSITIVE_CONFIG_SUFFIXES = {
+    "apikey",
+    "authorization",
+    "bearer",
+    "clientsecret",
+    "cookie",
+    "credential",
+    "password",
+    "passwd",
+    "privatekey",
+    "pwd",
+    "secret",
+    "token",
+}
+_SENSITIVE_EXACT_NAMES = {
+    "auth",
+    "code",
+    "key",
+    "session",
+    "sessionid",
+    "sig",
+    "signature",
+}
+
+
+def _is_sensitive_name(value: Any) -> bool:
+    compact = re.sub(r"[^a-z0-9]", "", str(value).lower())
+    return compact in _SENSITIVE_EXACT_NAMES or any(
+        compact.endswith(suffix) for suffix in _SENSITIVE_CONFIG_SUFFIXES
+    )
+
+
+def redact_sensitive_config(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned: dict[Any, Any] = {}
+        for key, item in value.items():
+            if _is_sensitive_name(key):
+                cleaned[key] = "[REDACTED]"
+            else:
+                cleaned[key] = redact_sensitive_config(item)
+        return cleaned
+    if isinstance(value, list):
+        return [redact_sensitive_config(item) for item in value]
+    return value
+
+
+def redact_source_url(value: Any) -> str:
+    """Return a display-safe URL without authority or query credentials."""
+    raw_url = str(value or "")
+    try:
+        parsed = urlsplit(raw_url)
+        if parsed.netloc:
+            hostname = parsed.hostname or ""
+            safe_host = f"[{hostname}]" if ":" in hostname else hostname
+            safe_netloc = safe_host
+            if parsed.port is not None:
+                safe_netloc = f"{safe_host}:{parsed.port}"
+        else:
+            # A relative feed path has no userinfo grammar. Refuse an ambiguous
+            # authority-like first segment instead of reflecting credentials.
+            if "@" in parsed.path.split("/", 1)[0]:
+                return "[REDACTED]"
+            safe_netloc = ""
+        safe_query = urlencode(
+            [
+                (key, "[REDACTED]" if _is_sensitive_name(key) else item)
+                for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            ],
+            doseq=True,
+        )
+        # Fragments are not sent to feed servers and commonly carry OAuth
+        # tokens. They provide no operational value in an API response.
+        return urlunsplit((parsed.scheme, safe_netloc, parsed.path, safe_query, ""))
+    except (TypeError, ValueError):
+        return "[REDACTED]"
+
+
+def source_out(row: CollectionSource) -> dict:
+    payload = out(row)
+    payload["config"] = redact_sensitive_config(payload.get("config") or {})
+    payload["url"] = redact_source_url(payload.get("url"))
+    return payload
 
 
 async def source_or_404(db: AsyncSession, source_id: str) -> CollectionSource:
@@ -124,32 +217,42 @@ async def me(user: TeamUser = Depends(current_user)):
 
 
 @router.get("/sources")
-async def sources(db: AsyncSession = Depends(get_session)):
-    rows = await db.execute(select(CollectionSource).order_by(CollectionSource.updated_at.desc()))
-    return [out(row) for row in rows.scalars().all()]
+async def sources(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    rows = await db.execute(
+        select(CollectionSource)
+        .order_by(CollectionSource.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return [source_out(row) for row in rows.scalars().all()]
 
 
 @router.post("/sources", status_code=201)
-async def create_source(body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_source(body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     row = CollectionSource(**body.model_dump())
     db.add(row); await db.flush()
     await audit(db, user, "source.create", "collection_source", str(row.id), {"kind": row.kind, "name": row.name})
     await db.commit(); await db.refresh(row)
-    return out(row)
+    return source_out(row)
 
 
 @router.put("/sources/{source_id}")
-async def update_source(source_id: str, body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def update_source(source_id: str, body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     row = await source_or_404(db, source_id)
     for key, value in body.model_dump().items():
         setattr(row, key, value)
     await audit(db, user, "source.update", "collection_source", source_id)
     await db.commit(); await db.refresh(row)
-    return out(row)
+    return source_out(row)
 
 
 @router.post("/sources/{source_id}/run")
-async def run_source(source_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def run_source(source_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     source = await source_or_404(db, source_id)
     if source.kind in {"sigma", "yara"}:
         run = await sync_detection_rule_feed(db, source)
@@ -172,7 +275,8 @@ async def run_source(source_id: str, db: AsyncSession = Depends(get_session), us
         run.items_created = result["items_created"]; run.observables_created = result["observables_created"]
         source.last_run_at = datetime.now(timezone.utc)
     except Exception as exc:
-        run.status = "failed"; run.error = str(exc)[:2000]
+        logger.exception("Collection source run failed source_id=%s", source_id)
+        run.status = "failed"; run.error = "Source collection failed. See server logs."
     run.completed_at = datetime.now(timezone.utc)
     await audit(db, user, "source.run", "collection_source", source_id, {"status": run.status})
     await db.commit(); await db.refresh(run)
@@ -180,21 +284,31 @@ async def run_source(source_id: str, db: AsyncSession = Depends(get_session), us
 
 
 @router.post("/rule-feeds/defaults")
-async def create_default_rule_feeds(db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_default_rule_feeds(db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     rows = await ensure_default_detection_feeds(db)
     await audit(db, user, "rule_feed.defaults", "collection_source", details={"count": len(rows)})
     await db.commit()
-    return [out(row) for row in rows]
+    return [source_out(row) for row in rows]
 
 
 @router.get("/runs")
-async def runs(db: AsyncSession = Depends(get_session)):
-    rows = await db.execute(select(CollectionRun).order_by(CollectionRun.started_at.desc()).limit(100))
+async def runs(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    rows = await db.execute(
+        select(CollectionRun)
+        .order_by(CollectionRun.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return [out(row) for row in rows.scalars().all()]
 
 
 @router.post("/import/stix")
-async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
+async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)):
     reports = stix_reports(bundle)
     result = await ingest_reports(db, reports, "STIX/TAXII import", "manual STIX/TAXII import")
     await audit(db, user, "import.stix", "report_intake", details={"seen": len(reports), **result})
@@ -203,7 +317,7 @@ async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), use
 
 
 @router.post("/import/misp")
-async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
+async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)):
     reports = misp_reports(event)
     result = await ingest_reports(db, reports, "MISP import", "manual MISP import")
     await audit(db, user, "import.misp", "report_intake", details={"seen": len(reports), **result})
@@ -212,7 +326,7 @@ async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user
 
 
 @router.post("/import/atlas")
-async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst), _body=Depends(_limit_10mb)):
+async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds), _body=Depends(_limit_10mb)):
     result = normalize_atlas(payload)
     await audit(db, user, "import.atlas", "framework", "atlas", {"technique_count": result["technique_count"]})
     await db.commit()
@@ -220,18 +334,32 @@ async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), u
 
 
 @router.get("/observables")
-async def observables(db: AsyncSession = Depends(get_session)):
-    rows = await db.execute(select(Observable).order_by(Observable.last_seen_at.desc()).limit(500))
+async def observables(
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    rows = await db.execute(
+        select(Observable)
+        .order_by(Observable.last_seen_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return [out(row) for row in rows.scalars().all()]
 
 
 @router.get("/sandbox/behaviors")
-async def sandbox_behaviors(limit: int = 100, db: AsyncSession = Depends(get_session)):
+async def sandbox_behaviors(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
     return await list_sandbox_behaviors(db, limit=limit)
 
 
 @router.post("/observables", status_code=201)
-async def create_observable(body: ObservableBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def create_observable(body: ObservableBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel)):
     row, created = await add_observable(db, {**body.model_dump(), "normalized_value": body.value.lower().strip()})
     row.status = body.status; row.confidence = body.confidence; row.tags = normalize_freeform_tags(body.tags); row.source_refs = body.source_refs
     await audit(db, user, "observable.create" if created else "observable.update", "observable", str(row.id))
@@ -240,7 +368,12 @@ async def create_observable(body: ObservableBody, db: AsyncSession = Depends(get
 
 
 @router.post("/observables/{observable_id}/enrich")
-async def enrich(observable_id: str, provider: str = "auto", db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def enrich(
+    observable_id: str,
+    provider: Literal["auto", "local", "rdap"] = Query("auto"),
+    db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(manage_pipeline_intel),
+):
     try:
         row = await db.get(Observable, uuid.UUID(observable_id))
     except ValueError:
@@ -250,7 +383,8 @@ async def enrich(observable_id: str, provider: str = "auto", db: AsyncSession = 
     try:
         result = await enrich_observable(row.type, row.normalized_value, provider)
     except Exception as exc:
-        result = {"provider": provider, "status": "failed", "verdict": "unknown", "confidence": 0, "raw_data": {"error": str(exc)}}
+        logger.exception("Observable enrichment failed observable_id=%s provider=%s", observable_id, provider)
+        result = {"provider": provider, "status": "failed", "verdict": "unknown", "confidence": 0, "raw_data": {"error": "Enrichment provider request failed. See server logs."}}
     enrichment = EnrichmentResult(observable_id=row.id, **result)
     db.add(enrichment)
     await audit(db, user, "observable.enrich", "observable", observable_id, {"provider": result["provider"], "status": result["status"]})
@@ -259,7 +393,7 @@ async def enrich(observable_id: str, provider: str = "auto", db: AsyncSession = 
 
 
 @router.post("/detections/generate", status_code=201)
-async def generate(body: DetectionBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(analyst)):
+async def generate(body: DetectionBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_detections)):
     try:
         provider = "deterministic"
         model = ""
@@ -278,7 +412,8 @@ async def generate(body: DetectionBody, db: AsyncSession = Depends(get_session),
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(500, f"AI detection generation failed: {exc}") from exc
+        logger.exception("AI detection generation failed provider=%s format=%s", body.provider, body.format)
+        raise HTTPException(500, "AI detection generation failed. See server logs.") from exc
     validation = validate_detection(body.format, content)
     validation["generation"] = "ai" if body.use_ai else "skeleton"
     validation["provider"] = provider
@@ -295,17 +430,30 @@ async def generate(body: DetectionBody, db: AsyncSession = Depends(get_session),
 
 
 @router.post("/detections/validate")
-async def validate(body: ValidationBody, user: TeamUser = Depends(current_user)):
+async def validate(body: ValidationBody, user: TeamUser = Depends(manage_pipeline_detections)):
     return validate_detection(body.format, body.content)
 
 
 @router.get("/detections/versions")
-async def detection_versions(db: AsyncSession = Depends(get_session)):
-    rows = await db.execute(select(DetectionVersion).order_by(DetectionVersion.created_at.desc()).limit(200))
+async def detection_versions(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
+    rows = await db.execute(
+        select(DetectionVersion)
+        .order_by(DetectionVersion.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return [out(row) for row in rows.scalars().all()]
 
 
 @router.get("/audit")
-async def audit_events(db: AsyncSession = Depends(get_session), user: TeamUser = Depends(current_user)):
+async def audit_events(
+    db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(require_permission("view_audit")),
+):
     rows = await db.execute(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(500))
     return [out(row) for row in rows.scalars().all()]

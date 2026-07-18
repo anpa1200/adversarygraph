@@ -14,6 +14,57 @@
 - Added a comprehensive threat-hunting guide with a table of contents,
   governance and telemetry methodology, reusable worksheets and checklists,
   and twenty worked hunt playbooks using current ATT&CK v19 terminology.
+- Added governed, advisory-only AI assistance to the plan, query, findings, and
+  outcome stages, with stage-specific safe fields, explicit analyst review, and
+  no automatic query execution, evidence creation, disposition, or lifecycle
+  changes.
+- Added report-to-hypothesis generation from completed, stored Enterprise ATT&CK
+  report or research sessions, including bounded source coverage, exact citation
+  binding, local ATT&CK ID verification, stale-context rejection, and editable
+  draft application.
+- Added operator-controlled provider policy for Threat Hunting AI: local/private
+  processing by default, cloud processing disabled by default, per-request cloud
+  acknowledgement, local-only handling for `TLP:AMBER+STRICT` and `TLP:RED`,
+  bounded timeouts, rate limiting, and append-only sanitized assistance records.
+- Reworked route authorization around explicit permissions and aligned frontend
+  route/action visibility with the API, including separate user-management,
+  authentication-administration, audit, upload, export, simulation, SIEM, feed,
+  intelligence, detection, and analysis capabilities.
+- Corrected local-auth lifecycle behavior for failed MFA logins, bootstrap
+  password policy, MFA re-enrollment, session revocation, user changes, and
+  security-event auditing.
+- Added decoded byte limits for uploads and remote responses, bounded query and
+  form schemas, safer archive extraction, path/identifier validation, and
+  deterministic ATT&CK-version scoping for STIX analysis exports.
+- Hardened caller-controlled outbound HTTP against unsafe schemes, local and
+  metadata destinations, redirects, environment-proxy bypass, and unbounded
+  responses; public DNS answers are revalidated and pinned at connect time
+  while the original HTTPS hostname remains authoritative for SNI and
+  certificate verification. Production DNS/egress controls remain defense in
+  depth.
+- Improved frontend reliability with authenticated startup gating, abortable
+  streams, stale-response suppression, state isolation, safe URL handling,
+  recoverable errors, deep-link restoration, and route-level code splitting.
+- Added database-backed readiness, bounded/redacted observability data,
+  deterministic background-job shutdown, and safer error responses that keep
+  provider and internal details in server logs.
+- Hardened non-root containers, Compose and Helm security contexts and storage,
+  production environment preflight, backup/restore scripts, immutable CI
+  dependencies, tag-only release publication, and scans for all seven published
+  image families plus three digest-pinned supporting images.
+- Hardened the post-v6 container release path: strict local and CI scans build
+  with refreshed base images and no layer cache; runtime images install OS
+  security updates available at build time; fixable high/critical findings fail
+  the gate; and the tag workflow loads and scans versioned images before
+  pushing those same local images. Added optional validated Helm digest fields
+  for operator-resolved registry artifacts.
+- Made the Anomaly Detection Atlas documentation build a release gate, with a
+  reviewed source commit recorded in the image, durable AdversaryGraph overlay
+  handling, and fail-closed validation for internal links and explicit anchors.
+- Raised the enforced backend line-coverage baseline from 35% to 60% and added
+  regression coverage for authorization, uploads, input limits, rate limiting,
+  network clients, exports, observability, lifecycle shutdown, archive handling,
+  simulation persistence, and Threat Hunting AI.
 
 ## v6.0.0 - 2026-07-17
 
@@ -191,8 +242,6 @@
   v4.1.0.
 - Added v4.1 screenshot evidence for Discover, Asset Surface analysis, saved
   Asset Surface history, and the white asset-surface Navigator layer.
-
-## Unreleased
 
 ## v3.1.0 - 2026-06-21
 

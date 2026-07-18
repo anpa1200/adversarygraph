@@ -37,6 +37,41 @@ Before production use:
 - Add triage guidance.
 - Review with detection engineering owners.
 
+## Threat Hunting AI Assistance
+
+- Generated hypotheses, plans, queries, finding summaries, and outcome summaries
+  are suggestions. They are not evidence, reviewed findings, query-run results,
+  dispositions, or authorization to act.
+- A source-report citation shows where supporting language appears in the
+  report; it does not establish that the behavior occurred in the local
+  environment.
+- Report instructions can influence a model. Structured output validation and
+  fixed task prompts reduce prompt-injection risk but do not eliminate
+  hallucination, omission, or misleading synthesis.
+- The current governed assistant supports Enterprise ATT&CK report-to-hunt
+  generation only. Mobile ATT&CK, ICS ATT&CK, and MITRE ATLAS report domains are
+  rejected for this workflow.
+- Long reports may be processed only in part. The interface warns when the
+  bounded source limit truncates input; conclusions cannot be extended to
+  omitted text.
+- Saved-hunt assistance also uses bounded context: the canonical query is
+  limited to 12,000 characters; only the newest five query versions and newest
+  50 active findings are included; and their query, backend-assumption, summary,
+  and note fields have documented per-field caps. The response warns whenever
+  these limits omit or truncate current data.
+- Suggestions are generated from a source and hunt snapshot. The API rejects a
+  result if that stored context changes during the provider call. A report or
+  hunt changed later still makes the earlier suggestion stale and requires
+  regeneration or explicit manual comparison.
+- Query drafts remain implementation-dependent. Analysts must validate fields,
+  syntax, time bounds, performance, and read-only behavior in the destination
+  before execution.
+- The AI-assistance record stores the validated suggestion, governance and
+  provenance metadata, and bounded server-validated citation excerpts of at
+  most 300 characters each. It does not store the full raw report, raw prompt,
+  or raw provider response. The original report remains subject to the report
+  store's access and retention controls.
+
 ## Evidence-to-Detection Graph
 
 - Graph nodes and edges preserve analyst reasoning, but they do not prove that a
@@ -51,7 +86,15 @@ Before production use:
 
 ## Privacy
 
-Docker mode sends report content to the configured LLM provider. Use a private provider or local gateway if report content cannot leave the environment.
+Other Docker-mode AI workflows send their selected input to the configured LLM
+provider. Threat Hunting AI defaults to the operator-configured local endpoint;
+cloud use is disabled by default and requires operator enablement plus explicit
+analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED` assistant inputs are
+local-only. A stored source report defaults conservatively to
+`TLP:AMBER+STRICT`; only the `manage_intel` report-edit path may change its
+server-side marking, and a request may raise but cannot lower it. An endpoint
+labeled `local` is private only when the operator has deployed and governed it
+that way.
 
 ## Sector Intelligence
 
@@ -76,3 +119,9 @@ Docker mode sends report content to the configured LLM provider. Use a private p
 ## Deployment
 
 The default Compose profile is intended for local and controlled self-hosted use. It is not a hardened public SaaS configuration.
+
+The API's generic size pre-check relies on a client-declared `Content-Length`;
+it is not a decoded-body streaming limiter. The bundled Nginx configurations
+enforce decoded request limits and route-specific upload allowances. A custom
+deployment must reproduce those ingress limits and must not expose the API
+container directly to untrusted clients.

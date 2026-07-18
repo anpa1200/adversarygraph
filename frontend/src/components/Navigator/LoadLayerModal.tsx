@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { layersApi } from '@/api/client';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 interface Props {
   domain: string;
@@ -9,6 +11,7 @@ interface Props {
 
 export function LoadLayerModal({ domain, onLoad, onClose }: Props) {
   const qc = useQueryClient();
+  const canManageLayers = useHasPermission('manage_intel');
 
   const { data: layers = [], isLoading } = useQuery({
     queryKey: ['saved-layers', domain],
@@ -52,6 +55,7 @@ export function LoadLayerModal({ domain, onLoad, onClose }: Props) {
 
         {!isLoading && layers.length > 0 && (
           <div className="space-y-2 max-h-80 overflow-y-auto">
+            {!canManageLayers && <PermissionNotice permission="manage_intel" action="delete saved layers" compact />}
             {layers.map(layer => (
               <div
                 key={layer.id}
@@ -68,13 +72,13 @@ export function LoadLayerModal({ domain, onLoad, onClose }: Props) {
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button
+                  {canManageLayers && <button
                     onClick={() => loadMutation.mutate(layer.id)}
                     disabled={loadMutation.isPending}
                     className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1 rounded transition-colors"
                   >
                     Load
-                  </button>
+                  </button>}
                   <button
                     onClick={() => {
                       if (confirm(`Delete "${layer.name}"?`)) deleteMutation.mutate(layer.id);

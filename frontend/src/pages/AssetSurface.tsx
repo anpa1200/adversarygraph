@@ -4,10 +4,13 @@ import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
+import { PermissionNotice } from '@/components/PermissionNotice';
 import { assetSurfaceApi, layersApi, threatRadarApi } from '@/api/client';
 import type { AssetIntelMatch, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatCompanySpace } from '@/api/client';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 import { useAppStore } from '@/store';
+import { safeInternalHref } from '@/utils/url';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 
@@ -15,7 +18,7 @@ const PROVIDERS: { id: Provider; label: string; model: string }[] = [
   { id: 'local', label: 'Local', model: 'qwen3:8b' },
   { id: 'claude', label: 'Claude', model: 'claude-opus-4-8' },
   { id: 'openai', label: 'OpenAI', model: 'gpt-4.1' },
-  { id: 'gemini', label: 'Gemini', model: 'gemini-2.0-flash' },
+  { id: 'gemini', label: 'Gemini', model: 'gemini-3.5-flash' },
   { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M3' },
 ];
 
@@ -26,6 +29,9 @@ asset-0003,ad-dc-01,identity,prod,IT,10.10.1.10,ad01.corp.local,"53;88;135;389;4
 asset-0004,postgres-payments,database,prod,Payments,10.20.5.15,,"5432","postgresql;linux",internal,critical,"database;payments"`;
 
 export function AssetSurface() {
+  const canManage = useHasPermission('manage_intel');
+  const canExport = useHasPermission('export_data');
+  const canUploadFiles = useHasPermission('upload_files');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -103,7 +109,7 @@ export function AssetSurface() {
   });
 
   const onDrop = (nextFiles: File[]) => {
-    if (!nextFiles.length) return;
+    if (!canManage || !canUploadFiles || !nextFiles.length) return;
     setFiles(nextFiles);
     setText('');
     setInventoryName(nextFiles.length === 1 ? nextFiles[0].name.replace(/\.[^.]+$/, '') : `${nextFiles.length} asset inventory files`);
@@ -111,6 +117,7 @@ export function AssetSurface() {
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
+    disabled: !canManage || !canUploadFiles,
     multiple: true,
     maxFiles: 20,
     accept: {
@@ -145,6 +152,7 @@ export function AssetSurface() {
   }, [matchesQuery.data, result?.intel_matches]);
 
   const run = () => {
+    if (!canManage || (files.length > 0 && !canUploadFiles)) return;
     const form = new FormData();
     form.append('provider', provider);
     form.append('use_ai', String(useAi));
@@ -155,7 +163,7 @@ export function AssetSurface() {
     mutation.mutate(form);
   };
 
-  const canRun = !mutation.isPending && (files.length > 0 || text.trim().length > 0);
+  const canRun = canManage && !mutation.isPending && ((files.length > 0 && canUploadFiles) || text.trim().length > 0);
   const addWhiteAssetLayer = (replace = false) => {
     if (!allTtpIds.length) return;
     if (replace) {
@@ -175,14 +183,15 @@ export function AssetSurface() {
       <Header title="Asset Attack Surface" />
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[400px_minmax(0,1fr)] xl:overflow-hidden">
         <aside className="flex min-h-0 flex-col overflow-y-auto border-r border-gray-700">
+          {!canManage&&<section className="border-b border-gray-800 p-4"><PermissionNotice permission="manage_intel" action="analyze inventory, create asset cases, or save server-side layers" compact /></section>}
           <section className="border-b border-gray-800 p-4">
             <label className="label">Inventory Name</label>
-            <input className="field" value={inventoryName} onChange={event => setInventoryName(event.target.value)} />
+            <input disabled={!canManage} className="field" value={inventoryName} onChange={event => setInventoryName(event.target.value)} />
           </section>
 
           <section className="border-b border-gray-800 p-4">
             <label className="label">Target Company Space</label>
-            <select className="field" value={companySpaceId} onChange={event => setCompanySpaceId(event.target.value)}>
+            <select disabled={!canManage} className="field" value={companySpaceId} onChange={event => setCompanySpaceId(event.target.value)}>
               <option value="">No company space - analyze only</option>
               {(spacesQuery.data ?? []).map((space: ThreatCompanySpace) => (
                 <option key={space.id} value={space.id}>
@@ -202,6 +211,7 @@ export function AssetSurface() {
                 <button
                   key={item.id}
                   type="button"
+                  disabled={!canManage}
                   onClick={() => setProvider(item.id)}
                   className={`flex items-center justify-between rounded border px-3 py-2 text-xs ${
                     provider === item.id ? 'border-mitre-accent bg-mitre-accent/20 text-white' : 'border-gray-700 text-gray-500 hover:text-gray-300'
@@ -213,7 +223,7 @@ export function AssetSurface() {
               ))}
             </div>
             <label className="mt-3 flex items-start gap-2 rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-400">
-              <input type="checkbox" checked={useAi} onChange={event => setUseAi(event.target.checked)} />
+              <input disabled={!canManage} type="checkbox" checked={useAi} onChange={event => setUseAi(event.target.checked)} />
               <span>Use AI enrichment for attack paths, control gaps, assumptions, and validation gaps. Baseline scoring still runs without AI.</span>
             </label>
           </section>
@@ -221,6 +231,7 @@ export function AssetSurface() {
           <section className="flex min-h-0 flex-1 flex-col p-4">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Inventory Input</div>
             <textarea
+              disabled={!canManage}
               value={text}
               onChange={event => {
                 setText(event.target.value);
@@ -242,6 +253,7 @@ export function AssetSurface() {
                 <span>Drop one or more CSV / JSON / TXT inventories or click</span>
               )}
             </div>
+            {!canUploadFiles && <div className="mt-3"><PermissionNotice permission="upload_files" action="upload asset inventory files" compact /></div>}
             {files.length > 0 && (
               <div className="mt-3 max-h-28 overflow-y-auto rounded border border-gray-800 bg-gray-950 p-2 text-xs text-gray-400">
                 {files.map(item => (
@@ -252,10 +264,10 @@ export function AssetSurface() {
                 ))}
               </div>
             )}
-            <button type="button" onClick={open} className="secondary-action mt-3 min-h-10 w-full">
+            <button type="button" disabled={!canManage || !canUploadFiles} onClick={open} className="secondary-action mt-3 min-h-10 w-full disabled:opacity-40">
               Upload inventory files
             </button>
-            <button type="button" disabled={!canRun} onClick={run} className="primary mt-4 disabled:opacity-50">
+            <button type="button" disabled={!canManage || !canRun} onClick={run} className="primary mt-4 disabled:opacity-50">
               {mutation.isPending ? 'Building matrix...' : 'Analyze Attack Surface'}
             </button>
             {mutation.error && (
@@ -296,7 +308,7 @@ export function AssetSurface() {
                       <b className="block truncate text-gray-200">{item.name}</b>
                       <span className="mt-1 block text-[10px] text-gray-600">{new Date(item.created_at).toLocaleString()}</span>
                     </div>
-                    <button
+                    {canManage&&<button
                       type="button"
                       onClick={event => {
                         event.stopPropagation();
@@ -306,7 +318,7 @@ export function AssetSurface() {
                       className="text-[10px] text-gray-600 hover:text-red-300 disabled:opacity-40"
                     >
                       delete
-                    </button>
+                    </button>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
                     <Chip>{item.asset_count} assets</Chip>
@@ -348,10 +360,10 @@ export function AssetSurface() {
                 <div className="flex flex-wrap gap-2">
                   <button type="button" disabled={!allTtpIds.length} onClick={() => addWhiteAssetLayer(false)} className="secondary-action disabled:opacity-40">Add White Layer</button>
                   <button type="button" disabled={!allTtpIds.length} onClick={() => { addWhiteAssetLayer(true); navigate('/navigator'); }} className="primary-action disabled:opacity-40">Open Matrix</button>
-                  <button type="button" disabled={!allTtpIds.length || saveLayer.isPending} onClick={() => saveLayer.mutate(allTtpIds)} className="secondary-action disabled:opacity-40">
+                  {canManage&&<button type="button" disabled={!allTtpIds.length || saveLayer.isPending} onClick={() => saveLayer.mutate(allTtpIds)} className="secondary-action disabled:opacity-40">
                     {saveLayer.isPending ? 'Saving...' : 'Save Layer'}
-                  </button>
-                  <button type="button" onClick={() => downloadJson(result, `${slug(inventoryName || 'asset-surface')}-matrix.json`)} className="secondary-action">Export JSON</button>
+                  </button>}
+                  {canExport&&<button type="button" onClick={() => downloadJson(result, `${slug(inventoryName || 'asset-surface')}-matrix.json`)} className="secondary-action">Export JSON</button>}
                 </div>
                 {saveLayer.data && <div className="w-full text-xs text-green-400">Saved layer: {saveLayer.data.name}</div>}
                 {saveLayer.error && <div className="w-full text-xs text-red-300">{String(saveLayer.error)}</div>}
@@ -559,8 +571,8 @@ function AssetIntelMatches({ matches, loading }: { matches: AssetIntelMatch[]; l
                 <div className="mt-1 font-mono text-[11px] text-gray-500">{match.source_id}</div>
               </td>
               <td className="py-3 pr-3">
-                {match.route ? (
-                  <a href={match.route} className="font-semibold text-white hover:text-mitre-accent hover:underline">{match.title || match.source_id}</a>
+                {safeInternalHref(match.route) ? (
+                  <a href={safeInternalHref(match.route)} className="font-semibold text-white hover:text-mitre-accent hover:underline">{match.title || match.source_id}</a>
                 ) : (
                   <span className="font-semibold text-white">{match.title || match.source_id}</span>
                 )}

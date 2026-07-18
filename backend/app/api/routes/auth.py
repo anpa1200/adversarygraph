@@ -14,7 +14,6 @@ from app.services.auth import (
     ALL_PERMISSIONS,
     SESSION_COOKIE,
     TeamUser,
-    admin,
     audit_event,
     authenticate_credentials,
     bootstrap_admin_if_configured,
@@ -23,18 +22,27 @@ from app.services.auth import (
     hash_password,
     hash_token,
     new_totp_secret,
+    normalize_identity_name,
     normalize_role,
     normalize_permissions,
     password_policy,
     revoke_session,
     revoke_user_sessions,
+    ensure_user_management_continuity,
+    require_permission,
+    require_any_permission,
     user_count,
     validate_password_policy,
+    validate_user_grant_scope,
+    validate_user_target_scope,
     verify_totp,
     ROLE_PERMISSIONS,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+manage_users = require_permission("manage_users")
+manage_auth = require_permission("manage_auth")
+manage_user_directory = require_any_permission("manage_users", "manage_auth")
 
 
 class LoginBody(BaseModel):
@@ -47,15 +55,15 @@ class UserCreateBody(BaseModel):
     username: str = Field(..., min_length=1, max_length=120)
     password: str = Field(..., min_length=10, max_length=500)
     display_name: str = Field(default="", max_length=255)
-    role: str = Field(default="viewer")
-    permissions: list[str] = Field(default_factory=list)
+    role: str = Field(default="viewer", max_length=30)
+    permissions: list[str] = Field(default_factory=list, max_length=50)
     enabled: bool = True
 
 
 class UserUpdateBody(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
-    role: str | None = None
-    permissions: list[str] | None = None
+    role: str | None = Field(default=None, max_length=30)
+    permissions: list[str] | None = Field(default=None, max_length=50)
     enabled: bool | None = None
 
 
@@ -83,6 +91,28 @@ def user_out(user: UserAccount) -> dict:
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
+
+
+async def _lock_user(db: AsyncSession, user_id: UUID) -> UserAccount | None:
+    """Lock one account before applying a security-sensitive mutation."""
+    result = await db.execute(
+        select(UserAccount)
+        .where(UserAccount.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _lock_user_directory(db: AsyncSession, user_id: UUID) -> UserAccount | None:
+    """Lock the directory in stable order for lifecycle/continuity changes."""
+    result = await db.execute(
+        select(UserAccount)
+        .order_by(UserAccount.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return next((user for user in result.scalars().all() if user.id == user_id), None)
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -138,6 +168,7 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
         await audit_event(db, user.username, "auth.mfa_failed", "user_account", str(user.id), {"ip": request.client.host if request.client else ""})
         await db.commit()
         raise HTTPException(401, "Invalid MFA code")
+    user.last_login_at = datetime.now(timezone.utc)
     token, session = await create_session(db, user, request)
     await audit_event(db, user.username, "auth.login", "auth_session", str(session.id), {"ip": session.ip_address, "mfa": user.mfa_enabled})
     await db.commit()
@@ -174,21 +205,26 @@ async def me(user: TeamUser = Depends(current_user)):
 
 
 @router.get("/users")
-async def list_users(db: AsyncSession = Depends(get_session), _: TeamUser = Depends(admin)):
+async def list_users(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(manage_user_directory),
+):
     rows = await db.execute(select(UserAccount).order_by(UserAccount.created_at.asc()))
     return [user_out(row) for row in rows.scalars().all()]
 
 
 @router.post("/users", status_code=201)
-async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_session), _: TeamUser = Depends(admin)):
+async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_users)):
+    username = normalize_identity_name(body.username, max_length=120)
     role = normalize_role(body.role)
     permissions = normalize_permissions(body.permissions)
+    validate_user_grant_scope(current, role=role, permissions=permissions)
     validate_password_policy(body.password)
-    existing = await db.scalar(select(UserAccount).where(UserAccount.username == body.username.strip()))
+    existing = await db.scalar(select(UserAccount).where(UserAccount.username == username))
     if existing:
         raise HTTPException(409, "Username already exists")
     user = UserAccount(
-        username=body.username.strip(),
+        username=username,
         display_name=body.display_name.strip(),
         password_hash=hash_password(body.password),
         role=role,
@@ -197,21 +233,46 @@ async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_sessi
     )
     db.add(user)
     await db.flush()
-    await audit_event(db, _.name, "auth.user_create", "user_account", str(user.id), {"username": user.username, "role": user.role, "enabled": user.enabled})
+    await audit_event(db, current.name, "auth.user_create", "user_account", str(user.id), {"username": user.username, "role": user.role, "enabled": user.enabled})
     await db.commit()
     await db.refresh(user)
     return user_out(user)
 
 
 @router.patch("/users/{user_id}")
-async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(admin)):
-    user = await db.get(UserAccount, user_id)
+async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_users)):
+    user = await _lock_user_directory(db, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    if body.role is not None:
-        user.role = normalize_role(body.role)
-    if body.permissions is not None:
-        user.permissions = normalize_permissions(body.permissions)
+    validate_user_target_scope(current, user)
+    if str(user.id) == current.user_id and (
+        body.role is not None or body.permissions is not None
+    ):
+        raise HTTPException(
+            403,
+            "You cannot change your own role or explicit permissions",
+        )
+    proposed_role = normalize_role(body.role) if body.role is not None else user.role
+    proposed_permissions = (
+        normalize_permissions(body.permissions)
+        if body.permissions is not None
+        else list(user.permissions or [])
+    )
+    proposed_enabled = body.enabled if body.enabled is not None else user.enabled
+    validate_user_grant_scope(
+        current,
+        role=proposed_role,
+        permissions=proposed_permissions,
+    )
+    await ensure_user_management_continuity(
+        db,
+        user,
+        proposed_role=proposed_role,
+        proposed_permissions=proposed_permissions,
+        proposed_enabled=proposed_enabled,
+    )
+    user.role = proposed_role
+    user.permissions = proposed_permissions
     if body.display_name is not None:
         user.display_name = body.display_name.strip()
     if body.enabled is not None:
@@ -225,10 +286,11 @@ async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = De
 
 
 @router.post("/users/{user_id}/password")
-async def set_password(user_id: UUID, body: PasswordBody, db: AsyncSession = Depends(get_session), _: TeamUser = Depends(admin)):
-    user = await db.get(UserAccount, user_id)
+async def set_password(user_id: UUID, body: PasswordBody, db: AsyncSession = Depends(get_session), _: TeamUser = Depends(manage_users)):
+    user = await _lock_user(db, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    validate_user_target_scope(_, user)
     validate_password_policy(body.password)
     user.password_hash = hash_password(body.password)
     rows = await db.execute(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)))
@@ -241,12 +303,20 @@ async def set_password(user_id: UUID, body: PasswordBody, db: AsyncSession = Dep
 
 
 @router.delete("/users/{user_id}", status_code=204)
-async def disable_user(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(admin)):
-    user = await db.get(UserAccount, user_id)
+async def disable_user(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_users)):
+    user = await _lock_user_directory(db, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    validate_user_target_scope(current, user)
     if str(user.id) == current.user_id:
         raise HTTPException(400, "You cannot disable your own account")
+    await ensure_user_management_continuity(
+        db,
+        user,
+        proposed_role=user.role,
+        proposed_permissions=list(user.permissions or []),
+        proposed_enabled=False,
+    )
     user.enabled = False
     rows = await db.execute(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)))
     revoked_at = datetime.now(timezone.utc)
@@ -258,7 +328,7 @@ async def disable_user(user_id: UUID, db: AsyncSession = Depends(get_session), c
 
 
 @router.get("/sessions")
-async def list_sessions(db: AsyncSession = Depends(get_session), current: TeamUser = Depends(admin)):
+async def list_sessions(db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_auth)):
     rows = await db.execute(
         select(AuthSession)
         .order_by(AuthSession.created_at.desc())
@@ -301,10 +371,11 @@ async def revoke_all_my_sessions(request: Request, db: AsyncSession = Depends(ge
 
 
 @router.post("/users/{user_id}/sessions/revoke")
-async def revoke_user_session_set(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(admin)):
-    user = await db.get(UserAccount, user_id)
+async def revoke_user_session_set(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_auth)):
+    user = await _lock_user(db, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    validate_user_target_scope(current, user)
     revoked = await revoke_user_sessions(db, user_id)
     await audit_event(db, current.name, "auth.sessions_revoke_user", "user_account", str(user_id), {"username": user.username, "revoked": revoked})
     await db.commit()
@@ -313,11 +384,18 @@ async def revoke_user_session_set(user_id: UUID, db: AsyncSession = Depends(get_
 
 @router.post("/mfa/setup")
 async def setup_mfa(db: AsyncSession = Depends(get_session), current: TeamUser = Depends(current_user)):
+    if not settings.auth_mfa_enabled:
+        raise HTTPException(403, "Local MFA enrollment is disabled by the operator")
     if not current.user_id:
         raise HTTPException(400, "MFA setup requires a local user account")
     user = await db.get(UserAccount, UUID(current.user_id))
     if not user:
         raise HTTPException(404, "User not found")
+    if user.mfa_enabled:
+        raise HTTPException(
+            409,
+            "MFA is already enabled; an auth administrator must disable it before re-enrollment",
+        )
     user.mfa_secret = new_totp_secret()
     user.mfa_enabled = False
     await audit_event(db, current.name, "auth.mfa_setup_start", "user_account", str(user.id))
@@ -330,6 +408,8 @@ async def setup_mfa(db: AsyncSession = Depends(get_session), current: TeamUser =
 
 @router.post("/mfa/confirm")
 async def confirm_mfa(body: MfaVerifyBody, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(current_user)):
+    if not settings.auth_mfa_enabled:
+        raise HTTPException(403, "Local MFA enrollment is disabled by the operator")
     if not current.user_id:
         raise HTTPException(400, "MFA confirmation requires a local user account")
     user = await db.get(UserAccount, UUID(current.user_id))
@@ -344,10 +424,11 @@ async def confirm_mfa(body: MfaVerifyBody, db: AsyncSession = Depends(get_sessio
 
 
 @router.post("/users/{user_id}/mfa/disable")
-async def disable_user_mfa(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(admin)):
-    user = await db.get(UserAccount, user_id)
+async def disable_user_mfa(user_id: UUID, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_auth)):
+    user = await _lock_user(db, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    validate_user_target_scope(current, user)
     user.mfa_enabled = False
     user.mfa_secret = ""
     await audit_event(db, current.name, "auth.mfa_disable", "user_account", str(user.id), {"username": user.username})
@@ -356,7 +437,10 @@ async def disable_user_mfa(user_id: UUID, db: AsyncSession = Depends(get_session
 
 
 @router.get("/audit")
-async def auth_audit_events(db: AsyncSession = Depends(get_session), _: TeamUser = Depends(admin)):
+async def auth_audit_events(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(require_permission("view_audit")),
+):
     rows = await db.execute(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(500))
     return [
         {

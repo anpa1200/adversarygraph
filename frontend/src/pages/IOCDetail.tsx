@@ -6,10 +6,14 @@ import { Header } from '@/components/Layout/Header';
 import { cveApi, iocApi, type IOCDetail as IOCDetailType } from '@/api/client';
 import { useAppStore } from '@/store';
 import { RelatedCvesPanel } from '@/components/CVE/RelatedCvesPanel';
+import { safeHref } from '@/utils/url';
+import { PermissionNotice } from '@/components/PermissionNotice';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const NETWORK_FINGERPRINT_TYPES = new Set(['ja3', 'ja3s', 'ja4', 'ja4s', 'ja4h', 'ja4l', 'ja4ls', 'ja4x', 'ja4ssh', 'ja4t']);
 
 export function IOCDetail() {
+  const canRunAnalysis = useHasPermission('run_analysis');
   const navigate = useNavigate();
   const { id = '' } = useParams();
   const { domain, addTechniques, replaceTechniques } = useAppStore();
@@ -55,14 +59,21 @@ export function IOCDetail() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <ClickableValue value={item.value} label="Lookup" />
                       {item.source_url && <ClickableValue value={item.source_url} label="Source report" />}
-                      <button
-                        onClick={() => navigate(`/ioc-investigation?indicator=${encodeURIComponent(item.value)}`)}
-                        className="primary-action"
-                      >
-                        Investigate IOC
-                      </button>
+                      {canRunAnalysis && (
+                        <button
+                          onClick={() => navigate(`/ioc-investigation?indicator=${encodeURIComponent(item.value)}`)}
+                          className="primary-action"
+                        >
+                          Investigate IOC
+                        </button>
+                      )}
                       <button onClick={() => navigate('/ioc-library')} className="secondary-action">Back to IOC Library</button>
                     </div>
+                    {!canRunAnalysis && (
+                      <div className="mt-3">
+                        <PermissionNotice permission="run_analysis" action="start an IOC investigation" compact />
+                      </div>
+                    )}
                   </div>
                   <div className="grid min-w-[240px] gap-2 text-xs text-gray-400">
                     <Metric label="Source" value={item.source_details.label || item.source} />
@@ -198,7 +209,7 @@ function TechniqueCard({ technique }: { technique: IOCDetailType['techniques'][n
       <div className="flex flex-wrap items-center gap-2">
         <a href={`/navigator?technique=${technique.attack_id}`} className="font-mono text-sm text-mitre-accent hover:underline">{technique.attack_id}</a>
         <span className="text-sm font-semibold text-white">{technique.name || 'Technique'}</span>
-        {technique.url && <a href={technique.url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline">ATT&CK ↗</a>}
+        {safeHref(technique.url) && <a href={safeHref(technique.url)} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline">ATT&CK ↗</a>}
       </div>
       {technique.tactics.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -244,8 +255,8 @@ function EnrichmentSection({ section }: { section: IOCDetailType['enrichments'][
 function ClickableValue({ value, label }: { value: string; label?: string }) {
   const trimmed = String(value || '').trim();
   if (!trimmed) return <span className="text-gray-600">-</span>;
-  if (/^https?:\/\//i.test(trimmed)) {
-    return <a href={trimmed} target="_blank" rel="noreferrer" className="break-all text-blue-400 hover:underline">{label || trimmed}</a>;
+  if (safeHref(trimmed)) {
+    return <a href={safeHref(trimmed)} target="_blank" rel="noreferrer" className="break-all text-blue-400 hover:underline">{label || trimmed}</a>;
   }
   if (/^T\d{4}(?:\.\d{3})?$/i.test(trimmed)) {
     return <a href={`/navigator?technique=${trimmed.toUpperCase()}`} className="break-all font-mono text-mitre-accent hover:underline">{label || trimmed.toUpperCase()}</a>;

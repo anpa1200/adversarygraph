@@ -8,7 +8,7 @@ This local triage file mirrors reviewer-facing project state when GitHub issue m
 |---|---|---|
 | Celery dead-code cleanup | Closed | Removed the unused `analysis.run` Celery task registration; background workers now cover sync, pipeline collection, and RetroHunt only. |
 | Starlette transitive CVE | Closed / audited | Current dependencies are audited in CI with `pip-audit`; reverse-proxy Host normalization remains documented for internet-facing deployments. |
-| Backend coverage target | Open | Raise enforced coverage from current baseline to 60%+, then 70% |
+| Backend coverage target | In progress | The enforced baseline is 60%; raise it toward 70% with risk-weighted route and failure-path tests. |
 | Frontend unit tests | Open | Add Vitest coverage for high-risk pages and shared utilities |
 | Reverse-proxy examples | Open | Add NGINX/Caddy examples for auth, TLS, trusted headers, and CORS |
 

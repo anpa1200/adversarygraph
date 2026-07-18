@@ -18,9 +18,17 @@ spec:
         {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: redis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
-          image: {{ .Values.redis.image | quote }}
+          image: {{ include "adversarygraph.fullImage" (dict "image" .Values.redis.image "digest" .Values.redis.imageDigest) | quote }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command: ["sh", "-lc", "redis-server --requirepass \"$REDIS_PASSWORD\""]
           env:
@@ -34,6 +42,14 @@ spec:
               command: ["sh", "-lc", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep PONG"]
             initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-lc", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep PONG"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
           securityContext:
@@ -41,6 +57,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

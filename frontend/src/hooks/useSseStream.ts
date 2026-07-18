@@ -8,7 +8,7 @@
  *   data: {"type":"error","message":"..."}
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SseState<T> {
   tokens: string;          // accumulated streaming text
@@ -25,18 +25,27 @@ export function useSseStream<T>() {
     streaming: false,
   });
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
-  const run = useCallback(async (responsePromise: Promise<Response>) => {
+  const run = useCallback(async (responseFactory: (signal: AbortSignal) => Promise<Response>) => {
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const requestId = ++requestIdRef.current;
 
     setState({ tokens: '', result: null, error: '', streaming: true });
 
     try {
-      const resp = await responsePromise;
+      const resp = await responseFactory(controller.signal);
+      if (requestId !== requestIdRef.current) {
+        await resp.body?.cancel().catch(() => undefined);
+        return;
+      }
       if (!resp.ok || !resp.body) {
         const text = await resp.text();
-        setState(s => ({ ...s, error: text || 'Request failed', streaming: false }));
+        if (requestId === requestIdRef.current) {
+          setState(s => ({ ...s, error: text || 'Request failed', streaming: false }));
+        }
         return;
       }
 
@@ -53,9 +62,19 @@ export function useSseStream<T>() {
         buf = lines.pop() ?? '';
 
         for (const line of lines) {
+          if (requestId !== requestIdRef.current) {
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
           if (!line.startsWith('data: ')) continue;
           const raw = line.slice(6);
-          if (raw === '[DONE]') break;
+          if (raw === '[DONE]') {
+            await reader.cancel().catch(() => undefined);
+            if (requestId === requestIdRef.current) {
+              setState(s => ({ ...s, streaming: false }));
+            }
+            return;
+          }
 
           try {
             const evt = JSON.parse(raw);
@@ -63,7 +82,14 @@ export function useSseStream<T>() {
               setState(s => ({ ...s, tokens: s.tokens + evt.content }));
             } else if (evt.type === 'result') {
               setState(s => ({ ...s, result: evt.data as T }));
+            } else if (evt.type === 'done') {
+              await reader.cancel().catch(() => undefined);
+              if (requestId === requestIdRef.current) {
+                setState(s => ({ ...s, streaming: false }));
+              }
+              return;
             } else if (evt.type === 'error') {
+              await reader.cancel().catch(() => undefined);
               setState(s => ({ ...s, error: evt.message, streaming: false }));
               return;
             }
@@ -73,21 +99,36 @@ export function useSseStream<T>() {
         }
       }
 
-      setState(s => ({ ...s, streaming: false }));
+      if (requestId === requestIdRef.current) {
+        setState(s => ({ ...s, streaming: false }));
+      }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
+      if ((err as Error).name !== 'AbortError' && requestId === requestIdRef.current) {
         setState(s => ({ ...s, error: String(err), streaming: false }));
       }
+    } finally {
+      if (requestId === requestIdRef.current) abortRef.current = null;
     }
   }, []);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    requestIdRef.current += 1;
     setState(s => ({ ...s, streaming: false }));
   }, []);
 
   const reset = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    requestIdRef.current += 1;
     setState({ tokens: '', result: null, error: '', streaming: false });
+  }, []);
+
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
   }, []);
 
   return { ...state, run, abort, reset };

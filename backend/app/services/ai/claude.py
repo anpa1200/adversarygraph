@@ -39,7 +39,14 @@ class ClaudeAdapter(LLMAdapter):
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        return msg.content[0].text  # type: ignore[index]
+        text_parts = [
+            text
+            for block in msg.content
+            if isinstance((text := getattr(block, "text", None)), str) and text.strip()
+        ]
+        if not text_parts:
+            raise RuntimeError("Claude returned no text content")
+        return "".join(text_parts)
 
     async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
         async with self._api_client.messages.stream(

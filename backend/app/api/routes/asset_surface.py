@@ -11,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.config import settings
+from app.core.safe_http import read_upload_limited
 from app.models.asset_surface import AssetSurfaceCase
 from app.models.threat_radar import ThreatCompanySpace, ThreatSpaceAsset
 from app.services.asset_intel import (
@@ -30,10 +32,12 @@ from app.services.asset_surface import (
     parse_ai_json,
     parse_inventory,
 )
-from app.services.auth import TeamUser, analyst, audit
+from app.services.auth import TeamUser, analyst, audit, has_permission, require_permission
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 router = APIRouter(prefix="/asset-surface", tags=["Asset Attack Surface"])
+manage_asset_surface = require_permission("manage_intel")
+run_asset_analysis = require_permission("run_analysis")
 logger = logging.getLogger(__name__)
 
 MAX_ASSET_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -117,8 +121,14 @@ async def analyze_asset_surface(
     file: UploadFile | None = File(default=None),
     files: list[UploadFile] | None = File(default=None),
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_asset_surface),
 ):
+    if (
+        (file is not None or bool(files))
+        and settings.auth_enabled
+        and not has_permission(user, "upload_files")
+    ):
+        raise HTTPException(403, "Permission required: upload_files")
     company_space = await _get_company_space_or_none(session, company_space_id)
     inventory_inputs = await _read_inventory_inputs(text, file, files)
     filenames = [filename or "pasted inventory" for _, filename in inventory_inputs]
@@ -130,7 +140,8 @@ async def analyze_asset_surface(
             records.extend(parsed_records)
         except Exception as exc:
             source_label = source_filename or "pasted inventory"
-            raise HTTPException(400, f"Could not parse inventory {source_label}: {exc}") from exc
+            logger.warning("Could not parse inventory source=%s", source_label, exc_info=True)
+            raise HTTPException(400, f"Could not parse inventory {source_label}") from exc
 
     if not records:
         raise HTTPException(400, "Inventory did not contain any recognizable assets")
@@ -158,7 +169,7 @@ async def analyze_asset_surface(
                 **baseline,
                 "validation_gaps": [
                     "AI enrichment failed; deterministic baseline matrix is shown.",
-                    str(exc),
+                    "Review server logs for the provider failure detail.",
                 ],
             }
 
@@ -321,7 +332,7 @@ async def list_registered_asset_matches(
 async def run_asset_retrohunt(
     payload: AssetRetrohuntIn,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(run_asset_analysis),
 ):
     summary = await retrohunt_assets(session, asset_ids=payload.asset_ids or None)
     await audit(session, user, "asset_surface.retrohunt", "asset_registry", details=summary)
@@ -350,7 +361,7 @@ async def get_asset_surface_case(
 async def delete_asset_surface_case(
     case_id: str,
     session: AsyncSession = Depends(get_session),
-    user: TeamUser = Depends(analyst),
+    user: TeamUser = Depends(manage_asset_surface),
 ):
     case = await _get_case_or_404(session, case_id)
     await audit(session, user, "asset_surface.delete_case", "asset_surface_case", str(case.id), {"name": case.name})
@@ -366,11 +377,14 @@ async def _read_inventory_inputs(
     inventory_inputs: list[tuple[bytes, str | None]] = []
     total_bytes = 0
     if file:
-        content = await file.read()
+        content = await read_upload_limited(file, MAX_ASSET_UPLOAD_BYTES)
         total_bytes += len(content)
         inventory_inputs.append((content, file.filename))
     for item in files or []:
-        content = await item.read()
+        remaining = MAX_ASSET_UPLOAD_BYTES - total_bytes
+        if remaining <= 0:
+            raise HTTPException(413, "Inventory uploads exceed 10 MB total limit")
+        content = await read_upload_limited(item, remaining)
         total_bytes += len(content)
         inventory_inputs.append((content, item.filename))
     if total_bytes > MAX_ASSET_UPLOAD_BYTES:

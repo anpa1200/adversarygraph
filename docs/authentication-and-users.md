@@ -11,29 +11,63 @@ The same operator guide is available in a running local instance at:
 The login page links directly to this guide, and the route remains accessible
 before sign-in when `AUTH_ENABLED=true`.
 
-## Roles
+## Roles and exact base permissions
 
-| Role | Access |
+The following table mirrors `ROLE_PERMISSIONS` in the API. These are the base
+permissions granted by the primary role; an administrator may add explicit
+permissions to an individual account, but an extra grant does not remove a
+role's base permission.
+
+| Role | Base permissions |
 | --- | --- |
-| `viewer` | Read-only workspace access, matrix navigation, libraries, reports, and lookups. |
-| `analyst` | Viewer access plus operational workflows such as attack simulation, feeds, pipeline, and cases. |
-| `threat_intel` | CTI-focused workflows: reports, APT/IOC/CVE views, feeds, enrichment, and exports. |
-| `detection_engineer` | Detection workflows: rule generation, coverage review, attack simulation, SIEM forwarding, and validation. |
-| `incident_responder` | Investigation workflows: IOC pivots, uploads, response cases, attack simulation, and SIEM forwarding. |
-| `auditor` | Read-only access plus audit and export review. |
-| `security_admin` | User, session, MFA, password, and audit administration. |
-| `service_account` | API automation for sync, analysis, SIEM forwarding, and exports. |
-| `admin` | Full platform administration. |
+| `viewer` | `read` |
+| `auditor` | `read`, `view_audit`, `export_data` |
+| `analyst` | `read`, `run_analysis`, `manage_intel`, `upload_files`, `export_data` |
+| `threat_intel` | `read`, `run_analysis`, `manage_intel`, `manage_feeds`, `upload_files`, `export_data` |
+| `detection_engineer` | `read`, `run_analysis`, `manage_detections`, `run_attack_simulation`, `forward_siem`, `export_data` |
+| `incident_responder` | `read`, `run_analysis`, `manage_intel`, `run_attack_simulation`, `forward_siem`, `upload_files`, `export_data` |
+| `service_account` | `read`, `run_analysis`, `manage_feeds`, `forward_siem`, `export_data` |
+| `security_admin` | `read`, `run_analysis`, `manage_intel`, `manage_detections`, `run_attack_simulation`, `manage_feeds`, `forward_siem`, `upload_files`, `export_data`, `manage_auth`, `view_audit` |
+| `admin` | Every current permission, including `manage_users` and `manage_auth` |
 
-Roles map to permissions. Admin inherits all permissions. Analyst-style roles
-inherit viewer access. The Admin Panel can also grant explicit extra
-permissions to a user when a coarse role is not precise enough.
+In particular, `analyst` does **not** implicitly own feed administration,
+detection administration, Attack Simulation, or SIEM forwarding. Use the
+purpose-built role or an explicit grant. `security_admin` has authentication,
+session, MFA, and audit controls but does not receive `manage_users` unless it
+is granted explicitly; `admin` receives it by default.
 
 Current permissions are:
 
 `read`, `run_analysis`, `manage_intel`, `manage_detections`,
 `run_attack_simulation`, `manage_feeds`, `forward_siem`, `upload_files`,
 `export_data`, `manage_users`, `manage_auth`, and `view_audit`.
+
+### Read-only pages and action controls
+
+`read` allows authenticated navigation and safe read APIs. Viewer-accessible
+pages include Discover, Navigator, ATT&CK Group Library, report/knowledge and
+IOC/CVE libraries, comparisons, sector context, lookups, help, and
+troubleshooting views. Seeing a page or previously stored record does not grant
+permission to upload, mutate, synchronize, execute, export, or forward data.
+
+The sidebar and route boundary hide or block these workspaces when the matching
+permission is absent:
+
+- analysis workspaces such as EMB3D, Evidence Graph, Threat Radar, Threat
+  Hunting, Investigation, IOC Investigation, Operations, Pipeline, and
+  Statistics require `run_analysis`;
+- Attack Simulation requires `run_attack_simulation`;
+- Feeds Management requires `manage_feeds`;
+- Observability/audit views require `view_audit`;
+- Admin Panel opens for `manage_users`, `manage_auth`, or `view_audit`, while
+  each panel and action requires its exact permission.
+
+Within otherwise readable pages, state-changing controls are permission-bound
+to the corresponding capability: `manage_intel`, `manage_detections`,
+`upload_files`, `export_data`, `forward_siem`, `manage_users`, or
+`manage_auth`. The UI boundary is for clarity, not the security boundary; API
+routes independently enforce effective permissions and return `403` when a
+direct request lacks the required grant.
 
 ## Enable Native Login
 
@@ -86,6 +120,21 @@ Admins can:
 - revoke all sessions for a user;
 - disable local MFA for a user;
 - review auth audit events.
+
+Delegated accounts with `manage_users` are subject to an authorization ceiling:
+they may create or manage only accounts whose complete effective permission set
+is contained in their own. They cannot assign the `admin` role, manage an admin
+account, or grant `manage_auth` unless they already hold it. Password reset,
+disable, role, and permission changes use the same target-account ceiling so a
+user manager cannot take over a more privileged identity. Session revocation and
+MFA reset remain `manage_auth` operations, and only an `admin` may apply them to
+another admin account.
+
+Users cannot change their own role or explicit permission grants through the
+Admin Panel API. Use a second named administrator for administrator-role changes;
+this preserves an attributable recovery path and prevents self-promotion or
+accidental self-demotion. A full `admin` remains able to create another admin and
+manage every lower-privilege account.
 
 The UI never displays stored password hashes. Passwords are hashed with
 PBKDF2-HMAC-SHA256 and per-user random salts.

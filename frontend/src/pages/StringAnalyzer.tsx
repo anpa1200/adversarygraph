@@ -9,6 +9,7 @@ import {
 } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { readHiddenCases, visibleJobs } from '@/pages/malwareShared';
+import { safeInternalHref } from '@/utils/url';
 
 const input = 'w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 outline-none focus:border-mitre-accent';
 
@@ -157,7 +158,7 @@ function StringResults({ result, mode }: { result: MalwareGraphStringsAnalysis; 
     {mode !== 'all' && <div className="grid gap-4 xl:grid-cols-2">
       <Panel title={`IOC Leads (${result.ioc_leads.length})`}>
         <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-800">
-          {result.ioc_leads.map(lead => <a key={`${lead.type}:${lead.value}`} href={lead.adversarygraph_route ?? `/ioc-library?search=${encodeURIComponent(lead.value)}`} className="block p-3 hover:bg-gray-900">
+          {result.ioc_leads.map(lead => <a key={`${lead.type}:${lead.value}`} href={safeInternalHref(lead.adversarygraph_route) ?? `/ioc-library?search=${encodeURIComponent(lead.value)}`} className="block p-3 hover:bg-gray-900">
             <div className="flex items-center justify-between gap-2">
               <b className="break-all font-mono text-xs text-gray-200">{lead.value}</b>
               <span className="shrink-0 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500">{lead.type}</span>
@@ -169,7 +170,7 @@ function StringResults({ result, mode }: { result: MalwareGraphStringsAnalysis; 
       </Panel>
       <Panel title={`TTP Leads (${result.ttp_leads.length})`}>
         <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-800">
-          {result.ttp_leads.map(lead => <a key={lead.attack_id} href={lead.navigator_route} className="block p-3 hover:bg-gray-900">
+          {result.ttp_leads.map(lead => <a key={lead.attack_id} href={safeInternalHref(lead.navigator_route) ?? `/navigator?technique=${encodeURIComponent(lead.attack_id)}`} className="block p-3 hover:bg-gray-900">
             <div className="flex items-center justify-between gap-2">
               <b className="text-xs text-gray-200">{lead.attack_id} {lead.name}</b>
               <span className="text-[10px] text-mitre-accent">{Math.round(lead.confidence * 100)}%</span>
@@ -182,8 +183,8 @@ function StringResults({ result, mode }: { result: MalwareGraphStringsAnalysis; 
     </div>}
     {mode !== 'all' && <Panel title={`Smart Findings (${result.findings.length})`}>
       <div className="grid gap-2 p-3 md:grid-cols-2">
-        {result.findings.slice(0, 120).map((finding, index) => finding.adversarygraph_route ? (
-          <a key={`${finding.category}-${index}`} href={finding.adversarygraph_route} className="rounded border border-gray-800 bg-gray-950 p-2 hover:border-mitre-accent">
+        {result.findings.slice(0, 120).map((finding, index) => safeInternalHref(finding.adversarygraph_route) ? (
+          <a key={`${finding.category}-${index}`} href={safeInternalHref(finding.adversarygraph_route)} className="rounded border border-gray-800 bg-gray-950 p-2 hover:border-mitre-accent">
             <Finding finding={finding} />
           </a>
         ) : <div key={`${finding.category}-${index}`} className="rounded border border-gray-800 bg-gray-950 p-2"><Finding finding={finding} /></div>)}

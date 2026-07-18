@@ -170,7 +170,7 @@ def _github_tree_rule_urls(url: str, kind: str, limit: int) -> list[str]:
     prefix = "/".join(parts[4:]).strip("/")
     api_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
     try:
-        response = requests.get(api_url, timeout=60, headers=HTTP_HEADERS)
+        response = safe_get(api_url, timeout=60, headers=HTTP_HEADERS)
         response.raise_for_status()
         tree = response.json().get("tree") or []
     except requests.RequestException:

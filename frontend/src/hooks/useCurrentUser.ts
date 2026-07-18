@@ -17,5 +17,20 @@ export function hasRole(user: CurrentUser | undefined, role: string): boolean {
   // the default role, but local dev shouldn't be gated — treat auth-off as
   // full access.
   if (!user.auth_enabled) return true;
-  return user.roles.includes(role) || user.roles.includes('admin');
+  if (user.roles.includes(role) || user.roles.includes('admin')) return true;
+  if (role === 'analyst') return hasPermission(user, 'run_analysis');
+  if (role === 'admin') return hasPermission(user, 'manage_auth');
+  return false;
+}
+
+export function hasPermission(user: CurrentUser | undefined, permission: string): boolean {
+  if (!user) return false;
+  if (!user.auth_enabled) return true;
+  return user.roles.includes('admin') || Boolean(user.permissions?.includes(permission));
+}
+
+/** Effective permission check backed by the shared current-user query. */
+export function useHasPermission(permission: string): boolean {
+  const { data: user } = useCurrentUser();
+  return hasPermission(user, permission);
 }

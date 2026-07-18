@@ -11,7 +11,7 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Version history | [docs/version-matrix.md](version-matrix.md) |
 | v6 release readiness | [docs/release-readiness-v6.md](release-readiness-v6.md) |
 | Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
-| Current screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
+| Tagged v6.0.0 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 | Security policy | [SECURITY.md](../SECURITY.md) |
@@ -49,9 +49,13 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 
 ## Security posture
 
-- All containers run as non-root users (verified in all Dockerfiles)
+- AdversaryGraph application images run as non-root users; bundled database,
+  Redis, build-helper, and third-party base images retain their upstream runtime
+  model and must be covered by deployment policy.
 - PostgreSQL bound to 127.0.0.1 in default Compose profile
-- All services have resource limits and `cap_drop: ALL` in Docker Compose
+- Core application services have Compose resource and capability restrictions;
+  the production overlay and Helm chart add the deployment-specific controls
+  documented in their manifests.
 - API keys are passed via environment variables, not embedded in code
 - LLM outputs are treated as untrusted and require analyst review
 - Evidence Graph AI-generated nodes and edges are drafts until analyst-reviewed
@@ -71,6 +75,7 @@ See [SECURITY.md](../SECURITY.md) for the full policy and known limitations.
 | Backend dependency audit (pip-audit) | ✅ GitHub Actions |
 | Frontend build | ✅ GitHub Actions |
 | Frontend dependency audit (npm audit) | ✅ GitHub Actions |
+| Anomaly documentation build and dependency audit | ✅ GitHub Actions |
 | Docker Compose validation | ✅ GitHub Actions |
 | Docker build check | ✅ GitHub Actions |
 | Container scan (Trivy) | ✅ GitHub Actions |
@@ -78,10 +83,17 @@ See [SECURITY.md](../SECURITY.md) for the full policy and known limitations.
 
 ## Test coverage
 
-26 test files covering:
+More than 60 backend test files plus browser-spec coverage for:
 
-- Unit tests: API routes, ATT&CK mapping, report parsing, export formats, LLM provider selection, IOC extraction, YARA scanning
-- Integration tests: database operations, job pipeline, Celery-backed sync/collection routes, endpoint orchestration
+- Unit tests: ATT&CK mapping, report parsing, export formats, LLM provider
+  selection, safe HTTP, rate limiting, observability, archive handling, Threat
+  Hunting AI, IOC extraction, and YARA scanning.
+- Integration tests: route authorization, database operations, user/session/MFA
+  lifecycle, uploads, analysis, collection, simulation, MalwareGraph, Threat
+  Radar, Threat Hunting, and endpoint orchestration.
+- Playwright tests: authentication startup, main navigation and deep links,
+  permissions, safe link handling, Threat Hunting, and deterministic release
+  screenshot flows.
 
 ## Demo dataset
 
@@ -90,7 +102,9 @@ A deterministic demo dataset is available in [`demo/`](../demo/) for evaluation 
 ## Known open items
 
 - Starlette/FastAPI transitive dependencies: audited in CI with `pip-audit`; internet-facing deployments should still normalize `Host` headers at a trusted reverse proxy
-- Backend coverage gate is intentionally conservative while route-level coverage is expanded
+- Backend line coverage has an enforced 60% baseline. Aggregate coverage is not
+  treated as proof that every high-risk path is tested; the next target remains
+  70% with risk-weighted route and failure-path coverage.
 
 ## Contact
 

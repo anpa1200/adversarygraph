@@ -506,7 +506,7 @@ async def _match_local_actors(
             .options(selectinload(AptGroup.technique_usages).selectinload(AptGroupTechnique.technique))
             .where(AptGroup.version_id == version_id)
         )
-        matches = []
+        matches: list[dict[str, Any]] = []
         for group in rows.scalars().all():
             aliases = [str(alias) for alias in (group.aliases or [])]
             actor_terms = [group.name, *aliases]
@@ -522,7 +522,10 @@ async def _match_local_actors(
                     "technique_ids": technique_ids,
                     "url": group.url,
                 })
-        return sorted(matches, key=lambda item: (-len(item["matched_terms"]), item["name"].lower()))[:12]
+        return sorted(
+            matches,
+            key=lambda item: (-len(item["matched_terms"]), str(item["name"]).lower()),
+        )[:12]
     except Exception:
         return []
 

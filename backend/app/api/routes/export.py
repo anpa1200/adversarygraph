@@ -17,14 +17,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, Technique
-from app.services.auth import TeamUser, analyst
+from app.services.auth import TeamUser, require_permission
 
 router = APIRouter(prefix="/export", tags=["Export"])
+export_data = require_permission("export_data")
 
 _PDF_HEADERS = {
     "Content-Disposition": 'attachment; filename="adversarygraph-report.pdf"',
     "Cache-Control": "no-store",
 }
+
+
+def _technique_export_query(
+    attack_ids: set[str],
+    domain: str,
+    version_id: int,
+):
+    return select(Technique).where(
+        Technique.attack_id.in_(sorted(attack_ids)),
+        Technique.domain == domain,
+        Technique.version_id == version_id,
+    )
+
+
+def _group_export_query(
+    group_ids: set[str],
+    domain: str,
+    version_id: int,
+):
+    return select(AptGroup).where(
+        AptGroup.attack_id.in_(sorted(group_ids)),
+        AptGroup.domain == domain,
+        AptGroup.version_id == version_id,
+    )
 
 
 # ── Analysis PDF ──────────────────────────────────────────────────────────────
@@ -34,7 +59,7 @@ _PDF_HEADERS = {
 async def export_analysis_pdf(
     session_id: str,
     db: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(export_data),
 ):
     """Generate a PDF for an existing analysis session."""
     try:
@@ -89,7 +114,7 @@ async def export_analysis_pdf(
 async def export_analysis_stix(
     session_id: str,
     db: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(export_data),
 ):
     """Generate a STIX 2.1 bundle for OpenCTI import."""
     try:
@@ -125,38 +150,41 @@ async def export_analysis_stix(
         for item in (res.apt_matches or [])
         if item.get("group_attack_id")
     }
+    from app.api.routes.attack import _resolve_version_id
+
+    version_id = (
+        await _resolve_version_id(db, db_session.domain, None)
+        if attack_ids or group_ids
+        else None
+    )
 
     technique_lookup = {}
     if attack_ids:
-        rows = await db.execute(
-            select(Technique).where(
-                Technique.attack_id.in_(sorted(attack_ids)),
-                Technique.domain == db_session.domain,
-            )
+        assert version_id is not None
+        technique_rows = await db.execute(
+            _technique_export_query(attack_ids, db_session.domain, version_id)
         )
-        for technique in rows.scalars().all():
-            technique_lookup[technique.attack_id] = {
-                "stix_id": technique.stix_id,
-                "name": technique.name,
-                "description": technique.description,
-                "url": technique.url,
+        for technique_row in technique_rows.scalars().all():
+            technique_lookup[technique_row.attack_id] = {
+                "stix_id": technique_row.stix_id,
+                "name": technique_row.name,
+                "description": technique_row.description,
+                "url": technique_row.url,
             }
 
     group_lookup = {}
     if group_ids:
-        rows = await db.execute(
-            select(AptGroup).where(
-                AptGroup.attack_id.in_(sorted(group_ids)),
-                AptGroup.domain == db_session.domain,
-            )
+        assert version_id is not None
+        group_rows = await db.execute(
+            _group_export_query(group_ids, db_session.domain, version_id)
         )
-        for group in rows.scalars().all():
-            group_lookup[group.attack_id] = {
-                "stix_id": group.stix_id,
-                "name": group.name,
-                "description": group.description,
-                "aliases": group.aliases or [],
-                "url": group.url,
+        for group_row in group_rows.scalars().all():
+            group_lookup[group_row.attack_id] = {
+                "stix_id": group_row.stix_id,
+                "name": group_row.name,
+                "description": group_row.description,
+                "aliases": group_row.aliases or [],
+                "url": group_row.url,
             }
 
     from app.services.stix_export import build_analysis_stix_bundle
@@ -191,7 +219,7 @@ class LayerPdfRequest(BaseModel):
 async def export_layer_pdf(
     req: LayerPdfRequest,
     db: AsyncSession = Depends(get_session),
-    _: TeamUser = Depends(analyst),
+    _: TeamUser = Depends(export_data),
 ):
     """Generate a simple PDF listing all techniques in the Navigator layer."""
     if not req.technique_ids:
@@ -226,7 +254,7 @@ async def export_layer_pdf(
     from app.services.report_generator import generate_layer_report
 
     # Use the DB-normalised IDs so the header count matches the table rows
-    found_ids = [d["attack_id"] for d in details]
+    found_ids: list[str] = [str(detail["attack_id"]) for detail in details]
     pdf_bytes = generate_layer_report(found_ids, req.domain, details)
     return Response(
         content=pdf_bytes,

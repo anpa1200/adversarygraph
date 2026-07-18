@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.models.retrohunt import RetroHuntSignal
+from app.services.auth import TeamUser, require_permission
 
 router = APIRouter(prefix="/retrohunt", tags=["RetroHunt"])
 
@@ -162,6 +163,7 @@ async def stats(
 @router.post("/collect", response_model=CollectOut)
 async def trigger_collect(
     days: int = Query(30, ge=1, le=365, description="Lookback window for collection"),
+    _: TeamUser = Depends(require_permission("manage_feeds")),
 ) -> CollectOut:
     from app.tasks.retrohunt import collect_all
     task = collect_all.delay(days=days)
@@ -169,7 +171,10 @@ async def trigger_collect(
 
 
 @router.get("/collect/{task_id}")
-async def collect_status(task_id: str) -> dict[str, Any]:
+async def collect_status(
+    task_id: str,
+    _: TeamUser = Depends(require_permission("manage_feeds")),
+) -> dict[str, Any]:
     from app.tasks.celery_app import celery_app as ca
     result = ca.AsyncResult(task_id)
     return {
