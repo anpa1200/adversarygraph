@@ -306,25 +306,18 @@ jobs:
     name: Docker Compose self-test
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      DB_PASS: ci_test_password
+      REDIS_PASSWORD: ci_redis_password
+      RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
+      AUTH_ENABLED: "false"
+      AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
+      ATTCK_DOMAINS: enterprise-attack
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
-        env:
-          DB_PASS: ci_test_password
-          REDIS_PASSWORD: ci_redis_password
-          RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
-          AUTH_ENABLED: "false"
-          AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
-          ATTCK_DOMAINS: enterprise-attack
         run: docker compose up -d --build postgres redis malwaregraph attack-lab-web attack-lab-endpoint api frontend
       - name: Run self-test service
-        env:
-          DB_PASS: ci_test_password
-          REDIS_PASSWORD: ci_redis_password
-          RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
-          AUTH_ENABLED: "false"
-          AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
-          ATTCK_DOMAINS: enterprise-attack
         run: docker compose run --rm selftest
       - name: Show logs on failure
         if: failure()
