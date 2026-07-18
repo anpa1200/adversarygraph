@@ -175,7 +175,14 @@ services:
       ATTACK_LAB_WEB_PORT: 8081
       ATTACK_LAB_WEB_LOG_DIR: /app/logs
     volumes:
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    depends_on:
+      logs-permissions:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -209,7 +216,14 @@ services:
       ATTACK_LAB_ENDPOINT_PORT: 8090
       ATTACK_LAB_ENDPOINT_LOG_DIR: /app/logs
     volumes:
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    depends_on:
+      logs-permissions:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -240,6 +254,29 @@ services:
       - attck_data:/app/data/attck
     restart: "no"
 
+  # Initialize the shared log volume before concurrent non-root writers start.
+  # nocopy prevents Docker from racing image-directory copy-up on a fresh volume.
+  logs-permissions:
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
+    command: sh -c "mkdir -p /app/logs/attack-simulation && chown -R 999:999 /app/logs && chmod -R u+rwX,g+rwX,o-rwx /app/logs"
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    volumes:
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
+    restart: "no"
+
   api:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
     build:
@@ -249,7 +286,11 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - attck_data:/app/data/attck
-      - adversarygraph_logs:/app/logs
+      - type: volume
+        source: adversarygraph_logs
+        target: /app/logs
+        volume:
+          nocopy: true
       - malwaregraph_storage:/malwaregraph-storage
     environment:
       DB_HOST: postgres
@@ -362,6 +403,8 @@ services:
       attack-lab-endpoint:
         condition: service_healthy
       attck-data-permissions:
+        condition: service_completed_successfully
+      logs-permissions:
         condition: service_completed_successfully
     networks:
       - default

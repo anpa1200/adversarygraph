@@ -6,11 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# UID 999 is shared with the API and the Compose log-volume initializer.
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends nginx ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -g nogroup -d /app -s /usr/sbin/nologin labweb \
+    && useradd --system --uid 999 --gid nogroup --home-dir /app --shell /usr/sbin/nologin labweb \
     && mkdir -p /app/logs/attack-simulation \
     && chown -R labweb:nogroup /app
 

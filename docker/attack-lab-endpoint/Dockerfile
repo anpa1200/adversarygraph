@@ -7,10 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY docker/attack-lab-endpoint/server.py /app/server.py
 
+# UID 999 is shared with the API and the Compose log-volume initializer.
 RUN apt-get update \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -g nogroup -d /app -s /usr/sbin/nologin labendpoint \
+    && useradd --system --uid 999 --gid nogroup --home-dir /app --shell /usr/sbin/nologin labendpoint \
     && mkdir -p /app/logs/attack-simulation \
     && chown -R labendpoint:nogroup /app
 
