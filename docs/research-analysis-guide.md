@@ -454,3 +454,14 @@ Use consistent tags so Statistics and Reports / Research filters work.
     readiness.
 12. Export an investigation report with validation gaps and next collection
     requirements.
+
+## Unified Intelligence Search
+
+On the post-v6 development branch, stored analysis reports can enter the
+Unified RAG corpus after reconciliation. The derived document retains the
+report's stored TLP, source reference, version, timestamps, legal-sensitivity,
+and verification context. Use grounded search to reconnect a new question to
+existing reports, IOCs, CVEs, actors, techniques, and evidence nodes, then open
+the cited source before accepting a claim. Retrieval does not promote a report
+or turn an AI extraction into confirmed evidence. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).

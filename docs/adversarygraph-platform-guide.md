@@ -57,6 +57,8 @@ AdversaryGraph is built around this defensive CTI workflow:
 ```text
 report / IOC / malware sample / feed source
   -> extraction and enrichment
+  -> unified exact, full-text, relationship, and optional vector retrieval
+  -> citation-bound answer or temporary Navigator proposal
   -> ATT&CK / ATLAS mapping candidates
   -> analyst validation
   -> actor, campaign, sector, and IOC pivots
@@ -76,6 +78,7 @@ AI assistant should remain traceable back to evidence.
 |---|---|
 | Discover | Start workspace, monitor platform state, open common CTI workflows, inspect selected TTP counts, actor context, and recent intelligence entry points. |
 | Navigator | Explore Enterprise, Mobile, ICS ATT&CK and ATLAS matrices; select TTPs; review technique detail; overlay actors; track coverage; export Navigator JSON and backlog data. |
+| Intelligence RAG Assistant | Search normalized IOC, CVE, TTP, actor, campaign, report, Knowledge, Threat Radar, Threat Hunting, Evidence Graph, and sanitized asset context; apply a saved business profile; generate citation-bound answers; preview and explicitly confirm expiring Navigator proposals. |
 | ATT&CK Group Library | Search actor profiles, aliases, campaigns, techniques, reports, source-backed IOCs, and push actor TTPs into Navigator or comparisons. |
 | AI Analysis | Paste text or upload PDF/DOCX/TXT; choose Claude, OpenAI, Gemini, MiniMax, or local OpenAI-compatible LLM; extract mapping candidates; review evidence and add accepted TTPs. |
 | Compare | Compare current TTP layers, reports, groups, and campaigns; inspect overlap, matrix diff, tactic breakdown, and gap analysis. |
@@ -138,6 +141,44 @@ malware analysis, operations, and troubleshooting.
 Navigator is the matrix review surface. Analysts select techniques, inspect
 evidence, expand sub-techniques, overlay actors or comparison layers, track
 coverage, and export matrix-compatible layers.
+
+### Intelligence RAG Assistant
+
+Open **ATT&CK Navigator → AI RAG assistant** to search the platform's
+normalized intelligence corpus without leaving the matrix workflow. Search uses
+exact identifiers and PostgreSQL full text by default. When an approved private
+embedding model is enabled, vector candidates are added and all retrieval modes
+are fused into one ranked result set. The result labels the active retrieval
+mode and keeps every source route, TLP marking, legal-sensitive flag, excerpt,
+and citation visible.
+
+For organization-specific questions, create or select a business profile with
+sector, region, technologies, and crown-jewel terms. For example:
+
+```text
+Find IOCs relevant to an Israel-based technology company. Explain the actor,
+campaign, CVE, or TTP relationship that makes each IOC worth reviewing.
+```
+
+The profile changes ranking context; it does not prove that an actor targets the
+organization or that an IOC is currently active. Follow each citation to the
+authoritative platform record and validate freshness, confidence, and source
+provenance before operational use.
+
+The assistant can also answer:
+
+```text
+Propose the ATT&CK techniques relevant to this business and preview them on
+Navigator. Use only cited evidence.
+```
+
+A proposal is a temporary overlay until the analyst reviews the citations and
+explicitly confirms **Add** or **Replace**. Confirmation changes the current
+browser selection only; it does not save a named layer, create a hunt, execute a
+query, run a simulation, or initiate a response action. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) for source coverage,
+permissions, indexing, retrieval semantics, provider governance, and API
+contracts.
 
 ### ATT&CK Group Library
 
@@ -401,7 +442,13 @@ Representative screenshots:
   local LLM gateways, private reports, local IOC feeds, and malware-analysis
   labs.
 - ATT&CK mapping, actor overlap, IOC enrichment, generated detections, and
-  malware-analysis output are evidence organization aids. They are not final
-  attribution, detection, or verdict decisions.
+  malware-analysis output are evidence organization aids. RAG ranking,
+  relationship expansion, and AI answers have the same boundary. They are not
+  final attribution, targeting, exploitation, detection, or verdict decisions.
+- The unified corpus must be reconciled before first use. Vector retrieval is
+  optional and remains disabled until an approved private embedding endpoint is
+  configured; exact and full-text retrieval remain available without it.
+- The optional MCP integration is a separate stdio-only local process. It can
+  search and propose, but it cannot confirm proposals or mutate Navigator.
 - Dynamic malware analysis is disabled by default and must run only in an
   explicitly isolated disposable runtime profile.

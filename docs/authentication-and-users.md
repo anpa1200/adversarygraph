@@ -69,6 +69,33 @@ to the corresponding capability: `manage_intel`, `manage_detections`,
 routes independently enforce effective permissions and return `403` when a
 direct request lacks the required grant.
 
+### Unified RAG and MCP permissions
+
+The **AI RAG assistant** button opens the **Intelligence RAG assistant** dialog
+inside Navigator, but its actions
+have separate server-side authorization:
+
+| Action | Required permission |
+|---|---|
+| Read corpus readiness/status | `read` |
+| List saved business profiles | `run_analysis` |
+| Search, read one indexed entity, list providers, generate a grounded answer, or confirm an expiring proposal | `run_analysis` |
+| Create, replace, or delete a business profile | `manage_intel` |
+| Queue reconciliation or view index-run history | `manage_feeds` |
+
+Proposal confirmation records the reviewed Add/Replace receipt but does not
+save a named Navigator layer. The frontend revalidates the server receipt
+before changing its in-memory selection.
+
+Every MCP tool requires `run_analysis`. When authentication is enabled, the
+stdio MCP process also requires a valid bearer session in `MCP_API_TOKEN`. That
+token is an ordinary AdversaryGraph session—not a separately scoped MCP API
+key—so use a dedicated non-administrator analyst or service account with the
+smallest effective permission set, protect the client configuration, and revoke
+the session when the integration is no longer required. MCP exposes no profile
+mutation, reindex, proposal-confirmation, layer-saving, feed, simulation, SIEM,
+or response tool.
+
 ## Enable Native Login
 
 Set these values in `.env`:

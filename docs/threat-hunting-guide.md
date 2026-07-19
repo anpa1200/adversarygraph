@@ -37,6 +37,7 @@ and business context before use.
 14. [AdversaryGraph threat-hunting workflow](#14-adversarygraph-threat-hunting-workflow)
     - [Stored report or research session to hypothesis](#1431-turn-a-stored-report-or-research-session-into-a-hypothesis)
     - [Assistance across the hunt](#1432-use-assistance-across-the-hunt-without-delegating-decisions)
+    - [Cross-source RAG evidence to a hunt](#1433-use-cross-source-rag-evidence-to-scope-a-hunt)
 15. [Security, privacy, and operational boundaries](#15-security-privacy-and-operational-boundaries)
 16. [Metrics and maturity](#16-metrics-and-maturity)
 17. [Twenty worked hunt playbooks](#17-twenty-worked-hunt-playbooks)
@@ -854,7 +855,9 @@ hypothesis and record reviewed outcomes.
 ```text
 Stored report/research -> classify source -> optional governed AI suggestion
                                                 |
-Threat Radar / report / IOC / CVE / asset / detection gap / prior incident
+Unified RAG retrieval -> cited IOC/CVE/TTP/actor/report/hunt/asset leads
+                                                |
+Threat Radar / report / IOC / CVE / asset / RAG lead / detection gap / incident
     -> create hunt
     -> hypothesis + scope + owner + priority
     -> ATT&CK v19 techniques and tactics
@@ -996,6 +999,79 @@ with up to 3,000 summary characters and 2,000 note characters each. The
 response and append-only record carry deterministic warnings when one of these
 limits affects a request.
 
+#### 14.3.3 Use cross-source RAG evidence to scope a hunt
+
+The **AI RAG assistant** in Navigator and the stage-specific **Threat Hunting AI
+assistant** have different evidence boundaries:
+
+| Assistant | Grounding boundary | Useful hunting output | What it never does |
+|---|---|---|---|
+| Navigator AI RAG assistant | Allowlisted chunks from the unified IOC, CVE, ATT&CK/ATLAS, actor, campaign, report, Knowledge, Threat Radar, canonical hunt, Evidence Graph, and sanitized asset corpus; optional saved business profile | Cross-source evidence search, cited synthesis, and an expiring ATT&CK/ATLAS proposal | It does not create a hunt, finding, query version, external query run, detection, incident, or response action |
+| Threat Hunting AI assistant | One completed stored report for hypothesis generation, or the bounded canonical context of one saved hunt for later stages | Draft hypothesis, plan, query, finding organization, or outcome for that hunt stage | It does not search the unified corpus or enterprise telemetry, and it never saves or advances the hunt automatically |
+
+Use RAG to find and compare leads; use the hunt assistant only after deciding
+which reviewed lead justifies a specific hunt. Neither assistant searches the
+SIEM, EDR, data lake, or cloud control plane.
+
+Example: scope an Israel technology-company hunt from actor-linked IOCs and
+supported TTPs.
+
+1. In **ATT&CK Navigator → AI RAG assistant**, select a saved business profile
+   containing the reviewed region, sector, technologies, and crown-jewel
+   categories. The profile affects deterministic retrieval/reranking and is not
+   itself evidence that an actor targets the organization.
+2. Select **IOCs**, **Actors**, **TTPs**, and the report sources relevant to the
+   question. Add **Assets** only when local inventory context is necessary; that
+   makes the request legally sensitive and local-provider-only.
+3. Use **Search evidence** first:
+
+   ```text
+   Find recent actor-linked IOCs relevant to this saved profile. Separate the
+   stored actor/sector observation, the IOC relationship, and the business
+   relevance inference. Show freshness and source limitations.
+   ```
+
+4. Open the returned source routes. Verify observation type/value, actor ID,
+   IOC type/value, relationship evidence, confidence, source, TLP, and dates.
+   Reject stale or unsupported links. A shared actor ID is a pivot, not local
+   compromise evidence.
+5. If a behavioral map is useful, use **Generate grounded answer**:
+
+   ```text
+   From only these cited actor, IOC, campaign, report, and CVE records, propose
+   the Enterprise ATT&CK techniques that could guide a local hunt. Explain each
+   mapping and create a Navigator proposal. Do not claim targeting, execution,
+   detection, or compromise.
+   ```
+
+6. Review citations and technique rationales. Preview the proposal, review the
+   Add/Replace diff, explicitly confirm it, and save a named layer separately
+   only if the reviewed map should persist. Confirmation changes the browser's
+   in-memory selection; it does not create a threat hunt.
+7. Create a new hunt from the reviewed technique or through the normal Threat
+   Hunting workflow. Write a falsifiable local hypothesis that names the actual
+   assets, identities, time window, expected telemetry, counter-evidence, and
+   authorization. Record the authoritative RAG source routes/IDs as research
+   context and label the relevance step as an inference.
+8. Use stage-specific Threat Hunting AI only if a draft plan or analytic would
+   help. Recheck every proposed field against the reviewed RAG sources and local
+   schema, then save through the ordinary hunt form. The RAG answer and
+   Navigator proposal are not hunt evidence.
+9. Execute the reviewed query in the authorized external telemetry platform and
+   record its backend job ID, effective range, coverage, errors, result count,
+   and evidence references in the hunt. Only those run records and reviewed
+   events support a local disposition.
+10. After the hunt changes, wait for the next RAG reconciliation or ask a
+    `manage_feeds` user to queue one before expecting the updated canonical hunt
+    to appear in cross-source retrieval.
+
+This flow deliberately prevents an AI feedback loop. Assistance answers and raw
+provider output are not indexed as source documents. If an analyst reviews
+material and saves it into a canonical hunt, the next reconciliation can index
+the allowlisted hunt fields as a legal-sensitive source. Query-version and
+finding tables are not independently collected by the unified corpus, and an
+unsaved draft is never searchable.
+
 ### 14.4 Execute and review
 
 1. Change the hunt to `running` only when execution actually starts.
@@ -1055,6 +1131,9 @@ The following separations preserve auditability as the module evolves:
 
 ### 14.7 Useful module integrations
 
+- **Unified Intelligence RAG:** search allowlisted platform intelligence with
+  citations and optional business-context reranking, then carry only reviewed
+  sources and explicitly labeled inferences into a hunt.
 - **Threat Radar:** convert a reviewed intelligence signal into a locally scoped
   hypothesis.
 - **IOC Intelligence:** start a retrospective behavior hunt around a time-bound
@@ -3422,6 +3501,18 @@ conversion_or_retirement_condition: [value]
       suggestion, governed metadata, and bounded validated citation excerpts;
       no full raw report, prompt, provider response, credential, or provider
       exception was persisted there.
+- [ ] When the Navigator RAG assistant supplied the trigger, every carried-over
+      IOC, CVE, actor, campaign, technique, or asset claim was checked through
+      its canonical route; retrieval score and relationship expansion were not
+      recorded as confidence, targeting, exploitation, or compromise evidence.
+- [ ] A saved business profile was treated as private ranking context, not
+      source evidence; prompt-only business language was recorded as
+      non-authoritative context.
+- [ ] A RAG proposal changed only the reviewed in-memory Navigator selection
+      after explicit confirmation. Layer saving and hunt creation were separate
+      actions, and the MCP surface was not used to bypass browser confirmation.
+- [ ] The hunt record distinguishes RAG research sources from the later external
+      telemetry run and evidence that support the local disposition.
 
 ## 20. Primary references
 

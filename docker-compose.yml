@@ -107,6 +107,43 @@ services:
           memory: 256m
           cpus: '0.5'
 
+  # Reconcile persistent MalwareGraph storage before either non-root consumer
+  # starts. MalwareGraph owns the volume (UID 10001); the backend API (GID 999)
+  # also needs bounded access for reviewed unpack exports.
+  malwaregraph-storage-permissions:
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
+    command: >-
+      sh -c "mkdir -p
+      /app/storage/quarantine
+      /app/storage/artifacts
+      /app/storage/saved-outputs
+      /app/storage/logs
+      && chown -R 10001:999 /app/storage
+      && chmod -R u+rwX,g+rX,o-rwx /app/storage
+      && chmod 2770
+      /app/storage
+      /app/storage/quarantine
+      /app/storage/artifacts
+      /app/storage/saved-outputs
+      /app/storage/logs"
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    volumes:
+      - type: volume
+        source: malwaregraph_storage
+        target: /app/storage
+        volume:
+          nocopy: true
+    restart: "no"
+
   malwaregraph:
     image: ${ADVERSARYGRAPH_MALWAREGRAPH_IMAGE:-adversarygraph-malwaregraph:local-scan}
     build:
@@ -150,6 +187,9 @@ services:
       - /tmp:size=256m,noexec,nosuid,nodev
     volumes:
       - malwaregraph_storage:/app/storage
+    depends_on:
+      malwaregraph-storage-permissions:
+        condition: service_completed_successfully
     networks:
       - malwaregraph_internal
     healthcheck:
@@ -317,6 +357,25 @@ services:
       THREAT_HUNTING_AI_TIMEOUT_SECONDS: ${THREAT_HUNTING_AI_TIMEOUT_SECONDS:-45}
       THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT: ${THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT:-40000}
       THREAT_HUNTING_AI_MAX_CANDIDATES: ${THREAT_HUNTING_AI_MAX_CANDIDATES:-3}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-local}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-nomic-embed-text}
+      RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-768}
+      RAG_EMBEDDING_BATCH_SIZE: ${RAG_EMBEDDING_BATCH_SIZE:-32}
+      RAG_VECTOR_MAX_COSINE_DISTANCE: ${RAG_VECTOR_MAX_COSINE_DISTANCE:-0.55}
+      RAG_CHUNK_CHARS: ${RAG_CHUNK_CHARS:-3500}
+      RAG_CHUNK_OVERLAP_CHARS: ${RAG_CHUNK_OVERLAP_CHARS:-350}
+      RAG_DEFAULT_RESULT_LIMIT: ${RAG_DEFAULT_RESULT_LIMIT:-12}
+      RAG_MAX_CONTEXT_CHARS: ${RAG_MAX_CONTEXT_CHARS:-32000}
+      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
+      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
+      RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
+      RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}
+      RAG_RETENTION_MAX_BATCHES: ${RAG_RETENTION_MAX_BATCHES:-20}
+      RAG_RETENTION_HOUR: ${RAG_RETENTION_HOUR:-4}
+      RAG_RETENTION_MINUTE: ${RAG_RETENTION_MINUTE:-45}
       ATTCK_DOMAINS: ${ATTCK_DOMAINS:-enterprise-attack,mobile-attack,ics-attack,atlas}
       ATTCK_DATA_DIR: /app/data/attck
       THREATFOX_AUTH_KEY: ${THREATFOX_AUTH_KEY:-}
@@ -445,6 +504,23 @@ services:
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
       LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-llama3.1:8b}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-local}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-nomic-embed-text}
+      RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-768}
+      RAG_EMBEDDING_BATCH_SIZE: ${RAG_EMBEDDING_BATCH_SIZE:-32}
+      RAG_VECTOR_MAX_COSINE_DISTANCE: ${RAG_VECTOR_MAX_COSINE_DISTANCE:-0.55}
+      RAG_CHUNK_CHARS: ${RAG_CHUNK_CHARS:-3500}
+      RAG_CHUNK_OVERLAP_CHARS: ${RAG_CHUNK_OVERLAP_CHARS:-350}
+      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
+      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
+      RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
+      RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}
+      RAG_RETENTION_MAX_BATCHES: ${RAG_RETENTION_MAX_BATCHES:-20}
+      RAG_RETENTION_HOUR: ${RAG_RETENTION_HOUR:-4}
+      RAG_RETENTION_MINUTE: ${RAG_RETENTION_MINUTE:-45}
       ATTCK_DATA_DIR: /app/data/attck
       THREATFOX_AUTH_KEY: ${THREATFOX_AUTH_KEY:-}
       AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-true}
@@ -493,6 +569,16 @@ services:
         condition: service_started
       attck-data-permissions:
         condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A app.tasks.celery_app inspect ping --destination celery@$$HOSTNAME --timeout=5 2>/dev/null | grep -q pong",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -550,6 +636,16 @@ services:
       DYNAMIC_DB_SYNC_HOUR: ${DYNAMIC_DB_SYNC_HOUR:-3}
       DYNAMIC_DB_SYNC_MINUTE: ${DYNAMIC_DB_SYNC_MINUTE:-30}
       DYNAMIC_DB_IOC_SYNC_DAYS: ${DYNAMIC_DB_IOC_SYNC_DAYS:-7}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
+      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
+      RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
+      RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}
+      RAG_RETENTION_MAX_BATCHES: ${RAG_RETENTION_MAX_BATCHES:-20}
+      RAG_RETENTION_HOUR: ${RAG_RETENTION_HOUR:-4}
+      RAG_RETENTION_MINUTE: ${RAG_RETENTION_MINUTE:-45}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_DEFAULT_ROLE: ${AUTH_DEFAULT_ROLE:-viewer}
       AUTH_SESSION_MINUTES: ${AUTH_SESSION_MINUTES:-720}
@@ -562,6 +658,18 @@ services:
         condition: service_started
       attck-data-permissions:
         condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from pathlib import Path; command = Path('/proc/1/cmdline').read_bytes(); assert b'celery' in command and b'beat' in command",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:

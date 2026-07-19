@@ -11,10 +11,21 @@ This file is the canonical reference for AdversaryGraph release history and feat
 | Theme | Operational evidence and controlled self-hosted production readiness |
 | Status | Stable for controlled self-hosted deployments |
 
-`main` may contain the post-v6 changes recorded under
+The development line may contain the post-v6 changes recorded under
 [Unreleased](../CHANGELOG.md). In this file, “current release” and the feature
 gate labels refer to the immutable `v6.0.0` tag unless a row explicitly says
 otherwise.
+
+### Post-v6 Unreleased Capability
+
+The checked-out development revision adds unified hybrid RAG, a governed
+Navigator intelligence assistant, private business profiles, pgvector-backed
+semantic retrieval, bounded relationship expansion, background reconciliation
+and retention, and a local stdio MCP server. These capabilities are documented
+in [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) and the
+[Unreleased changelog](../CHANGELOG.md). They are **not** part of the immutable
+`v6.0.0` tag and require a new successfully gated semantic release before they
+can be represented as a published release feature.
 
 ## Release History
 

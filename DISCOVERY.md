@@ -1,8 +1,16 @@
 # AdversaryGraph And CTI Publishing Kit
 
-Use this file for consistent external publishing of AdversaryGraph and the related
-1200km CTI ecosystem. The core message is CTI-to-detection, not automated
-attribution.
+Use this file for consistent external publishing of AdversaryGraph and the
+related 1200km CTI ecosystem. The core message is evidence-backed
+CTI-to-detection and governed retrieval, not automated attribution or response.
+
+## Release Accuracy
+
+The unified RAG, Navigator intelligence assistant, and MCP integration are
+post-v6.0.0 work under `Unreleased`. Do not advertise them as part of the
+immutable `v6.0.0` tag. Use the RAG/MCP copy below only for a build or deployment
+that contains those changes, and attach a version only after the next release
+tag and its validation evidence exist.
 
 ## Canonical Links
 
@@ -19,18 +27,24 @@ attribution.
 
 ## One-Line Pitch
 
-AdversaryGraph is an AI-assisted CTI-to-detection workbench that turns threat
-reports into ATT&CK mappings, TTP-overlap comparisons, Navigator-style views,
-detection gaps, and analyst-ready outputs.
+AdversaryGraph is a self-hosted, AI-assisted CTI-to-detection workbench that
+combines evidence-backed ATT&CK mapping, threat hunting, and governed retrieval
+across IOCs, CVEs, TTPs, actors, reports, and operational intelligence.
 
 ## Short Description
 
 AdversaryGraph helps analysts operationalize CTI. It extracts ATT&CK technique
 candidates from reports, keeps supporting evidence visible, compares selected
-TTPs against known groups and campaigns, surfaces detection gaps, and exports
-analyst-ready outputs. The web version is a public browser workspace for ATT&CK
-exploration. The Docker version adds self-hosted AI extraction, private
-PostgreSQL-backed analyses, APIs, and report generation.
+TTPs against known groups and campaigns, builds threat-hunting and detection
+work, and exports analyst-ready outputs. In the self-hosted Docker platform, a
+normalized PostgreSQL/pgvector corpus supports exact, full-text, and optional
+semantic retrieval across IOCs, CVEs, ATT&CK/ATLAS, actors, campaigns, reports,
+knowledge, Threat Radar, Threat Hunting, Evidence Graph, and sanitized assets.
+The Navigator assistant returns cited answers and expiring technique proposals
+that require analyst confirmation. A local stdio MCP process exposes the same
+bounded, advisory retrieval boundary to compatible clients. The public web
+workspace remains a browser exploration surface and does not include private
+Docker RAG/MCP capabilities.
 
 ## Safety And Accuracy Statement
 
@@ -38,7 +52,10 @@ AdversaryGraph does not perform definitive attribution. TTP overlap and group
 similarity are investigation leads for analyst review, not proof of actor
 identity. LLM-assisted extraction can produce false positives, false negatives,
 or ambiguous technique mappings; analysts must validate every mapping against
-the source evidence and ATT&CK definitions.
+the source evidence and ATT&CK definitions. RAG rankings and relationship links
+are retrieval signals, not proof of targeting, IOC activity, CVE exploitation,
+or compromise. The assistant and MCP integration do not execute queries,
+confirm proposals, save layers, or perform response actions autonomously.
 
 ## Platform-Specific Copy
 
@@ -47,7 +64,7 @@ the source evidence and ATT&CK definitions.
 Title:
 
 ```text
-Show HN: AdversaryGraph - CTI reports to ATT&CK mappings and detection gaps
+Show HN: AdversaryGraph – self-hosted CTI retrieval, ATT&CK mapping, and hunting
 ```
 
 Body:
@@ -57,17 +74,19 @@ I built AdversaryGraph to reduce the manual gap between threat reports and
 detection engineering.
 
 The workflow is:
-report/PDF/text -> ATT&CK technique candidates with evidence -> group/campaign
-TTP-overlap comparison -> Navigator-style layer -> detection gaps -> analyst
-report.
+report/PDF/text -> ATT&CK candidates with evidence -> cross-source IOC/CVE/TTP
+retrieval -> group/campaign comparison -> reviewed Navigator proposal -> hunt and
+detection work -> analyst report.
 
 There are two modes:
 - public browser workspace for ATT&CK exploration and group comparison
-- self-hosted Docker platform for AI-assisted report extraction, private
-  PostgreSQL-backed analyses, APIs, and PDF reports
+- self-hosted Docker platform for AI-assisted extraction, private
+  PostgreSQL/pgvector retrieval, cited Navigator assistance, APIs, and reports
+- optional local stdio MCP tools for bounded read-only/advisory access
 
-It is not an attribution engine. TTP overlap is an investigation lead, and every
-LLM-assisted mapping needs analyst validation.
+It is not an attribution or autonomous-response engine. TTP overlap, vector
+similarity, and stored relationships are investigation leads, and every
+AI-assisted output needs analyst validation.
 
 Live workspace: https://1200km.com/threat-matrix/
 Docs: https://1200km.com/adversarygraph-docs/
@@ -80,10 +99,11 @@ GitHub: https://github.com/anpa1200/adversarygraph
 I built AdversaryGraph as a CTI-to-detection workflow tool and would appreciate
 feedback from CTI analysts.
 
-The goal is not automated attribution. The goal is to make the mechanical part
-of report processing easier: extract ATT&CK technique candidates, preserve
-supporting evidence, compare TTP overlap with groups/campaigns, identify
-detection gaps, and export analyst-ready outputs.
+The goal is not automated attribution. The self-hosted workflow preserves report
+evidence, retrieves related IOC/CVE/TTP/actor records from a normalized corpus,
+compares TTP overlap, and turns reviewed results into hunting and detection
+work. The Navigator assistant cites the stored records behind its answer and
+requires confirmation before applying a proposed technique set.
 
 Public workspace: https://1200km.com/threat-matrix/
 Docs: https://1200km.com/adversarygraph-docs/
@@ -96,10 +116,11 @@ GitHub: https://github.com/anpa1200/adversarygraph
 I released AdversaryGraph, a CTI-to-detection workbench focused on turning threat
 reports into detection backlog material.
 
-It maps report evidence to ATT&CK technique candidates, compares TTP overlap
-with groups and campaigns, surfaces gaps, and produces Navigator-style views and
-analyst reports. The public web version is browser-native; the Docker version
-adds self-hosted AI extraction and private analysis storage.
+It maps report evidence to ATT&CK technique candidates, retrieves related IOCs,
+CVEs, actors, campaigns, and operational records, surfaces detection gaps, and
+produces reviewed Navigator views and analyst reports. The public web version is
+browser-native; the Docker version adds private analysis storage, governed RAG,
+and an optional stdio MCP facade.
 
 The important constraint: it is not an attribution engine. The output is
 analyst-review seed material for hunting and detection engineering.
@@ -117,10 +138,11 @@ I built AdversaryGraph to help move from threat reports to detection-ready work:
 
 1. ingest report text/PDF/DOCX
 2. extract ATT&CK technique candidates with evidence
-3. compare TTP overlap with groups and campaigns
-4. generate Navigator-style views
-5. identify detection gaps
-6. export analyst-ready reports
+3. retrieve related IOC/CVE/TTP/actor evidence for a saved business profile
+4. compare TTP overlap with groups and campaigns
+5. review a cited, expiring Navigator proposal
+6. create threat-hunting and detection work
+7. export analyst-ready reports
 
 AdversaryGraph does not perform definitive attribution. TTP overlap is an
 investigation lead, and every mapping requires analyst validation.
@@ -133,18 +155,21 @@ GitHub: https://github.com/anpa1200/adversarygraph
 ### X / Twitter Thread
 
 ```text
-1/ I built AdversaryGraph: a CTI-to-detection workbench for turning threat reports
-into ATT&CK mappings, TTP-overlap comparisons, and detection gaps.
+1/ I built AdversaryGraph: a self-hosted CTI-to-detection workbench for turning
+threat evidence into ATT&CK mappings, grounded retrieval, hunts, and detection
+gaps.
 
 2/ Workflow:
-report -> evidence -> ATT&CK technique candidates -> group/campaign comparison
--> Navigator-style layer -> analyst report.
+report -> evidence -> ATT&CK candidates -> IOC/CVE/TTP/actor retrieval ->
+group/campaign comparison -> reviewed Navigator proposal -> analyst work.
 
-3/ Public web mode is browser-native. Docker mode adds self-hosted AI
-extraction, private PostgreSQL-backed analyses, APIs, and PDF reports.
+3/ Docker mode adds a normalized PostgreSQL/pgvector corpus, cited AI answers,
+saved business context, and optional stdio MCP tools. Embeddings stay off until
+an operator configures a reviewed private endpoint.
 
-4/ Important limitation: AdversaryGraph is not an attribution engine. TTP overlap
-is an investigation lead, not proof.
+4/ Important limitation: AdversaryGraph is not an attribution or
+autonomous-response engine. Retrieval and TTP overlap are investigation leads,
+not proof.
 
 5/ Live: https://1200km.com/threat-matrix/
 Docs: https://1200km.com/adversarygraph-docs/
@@ -157,10 +182,11 @@ GitHub: https://github.com/anpa1200/adversarygraph
 
 ```text
 I built AdversaryGraph as a CTI-to-detection workbench around ATT&CK evidence
-mapping, group/campaign TTP-overlap comparison, detection gaps, and analyst
-reporting. It complements OpenCTI-style workflows by helping analysts turn raw
-reports into structured ATT&CK hypotheses before promotion into a CTI knowledge
-graph.
+mapping, governed IOC/CVE/TTP/actor retrieval, group/campaign comparison, threat
+hunting, detection gaps, and analyst reporting. It complements OpenCTI-style
+workflows by helping analysts review raw evidence and structured hypotheses
+before promotion into a CTI knowledge graph. The local MCP surface is advisory;
+it is not a direct database or synchronization connector.
 
 Docs: https://1200km.com/adversarygraph-docs/
 GitHub: https://github.com/anpa1200/adversarygraph
@@ -170,10 +196,11 @@ Related OpenCTI workflow: https://1200km.com/operation-desert-hydra/
 ### MISP Community
 
 ```text
-AdversaryGraph is a CTI-to-detection workbench for analyst-reviewed ATT&CK mapping
-and detection-gap analysis. It is not a MISP replacement; the useful integration
-angle is turning report evidence into structured technique hypotheses and
-observable context that can later feed MISP/OpenCTI-style workflows.
+AdversaryGraph is a CTI-to-detection workbench for analyst-reviewed ATT&CK
+mapping, cross-source retrieval, and detection-gap analysis. It is not a MISP
+replacement; the useful integration angle is reviewing report evidence,
+structured technique hypotheses, and observable context before those records
+feed MISP/OpenCTI-style workflows.
 
 Project: https://github.com/anpa1200/adversarygraph
 Docs: https://1200km.com/adversarygraph-docs/
@@ -182,10 +209,11 @@ Docs: https://1200km.com/adversarygraph-docs/
 ### Sigma / Detection Engineering Communities
 
 ```text
-AdversaryGraph focuses on the step before rule writing: turning CTI report
-evidence into ATT&CK technique candidates, hunting hypotheses, detection gaps,
-and analyst-reviewed backlog items. It is intended to feed Sigma/KQL/SPL work,
-not replace detection engineering validation.
+AdversaryGraph focuses on the step before rule writing: retrieving relevant CTI
+with citations, turning report evidence into ATT&CK candidates and falsifiable
+hypotheses, and creating analyst-reviewed detection backlog items. It is
+intended to feed Sigma/KQL/SPL work, not execute hunts or replace detection
+engineering validation.
 
 Live workspace: https://1200km.com/threat-matrix/
 CTI Field Manual: https://1200km.com/cti-analyst-field-manual/
@@ -204,15 +232,17 @@ Body:
 ```text
 Hi,
 
-I released AdversaryGraph, an open-source CTI-to-detection workbench for mapping
-threat reports to MITRE ATT&CK, comparing TTP overlap with known groups and
-campaigns, identifying detection gaps, and exporting analyst-ready outputs.
+I released AdversaryGraph, a self-hosted CTI-to-detection workbench for mapping
+threat reports to MITRE ATT&CK, retrieving related IOCs/CVEs/TTPs/actors with
+provenance, comparing campaigns, creating hunts, identifying detection gaps,
+and exporting analyst-ready outputs.
 
 The project is explicitly analyst-controlled: it does not perform definitive
-attribution, and TTP overlap is treated as an investigation lead rather than
-proof. The public web version supports browser-native ATT&CK exploration; the
-self-hosted Docker version adds AI-assisted extraction, private analysis
-storage, APIs, and PDF reporting.
+attribution or autonomous response, and retrieval signals are investigation
+leads rather than proof. The public web version supports browser-native ATT&CK
+exploration; the self-hosted Docker version adds AI-assisted extraction, a
+private normalized retrieval corpus, cited Navigator assistance, optional local
+MCP tools, APIs, and reporting.
 
 Live: https://1200km.com/threat-matrix/
 Docs: https://1200km.com/adversarygraph-docs/

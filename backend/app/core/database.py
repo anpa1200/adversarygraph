@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -39,7 +41,42 @@ async def create_tables() -> None:
     startup never deletes or rewrites investigation data implicitly.
     """
     async with engine.begin() as conn:
+        # RAG vectors live beside their authoritative records so backups,
+        # transactions, and authorization filters share one database boundary.
+        # The bundled PostgreSQL image installs this extension package. An
+        # external database must make pgvector available before first startup.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        vector_version = await conn.scalar(
+            text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+        )
+        parsed_version = [
+            int(part) for part in re.findall(r"\d+", str(vector_version or ""))[:3]
+        ]
+        version_parts = tuple((parsed_version + [0, 0, 0])[:3])
+        if version_parts < (0, 5, 0):
+            raise RuntimeError(
+                "pgvector 0.5.0 or newer is required for the RAG HNSW index; "
+                f"the database reports {vector_version or 'no installed version'}"
+            )
         await conn.run_sync(Base.metadata.create_all)
+        rag_vector_type = await conn.scalar(text("""
+            SELECT format_type(attribute.atttypid, attribute.atttypmod)
+            FROM pg_attribute AS attribute
+            JOIN pg_class AS relation ON relation.oid = attribute.attrelid
+            JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname = current_schema()
+              AND relation.relname = 'rag_chunks'
+              AND attribute.attname = 'embedding'
+              AND attribute.attnum > 0
+              AND NOT attribute.attisdropped
+        """))
+        expected_rag_vector_type = f"vector({settings.rag_embedding_dimensions})"
+        if rag_vector_type and str(rag_vector_type) != expected_rag_vector_type:
+            raise RuntimeError(
+                "RAG_EMBEDDING_DIMENSIONS does not match the existing rag_chunks.embedding "
+                f"column ({rag_vector_type}); perform the documented corpus schema migration "
+                "and full reindex before restarting"
+            )
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS created VARCHAR(50) DEFAULT ''"))
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS modified VARCHAR(50) DEFAULT ''"))
         await conn.execute(text("ALTER TABLE apt_groups ADD COLUMN IF NOT EXISTS attack_version VARCHAR(50) DEFAULT ''"))

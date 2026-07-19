@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
-import { aptApi, exportApi, simulationApi } from '@/api/client';
+import { aptApi, attackApi, exportApi, simulationApi } from '@/api/client';
 import { useAttackMatrix } from '@/hooks/useAttackMatrix';
 import { AttackMatrix } from '@/components/Navigator/AttackMatrix';
 import { LayerControls } from '@/components/Navigator/LayerControls';
@@ -10,6 +10,7 @@ import { SaveLayerModal } from '@/components/Navigator/SaveLayerModal';
 import { LoadLayerModal } from '@/components/Navigator/LoadLayerModal';
 import { TechniquePanel } from '@/components/Navigator/TechniquePanel';
 import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
+import { RAGAssistant } from '@/components/Navigator/RAGAssistant';
 import { Header } from '@/components/Layout/Header';
 import type { TechniqueListItem } from '@/types/attack';
 import { useSearchParams } from 'react-router-dom';
@@ -28,6 +29,7 @@ export function Navigator() {
     addTechniques, replaceTechniques, clearTechniques, clearOverlay,
     setOverlayTechniques, expandAll, collapseAll, coverageTechniques, setCoverageTechniques, clearCoverage,
     addComparisonLayer, removeComparisonLayer, clearComparisonLayers,
+    setRagPreview,
   } = useAppStore();
 
   // ── Panel state ────────────────────────────────────────────────────────────
@@ -50,6 +52,15 @@ export function Navigator() {
   // ── Matrix data ────────────────────────────────────────────────────────────
   const matrixData = useAttackMatrix(domain, version);
   const { tactics, techniquesByTactic, subtechsByParent, parentsWithSubs, isLoading, hasData } = matrixData;
+  const { data: attackVersions = [] } = useQuery({
+    queryKey: ['attack-versions'],
+    queryFn: attackApi.versions,
+    staleTime: 10 * 60 * 1000,
+  });
+  const activeAttackVersion = useMemo(
+    () => version ?? attackVersions.find(item => item.domain === domain && item.is_latest)?.version ?? null,
+    [attackVersions, domain, version],
+  );
 
   // ── Group-profile overlay sync ─────────────────────────────────────────────
   const { data: overlayGroup } = useQuery({
@@ -171,6 +182,18 @@ export function Navigator() {
           {canExport && <button onClick={() => exportBacklog(selectedTechniques, overlayTechniques, coverageTechniques)} className="border border-amber-800 text-amber-400 px-2 py-1 rounded">Export detection backlog</button>}
           <button onClick={clearCoverage} className="text-gray-600">Clear coverage</button>
         </>}
+        <div className="ml-auto">
+          <RAGAssistant
+            domain={domain}
+            attackVersion={activeAttackVersion}
+            selectedTechniques={selectedTechniques}
+            onPreview={setRagPreview}
+            onApply={(ids, mode) => {
+              if (mode === 'replace') replaceTechniques(ids);
+              else addTechniques(ids);
+            }}
+          />
+        </div>
       </div>
 
       {/* Main workspace row */}

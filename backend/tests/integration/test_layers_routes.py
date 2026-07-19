@@ -48,3 +48,23 @@ async def test_layers_create_empty_techniques_returns_422(client: AsyncClient):
         json={"name": "Test Layer", "domain": "enterprise-attack", "technique_ids": []},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_layers_create_rejects_malformed_technique_before_catalog_lookup(client: AsyncClient):
+    response = await client.post(
+        "/api/layers",
+        json={"name": "Unsafe Layer", "domain": "enterprise-attack", "technique_ids": ["not-an-id"]},
+    )
+    assert response.status_code == 422
+    assert "Malformed" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_layers_create_rejects_unknown_domain(client: AsyncClient):
+    response = await client.post(
+        "/api/layers",
+        json={"name": "Wrong domain", "domain": "unknown-attack", "technique_ids": ["T1059"]},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported ATT&CK domain"

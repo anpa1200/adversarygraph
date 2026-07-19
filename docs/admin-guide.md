@@ -22,7 +22,7 @@ Current public documentation bundle:
 | API | FastAPI backend and OpenAPI docs |
 | PostgreSQL | External persistent database for synced references and private/custom data |
 | Redis | Celery broker/result backend |
-| Worker | Background report analysis and collection jobs |
+| Worker | Background report analysis, collection, and RAG reconciliation jobs |
 | Beat | Scheduled ATT&CK sync and collection jobs |
 | Atlas docs | Embedded Anomaly Detection Atlas reference |
 
@@ -44,7 +44,7 @@ Important settings:
 | `MINIMAX_API_KEY` | MiniMax provider |
 | `MINIMAX_MODEL` | MiniMax model default |
 | `MINIMAX_BASE_URL` | MiniMax OpenAI-compatible API base URL |
-| `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM endpoint |
+| `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM/embedding endpoint; the `local` provider requires a loopback, private/link-local IP, or recognized private service DNS host |
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
 | `LOCAL_LLM_MODEL` | Local model default |
 | `THREAT_HUNTING_AI_ENABLED` | Enable governed Threat Hunting AI endpoints, default `true` |
@@ -53,8 +53,27 @@ Important settings:
 | `THREAT_HUNTING_AI_TIMEOUT_SECONDS` | Maximum governed assistant generation time; default `45` seconds, enforced range `5`–`180` |
 | `THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT` | Maximum raw source-text characters included in report-to-hypothesis context; default `40000`, enforced range `4000`–`80000` |
 | `THREAT_HUNTING_AI_MAX_CANDIDATES` | Maximum returned report-to-hypothesis candidates; default `3`, enforced range `1`–`3` |
+| `RAG_ENABLED` | Enable unified hybrid retrieval and grounded assistant endpoints; default `true` |
+| `RAG_EMBEDDING_ENABLED` | Enable vector embedding/index/query calls after a private model is verified; default `false`, and lexical retrieval remains available |
+| `RAG_EMBEDDING_PROVIDER` | Private embedding boundary; the post-v6 implementation accepts `local` only |
+| `RAG_EMBEDDING_MODEL` | Server-controlled embedding model; default `nomic-embed-text` |
+| `RAG_EMBEDDING_DIMENSIONS` | Fixed pgvector dimension for this corpus; default `768`, change only with migration and full reindex |
+| `RAG_EMBEDDING_BATCH_SIZE` | Maximum texts per embedding request; default `32`, range `1`–`128` |
+| `RAG_VECTOR_MAX_COSINE_DISTANCE` | Maximum accepted cosine distance before vector candidates are discarded; default `0.55`, range `0`–`2` |
+| `RAG_CHUNK_CHARS`, `RAG_CHUNK_OVERLAP_CHARS` | Bounded source chunk and overlap size; defaults `3500` and `350` |
+| `RAG_DEFAULT_RESULT_LIMIT` | Default hybrid retrieval result count; default `12`, maximum API result limit `25` |
+| `RAG_MAX_CONTEXT_CHARS` | Hard maximum for the serialized AI user context, including question, business profile, source titles, metadata, and excerpts; default `32000`, range `4000`–`80000` |
+| `RAG_RECONCILE_HOUR`, `RAG_RECONCILE_MINUTE` | Daily Celery corpus reconciliation time in UTC; defaults `04:15` |
+| `RAG_TOMBSTONE_RETENTION_DAYS` | Days to retain inactive derived RAG documents and their chunks; default `30`; `0` disables this automatic deletion path |
+| `RAG_ASSISTANCE_RETENTION_DAYS` | Days to retain generated assistance records and associated Navigator proposals; default `90`; `0` disables this automatic deletion path |
+| `RAG_RETENTION_BATCH_SIZE`, `RAG_RETENTION_MAX_BATCHES` | Bounded deletions per table and maximum transactions per scheduled run; defaults `1000` and `20` |
+| `RAG_RETENTION_HOUR`, `RAG_RETENTION_MINUTE` | Daily audited RAG retention task time in UTC; defaults `04:45` |
 | `ATTCK_DOMAINS` | ATT&CK/ATLAS domains to ingest, for example `enterprise-attack,mobile-attack,ics-attack,atlas` |
 | `THREATFOX_AUTH_KEY` | Optional abuse.ch ThreatFox key for IOC sync |
+
+External PostgreSQL must provide pgvector **0.5.0 or newer** before API
+startup; older versions are rejected because the RAG schema requires HNSW.
+The bundled development image builds checksum-pinned pgvector **0.8.2**.
 | `AUTO_IOC_FULL_SYNC_ON_STARTUP` | Run background full IOC source sync after API startup |
 | `AUTO_THREATFOX_SYNC_DAYS` | Startup IOC sync window for recent IOC providers, clamped to 1-7 days |
 | `OTX_API_KEY` | Optional AlienVault OTX key for actor pulse IOC enrichment |
@@ -76,6 +95,57 @@ Important settings:
 
 See [`local-storage-and-permissions.md`](local-storage-and-permissions.md) for
 the exact local database, cache, log, and artifact storage locations.
+
+### Unified RAG operation
+
+The RAG corpus includes allowlisted actor sector/region/technology observations
+as `actor_intel` records, stored evidence-bearing IOC/CVE actor links, and the
+latest local ATT&CK group-to-technique, group-to-campaign, and
+campaign-to-technique relationships. Raw provider/observation JSON is not
+indexed. Actor observations have no source-level TLP column and therefore fail
+closed to `TLP:AMBER+STRICT`.
+
+When an analyst explicitly asks for IOCs, CVEs, TTPs, campaigns, or actors,
+hybrid search can use shared allowlisted relationship identifiers for one
+bounded full-text expansion into the requested source class. This is not a
+recursive graph traversal. Operators and analysts must preserve the returned
+warning: a stored link can support investigation prioritization but does not
+prove current targeting, exploitation, or compromise.
+
+`RAG_EMBEDDING_PROVIDER=local` is enforced in this release. The embedding
+adapter refuses a public `LOCAL_LLM_BASE_URL`, even over HTTPS; use a loopback,
+private/link-local IP, single-label service name, `host.docker.internal`, or a
+recognized private service suffix. Verify model availability before setting
+`RAG_EMBEDDING_ENABLED=true`.
+
+RAG reconciliation holds a PostgreSQL session advisory lock on one dedicated
+physical connection across commits. The worker database connection must
+therefore be direct PostgreSQL or PgBouncer with `pool_mode=session`.
+Transaction and statement pooling are unsupported for RAG workers. If the API
+uses transaction pooling, configure the worker process/container separately
+with a direct or session-pooled database connection. The application does not
+detect or repair an incompatible PgBouncer mode.
+
+The daily retention task uses the same corpus advisory lock. It deletes only
+tombstoned derived documents older than `RAG_TOMBSTONE_RETENTION_DAYS`; active
+corpus documents are never eligible. PostgreSQL cascades those deletes to the
+document chunks and vectors. It separately deletes `RAGAssistance` rows older
+than `RAG_ASSISTANCE_RETENTION_DAYS`, cascading to their expiring Navigator
+proposals. Each bounded transaction writes a `rag.retention.purge` audit event
+with counts and cutoffs, but no deleted source text or answer content.
+
+Set either retention-day value to `0` to disable automatic deletion for that
+record family. Set both to `0` for operator-controlled legal-hold mode; the
+scheduled task records `rag.retention.legal_hold`. This setting does not protect
+against manual database deletion and does not change snapshot, replica, export,
+or backup retention. Apply the same hold/deletion policy to those systems.
+
+For host-side MCP clients in the standard Compose deployment, set
+`MCP_API_BASE_URL=http://127.0.0.1:3000`. The host does not publish API port
+`8000`; that origin is only valid inside the API container or Compose network.
+See [`unified-rag-and-mcp.md`](unified-rag-and-mcp.md) and
+[`mcp-server.md`](mcp-server.md) for the full retrieval and integration
+contracts.
 
 ### Governed Threat Hunting AI policy
 
@@ -480,6 +550,28 @@ If the self-test reports `taxonomy_normalized` as a warning, a user with
 `manage_feeds` permission can select **Normalize Taxonomy** in the popup. The
 same operation is available as `POST /api/system/taxonomy/normalize`; rerun the
 self-test after it completes.
+
+If `rag_index` is a warning, inspect its details before changing
+configuration. A never-indexed fresh installation remains `ok` with an
+instruction to run the initial reconciliation; a warning means a run or enabled
+embedding path needs attention:
+
+- `pgvector_version` is empty: deploy the bundled pgvector-capable PostgreSQL
+  image or install a compatible extension on the external database, then
+  restart the API;
+- `documents=0`: sign in with `manage_feeds`, open **ATT&CK Navigator →
+  AI RAG assistant**, and run **Build / refresh RAG index**;
+- embeddings are pending/failed while lexical documents exist: keep using the
+  reported exact/full-text fallback, verify the private endpoint/model and
+  configured dimensions, then queue a complete retry;
+- the latest run is failed or its running heartbeat is stale: review
+  `/api/rag/index-runs`, worker/Redis health, and worker database pooling before
+  redispatching the idempotent run.
+
+Rerun the authenticated self-test after reconciliation and require `status=ok`
+for release acceptance. Do not disable `RAG_ENABLED` merely to hide a failed
+dependency unless the deployment has formally removed the feature and updated
+its acceptance scope.
 
 Open **Observability** in the sidebar, or browse directly to:
 

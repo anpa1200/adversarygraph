@@ -133,6 +133,38 @@ def test_model_override_is_rejected(monkeypatch: pytest.MonkeyPatch):
     assert "override" in str(exc.value.detail).lower()
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://127.0.0.1:11434/v1", True),
+        ("http://ollama:11434/v1", True),
+        ("http://ollama.default.svc:11434/v1", True),
+        ("http://local-llm.test/v1", True),
+        ("https://api.example.com/v1", False),
+        ("http://8.8.8.8/v1", False),
+        ("http://user:secret@127.0.0.1/v1", False),
+    ],
+)
+def test_local_ai_endpoint_must_be_a_private_origin(url: str, expected: bool):
+    assert ai.local_ai_endpoint_is_private(url) is expected
+
+
+def test_local_provider_rejects_public_endpoint_label(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "local_llm_base_url", "https://api.example.com/v1")
+
+    with pytest.raises(HTTPException) as exc:
+        ai.create_adapter(
+            "local",
+            None,
+            effective_tlp="TLP:AMBER+STRICT",
+            cloud_processing_acknowledged=False,
+        )
+
+    assert exc.value.status_code == 503
+    assert "private" in str(exc.value.detail).lower()
+
+
 def test_remote_provider_catalog_is_not_usable_when_cloud_is_disabled(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)

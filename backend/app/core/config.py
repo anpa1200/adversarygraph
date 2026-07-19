@@ -1,5 +1,8 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
 from sqlalchemy.engine import URL
 
 
@@ -37,6 +40,44 @@ class Settings(BaseSettings):
     threat_hunting_ai_timeout_seconds: float = 45.0
     threat_hunting_ai_source_char_limit: int = 40_000
     threat_hunting_ai_max_candidates: int = 3
+
+    # Unified intelligence RAG. Embeddings use the same private
+    # OpenAI-compatible boundary as the local LLM by default, but a distinct
+    # model because chat models are not valid embedding models.
+    rag_enabled: bool = True
+    rag_embedding_enabled: bool = False
+    rag_embedding_provider: Literal["local"] = "local"
+    rag_embedding_model: str = "nomic-embed-text"
+    rag_embedding_dimensions: int = Field(default=768, ge=1, le=2_000)
+    rag_embedding_batch_size: int = Field(default=32, ge=1, le=128)
+    # Cosine distance is 0 for identical vectors and approaches 2 for opposite
+    # vectors. Reject weak semantic neighbours before reciprocal-rank fusion.
+    rag_vector_max_cosine_distance: float = Field(default=0.55, ge=0.0, le=2.0)
+    rag_chunk_chars: int = Field(default=3_500, ge=500, le=10_000)
+    rag_chunk_overlap_chars: int = Field(default=350, ge=0, le=2_000)
+    rag_default_result_limit: int = Field(default=12, ge=1, le=25)
+    rag_max_context_chars: int = Field(default=32_000, ge=4_000, le=80_000)
+    rag_reconcile_hour: int = Field(default=4, ge=0, le=23)
+    rag_reconcile_minute: int = Field(default=15, ge=0, le=59)
+    # Derived RAG data has an explicit, bounded lifecycle. A zero retention
+    # value disables automatic deletion for that record family (legal-hold
+    # mode); backups and manual administrative deletion remain separate.
+    rag_tombstone_retention_days: int = Field(default=30, ge=0, le=36_500)
+    rag_assistance_retention_days: int = Field(default=90, ge=0, le=36_500)
+    rag_retention_batch_size: int = Field(default=1_000, ge=1, le=10_000)
+    rag_retention_max_batches: int = Field(default=20, ge=1, le=100)
+    rag_retention_hour: int = Field(default=4, ge=0, le=23)
+    rag_retention_minute: int = Field(default=45, ge=0, le=59)
+
+    # MCP is a separate, local stdio process. Remote HTTP transport is not
+    # exposed until the platform has an independent OAuth authorization model.
+    mcp_transport: Literal["stdio"] = "stdio"
+    # MCP is normally launched as a host-side stdio subprocess. The standard
+    # Compose deployment exposes the authenticated API through the frontend
+    # proxy on loopback port 3000; in-container deployments must override this
+    # with http://api:8000 explicitly.
+    mcp_api_base_url: str = "http://127.0.0.1:3000"
+    mcp_api_token: str = ""
 
     # MalwareGraph integration
     malwaregraph_url: str = "http://malwaregraph:8100"
@@ -131,6 +172,12 @@ class Settings(BaseSettings):
     log_dir: str = "logs"
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 5
+
+    @model_validator(mode="after")
+    def validate_rag_settings(self):
+        if self.rag_chunk_overlap_chars >= self.rag_chunk_chars:
+            raise ValueError("RAG_CHUNK_OVERLAP_CHARS must be smaller than RAG_CHUNK_CHARS")
+        return self
 
     @property
     def attck_domain_list(self) -> list[str]:

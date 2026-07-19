@@ -84,6 +84,40 @@ Before production use:
 - Evidence Pack exports may contain sensitive report excerpts and analyst
   conclusions; handle them as investigation artifacts.
 
+## Unified RAG and Navigator AI
+
+- Hybrid retrieval improves discovery; it does not prove relevance,
+  attribution, targeting, exploitation, or compromise. Vector similarity is a
+  ranking signal, not evidence confidence.
+- The assistant refuses ungrounded generation when no safe indexed source
+  matches. A refusal is not evidence that no relevant intelligence exists.
+- Source markers bind the answer to retrieved excerpts but do not guarantee the
+  model interpreted them correctly. Review the source route and full record.
+- IOC freshness/confidence, CVE relationships, actor links, sector labels, and
+  ATT&CK mappings inherit source limitations and can be incomplete or stale.
+- Actor sector/region/technology observations are indexed from the normalized
+  observation table with evidence and sanitized references, not raw provider
+  JSON. They have no per-observation distribution marking and are therefore
+  treated as `TLP:AMBER+STRICT`; their presence still does not prove current
+  victim selection or campaign scope.
+- Relationship expansion is one non-recursive search over allowlisted IDs from
+  the initial result set, and only runs for an explicitly requested target class
+  that is present in the source filter. It is not a complete graph traversal or
+  evidence that an absent relationship does not exist.
+- IOC/CVE relationship evidence and current ATT&CK usage/attribution text are
+  preserved for review, but indexing does not independently validate, approve,
+  or strengthen the underlying relationship. A business-context match followed
+  by an actor-to-IOC link is not proof that the IOC targets that business.
+- A business profile supplies deterministic relevance context. It does not show
+  that an actor or IOC targets that organization.
+- Navigator output is an expiring proposal. Preview does not change selected
+  techniques, confirmation does not save a named layer, and every ID still
+  requires analyst review.
+- The corpus contains curated derived excerpts and remains sensitive data. It
+  is covered by database backup, access, retention, and deletion controls.
+- AdversaryGraph is single-workspace. The RAG corpus is not a tenant-isolation
+  mechanism for mutually untrusted customers.
+
 ## Privacy
 
 Other Docker-mode AI workflows send their selected input to the configured LLM
@@ -92,9 +126,10 @@ cloud use is disabled by default and requires operator enablement plus explicit
 analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED` assistant inputs are
 local-only. A stored source report defaults conservatively to
 `TLP:AMBER+STRICT`; only the `manage_intel` report-edit path may change its
-server-side marking, and a request may raise but cannot lower it. An endpoint
-labeled `local` is private only when the operator has deployed and governed it
-that way.
+server-side marking, and a request may raise but cannot lower it. The governed
+local adapters reject public hostnames, but an accepted loopback/private-IP or
+private-service-DNS endpoint is private only when the operator has also deployed
+and governed its routing, access control, TLS, logging, and retention that way.
 
 ## Sector Intelligence
 

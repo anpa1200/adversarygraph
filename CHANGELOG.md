@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- Fixed source-build Compose startup for existing MalwareGraph volumes with a
+  least-privilege one-shot ownership initializer shared by the UID 10001
+  MalwareGraph service and GID 999 backend export path.
+- Replaced the backend image's inherited HTTP healthcheck on Celery worker and
+  beat services with process-appropriate checks, eliminating false unhealthy
+  states while retaining API readiness checks on the API service.
+- Added a unified normalized RAG corpus across IOC, CVE, ATT&CK/TTP, actor,
+  actor sector/region/technology observations, campaign, report, knowledge,
+  Threat Radar, Threat Hunting, Evidence Graph, and sanitized asset records,
+  using exact identifier resolution,
+  PostgreSQL full-text search, pgvector cosine search, reciprocal-rank fusion,
+  source provenance, TLP/legal controls, and visible lexical-only fallback.
+- Added relationship-aware retrieval over stored evidence-bearing actor-to-IOC
+  and actor-to-CVE links plus current local ATT&CK actor-to-technique and
+  actor-to-campaign relationships. Explicit IOC/CVE/TTP/campaign/actor requests
+  can perform one bounded, non-recursive full-text expansion over allowlisted
+  relationship identifiers; results label that retrieval signal and warn that
+  link-based relevance is not proof of targeting, exploitation, or compromise.
+- Added a governed Navigator-level intelligence assistant with strict structured
+  output, verified source markers, stale-source rejection, local ATT&CK catalog
+  validation, expiring checksum-bound proposals, temporary preview, and explicit
+  Add/Replace confirmation without automatic named-layer persistence. Proposal
+  and confirmation state is still persisted for audit.
+- Added saved business profiles for private region, sector, technology, and
+  crown-jewel context. Profiles participate in request-time retrieval/reranking
+  and generation but are not exposed as globally searchable corpus documents.
+- Added an MCP integration for bounded authenticated retrieval and advisory
+  proposals through the same RAG API boundary, without arbitrary SQL, URL
+  fetching, proposal confirmation, response actions, or Navigator mutation.
+- Reduced the MCP subprocess configuration boundary to transport, API origin,
+  token, and auth mode so it no longer imports or requires database, Redis,
+  feed, or provider credentials.
+- Made CVE retrieval fail closed when correlation evidence derives from linked
+  IOCs: the document inherits the strictest IOC TLP, unresolved actor/IOC
+  provenance becomes `TLP:AMBER+STRICT`, and relationship-derived CVE documents
+  are legal-sensitive before provider selection.
+- Enforced a loopback/private-host boundary for the local embedding endpoint,
+  documented `http://127.0.0.1:3000` as the standard host-side MCP API origin,
+  and documented that RAG reconciliation workers must use a direct PostgreSQL
+  connection or PgBouncer session pooling because their advisory lock spans
+  commits on one physical database session.
+- Added scheduled, idempotent corpus reconciliation with run history,
+  heartbeats, stale-run redispatch, lexical-only degraded operation, and a
+  corpus-wide session advisory lock. Added bounded daily retention for inactive
+  tombstoned documents and assistance/proposal records, including auditable
+  operator-controlled legal-hold mode.
+
 - Added a hypothesis-driven Threat Hunting workspace with lifecycle controls,
   ATT&CK mappings, telemetry and field requirements, bounded scope, TLP
   handling, reviewed findings, controlled dispositions, and soft archival.

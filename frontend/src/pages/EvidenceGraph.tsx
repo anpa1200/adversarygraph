@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Edge, Node } from '@xyflow/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   evidenceGraphApi,
   type EvidenceGraphEdge,
@@ -51,15 +52,28 @@ const NEXT_STEP: Partial<Record<EvidenceGraphNodeType, { node_type: EvidenceGrap
   siem_result: { node_type: 'analyst_decision', title: 'Analyst decision', edge_type: 'REVIEWED_AS' },
 };
 
+function normalizeNodeId(value: string | null): string {
+  const normalized = value?.trim() ?? '';
+  return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : '';
+}
+
 export function EvidenceGraph() {
   const qc = useQueryClient();
   const canManage = useHasPermission('manage_intel');
   const canExport = useHasPermission('export_data');
+  const [searchParams] = useSearchParams();
+  const linkedNodeId = normalizeNodeId(searchParams.get('node') || searchParams.get('node_id'));
   const [tab, setTab] = useState<'overview' | 'path' | 'gaps' | 'review'>('overview');
-  const [selectedId, setSelectedId] = useState<string>('');
+  const [selectedId, setSelectedId] = useState<string>(linkedNodeId);
   const [filters, setFilters] = useState({ search: '', node_type: '', review_status: '', technique_id: '', onlyGaps: false, onlyAi: false });
   const [newEvidenceTitle, setNewEvidenceTitle] = useState('');
   const [newEvidenceText, setNewEvidenceText] = useState('');
+
+  useEffect(() => {
+    if (linkedNodeId && linkedNodeId !== selectedId) setSelectedId(linkedNodeId);
+  }, [linkedNodeId, selectedId]);
 
   const summary = useQuery({ queryKey: ['evidence-graph-summary'], queryFn: evidenceGraphApi.summary });
   const graph = useQuery({
@@ -91,7 +105,8 @@ export function EvidenceGraph() {
 
   const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data?.nodes]);
   const edges = useMemo(() => graph.data?.edges ?? [], [graph.data?.edges]);
-  const selected = nodes.find(node => node.id === selectedId) ?? nodes[0];
+  const selected = selectedId ? nodes.find(node => node.id === selectedId) : nodes[0];
+  const linkedNodeMissing = Boolean(linkedNodeId && !graph.isLoading && !selected);
   const reviewQueue = useMemo(() => nodes.filter(node =>
     (node.ai_generated && node.review_status === 'draft')
     || node.review_status === 'needs_evidence'
@@ -227,6 +242,11 @@ export function EvidenceGraph() {
           </main>
 
           <aside className="space-y-4">
+            {linkedNodeMissing && (
+              <section className="rounded border border-yellow-800 bg-yellow-950/20 p-4 text-xs leading-5 text-yellow-200">
+                The linked evidence node is not present in the active graph result. It may have been removed, rejected, or excluded by the graph result limit.
+              </section>
+            )}
             <NodeDetail
               node={selected}
               canManage={canManage}

@@ -13,6 +13,8 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
 | Tagged v6.0.0 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |
+| Unified intelligence RAG | [docs/unified-rag-and-mcp.md](unified-rag-and-mcp.md) |
+| MCP server contract | [docs/mcp-server.md](mcp-server.md) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 | Security policy | [SECURITY.md](../SECURITY.md) |
 | Known limitations | [docs/limitations.md](limitations.md) |
@@ -34,6 +36,13 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 - Preserving evidence-to-detection reasoning chains from raw evidence through claims, behavior, ATT&CK mapping, required telemetry, detection logic, validation, SIEM result, and analyst decision
 - Running Attack Simulation scenarios against authorized lab targets, reviewing real lab-target telemetry, and forwarding either real lab logs or synthetic source-shaped telemetry to a SIEM for rule validation
 - Generating AI-assisted kill-chain scenarios for detection engineering exercises
+- Searching a normalized cross-module IOC/CVE/TTP/actor/report/hunt/evidence/
+  asset corpus with exact, full-text, optional private vector, and bounded
+  relationship retrieval
+- Applying private business context to ranking, generating citation-bound
+  answers, and reviewing persisted, expiring ATT&CK Navigator advisory proposals
+- Exposing the same bounded retrieval and advisory proposal boundary to a local
+  stdio MCP client without automatic platform mutation
 - Reviewing platform health through self-test, API request metrics, recent traces, redacted log tails, and Prometheus-compatible metrics
 
 ## What this tool is NOT
@@ -44,6 +53,8 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 | Multi-tenant cloud product | Not implemented. Native user auth is project-level access control, not tenant isolation. |
 | Hardened internet-facing service | Not the default. Requires TLS, auth enabled, network restrictions, and operator hardening — documented in [SECURITY.md](../SECURITY.md) and [Authentication and User Management](authentication-and-users.md). |
 | Automated threat actor attribution | Not claimed. TTP overlap is an investigation lead, not attribution proof. |
+| Autonomous RAG decision or response engine | Not claimed. Retrieval ranks evidence for review; it does not prove targeting, active IOCs, exploitation, or compromise, and it does not block, contain, execute, or save a layer automatically. |
+| Remote MCP service | Not implemented. The supported MCP process is local stdio only and calls fixed authenticated API routes. |
 | Replacement for analyst judgment | Not claimed. All AI outputs require analyst review before operational use. |
 | Live attack framework | Not claimed. Attack Simulation uses approved lab fixtures and benign canaries; it is not a general exploit runner and does not target arbitrary systems. |
 
@@ -58,6 +69,16 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
   documented in their manifests.
 - API keys are passed via environment variables, not embedded in code
 - LLM outputs are treated as untrusted and require analyst review
+- RAG indexes only allowlisted normalized fields; vector similarity and
+  one-hop relationship expansion are labeled retrieval signals, not evidence
+  confidence
+- Embeddings are local-only and the configured endpoint host must pass the
+  private-network validation boundary
+- Navigator proposals are source-bound, expiring, checksum-checked, locally
+  ATT&CK-validated, and require explicit Add/Replace confirmation; confirmation
+  persists the audit decision but does not save or mutate a named layer
+- MCP has no confirmation, reindex, arbitrary SQL/URL, or operational-action
+  tool and should use a dedicated least-privilege session
 - Evidence Graph AI-generated nodes and edges are drafts until analyst-reviewed
 - Generated detection logic (Sigma/KQL/SPL/EQL) is a draft and must be reviewed before deployment
 - SIEM forwarding secret values (bearer tokens, passwords) are not stored server-side
@@ -87,13 +108,15 @@ More than 60 backend test files plus browser-spec coverage for:
 
 - Unit tests: ATT&CK mapping, report parsing, export formats, LLM provider
   selection, safe HTTP, rate limiting, observability, archive handling, Threat
-  Hunting AI, IOC extraction, and YARA scanning.
+  Hunting AI, RAG retrieval/generation/retention/worker behavior, MCP input and
+  output boundaries, IOC extraction, and YARA scanning.
 - Integration tests: route authorization, database operations, user/session/MFA
   lifecycle, uploads, analysis, collection, simulation, MalwareGraph, Threat
-  Radar, Threat Hunting, and endpoint orchestration.
+  Radar, Threat Hunting, RAG profile/search/assistant/proposal/reindex APIs, and
+  endpoint orchestration.
 - Playwright tests: authentication startup, main navigation and deep links,
-  permissions, safe link handling, Threat Hunting, and deterministic release
-  screenshot flows.
+  permissions, safe link handling, Threat Hunting, RAG source deep links, and
+  deterministic release screenshot flows.
 
 ## Demo dataset
 

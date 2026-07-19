@@ -259,8 +259,84 @@ jobs:
         with:
           context: .
           file: docker/postgres/Dockerfile
+          load: true
           push: false
           tags: adversarygraph-postgres:ci
+      - name: Smoke test PostgreSQL pgvector extension
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          container_name="adversarygraph-postgres-pgvector-ci"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --env POSTGRES_PASSWORD=ci_pgvector_validation_password \
+            --env POSTGRES_DB=adversarygraph_ci \
+            adversarygraph-postgres:ci >/dev/null
+
+          ready=false
+          for _ in {1..30}; do
+            if docker exec "$container_name" \
+              pg_isready --username postgres --dbname adversarygraph_ci >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "true" ]]; then
+            docker logs "$container_name"
+            exit 1
+          fi
+
+          extension_version="$(
+            docker exec "$container_name" \
+              psql --username postgres --dbname adversarygraph_ci \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 \
+                --command "CREATE EXTENSION vector; SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+          )"
+          if [[ "$extension_version" != "0.8.2" ]]; then
+            echo "Expected pgvector 0.8.2, got: ${extension_version:-<empty>}" >&2
+            exit 1
+          fi
+
+          search_result="$(
+            docker exec "$container_name" \
+              psql --username postgres --dbname adversarygraph_ci \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 \
+                --command "
+                  CREATE TABLE rag_index_smoke (
+                    id integer PRIMARY KEY,
+                    content text NOT NULL,
+                    search_vector tsvector GENERATED ALWAYS AS
+                      (to_tsvector('simple', coalesce(content, ''))) STORED,
+                    embedding vector(3)
+                  );
+                  CREATE INDEX rag_index_smoke_fts ON rag_index_smoke USING gin (search_vector);
+                  CREATE INDEX rag_index_smoke_hnsw ON rag_index_smoke
+                    USING hnsw (embedding vector_cosine_ops);
+                  INSERT INTO rag_index_smoke VALUES
+                    (1, 'PowerShell execution evidence', '[1,0,0]'),
+                    (2, 'Unrelated Linux package record', '[0,1,0]');
+                  SELECT
+                    (SELECT id FROM rag_index_smoke
+                     WHERE search_vector @@ websearch_to_tsquery('simple', 'PowerShell'))
+                    || '|' ||
+                    (SELECT id FROM rag_index_smoke
+                     ORDER BY embedding <=> '[1,0,0]'::vector LIMIT 1);
+                  DROP TABLE rag_index_smoke;
+                "
+          )"
+          if [[ "$search_result" != "1|1" ]]; then
+            echo "PostgreSQL FTS/vector index smoke failed: ${search_result:-<empty>}" >&2
+            exit 1
+          fi
       - name: Build backend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:

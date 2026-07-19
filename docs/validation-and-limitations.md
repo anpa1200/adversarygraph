@@ -10,6 +10,9 @@ This document records what AdversaryGraph can validate today and where analyst r
 | Group/campaign similarity | Treat TTP overlap as an investigation lead, not attribution |
 | Generated detection logic | Test in the target SIEM/EDR/query engine before operational deployment |
 | IOC enrichment | Check source, timestamp, confidence, and relationship context |
+| RAG search result | Confirm the source route, content hash/index time, active retrieval signals, TLP/legal labels, and the authoritative record; ranking is not evidence confidence |
+| Grounded AI answer | Verify every material statement against its cited full record; citation validity proves excerpt provenance, not model correctness |
+| Navigator proposal | Verify domain, ATT&CK version, technique IDs, rationale, citations, expiry, and Add/Replace diff; confirmation is not a saved layer |
 | Malware-analysis summary | Confirm static and runtime evidence separately; do not merge AI interpretation into ground truth |
 | Asset Surface matrix | Validate exposure, ownership, criticality, and reachable services against authoritative inventory |
 | Attack Simulation real telemetry | Confirm the lab target emitted the event and that the SIEM parsed it as expected |
@@ -25,6 +28,13 @@ This document records what AdversaryGraph can validate today and where analyst r
 - Real-time attacked-server log view for lab simulations.
 - SIEM forwarding status, event counts, and recent destination history.
 - Evidence Graph gaps, review queue, reasoning paths, readiness score, and Evidence Pack export.
+- RAG source routes, exact/full-text/vector signal labels, content hashes,
+  indexed timestamps, TLP/legal flags, business-context warnings, verified
+  citations, and refusal when no safe source set is available.
+- Expiring checksum-bound Navigator proposals with local ATT&CK validation,
+  temporary preview, explicit Add/Replace review, and a non-mutating server
+  confirmation receipt. The advisory record and confirmation state are kept
+  for audit; `persisted=false` means no named Navigator layer was saved.
 - Demo dataset with expected mappings and expected outputs.
 - CI checks for tests, lint, dependency audit, Docker build, container scan, secret scan, and version consistency.
 
@@ -38,6 +48,18 @@ This document records what AdversaryGraph can validate today and where analyst r
 - Synthetic telemetry may match a vendor structure but is still generated data.
 - SQL, FTP, identity, and egress simulation target classes require dedicated lab fixtures before they can be treated as real lab telemetry.
 - Malware dynamic analysis requires isolated MalwareGraph runtime profiles and remains disabled by default.
+- Business profiles improve deterministic ranking but do not prove that an
+  actor, campaign, IOC, CVE, or technique targets the organization.
+- Vector similarity and bounded one-hop relationship expansion can surface
+  useful leads but do not prove attribution, targeting, exploitation, active
+  infrastructure, or compromise. Absence from the derived corpus is not proof
+  that intelligence does not exist.
+- Semantic retrieval requires an approved private embedding service. When it is
+  disabled or unavailable, supported exact/full-text fallback remains visible
+  in the result mode.
+- The MCP surface is local stdio advisory access, not a remote automation or
+  response interface. It cannot confirm/apply Navigator proposals or mutate
+  operational state.
 
 ## Reviewer Checklist
 
@@ -48,5 +70,12 @@ Before accepting a result as validated:
 - Confirm the ATT&CK technique is behaviorally justified.
 - Confirm no private data was uploaded to public demos.
 - Confirm generated detections were tested against representative telemetry.
+- Confirm RAG source coverage and index freshness before treating search as a
+  meaningful review aid.
+- Follow every consequential assistant citation to its complete canonical
+  record and document any stale, conflicting, or weak relationship evidence.
+- Confirm a Navigator proposal did not silently persist, execute, or imply
+  coverage; save and validate a named layer through the normal workflow only
+  after review.
 - Confirm Evidence Graph AI drafts, ATT&CK mappings, and readiness score inputs were analyst-reviewed.
 - Document unresolved assumptions and validation gaps in the investigation.

@@ -2,7 +2,7 @@
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
 controlled deployments. The latest immutable release tag is `v6.0.0`; the
-current `main` branch also contains the post-v6 work listed under
+current development checkout also contains the post-v6 work listed under
 [Unreleased](../CHANGELOG.md). This document tracks the checked-out repository,
 so every production review must record the exact tag or commit and must not
 transfer evidence from a different revision.
@@ -70,8 +70,12 @@ handling policy.
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
 | Fresh image scan/publish path | Implemented on post-v6 `main`; future-tag evidence required | strict local builds scan seven custom images plus the three pinned third-party stack images; the tag workflow loads and scans seven versioned images before pushing those same local images |
 | Immutable Compose deployment | Implemented | production preflight requires all seven custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Implemented with operator input | PostgreSQL and Redis evaluation defaults are pinned; production replaces the PostgreSQL repository/digest and supplies reviewed release digests for all four release components |
+| Helm image digests | Implemented with operator input | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph remain v6.0.0 tag-only. Post-v6 evaluation overrides those three application images; production also replaces PostgreSQL and supplies reviewed digests for all four release components. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
+| PostgreSQL full-text and pgvector | Implemented on the post-v6 development branch | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
+| Unified RAG corpus | Implemented on the post-v6 development branch | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
+| Governed Navigator assistant | Implemented on the post-v6 development branch | business profiles, exact/FTS/optional vector retrieval, source-bound structured output, TLP/legal gates, verified citations, temporary preview, and explicit non-mutating Add/Replace confirmation; advisory/audit records are persisted but no layer is saved |
+| Local MCP integration | Implemented on the post-v6 development branch | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
 
 ## Remaining Production Blockers
 
@@ -101,6 +105,11 @@ deployment with documented compensating controls:
   source updates; current defaults are immutable reviewed SHAs but the upstream
   commits are not signature-verified by the build.
 - Add formal Alembic migration chain and migration tests.
+- Before enabling semantic retrieval in a production environment, retain an
+  end-to-end smoke test against the exact approved private embedding and chat
+  endpoint/model pair. Unit/integration protocol tests do not prove that a
+  deployment-specific model returns the configured dimensions, obeys latency
+  limits, or meets local data-handling policy.
 
 ## Deployment Position
 
@@ -116,6 +125,13 @@ internet-facing use, place AdversaryGraph behind:
 - managed secrets
 - backups and retention controls
 - logging and monitoring
+- the bundled pgvector-capable PostgreSQL image, or an external PostgreSQL
+  service where the compatible `vector` extension is installed before API
+  startup
+- a private, authenticated model gateway when embeddings or local generation
+  are enabled; restrict model egress and include its logs/retention in policy
+- a direct PostgreSQL connection for the RAG worker, or PgBouncer configured in
+  session-pooling mode rather than transaction/statement pooling
 - reviewed registry digests for deployed images where the orchestrator supports
   them; retain the corresponding tag, architecture, workflow, and scan evidence
 
@@ -143,7 +159,7 @@ the absence of an externally managed Secret.
 
 ## Container Release Integrity
 
-On post-v6 `main`, strict local and CI container scans are configured to pull
+On the post-v6 development branch, strict local and CI container scans are configured to pull
 base images and bypass cached layers. Runtime Dockerfiles apply distribution
 updates available during the build, and fixable high/critical Trivy findings
 fail the strict gate. The current `ignore-unfixed` policy filters findings that
@@ -164,7 +180,7 @@ tag commit, and it rescans the selected artifact before an idempotent push;
 mismatches and ambiguous registry or GitHub release lookups stop publication.
 The workflow rechecks release state immediately before its draft update.
 A successful run for the exact tag is required evidence; the workflow currently
-on `main` is not evidence for the historical `v6.0.0` artifact.
+on a development branch is not evidence for the historical `v6.0.0` artifact.
 
 For Helm deployments, operators supply reviewed registry digests for the
 PostgreSQL, backend, frontend, and MalwareGraph release images. Redis and an
@@ -188,3 +204,13 @@ victim details, credentials, or internal telemetry.
 IOC feeds can also contain customer, investigation, or vendor-sensitive context.
 Operators should define feed provenance, retention, export, and sharing rules
 before importing private IOC data.
+
+The unified RAG corpus is a derived copy of allowlisted source fields, not a
+separate public knowledge base. Embeddings, source excerpts, actor relationship
+evidence, saved business profiles, generated answers, citations, and Navigator
+proposals can reveal the same sensitive context as their source records. Apply
+the source record's access, TLP, legal, retention, deletion, backup, and incident
+response controls to the corpus and to any MCP client/model that receives tool
+results. Automatic RAG retention does not delete source records, backups,
+exports, replicas, MCP-client history, index-run history, or platform audit
+events. Give those records an explicit operator retention/deletion policy.

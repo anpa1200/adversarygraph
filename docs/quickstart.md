@@ -13,7 +13,9 @@ the 1200km mirror or Medium publication:
 - Docker Engine and Docker Compose v2.
 - 8 GB RAM available to Docker.
 - OpenSSL or another cryptographically secure secret generator.
-- At least one LLM provider key for AI report extraction.
+- At least one configured cloud or private LLM provider for AI generation.
+  Provider configuration is not required for exact/full-text intelligence
+  search.
 
 The public browser workspace at <https://1200km.com/threat-matrix/> does not require Docker, but it also does not process private reports or store backend analyses.
 
@@ -59,6 +61,39 @@ MINIMAX_BASE_URL=https://api.minimax.io/v1
 ```
 
 For private analysis, use an operator-controlled LLM gateway and review the provider's data-retention terms.
+
+The unified intelligence index is enabled by default. It starts in lexical mode,
+so no embedding service is required for the first boot:
+
+```env
+RAG_ENABLED=true
+RAG_EMBEDDING_ENABLED=false
+```
+
+To add semantic vector retrieval, configure an OpenAI-compatible private
+endpoint that serves both the selected chat model and a separate embedding
+model. An Ollama example is:
+
+```bash
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+```
+
+```env
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_LLM_API_KEY=local
+LOCAL_LLM_MODEL=llama3.1:8b
+RAG_EMBEDDING_ENABLED=true
+RAG_EMBEDDING_PROVIDER=local
+RAG_EMBEDDING_MODEL=nomic-embed-text
+RAG_EMBEDDING_DIMENSIONS=768
+```
+
+The local adapter rejects public endpoint hosts. Confirm the model's output
+dimension before first indexing; changing `RAG_EMBEDDING_DIMENSIONS` on an
+existing database requires an explicit schema migration and complete reindex.
+Keep embeddings disabled when no reviewed private service is available—exact
+identifier and PostgreSQL full-text search continue to work.
 
 Optional native authentication:
 
@@ -175,8 +210,11 @@ custom feeds, and synced public reference data.
 docker compose up --build
 ```
 
-First startup creates the external DB directory and ingests MITRE ATT&CK STIX
-data into PostgreSQL. This can take several minutes.
+First startup creates the external DB directory, installs the bundled pgvector
+extension, creates the RAG tables and indexes, and ingests MITRE ATT&CK STIX
+data into PostgreSQL. This can take several minutes. Source ingestion does not
+automatically mean the derived RAG corpus is ready; queue the first
+reconciliation after startup.
 
 ## 4. Open
 
@@ -194,6 +232,7 @@ data into PostgreSQL. This can take several minutes.
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/ready
 curl "http://localhost:3000/api/attack/versions"
+curl http://localhost:3000/api/rag/status
 ```
 
 Expected health response:
@@ -212,8 +251,12 @@ docker compose run --rm selftest
 ```
 
 The self-test validates API startup, database connectivity, Redis,
-ATT&CK/ATLAS data ingestion, and provider key configuration without exposing
-secret values. The same check is available in the UI through error-popup
+ATT&CK/ATLAS data ingestion, the pgvector extension, RAG corpus state, and
+provider key configuration without exposing secret values. A fresh deployment
+with no RAG run and an empty corpus remains `ok` and tells the operator to run
+the initial reconciliation. The RAG check becomes degraded after a failed or
+degraded run, a completed-but-empty run, failed embeddings, or enabled
+embeddings without completed vectors. The same check is available in the UI through error-popup
 `Recheck` actions and the internal troubleshooting page:
 
 ```text
@@ -229,6 +272,22 @@ explicit risk acceptance.
 The API service is intentionally not published as `localhost:8000` by the
 default Compose file. Use the frontend proxy at `localhost:3000/api/...` unless
 you deliberately add a development override.
+
+Queue the initial corpus from **ATT&CK Navigator → AI RAG assistant →
+Build / refresh RAG index**. This action requires `manage_feeds` when
+authentication is enabled. An unauthenticated local evaluation can use the API:
+
+```bash
+curl -sS -X POST http://localhost:3000/api/rag/reindex \
+  -H 'Content-Type: application/json' \
+  --data '{"source_types":[],"include_embeddings":true}'
+```
+
+Poll `GET /api/rag/status` or review `GET /api/rag/index-runs?limit=10` until the
+run is complete. With embeddings disabled, `include_embeddings` is safely
+reduced to lexical indexing. With authentication enabled, use the UI or add a
+valid session bearer token from a least-privilege account; never paste a token
+into documentation, shell history, or screenshots.
 
 ## Troubleshooting: PostgreSQL Password Mismatch
 
@@ -338,3 +397,46 @@ Useful actions after a result:
 - continue in VirusTotal Lookup
 - save, reopen, or delete the investigation
 - open graph nodes as follow-up IOC pages
+
+## 10. Business-Context RAG And Navigator Workflow
+
+1. Open **ATT&CK Navigator** and select **AI RAG assistant**.
+2. Confirm the readiness card reports a non-empty corpus. If not, ask a user
+   with `manage_feeds` to queue reconciliation and wait for completion.
+3. Create a business profile such as:
+   - name: `Israel Technology Company`
+   - sector: `technology`
+   - region: `Israel`
+   - technologies: the organization's actual cloud, identity, endpoint, and
+     product stack
+   - crown jewels: the systems or data classes that matter most
+4. Select the profile and the **IOCs**, **Actors**, **Reports**, **CVEs**, and
+   **TTPs** source filters.
+5. Search without generation first:
+
+   ```text
+   Find IOCs relevant to this business. Explain which stored actor, campaign,
+   CVE, or TTP relationship caused each result to rank.
+   ```
+
+6. Open the cited platform records. Validate indicator type, source, confidence,
+   freshness, TLP, relationship evidence, and whether the source actually
+   describes the organization's operating context.
+7. Run the grounded assistant only after retrieval looks useful. Remote provider
+   use requires explicit acknowledgment and remains blocked for local-only
+   handling markings.
+8. Ask for a matrix proposal:
+
+   ```text
+   Propose all ATT&CK techniques relevant to this business from the cited
+   evidence and preview them on Navigator.
+   ```
+
+9. Review the citation set and temporary overlay. Confirm **Add** or **Replace**
+   only if the proposal is appropriate. Save a named Navigator layer separately
+   if the reviewed selection should persist.
+
+Business-profile and relationship matches are prioritization signals, not proof
+of targeting, active infrastructure, exploitation, or compromise. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) for the complete
+data, security, retention, and troubleshooting contract.

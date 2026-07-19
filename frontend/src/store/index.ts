@@ -29,6 +29,7 @@ interface AppState {
   addComparisonLayer: (layer: Omit<ComparisonLayer, 'id' | 'color'> & { color?: string }) => void;
   removeComparisonLayer: (id: string) => void;
   clearComparisonLayers: () => void;
+  setRagPreview: (ids: string[] | null) => void;
 
   // ── Sub-technique expansion ─────────────────────────────────────────────
   expandedTechniques: Set<string>;
@@ -152,6 +153,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ comparisonLayers: state.comparisonLayers.filter(layer => layer.id !== id) })),
   clearComparisonLayers: () =>
     set({ comparisonLayers: [] }),
+  setRagPreview: (ids) =>
+    set((state) => {
+      const withoutPreview = state.comparisonLayers.filter(layer => layer.source !== 'rag-preview');
+      if (!ids?.length) return { comparisonLayers: withoutPreview };
+      return {
+        comparisonLayers: [
+          ...withoutPreview,
+          {
+            id: 'rag-preview',
+            name: 'AI RAG proposal preview',
+            techniqueIds: Array.from(new Set(ids.map(id => id.toUpperCase()))).sort(),
+            color: '#06b6d4',
+            source: 'rag-preview',
+          },
+        ],
+      };
+    }),
 
   // Sub-technique expansion
   expandedTechniques: new Set(),
@@ -188,7 +206,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       version: state.version,
       selectedTechniques: [...state.selectedTechniques], coverageTechniques: [...state.coverageTechniques],
       overlayGroupId: state.overlayGroupId, overlayGroupName: state.overlayGroupName,
-      overlayTechniques: [...state.overlayTechniques], comparisonLayers: state.comparisonLayers,
+      overlayTechniques: [...state.overlayTechniques],
+      comparisonLayers: state.comparisonLayers.filter(layer => layer.source !== 'rag-preview'),
       techniqueAssessments: state.techniqueAssessments, updatedAt: new Date().toISOString(),
     };
     const workspaces = [workspace, ...state.workspaces];
@@ -200,7 +219,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       domain: workspace.domain, version: workspace.version, selectedTechniques: new Set(workspace.selectedTechniques),
       coverageTechniques: new Set(workspace.coverageTechniques), overlayGroupId: workspace.overlayGroupId,
       overlayGroupName: workspace.overlayGroupName, overlayTechniques: new Set(workspace.overlayTechniques),
-      comparisonLayers: workspace.comparisonLayers, techniqueAssessments: workspace.techniqueAssessments,
+      comparisonLayers: workspace.comparisonLayers.filter(layer => layer.source !== 'rag-preview'),
+      techniqueAssessments: workspace.techniqueAssessments,
     } : {};
   }),
   deleteWorkspace: (id) => set(state => {
@@ -244,7 +264,9 @@ function sanitizeWorkspace(value: unknown): InvestigationWorkspace | null {
     overlayGroupName: typeof row.overlayGroupName === 'string' ? row.overlayGroupName : '',
     overlayTechniques: stringArray(row.overlayTechniques),
     comparisonLayers: Array.isArray(row.comparisonLayers)
-      ? row.comparisonLayers.map(sanitizeComparisonLayer).filter((item): item is ComparisonLayer => Boolean(item))
+      ? row.comparisonLayers
+        .map(sanitizeComparisonLayer)
+        .filter((item): item is ComparisonLayer => item !== null && item.source !== 'rag-preview')
       : [],
     techniqueAssessments: sanitizeAssessments(row.techniqueAssessments),
     updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',

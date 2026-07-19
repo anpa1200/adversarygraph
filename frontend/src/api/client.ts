@@ -1197,6 +1197,7 @@ export interface SavedLayer {
   id: string;
   name: string;
   domain: string;
+  attack_version?: string;
   technique_count: number;
   created_at: string;
   updated_at: string;
@@ -1215,6 +1216,158 @@ export const layersApi = {
 
   remove: (id: string): Promise<void> =>
     http.delete(`/layers/${id}`).then(() => {}),
+};
+
+// ── Unified intelligence RAG ────────────────────────────────────────────────
+
+export type RagProvider = 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
+
+export interface RagCitation {
+  source_ref: string;
+  source_type: string;
+  source_id: string;
+  title: string;
+  excerpt: string;
+  route: string;
+  tlp: string;
+  score: number;
+  verified: boolean;
+}
+
+export interface RagEntity {
+  source_type: string;
+  source_id: string;
+  title: string;
+  route: string;
+  tlp: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface RagNavigatorProposal {
+  id: string;
+  name: string;
+  domain: string;
+  attack_version: string;
+  technique_ids: string[];
+  rationale: string;
+  proposal_checksum: string;
+  expires_at: string;
+  requires_confirmation: true;
+}
+
+export interface RagSearchItem extends Omit<RagCitation, 'source_ref' | 'verified'> {
+  chunk_id: string;
+  document_id: string;
+  source_version: string;
+  logical_key: string;
+  domain: string;
+  legal_sensitive: boolean;
+  lexical_score: number;
+  vector_score: number;
+  exact_match: boolean;
+  retrieval_signals: string[];
+  metadata: Record<string, unknown>;
+  content_hash: string;
+  source_updated_at: string | null;
+  indexed_at: string | null;
+}
+
+export interface RagSearchResponse {
+  query: string;
+  retrieval_mode: string;
+  items: RagSearchItem[];
+  warnings: string[];
+  corpus_indexed_at: string | null;
+}
+
+export interface RagAssistResponse {
+  assistance_id: string;
+  provider: string;
+  model: string;
+  retrieval_mode: string;
+  effective_tlp: string;
+  answer: string;
+  citations: RagCitation[];
+  entities: RagEntity[];
+  cautions: string[];
+  warnings: string[];
+  navigator_proposal: RagNavigatorProposal | null;
+  requires_human_review: true;
+  execution_boundary: string;
+}
+
+export interface RagClientProfile {
+  id: number;
+  name: string;
+  sector: string;
+  region: string;
+  technologies: string[];
+  crown_jewels: string[];
+}
+
+export interface RagQueryPayload {
+  query: string;
+  source_types?: string[];
+  domain?: string;
+  attack_version?: string;
+  client_profile_id?: number;
+  limit?: number;
+}
+
+export const ragApi = {
+  status: (): Promise<Record<string, unknown>> =>
+    http.get('/rag/status').then(r => r.data),
+  profiles: (): Promise<RagClientProfile[]> =>
+    http.get('/rag/profiles').then(r => r.data),
+  createProfile: (payload: {
+    name: string;
+    sector: string;
+    region?: string;
+    technologies?: string[];
+    crown_jewels?: string[];
+    notes?: string;
+  }): Promise<RagClientProfile> =>
+    http.post('/rag/profiles', payload).then(r => r.data),
+  updateProfile: (id: number, payload: {
+    name: string;
+    sector: string;
+    region?: string;
+    technologies?: string[];
+    crown_jewels?: string[];
+    notes?: string;
+  }): Promise<RagClientProfile> =>
+    http.put(`/rag/profiles/${id}`, payload).then(r => r.data),
+  deleteProfile: (id: number): Promise<void> =>
+    http.delete(`/rag/profiles/${id}`).then(() => undefined),
+  reindex: (payload: { source_types?: string[]; include_embeddings?: boolean }): Promise<{
+    run_id: string;
+    status: 'queued';
+  }> => http.post('/rag/reindex', payload).then(r => r.data),
+  search: (payload: RagQueryPayload): Promise<RagSearchResponse> =>
+    http.post('/rag/search', payload).then(r => r.data),
+  assist: (payload: RagQueryPayload & {
+    provider: RagProvider;
+    model?: string;
+    cloud_processing_acknowledged?: boolean;
+  }): Promise<RagAssistResponse> =>
+    http.post('/rag/assist', payload).then(r => r.data),
+  confirmProposal: (
+    id: string,
+    payload: { checksum: string; mode: 'add' | 'replace' },
+  ): Promise<{
+    proposal_id: string;
+    status: 'confirmed';
+    mode: 'add' | 'replace';
+    domain: string;
+    attack_version: string;
+    technique_ids: string[];
+    warnings: string[];
+    persisted: false;
+    message: string;
+  }> => http.post(`/rag/proposals/${id}/confirm`, {
+    proposal_checksum: payload.checksum,
+    mode: payload.mode,
+  }).then(r => r.data),
 };
 
 // ── Health ────────────────────────────────────────────────────────────────────

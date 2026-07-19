@@ -108,3 +108,10 @@ Strict labels make cross-dataset queries reliable:
   `dependency:openssl`;
 - retrohunt new reports against owned assets without relying on inconsistent
   free-text labels.
+
+Normalized tags also improve Unified RAG exact retrieval and business-profile
+reranking. They make cross-source matches explainable, but a shared sector,
+region, technology, actor, or TTP label does not prove that an organization is
+targeted or compromised. Treat the match as a lead and verify the cited source
+and stored relationship. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).

@@ -6,7 +6,7 @@ This local triage file mirrors reviewer-facing project state when GitHub issue m
 
 | Area | Status | Next action |
 |---|---|---|
-| Celery dead-code cleanup | Closed | Removed the unused `analysis.run` Celery task registration; background workers now cover sync, pipeline collection, and RetroHunt only. |
+| Celery dead-code cleanup | Closed | Removed the unused `analysis.run` registration; active worker modules now cover sync, pipeline collection, RetroHunt, unified RAG reconciliation, and RAG retention. |
 | Starlette transitive CVE | Closed / audited | Current dependencies are audited in CI with `pip-audit`; reverse-proxy Host normalization remains documented for internet-facing deployments. |
 | Backend coverage target | In progress | The enforced baseline is 60%; raise it toward 70% with risk-weighted route and failure-path tests. |
 | Frontend unit tests | Open | Add Vitest coverage for high-risk pages and shared utilities |

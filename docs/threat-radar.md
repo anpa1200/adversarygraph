@@ -311,3 +311,13 @@ exploitation by itself. Analysts must validate:
 
 Use the module to preserve this reasoning instead of flattening all claims into
 a single alert.
+
+## Unified Intelligence Search
+
+After reconciliation, allowlisted Threat Radar signals can be retrieved with
+the rest of the Unified RAG corpus. The derived document preserves the source
+signal's TLP and legal-sensitivity controls; restricted content cannot be sent
+to an unapproved remote provider merely because it was indexed. Retrieval and
+business-profile reranking prioritize review—they do not change a signal's
+triage state or prove that an affected product is deployed or exploited. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).

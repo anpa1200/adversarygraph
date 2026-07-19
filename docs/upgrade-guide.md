@@ -12,8 +12,21 @@ post-upgrade validation.
 
 Formal Alembic migrations are a planned production-readiness improvement.
 
+The post-v6 unified RAG schema adds the PostgreSQL `vector` extension, derived
+document/chunk tables, a generated full-text column, GIN/HNSW indexes, index-run
+state, assistance provenance, and Navigator proposals. The bundled
+`adversarygraph-postgres` image installs checksum-pinned pgvector 0.8.2. An external
+PostgreSQL service must make pgvector 0.5.0 or newer available to the application
+database before the upgraded API starts; `CREATE EXTENSION IF NOT EXISTS
+vector` cannot install operating-system extension files on a managed host.
+
+`RAG_EMBEDDING_DIMENSIONS` is embedded in the PostgreSQL vector column type.
+Changing it on an existing installation is not a configuration-only upgrade.
+Keep the existing value unless the release supplies and tests an explicit
+schema migration and complete reindex procedure for the new model dimension.
+
 All current startup compatibility DDL runs inside one database transaction.
-The current post-v6 `main` referential-integrity preflight aborts that
+The current post-v6 development referential-integrity preflight aborts that
 transaction if it finds a
 Threat Hunting AI record whose source report no longer exists or an Evidence
 Graph edge whose endpoint node no longer exists. It does not silently delete
@@ -198,6 +211,49 @@ migration tooling is introduced:
    - Attack Simulation with real-time logs;
    - Malware Analysis case list when enabled.
 
+## Post-v6 Unified RAG Upgrade Acceptance
+
+Use these additional steps for the first release that contains unified RAG, or
+whenever its schema/indexing contract changes:
+
+1. Before rollout, record the existing PostgreSQL version, RAG settings, model
+   identity/dimensions, direct or session-pooled worker database route, and the
+   pre-upgrade dump checksum. Do not use PgBouncer transaction or statement
+   pooling for the reconciliation worker because its session advisory lock
+   spans commits on one physical connection.
+2. Start with `RAG_EMBEDDING_ENABLED=false` unless the exact private embedding
+   endpoint and model have already passed a deployment smoke test. This permits
+   exact/full-text indexing without external model dependence.
+3. After API startup, verify pgvector before queueing work:
+
+   ```bash
+   docker compose exec -T postgres sh -lc \
+     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+     "SELECT extversion FROM pg_extension WHERE extname = '\''vector'\'';"'
+   ```
+
+4. Open **ATT&CK Navigator → AI RAG assistant** and select **Build /
+   refresh RAG index** with a `manage_feeds` account. Monitor
+   `/api/rag/status` and `/api/rag/index-runs` until reconciliation is complete.
+   A degraded result with failed embeddings is not semantic-search acceptance;
+   lexical retrieval may still be available.
+5. Run representative exact IOC/CVE/ATT&CK searches and follow each canonical
+   source route. Then, if semantic retrieval is approved, enable embeddings,
+   restart API/worker/beat, run a complete reindex, and verify the response
+   reports vector retrieval with zero unexpected failed embeddings.
+6. Create a non-sensitive test business profile, run one grounded answer, and
+   preview a Navigator proposal. Verify citations, effective TLP, domain,
+   ATT&CK version, expiry, Add/Replace diff, and the non-mutating confirmation
+   boundary. Confirm that proposal/audit state is persisted while no named
+   Navigator layer is saved.
+7. If MCP is used, start the stdio process with a dedicated least-privilege
+   analyst session and run its four bounded tools. Confirm it cannot reindex,
+   confirm/apply a proposal, save a layer, or perform operational actions.
+
+The scheduled reconciliation and retention jobs are part of acceptance. Verify
+Celery Beat schedules them, the worker heartbeat advances, and retention values
+match the organization's source, backup, legal-hold, and deletion policy.
+
 ## Rollback
 
 If validation fails:
@@ -223,6 +279,14 @@ If validation fails:
 The restore script repeats the production preflight and refuses to build a
 missing image. Make sure the prior digest-pinned images remain available in the
 registry before beginning an upgrade.
+
+If the upgrade introduced pgvector tables, do not assume the upgraded database
+directory is safe to attach to an older PostgreSQL image that lacks the
+extension files. Roll back with the pre-upgrade logical dump and the previous
+reviewed image set, or retain a pgvector-compatible database only after an
+explicit compatibility test. RAG documents and embeddings are derived, but
+business profiles and authoritative IOC/CVE/ATT&CK/report records still require
+the normal backup/restore discipline.
 
 ## Required Future Production Step
 

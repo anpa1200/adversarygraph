@@ -68,6 +68,25 @@ data:
   THREAT_HUNTING_AI_TIMEOUT_SECONDS: {{ .Values.config.threatHuntingAiTimeoutSeconds | quote }}
   THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT: {{ .Values.config.threatHuntingAiSourceCharLimit | quote }}
   THREAT_HUNTING_AI_MAX_CANDIDATES: {{ .Values.config.threatHuntingAiMaxCandidates | quote }}
+  RAG_ENABLED: {{ .Values.config.ragEnabled | quote }}
+  RAG_EMBEDDING_ENABLED: {{ .Values.config.ragEmbeddingEnabled | quote }}
+  RAG_EMBEDDING_PROVIDER: {{ .Values.config.ragEmbeddingProvider | quote }}
+  RAG_EMBEDDING_MODEL: {{ .Values.config.ragEmbeddingModel | quote }}
+  RAG_EMBEDDING_DIMENSIONS: {{ .Values.config.ragEmbeddingDimensions | quote }}
+  RAG_EMBEDDING_BATCH_SIZE: {{ .Values.config.ragEmbeddingBatchSize | quote }}
+  RAG_VECTOR_MAX_COSINE_DISTANCE: {{ .Values.config.ragVectorMaxCosineDistance | quote }}
+  RAG_CHUNK_CHARS: {{ .Values.config.ragChunkChars | quote }}
+  RAG_CHUNK_OVERLAP_CHARS: {{ .Values.config.ragChunkOverlapChars | quote }}
+  RAG_DEFAULT_RESULT_LIMIT: {{ .Values.config.ragDefaultResultLimit | quote }}
+  RAG_MAX_CONTEXT_CHARS: {{ .Values.config.ragMaxContextChars | quote }}
+  RAG_RECONCILE_HOUR: {{ .Values.config.ragReconcileHour | quote }}
+  RAG_RECONCILE_MINUTE: {{ .Values.config.ragReconcileMinute | quote }}
+  RAG_TOMBSTONE_RETENTION_DAYS: {{ .Values.config.ragTombstoneRetentionDays | quote }}
+  RAG_ASSISTANCE_RETENTION_DAYS: {{ .Values.config.ragAssistanceRetentionDays | quote }}
+  RAG_RETENTION_BATCH_SIZE: {{ .Values.config.ragRetentionBatchSize | quote }}
+  RAG_RETENTION_MAX_BATCHES: {{ .Values.config.ragRetentionMaxBatches | quote }}
+  RAG_RETENTION_HOUR: {{ .Values.config.ragRetentionHour | quote }}
+  RAG_RETENTION_MINUTE: {{ .Values.config.ragRetentionMinute | quote }}
   MALWAREGRAPH_MAX_UPLOAD_BYTES: {{ .Values.config.malwaregraphMaxUploadBytes | quote }}
   ATTCK_DATA_DIR: /app/data/attck
   LOG_DIR: /app/logs
