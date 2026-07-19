@@ -282,7 +282,9 @@ jobs:
           ready=false
           for _ in {1..30}; do
             if docker exec "$container_name" \
-              pg_isready --username postgres --dbname adversarygraph_ci >/dev/null 2>&1; then
+              psql --username postgres --dbname adversarygraph_ci \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 --command "SELECT 1;" >/dev/null 2>&1; then
               ready=true
               break
             fi
