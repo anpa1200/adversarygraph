@@ -321,7 +321,7 @@ jobs:
                   CREATE INDEX rag_index_smoke_fts ON rag_index_smoke USING gin (search_vector);
                   CREATE INDEX rag_index_smoke_hnsw ON rag_index_smoke
                     USING hnsw (embedding vector_cosine_ops);
-                  INSERT INTO rag_index_smoke VALUES
+                  INSERT INTO rag_index_smoke (id, content, embedding) VALUES
                     (1, 'PowerShell execution evidence', '[1,0,0]'),
                     (2, 'Unrelated Linux package record', '[0,1,0]');
                   SELECT
