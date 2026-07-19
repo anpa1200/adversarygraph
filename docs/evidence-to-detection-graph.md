@@ -214,3 +214,13 @@ They use fictional activity, `example.com`, and RFC5737 documentation IP ranges.
   should be analyst-reviewed.
 - SIEM match status must be attached from validation results; the graph does not
   prove production detection by itself.
+
+## Unified Intelligence Search
+
+After reconciliation, allowlisted Evidence Graph nodes are available to
+Unified RAG with their provenance and verification state. They are forced into
+the local/legal-sensitive processing boundary; graph content is not sent to an
+unapproved cloud provider. Retrieval can surface a stored node but cannot
+create, validate, accept, reject, or delete graph evidence. A graph path or
+similarity score remains an analyst lead, not attribution or detection proof.
+See [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).

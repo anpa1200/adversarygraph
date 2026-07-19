@@ -61,12 +61,12 @@ beat:
 postgresql:
   enabled: true
   image:
-    # Compatibility default for chart evaluation. A production rollout must
-    # replace this with the release's adversarygraph-postgres repository and
-    # digest from adversarygraph-images.env.
-    repository: postgres
-    tag: "16-alpine"
-    digest: sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # Development-compatible upstream pgvector image. Production mode rejects
+    # this fallback and requires the release's reviewed adversarygraph-postgres
+    # repository and digest from adversarygraph-images.env.
+    repository: pgvector/pgvector
+    tag: "0.8.2-pg16"
+    digest: sha256:00ba258a66dac104fd5171074a0084462a64a1369d8513f3d0a634e2f24d15bc
   storageClassName: ""
   accessModes:
     - ReadWriteOnce
@@ -209,4 +209,27 @@ config:
   threatHuntingAiTimeoutSeconds: "45"
   threatHuntingAiSourceCharLimit: "40000"
   threatHuntingAiMaxCandidates: "3"
+  ragEnabled: "true"
+  # Enable only after localLlmBaseUrl exposes a reviewed private embedding
+  # model with the configured dimensions.
+  ragEmbeddingEnabled: "false"
+  ragEmbeddingProvider: local
+  ragEmbeddingModel: nomic-embed-text
+  ragEmbeddingDimensions: "768"
+  ragEmbeddingBatchSize: "32"
+  ragVectorMaxCosineDistance: "0.55"
+  ragChunkChars: "3500"
+  ragChunkOverlapChars: "350"
+  ragDefaultResultLimit: "12"
+  ragMaxContextChars: "32000"
+  ragReconcileHour: "4"
+  ragReconcileMinute: "15"
+  # Set either retention day value to "0" to disable that automatic purge
+  # path for an operator-controlled legal hold. Backup policy is separate.
+  ragTombstoneRetentionDays: "30"
+  ragAssistanceRetentionDays: "90"
+  ragRetentionBatchSize: "1000"
+  ragRetentionMaxBatches: "20"
+  ragRetentionHour: "4"
+  ragRetentionMinute: "45"
   malwaregraphMaxUploadBytes: "268435456"

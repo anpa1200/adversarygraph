@@ -121,12 +121,14 @@ separate review evidence.
 After publication, use the `adversarygraph-images.env` digest manifest attached
 to the GitHub release and independently verify it against the registry. The
 production Compose preflight requires those custom digest references and
-deploys them with `--no-build`. The Helm chart renders digest references for the
-PostgreSQL, backend, frontend, and MalwareGraph images and pins Redis by
-default. Its upstream PostgreSQL compatibility default is also digest-pinned
-for chart evaluation, but production must replace both that repository and
-digest with the release's remediated `adversarygraph-postgres` artifact. For
-the other custom images, a reviewed `sha256:...` value takes precedence over
+deploys them with `--no-build`. The Helm chart can render digest references for
+PostgreSQL, backend, frontend, and MalwareGraph. Its PostgreSQL and Redis
+evaluation defaults are digest-pinned, while backend, frontend, and
+MalwareGraph remain `6.0.0` tag-only. Post-v6 evaluation overrides those three
+application images; production also replaces PostgreSQL and supplies
+revision-matched images with reviewed manifest digests for all four release
+components.
+A reviewed `sha256:...` value takes precedence over
 the human-readable tag; an empty digest remains tag-based and is not acceptable
 for the production evidence row below. Preserve the registry, architecture,
 tag, digest, workflow run, and source tag/commit as evidence.
@@ -144,6 +146,9 @@ tag, digest, workflow run, and source tag/commit as evidence.
 | Backup | Pre-upgrade logical backup exists and its SHA-256 checksum verifies | Backup file and checksum result |
 | Restore | Restore procedure has been tested in a non-production environment | Restore test record |
 | Capacity | CPU, memory, disk, database, and worker sizing match expected ingestion volume | Sizing worksheet and load observation |
+| Unified RAG | pgvector is present; initial reconciliation completed; source coverage/freshness and pending/failed embeddings are reviewed; representative exact/full-text queries retain canonical provenance, plus a real vector query when embeddings are enabled in the approved scope | Authenticated RAG status, run history, query evidence, and model smoke when embeddings are enabled |
+| RAG governance | Business profiles, TLP/legal gates, citation verification, stale-context rejection, retention/legal hold, and non-mutating Navigator confirmation behave as documented; proposal/audit state is persisted but no layer is saved | Functional test record and audit events |
+| MCP, when enabled | Stdio-only process uses a dedicated least-privilege session and exposes only bounded advisory tools; no confirmation, reindex, arbitrary URL/SQL, or operational mutation is possible | MCP client configuration review, tool smoke, and session revocation test |
 | Monitoring | Health, self-test, logs, traces, metrics, disk, database, and job failures are monitored | Dashboard/alert references |
 | Images | Fresh no-cache image scans pass; fixable high/critical findings are absent; published registry digests are recorded and used where the deployment supports them | Tag-workflow run, ten stack scan results, registry digest record, rendered deployment |
 | Validation | Full release gate passes for the exact revision and an authenticated application self-test returns `status=ok` | Command output, commit/tag, and timestamp |
@@ -184,9 +189,30 @@ After deployment, confirm with a non-sensitive reviewer account:
    confirm suggestions do not execute queries, create evidence, save records,
    or make lifecycle and disposition decisions.
 7. Observability health, metrics, traces, and redacted log views.
-8. Attack Simulation against an approved lab target only; confirm target-side
+8. In Navigator, queue/review a RAG reconciliation with `manage_feeds`, then run
+   an exact IOC/CVE/ATT&CK search and follow every canonical source route.
+   Confirm status/source counts, current indexed time, run heartbeat/attempts,
+   and no unexplained failed embeddings.
+9. With an approved non-sensitive business profile, ask which IOCs matter for
+   the profile and why. Verify the profile changes prioritization only, all
+   material claims have valid citations, and no result claims targeting,
+   exploitation, active infrastructure, or compromise without evidence.
+10. Request an ATT&CK Navigator proposal. Verify the domain/version/IDs,
+    citations, checksum and expiry; preview it; review the Add/Replace diff; and
+    confirm that the receipt reports `persisted=false`. Save a named layer only
+    through the separate normal workflow if required.
+11. When semantic retrieval is enabled, retain a smoke test against the exact
+    private endpoint/model showing the configured dimensions and visible vector
+    retrieval. Protocol-mocked tests alone are not deployment acceptance.
+12. When MCP is enabled, exercise `search_intelligence`, `ask_intelligence`,
+    `get_indexed_entity`, and `propose_navigator_layer` through stdio, then
+    revoke the dedicated session and confirm subsequent calls fail. Confirm MCP
+    did not change Navigator or another operational record.
+13. Attack Simulation against an approved lab target only; confirm target-side
    telemetry and SIEM delivery labels.
-9. Backup creation and checksum verification.
+14. Backup creation and checksum verification, including RAG tables and a
+    documented policy for derived vectors, assistance, proposals, and MCP-client
+    copies.
 
 ## Security Acceptance
 
@@ -213,6 +239,23 @@ After deployment, confirm with a non-sensitive reviewer account:
   every remote provider, and that stored assistance records contain bounded,
   sanitized provenance rather than raw prompts, reports, provider responses,
   credentials, or exceptions.
+- Confirm RAG embeddings accept only the local provider and reject a public
+  endpoint host. Review private model routing, authentication, TLS, egress,
+  logs, retention, model provenance, and exact embedding dimensions.
+- Confirm raw provider payloads, connector/authentication credential fields,
+  and unrestricted asset fields are absent from RAG source allowlists and
+  stored assistance provenance. Scan representative allowlisted narrative data
+  for secrets because the collector is not a general DLP/redaction engine.
+- Confirm legal-sensitive, `TLP:AMBER+STRICT`, and `TLP:RED` RAG generation
+  stays local; every eligible remote request requires an explicit user
+  acknowledgment and is audited before egress.
+- Confirm the RAG worker reaches PostgreSQL directly or through PgBouncer
+  session pooling; transaction/statement pooling is incompatible with the
+  session advisory lock.
+- Confirm MCP is stdio-only, uses a dedicated least-privilege session, keeps
+  credentials out of committed configuration/logs, and cannot acknowledge cloud
+  processing or invoke proposal confirmation, reindex, feed, simulation,
+  detection-forwarding, or response actions.
 - Confirm strict image evidence came from fresh pull/no-cache builds and retain
   the gated Trivy output. Where policy requires an inventory of vulnerabilities
   without upstream fixes, also retain a separate scan that does not use the
@@ -262,6 +305,10 @@ The following remain outside the v6.0.0 production claim:
 - zero-downtime or downgrade-safe schema guarantees;
 - formal Alembic migration-chain guarantees;
 - automatic truth or attribution from AI output;
+- semantic-search readiness without a deployment-specific private model and
+  first-index smoke test;
+- RAG or MCP as autonomous blocking, containment, hunting execution, layer
+  persistence, or response automation;
 - real exploit validation from synthetic telemetry;
 - dynamic malware execution without an isolated approved runtime.
 

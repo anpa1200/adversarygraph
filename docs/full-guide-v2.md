@@ -1,5 +1,12 @@
 # AdversaryGraph v2.x Full Guide
 
+> This is the historical v2.x walkthrough and its screenshots represent that
+> interface. For current behavior, use the
+> [AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). The post-v6
+> unified intelligence RAG, Navigator assistant, and local MCP integration are
+> documented in [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) and
+> are not retroactively part of a v2 release.
+
 ![AdversaryGraph v2.5 cover](assets/adversarygraph-v2/01-31Nq2VMJ9Mm9lgryHGJRQQ.webp)
 
 AdversaryGraph is a self-hosted CTI-to-detection workbench for turning threat
@@ -917,7 +924,24 @@ GET  /api/evidence-graph/gaps
 POST /api/evidence-graph/from-report/{report_id}
 POST /api/evidence-graph/from-simulation/{simulation_run_id}
 GET  /api/evidence-graph/export
+GET  /api/rag/status
+GET  /api/rag/profiles
+POST /api/rag/search
+GET  /api/rag/entity/{source_type}/{source_id}
+GET  /api/rag/providers
+POST /api/rag/assist
+POST /api/rag/proposals/{proposal_id}/confirm
+POST /api/rag/reindex
+GET  /api/rag/index-runs
 ```
+
+The RAG endpoints shown above exist only in the documented post-v6 checkout,
+not in the historical v2.x release. Search/assistance requires `run_analysis`,
+business-profile mutation requires `manage_intel`, and reconciliation/history
+requires `manage_feeds`. Proposal confirmation records a reviewed receipt but
+does not save a Navigator layer. The optional MCP subprocess calls a restricted
+subset of these authenticated routes through stdio and cannot confirm a
+proposal or reindex the corpus.
 
 ![API terminal output and health checks](assets/adversarygraph-v2/09-z711T5SOrORpjITlM2IY9A.webp)
 

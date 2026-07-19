@@ -21,7 +21,7 @@ admin passwords, OpenCTI tokens, SIEM destinations, and proxy secrets belong in
 
 | Data | Default location | Purpose | Keep for upgrade? |
 |---|---|---|---|
-| PostgreSQL database | `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}` | Users, sessions, audit records, investigations, saved analyses, IOC/CVE/ATT&CK correlations, asset cases, attack simulation history, feed state, and private/custom records. | Yes |
+| PostgreSQL database | `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}` | Users, sessions, audit records, investigations, saved analyses, IOC/CVE/ATT&CK correlations, business profiles, normalized RAG documents/chunks/embeddings, assistant/proposal provenance, asset cases, attack simulation history, feed state, and private/custom records. | Yes |
 | ATT&CK/ATLAS cache | Docker volume `adversarygraph_attck_data`, mounted at `/app/data/attck` | Cached public STIX bundles and ingestion scratch data. | Recommended |
 | API and lab logs | Docker volume `adversarygraph_adversarygraph_logs`, mounted at `/app/logs` | API logs, attack-lab telemetry, forwarded-event evidence. | Optional, depending on retention needs |
 | MalwareGraph storage | Docker volume `adversarygraph_malwaregraph_storage` | MalwareGraph quarantine/artifact workspace and generated analysis artifacts. | Case-dependent |
@@ -31,6 +31,13 @@ admin passwords, OpenCTI tokens, SIEM destinations, and proxy secrets belong in
 `./data/postgres` is intentionally ignored by git. It is normally owned by the
 PostgreSQL container user, so manual host edits may require elevated
 permissions. Use logical backups rather than copying live database files.
+
+The vector corpus does not create a separate filesystem volume. pgvector data,
+full-text indexes, reconciliation state, assistance records, and proposals are
+inside PostgreSQL and are covered by the same logical backup. RAG retention
+does not delete backups, replicas, exports, or copies retained by an MCP client;
+it also does not purge RAG index-run history or platform audit events. Apply the
+organization's legal-hold and deletion policy to those separately.
 
 ## Permissions Model
 

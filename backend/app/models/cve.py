@@ -1,10 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.ioc import IOCIndicator
 
 
 class CVESource(Base):
@@ -89,6 +93,7 @@ class CVEIOCLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     cve: Mapped["CVERecord"] = relationship(back_populates="ioc_links")
+    indicator: Mapped["IOCIndicator"] = relationship()
 
 
 class CVEActorLink(Base):

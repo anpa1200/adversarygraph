@@ -3,7 +3,7 @@
 AdversaryGraph is built around a defensive CTI workflow:
 
 ```text
-client context/report -> ATT&CK mapping candidates -> analyst review -> actor/campaign/sector relevance -> IOC enrichment -> detection gaps -> exports
+client context/report -> hybrid intelligence retrieval -> cited answer or ATT&CK proposal -> analyst review -> actor/campaign/sector relevance -> IOC enrichment -> detection gaps -> exports
 ```
 
 Published walkthrough and visual reference:
@@ -11,6 +11,8 @@ Published walkthrough and visual reference:
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
 - Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
+- Unified intelligence RAG and MCP guide: [`unified-rag-and-mcp.md`](unified-rag-and-mcp.md)
+- MCP client setup: [`mcp-server.md`](mcp-server.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 reproducible case studies: [`case-studies-v6.md`](case-studies-v6.md)
@@ -31,6 +33,10 @@ Published walkthrough and visual reference:
 | Similarity | Jaccard overlap between selected TTPs and a known group/campaign profile |
 | Sector relevance | Local score explaining why an actor matters to selected sectors, regions, technologies, and activity windows |
 | IOC | Source-backed observable linked to an actor only when the feed, import, or uploaded report provides actor evidence |
+| Hybrid retrieval | Exact identifiers plus PostgreSQL full-text results, optional private vector similarity, and bounded relationship expansion combined into a ranked evidence set |
+| Business profile | Private sector, region, technology, and crown-jewel context used to rerank a request; it is not evidence of targeting |
+| Citation | A verified reference from an assistant answer to one indexed source excerpt and its canonical platform route |
+| Navigator proposal | A persisted, expiring, checksum-bound advisory record containing locally valid ATT&CK IDs; confirmation records the analyst decision but does not save or mutate a Navigator layer |
 | Detection gap | A mapped behavior without sufficient local telemetry, detection, or validation |
 | Telemetry Readiness Score | Per-technique score that compares required telemetry to available logs and highlights missing data components before detection engineering starts |
 
@@ -54,6 +60,8 @@ For a platform walkthrough with clearly versioned screenshot packs, see the
 
 - Discover and workflow entry points
 - Navigator and ATT&CK/ATLAS matrix review
+- Navigator Intelligence RAG Assistant for corpus search, business-context
+  ranking, grounded answers, and reviewed TTP proposals
 - ATT&CK Group Library and actor/campaign pivots
 - AI Analysis for report extraction
 - Compare and Group vs Group similarity workflows
@@ -84,6 +92,13 @@ Use the Docker deployment for:
 - PostgreSQL-backed Threat Hunting records with versioned query plans,
   evidence references, lifecycle controls, Threat Radar handoff, and governed
   AI-assistance provenance.
+- A normalized RAG corpus across IOCs, CVEs, ATT&CK TTPs, actors, campaigns,
+  reports, Knowledge, Threat Radar, Threat Hunting, Evidence Graph, and
+  sanitized Asset Surface records.
+- Exact and PostgreSQL full-text search without a model, plus optional pgvector
+  retrieval through an approved private embedding endpoint.
+- An optional local stdio MCP process for bounded search, grounded questions,
+  indexed-entity reads, and unconfirmed Navigator proposals.
 - API-driven workflows.
 
 ## Analyst Workflow
@@ -98,6 +113,9 @@ Examples:
 - Which telemetry sources are required before writing detections?
 - Which actors matter for this client sector or environment?
 - Which current or historical IOCs are linked to this actor by source evidence?
+- Which IOCs and TTPs deserve review for this business's sector, region,
+  technologies, and crown jewels?
+- Which citations support a proposed ATT&CK Navigator layer?
 
 ### 2. Ingest or Paste a Report
 
@@ -129,7 +147,7 @@ query.
 1. Open the stored report and confirm that analysis is completed, source text
    is available, and it uses the Enterprise ATT&CK domain. Mobile, ICS, and
    ATLAS reports are not supported by the governed hunting assistant in the
-   current post-v6.0.0 implementation on `main`.
+   current post-v6.0.0 development implementation.
 2. Confirm the report's authoritative handling marking. New and repaired legacy
    reports default conservatively to `TLP:AMBER+STRICT`. Only a user with
    `manage_intel` may deliberately change the stored marking after reviewing
@@ -174,6 +192,65 @@ changes after generation, treat the earlier suggestion as stale and regenerate
 or review it manually. For saved hunts, coverage warnings also disclose when
 the bounded request omits older query versions or findings, or truncates query,
 summary, note, or backend-assumption text.
+
+### Optional: Search All Intelligence With RAG
+
+Use **ATT&CK Navigator → AI RAG assistant** when the question spans
+multiple modules instead of one report or IOC. An account needs `run_analysis`
+to search or generate an answer, `manage_intel` to create, edit, or delete
+business profiles, and `manage_feeds` to queue corpus reconciliation.
+
+1. Confirm the assistant readiness card shows indexed documents. An empty
+   corpus is not searched automatically; ask a feed manager to run **Build /
+   refresh RAG index**.
+2. Choose source filters. The friendly groups map to the normalized sources:
+   IOCs; CVEs; ATT&CK/ATLAS techniques; groups, campaigns, and actor
+   observations; reports, Knowledge, Threat Radar signals, hunts, and Evidence
+   Graph nodes; and sanitized assets.
+3. Optionally select a saved business profile. Include only context necessary
+   for ranking. Profiles are private request context and are not copied into the
+   global source documents or embeddings.
+4. Start with **Search evidence**. Exact IDs and full text work when embeddings
+   are disabled. If an approved private embedding model is active, the result
+   also reports vector retrieval.
+5. Open every material citation. Check the source route, excerpt, indexed time,
+   TLP, legal-sensitive label, freshness, and relationship evidence.
+6. Use **Ask grounded assistant** only when generation adds value. A remote
+   provider requires a per-request acknowledgment; legal-sensitive,
+   `TLP:AMBER+STRICT`, and `TLP:RED` context remains local-only.
+
+Example IOC question:
+
+```text
+Find IOCs relevant to an Israel-based technology company using cloud identity,
+Linux production systems, and public APIs. Rank them by stored evidence and
+freshness. Explain the actor, campaign, CVE, and TTP relationship for every IOC.
+Do not claim targeting or compromise.
+```
+
+The correct analyst outcome is a review queue, not a blocklist. A business
+profile match followed by an actor-to-IOC relationship can make an indicator
+worth investigating, but it does not prove that the indicator targets the
+business or remains active.
+
+Example Navigator question:
+
+```text
+Using only verified citations, propose the Enterprise ATT&CK techniques most
+relevant to this business and return a Navigator proposal.
+```
+
+Review the proposal's ATT&CK version, domain, technique IDs, rationale,
+citations, and expiration. **Preview** creates a temporary overlay without
+changing the selection. **Confirm → Add** merges the server-verified IDs into
+the current browser selection; **Confirm → Replace** replaces that selection.
+Neither action saves a named layer. The assistant never creates a hunt,
+executes a query, runs an attack, changes a feed, or initiates response.
+
+MCP clients receive the same governed search and assistance boundary through a
+local stdio process. MCP can return an unconfirmed proposal but cannot confirm
+or apply it; repeat the reviewed proposal workflow in Navigator when a matrix
+change is required.
 
 ### 4. Compare With Groups and Campaigns
 
@@ -255,6 +332,12 @@ OpenAI, Gemini, or MiniMax providers, but the output remains review material.
 - ATT&CK is not attribution evidence.
 - Tool names do not automatically imply techniques.
 - LLM output is untrusted until reviewed.
+- RAG ranking, vector similarity, and relationship expansion are discovery
+  signals, not evidence confidence or attribution.
+- Follow assistant citations to the complete source record; a verified citation
+  proves provenance of the excerpt, not correctness of the model's conclusion.
+- Navigator proposals expire and are not saved layers. Review the Add/Replace
+  diff and save separately only after confirmation.
 - Threat Hunting AI output is not evidence and cannot decide finding verdict,
   disposition, completion, escalation, containment, or detection publication.
 - Review citation and truncation warnings before transferring an AI suggestion

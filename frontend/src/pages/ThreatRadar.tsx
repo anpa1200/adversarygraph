@@ -52,7 +52,7 @@ export function ThreatRadar() {
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const [selectedSpaceId, setSelectedSpaceId] = useState(searchParams.get('space_id') || '');
-  const [selectedSignalId, setSelectedSignalId] = useState(searchParams.get('signal_id') || '');
+  const [selectedSignalId, setSelectedSignalId] = useState(searchParams.get('signal_id') || searchParams.get('signal') || '');
   const [statusFilter, setStatusFilter] = useState('open');
   const [query, setQuery] = useState('* | stats count by priority');
   const [newSpaceName, setNewSpaceName] = useState('My Company Threat Monitor');
@@ -151,19 +151,28 @@ export function ThreatRadar() {
   });
 
   useEffect(() => {
-    if (!selectedSpaceId && spaces.data?.length) {
-      const first = spaces.data[0].id;
-      setSelectedSpaceId(first);
-      setSearchParams({ space_id: first });
+    const nextParams = new URLSearchParams(searchParams);
+    let paramsChanged = false;
+    let spaceId = searchParams.get('space_id') || '';
+    if (!spaceId && spaces.data?.length) {
+      spaceId = spaces.data[0].id;
+      nextParams.set('space_id', spaceId);
+      paramsChanged = true;
     }
-  }, [selectedSpaceId, setSearchParams, spaces.data]);
 
-  useEffect(() => {
-    const spaceId = searchParams.get('space_id') || '';
-    const signalId = searchParams.get('signal_id') || '';
+    const canonicalSignalId = searchParams.get('signal_id') || '';
+    const legacySignalId = searchParams.get('signal') || '';
+    const signalId = canonicalSignalId || legacySignalId;
+    if (!canonicalSignalId && legacySignalId) {
+      nextParams.set('signal_id', legacySignalId);
+      nextParams.delete('signal');
+      paramsChanged = true;
+    }
+
     if (spaceId && spaceId !== selectedSpaceId) setSelectedSpaceId(spaceId);
     if (signalId && signalId !== selectedSignalId) setSelectedSignalId(signalId);
-  }, [searchParams, selectedSignalId, selectedSpaceId]);
+    if (paramsChanged) setSearchParams(nextParams, { replace: true });
+  }, [searchParams, selectedSignalId, selectedSpaceId, setSearchParams, spaces.data]);
 
   const selectedDetail = selectedSpace.data ?? null;
   const rawAlertRows = useMemo(() => (alerts.data ?? []) as AlertRow[], [alerts.data]);

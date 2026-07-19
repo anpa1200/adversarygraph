@@ -29,6 +29,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   strategy:       'bg-green-950 text-green-400 border-green-900',
 };
 
+function parseArticleId(value: string | null): number | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
 function CategoryBadge({ category }: { category: string }) {
   const label = CATEGORIES.find(c => c.id === category)?.label ?? category;
   return (
@@ -146,15 +152,31 @@ function ArticleCard({ article, onClick }: { article: KnowledgeArticle; onClick:
 export function KnowledgeLibrary() {
   const qc = useQueryClient();
   const canManageFeeds = useHasPermission('manage_feeds');
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const [category, setCategory] = useState('');
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState<number | null>(null);
 
   useEffect(() => {
     const qParam = params.get('q');
+    const articleId = parseArticleId(params.get('article'));
     if (qParam) setQ(qParam);
+    if (articleId != null) setOpenId(articleId);
   }, [params]);
+
+  const openArticle = (articleId: number) => {
+    const next = new URLSearchParams(params);
+    next.set('article', String(articleId));
+    setParams(next, { replace: true });
+    setOpenId(articleId);
+  };
+
+  const closeArticle = () => {
+    const next = new URLSearchParams(params);
+    next.delete('article');
+    setParams(next, { replace: true });
+    setOpenId(null);
+  };
 
   const { data: stats } = useQuery({
     queryKey: ['knowledge-stats'],
@@ -276,7 +298,7 @@ export function KnowledgeLibrary() {
                 <ArticleCard
                   key={article.id}
                   article={article}
-                  onClick={() => setOpenId(article.id)}
+                  onClick={() => openArticle(article.id)}
                 />
               ))}
             </div>
@@ -293,7 +315,7 @@ export function KnowledgeLibrary() {
       </div>
 
       {openId != null && (
-        <ArticleModal id={openId} onClose={() => setOpenId(null)} />
+        <ArticleModal id={openId} onClose={closeArticle} />
       )}
     </div>
   );

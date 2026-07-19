@@ -11,6 +11,20 @@ For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md)
   Radar handoff
 - [x] Add advisory AI assistance at planning, query, findings, and outcome
   stages, including source-bound report-to-hypothesis generation
+- [x] Add a normalized, provenance-preserving corpus across IOC, CVE,
+  ATT&CK/ATLAS, actor intelligence, campaigns, reports, knowledge, Threat
+  Radar, Threat Hunting, Evidence Graph, and sanitized asset records
+- [x] Add exact identifier, PostgreSQL full-text, and optional pgvector retrieval
+  with reciprocal-rank fusion, business-profile reranking, lexical-only
+  fallback, and bounded relationship expansion
+- [x] Add a citation-bound Navigator intelligence assistant with TLP/legal
+  provider controls, verified ATT&CK IDs, expiring preview proposals, and
+  explicit Add/Replace confirmation
+- [x] Add a stdio-only MCP facade for bounded intelligence search, grounded
+  questions, indexed-entity reads, and advisory Navigator proposals without
+  platform mutation
+- [x] Add scheduled, lock-protected corpus reconciliation and bounded retention
+  for tombstoned documents, assistance records, and dependent proposals
 - [x] Enforce explicit backend and frontend permissions for analysis, uploads,
   intelligence, detections, feeds, exports, simulation, SIEM, auth, users, and
   audit access
@@ -130,7 +144,16 @@ For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md)
 
 ## Backlog
 
-- Optional local LLM gateway profile (Ollama / LM Studio)
+- Packaged, opt-in local LLM gateway profile (Ollama / LM Studio); the current
+  integration uses an operator-managed private OpenAI-compatible endpoint
+- Retrieval evaluation fixtures and relevance/recall regression thresholds
+- Streaming or paged source materialization for very large RAG corpora
+- Per-source distribution markings where authoritative tables do not yet store
+  reviewed TLP metadata
+- Independently scoped MCP credentials; remote MCP transport remains out of
+  scope until an OAuth-based authorization boundary exists
+- Tenant-level ownership across every source table; use separate deployments
+  for mutually untrusted customers until this exists
 - STIX/TAXII export mode
 - Case timeline view
 - ATT&CK version-diff view for mappings across releases

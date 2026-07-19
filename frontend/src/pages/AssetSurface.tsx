@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { assetSurfaceApi, layersApi, threatRadarApi } from '@/api/client';
-import type { AssetIntelMatch, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatCompanySpace } from '@/api/client';
+import type { AssetIntelMatch, AssetRegistryItem, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatCompanySpace } from '@/api/client';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 import { useAppStore } from '@/store';
 import { safeInternalHref } from '@/utils/url';
@@ -28,12 +28,18 @@ asset-0002,vpn-gateway,remote-access,prod,IT,198.51.100.20,vpn.example.com,"443;
 asset-0003,ad-dc-01,identity,prod,IT,10.10.1.10,ad01.corp.local,"53;88;135;389;445","active-directory;windows;kerberos;ldap",internal,critical,"identity;tier-0"
 asset-0004,postgres-payments,database,prod,Payments,10.20.5.15,,"5432","postgresql;linux",internal,critical,"database;payments"`;
 
+function linkedRecordId(value: string | null): string {
+  const normalized = value?.trim() ?? '';
+  return normalized.length <= 128 ? normalized : '';
+}
+
 export function AssetSurface() {
   const canManage = useHasPermission('manage_intel');
   const canExport = useHasPermission('export_data');
   const canUploadFiles = useHasPermission('upload_files');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const linkedAssetId = linkedRecordId(searchParams.get('asset') || searchParams.get('asset_id'));
   const queryClient = useQueryClient();
   const { domain, addComparisonLayer, clearComparisonLayers, clearTechniques } = useAppStore();
   const [provider, setProvider] = useState<Provider>('local');
@@ -141,6 +147,10 @@ export function AssetSurface() {
       return riskOk && exposureOk;
     });
   }, [result?.assets, riskFilter, exposureFilter]);
+
+  const linkedAsset = useMemo(() => (assetsQuery.data ?? []).find(asset => (
+    asset.id === linkedAssetId || asset.inventory_asset_id === linkedAssetId
+  )), [assetsQuery.data, linkedAssetId]);
 
   const allTtpIds = useMemo(() => {
     return Array.from(new Set((result?.assets ?? []).flatMap(asset => asset.ttp_candidates.map(ttp => ttp.attack_id.toUpperCase())))).sort();
@@ -348,6 +358,14 @@ export function AssetSurface() {
         </aside>
 
         <main className="min-h-0 overflow-y-auto p-4 lg:p-6">
+          {linkedAssetId && (
+            <LinkedRegistryAsset
+              asset={linkedAsset}
+              assetId={linkedAssetId}
+              error={assetsQuery.error}
+              loading={assetsQuery.isLoading}
+            />
+          )}
           {!result ? (
             <EmptyState />
           ) : (
@@ -476,6 +494,88 @@ export function AssetSurface() {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function LinkedRegistryAsset({
+  asset,
+  assetId,
+  error,
+  loading,
+}: {
+  asset?: AssetRegistryItem;
+  assetId: string;
+  error: unknown;
+  loading: boolean;
+}) {
+  if (loading) {
+    return <section className="mx-auto mb-5 max-w-7xl rounded border border-cyan-900/70 bg-cyan-950/20 p-4 text-sm text-cyan-200">Loading linked registry asset...</section>;
+  }
+  if (error) {
+    return <section className="mx-auto mb-5 max-w-7xl rounded border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">Could not load linked registry asset: {String(error)}</section>;
+  }
+  if (!asset) {
+    return (
+      <section className="mx-auto mb-5 max-w-7xl rounded border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+        Registry asset <span className="font-mono">{assetId}</span> was not found in the active asset result. It may have been removed or excluded by the registry result limit.
+      </section>
+    );
+  }
+
+  return (
+    <section className="mx-auto mb-5 max-w-7xl rounded border border-cyan-800/70 bg-cyan-950/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">Linked asset registry record</div>
+          <h2 className="mt-1 text-lg font-semibold text-white">{asset.name}</h2>
+          <div className="mt-1 font-mono text-[11px] text-gray-500">{asset.inventory_asset_id || asset.id}</div>
+        </div>
+        <RiskBadge level={asset.risk_level} score={asset.risk_score} />
+      </div>
+      <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-5">
+        <RegistryField label="Type" value={asset.asset_type || 'unknown'} />
+        <RegistryField label="Environment" value={asset.environment || 'unknown'} />
+        <RegistryField label="Owner" value={asset.owner || 'unassigned'} />
+        <RegistryField label="Exposure" value={asset.exposure || 'unknown'} />
+        <RegistryField label="Criticality" value={asset.criticality || 'unknown'} />
+      </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase text-gray-500">Observed addresses</div>
+          <div className="mt-2 flex flex-wrap gap-2 font-mono text-xs text-cyan-300">
+            {[...asset.domains, ...asset.ip_addresses].map(value => (
+              <IocLink key={value} value={value} source="AssetSurface" className="hover:underline" />
+            ))}
+            {!asset.domains.length && !asset.ip_addresses.length && <span className="text-gray-600">None recorded</span>}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold uppercase text-gray-500">Technologies and ports</div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {[...asset.technologies, ...asset.products, ...asset.ports.map(port => `port:${port}`)].map(value => <Chip key={value}>{value}</Chip>)}
+            {!asset.technologies.length && !asset.products.length && !asset.ports.length && <span className="text-xs text-gray-600">None recorded</span>}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold uppercase text-gray-500">ATT&amp;CK candidates</div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {asset.technique_ids.map(techniqueId => (
+              <TtpLink key={techniqueId} id={techniqueId} className="rounded border border-mitre-accent/50 bg-mitre-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-mitre-accent hover:bg-mitre-accent/20" />
+            ))}
+            {!asset.technique_ids.length && <span className="text-xs text-gray-600">None recorded</span>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RegistryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-gray-800 bg-gray-950 p-3">
+      <div className="text-[10px] uppercase text-gray-600">{label}</div>
+      <div className="mt-1 text-gray-200">{value}</div>
     </div>
   );
 }

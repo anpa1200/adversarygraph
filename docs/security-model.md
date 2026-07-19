@@ -10,6 +10,8 @@ AdversaryGraph is a self-hosted analyst workbench, not a managed SaaS.
 | Frontend to API | API is reachable from the operator-controlled network |
 | API to PostgreSQL | Database is private to the deployment |
 | API/worker to LLM provider | Operator controls provider choice and accepts provider data terms; governed Threat Hunting cloud AI is disabled by default and requires explicit analyst acknowledgment when enabled |
+| API/worker to embedding endpoint | RAG embeddings use the configured `local` provider only; the endpoint host must be loopback, a private/link-local IP, or recognized private service DNS, and the operator must still secure routing, authentication, TLS, logs, and retention |
+| Local MCP client to MCP subprocess | MCP uses stdio only; the subprocess calls fixed authenticated RAG API routes with a dedicated least-privilege AdversaryGraph session and exposes no remote MCP listener |
 | API to MITRE/GitHub | Public ATT&CK STIX bundles are downloaded for sync |
 | API to IOC feeds | Operator controls ThreatFox, OTX, and custom feed credentials/URLs |
 | AdversaryGraph to malware-analysis service | Malware samples remain outside the main application containers; only validated result artifacts are imported |
@@ -27,6 +29,11 @@ Potentially sensitive data includes:
 - Analyst notes.
 - Threat Hunting AI suggestions, analyst focus text, source citations, and
   assistant provenance metadata.
+- Normalized RAG documents, excerpts, embeddings, source relationship metadata,
+  business profiles, assistant answers, citations, and expiring Navigator
+  proposals.
+- MCP tool results and any copies retained by the connected MCP client or its
+  model.
 - Campaign or customer names.
 - IOC feed contents and actor-linked indicators.
 - Custom feed URLs.
@@ -68,6 +75,11 @@ For private analysis:
 - Keep governed Threat Hunting AI on the operator-configured local endpoint
   unless cloud processing is explicitly enabled and approved. Treat
   `TLP:AMBER+STRICT` and `TLP:RED` hunt context as local-only.
+- Keep RAG embeddings local-only and review every field allowlist before adding
+  a new indexed source type. Do not index raw provider payloads or secrets.
+- Include the RAG tables, vector indexes, assistance records, business profiles,
+  and MCP-client copies in classification, retention, deletion, backup, and
+  incident-response policy.
 
 ## LLM Output
 
@@ -92,7 +104,7 @@ disabled by default; when an operator enables it, a remote request still
 requires explicit analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED`
 requests are rejected for remote providers.
 Enterprise ATT&CK is the only supported report-to-hunt framework in the current
-post-v6 `main` implementation.
+post-v6 development implementation.
 
 The assistant request treats report text as untrusted model input. Fixed task
 prompts, structured validation, source-span checks, provider/TLP gates, and
@@ -105,6 +117,56 @@ their source references and offsets, but it does not
 persist the raw assistant prompt, full raw report, or raw provider response in
 an AI-assistance record. The stored report remains the controlled source of
 record; assistant provenance does not create another full-text copy.
+
+## Unified RAG And MCP
+
+RAG retrieval separates authoritative records from a rebuildable derived
+corpus. Reconciliation copies only allowlisted normalized fields into
+`rag_documents` and bounded `rag_chunks`. Each record carries its source
+identity, canonical route, content hash, timestamps, TLP, sanitization state,
+and legal-sensitive flag. Raw feed/provider JSON, configuration credential
+fields, and unrestricted asset metadata are excluded from the corpus. Included
+narrative fields are not passed through a general DLP/secret redactor; the
+operator must remove unnecessary secrets and apply correct TLP/legal markings.
+
+The search service uses exact identifiers and PostgreSQL full text, with
+optional private vector similarity. One-hop relationship expansion is bounded,
+non-recursive, and limited to stored allowlisted relationship identifiers.
+Those relationships may originate from upstream or automated ingestion and do
+not have a universal analyst-review state. Neither a
+business-profile match nor a retrieved relationship proves targeting,
+exploitation, attribution, active infrastructure, or compromise.
+
+Generation adds these controls:
+
+- a fixed structured-output schema and server-side validation;
+- citations constrained to the retrieved source set and rechecked locally;
+- source and business-context freshness checks after provider egress;
+- effective-TLP calculation and local-only handling for legal-sensitive,
+  `TLP:AMBER+STRICT`, and `TLP:RED` context;
+- explicit per-request acknowledgment before eligible content reaches a remote
+  provider;
+- bounded stored provenance instead of raw prompts, raw provider responses, or
+  provider exceptions;
+- locally validated ATT&CK IDs and expiring checksum-bound proposals;
+- explicit browser confirmation before Add/Replace. Proposal and confirmation
+  state is persisted for audit, but no named layer is saved and no operational
+  action is executed.
+
+The MCP process deliberately has a narrower boundary. It supports stdio only,
+rejects public cleartext API origins, validates inputs and output sizes, and
+offers search, grounded questions, sanitized indexed-entity reads, and
+unconfirmed Navigator proposals. It cannot reindex the corpus, confirm a
+proposal, save a layer, change intelligence, execute a hunt, run Attack
+Simulation, forward detections, or acknowledge cloud processing for a user.
+Because `MCP_API_TOKEN` is an ordinary application session rather than an
+independently scoped MCP credential, use a dedicated analyst/service account,
+rotate and revoke the session, protect process configuration, and treat the
+connected client/model as another sensitive-data processor.
+
+See [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md),
+[MCP Server](mcp-server.md), and the more detailed
+[Security Threat Model](security-threat-model.md).
 
 ## File Parsing
 

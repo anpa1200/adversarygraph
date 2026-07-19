@@ -1,7 +1,7 @@
 # AdversaryGraph Helm Chart
 
 This chart is a deployment scaffold for a controlled, single-workspace
-Kubernetes installation. The checked-out `main` chart contains post-v6 controls
+Kubernetes installation. The checked-out development chart contains post-v6 controls
 and must not be represented as the chart from the immutable `v6.0.0` tag. It
 requires a new successfully gated semantic release and its image manifest
 before production use. It is not a managed-SaaS or multi-tenant isolation
@@ -14,6 +14,10 @@ boundary.
 - a default StorageClass, or explicit storage classes for every PVC
 - an ingress controller and certificate workflow when TLS ingress is enabled
 - an externally managed Secret for any production-like installation
+- digest-pinned `pgvector/pgvector:0.8.2-pg16` is the development/evaluation
+  default; production uses the release's custom pgvector-capable
+  `adversarygraph-postgres` image and reviewed digest. An external database
+  overlay must provide pgvector 0.5.0 or newer before API startup.
 
 The bundled chart deploys PostgreSQL and Redis. Setting either bundled service
 to `enabled: false` requires a deployment-specific chart overlay that supplies
@@ -105,14 +109,17 @@ review both separately.
 
 ### Image integrity
 
-The backend, frontend, and MalwareGraph images default to versioned tags with
-`imagePullPolicy: Always`. The chart-evaluation defaults for upstream
-PostgreSQL and Redis are digest-pinned. The PostgreSQL compatibility image is
-not the remediated release image and does not satisfy the strict post-v6 stack
-gate. For production, use the release manifest to replace it with the custom
-`adversarygraph-postgres` repository and set reviewed digests for all four
-release images; a configured digest takes precedence over its human-readable
-tag:
+The backend, frontend, and MalwareGraph images default to the immutable
+`6.0.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
+uses the pgvector project's `0.8.2-pg16` compatibility image so the development
+chart has the extension required by the RAG schema; both PostgreSQL and Redis
+compatibility images are digest-pinned. The v6.0.0 AdversaryGraph images
+predate the Unreleased RAG/MCP implementation. To evaluate the current
+development chart, override **all** custom image references with
+revision-matched artifacts. For production, also replace the PostgreSQL
+compatibility image with the release's custom image and use the digest manifest
+created by that revision's successful tag workflow. A configured digest takes
+precedence over its human-readable tag:
 
 ```yaml
 image:
@@ -200,6 +207,69 @@ portably resolve Compose's `host.docker.internal` hostname. To enable the local
 provider, set it to an OpenAI-compatible in-cluster Service URL or a reviewed
 private gateway that is reachable from API, worker, and MalwareGraph pods.
 
+## Unified RAG Configuration
+
+The current development chart templates enable RAG configuration and scheduled
+reconciliation by default, while semantic embeddings remain disabled. The
+default `6.0.0` application images do **not** implement those post-v6 routes or
+jobs. Supply revision-matched backend and frontend application images before
+using this section; worker and Beat use the backend image. The digest-pinned
+PostgreSQL evaluation default already includes pgvector 0.8.2. Production also
+replaces that compatibility image with the release's reviewed PostgreSQL image
+and digest. With revision-matched application images, exact identifier and
+PostgreSQL full-text retrieval work without a model dependency. A production
+values overlay can enable the reviewed private vector path:
+
+```yaml
+config:
+  ragEnabled: "true"
+  localLlmBaseUrl: http://private-model.ai-services.svc.cluster.local:11434/v1
+  localLlmModel: llama3.1:8b
+  ragEmbeddingEnabled: "true"
+  ragEmbeddingProvider: local
+  ragEmbeddingModel: nomic-embed-text
+  ragEmbeddingDimensions: "768"
+  ragEmbeddingBatchSize: "32"
+  ragVectorMaxCosineDistance: "0.55"
+  ragReconcileHour: "4"
+  ragReconcileMinute: "15"
+  ragTombstoneRetentionDays: "30"
+  ragAssistanceRetentionDays: "90"
+  ragRetentionHour: "4"
+  ragRetentionMinute: "45"
+```
+
+`localLlmBaseUrl` must resolve to loopback/private/link-local addressing or a
+recognized private service DNS name. A public hostname cannot be relabeled as
+the local provider. Add deployment-specific NetworkPolicy/mesh egress rules,
+authentication, TLS, request logging, and retention controls for the model
+Service. Store `LOCAL_LLM_API_KEY` in the runtime Secret, not in values.
+
+Confirm the embedding model returns exactly `ragEmbeddingDimensions` values
+before activation. The value defines the PostgreSQL vector column; changing it
+later requires a reviewed schema migration and complete reindex. Disable
+embeddings during initial deployment if the model has not passed that test.
+
+The worker and Beat deployments receive the same RAG schedule and retention
+configuration through the ConfigMap. The base chart connects the worker
+directly to bundled PostgreSQL, which satisfies the reconciliation session-lock
+requirement. A custom external-database overlay must use a direct connection or
+PgBouncer `pool_mode=session`; transaction and statement pooling are
+unsupported for this worker path.
+
+After rollout, sign in with a `manage_feeds` account and open **ATT&CK Navigator
+→ AI RAG assistant → Build / refresh RAG index**. Wait for the run to
+complete and verify corpus/source counts, pending/failed embeddings, and the
+latest indexed time before accepting the feature. Then run exact IOC/CVE/ATT&CK
+queries, an approved non-sensitive semantic query, and a citation/temporary
+Navigator proposal review.
+
+The Helm chart does not deploy the optional MCP process. Run MCP as a local
+stdio subprocess of the approved client and connect it to the authenticated
+HTTPS ingress with a dedicated least-privilege analyst session. Do not add an
+MCP HTTP/SSE listener to the chart. See
+[`docs/mcp-server.md`](../../docs/mcp-server.md).
+
 ## Production Boundaries
 
 - Configure TLS and an explicit `config.corsAllowedOrigins`; never use `*` with
@@ -208,6 +278,12 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 - Create permanent named administrators, then remove
   `AUTH_BOOTSTRAP_ADMIN_PASSWORD` from the Secret and restart the API.
 - Run backup and restore drills before storing private investigation data.
+- Include RAG documents/chunks/embeddings, business profiles, assistance,
+  proposals, and any MCP-client copies in classification, retention, backup,
+  deletion, and incident-response policy.
+- Monitor the RAG index status and run history; an enabled empty corpus, stale
+  run heartbeat, or failed embedding population is not semantic-search
+  readiness.
 - Review resource sizing in
   [`docs/deployment-sizing.md`](../../docs/deployment-sizing.md).
 - Review and extend the chart's baseline ingress NetworkPolicies; supply
@@ -247,10 +323,11 @@ the deployment review:
   escalation and service-account token mounting, and uses the compatible UID.
 - `CKV_K8S_43`: the three tag-based custom images remain findings in a default
   render until the operator supplies the release's reviewed digests.
-  PostgreSQL and Redis compatibility defaults are digest-pinned, but production
-  must also replace the PostgreSQL repository/digest with the remediated release
-  artifact. The chart validates digest syntax but cannot invent registry
-  digests for unpublished custom artifacts.
+  Redis and the development pgvector compatibility image are digest-pinned.
+  Production must replace the compatibility image and set reviewed
+  revision-matched digests for PostgreSQL and all custom images. The chart
+  validates digest syntax but cannot invent registry digests for unpublished
+  custom artifacts.
 
 The chart directly addresses `CKV2_K8S_6` with baseline NetworkPolicies,
 `CKV_K8S_15` with an `Always` pull policy, and `CKV_K8S_22` for PostgreSQL by

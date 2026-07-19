@@ -16,6 +16,11 @@ import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type GroupTab = 'overview' | 'techniques' | 'campaigns' | 'reports' | 'iocs' | 'cves';
 
+function normalizeCampaignId(value: string | null): string | null {
+  const normalized = value?.trim().toUpperCase() ?? '';
+  return /^C\d{4}$/.test(normalized) ? normalized : null;
+}
+
 export function APTLibrary() {
   const qc = useQueryClient();
   const canManageFeeds = useHasPermission('manage_feeds');
@@ -30,12 +35,20 @@ export function APTLibrary() {
   const [groupTab, setGroupTab] = useState<GroupTab>('overview');
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [techModalId, setTechModalId] = useState<string | null>(null);
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   useEffect(() => {
     const id = params.get('group');
+    const campaignId = normalizeCampaignId(params.get('campaign'));
     const tab = params.get('tab') as GroupTab | null;
     const searchParam = params.get('search');
-    if (id) setSelectedGroupId(id);
+    if (campaignId) {
+      setExpandedCampaign(campaignId);
+      setGroupTab('campaigns');
+      if (!id) setSelectedGroupId(null);
+    } else if (id) {
+      setSelectedGroupId(id);
+      setExpandedCampaign(null);
+    }
     if (tab && ['overview', 'techniques', 'campaigns', 'reports', 'iocs', 'cves'].includes(tab)) setGroupTab(tab);
     if (searchParam) setSearch(searchParam);
   }, [params]);
@@ -66,7 +79,7 @@ export function APTLibrary() {
     enabled: !!selectedGroupId && groupTab === 'campaigns',
   });
 
-  const { data: campaignDetail } = useQuery({
+  const { data: campaignDetail, error: campaignDetailError, isLoading: campaignDetailLoading } = useQuery({
     queryKey: ['campaign-detail', expandedCampaign, domain, version],
     queryFn: () => aptApi.campaign(expandedCampaign!, domain, version ?? undefined),
     enabled: !!expandedCampaign,
@@ -138,6 +151,13 @@ export function APTLibrary() {
   });
   const trackActor = useMutation({ mutationFn: () => operationsApi.trackActor({ actor_id: groupDetail!.attack_id, actor_name: groupDetail!.name, snapshot: { technique_ids: groupDetail!.techniques.map(item => item.attack_id), captured_at: new Date().toISOString() } }) });
 
+  const closeLinkedCampaign = () => {
+    const next = new URLSearchParams(params);
+    next.delete('campaign');
+    setParams(next, { replace: true });
+    setExpandedCampaign(null);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <TechniqueModal attackId={techModalId} onClose={() => setTechModalId(null)} />
@@ -185,10 +205,34 @@ export function APTLibrary() {
 
         {/* Group detail */}
         <div className="flex-1 overflow-y-auto p-6">
-          {!selectedGroupId && (
+          {!selectedGroupId && !expandedCampaign && (
             <div className="flex items-center justify-center h-48 text-gray-500">
               Select a group to view its TTP profile
             </div>
+          )}
+
+          {!selectedGroupId && expandedCampaign && (
+            <section className="space-y-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Linked ATT&amp;CK campaign</div>
+                <p className="mt-1 text-xs text-gray-500">Opened directly from an intelligence citation.</p>
+              </div>
+              {campaignDetailLoading && <div className="text-sm text-gray-400">Loading campaign {expandedCampaign}...</div>}
+              {campaignDetailError && (
+                <div className="rounded border border-red-900 bg-red-950/30 p-3 text-sm text-red-300">
+                  Could not open campaign {expandedCampaign}: {errorMessage(campaignDetailError)}
+                </div>
+              )}
+              {campaignDetail && (
+                <CampaignCard
+                  campaign={campaignDetail}
+                  expanded
+                  detail={campaignDetail}
+                  onToggle={closeLinkedCampaign}
+                  onAddTTPs={() => addTechniques(campaignDetail.techniques.map(technique => technique.attack_id))}
+                />
+              )}
+            </section>
           )}
 
           {selectedGroupId && (detailLoading) && (

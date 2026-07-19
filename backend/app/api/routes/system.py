@@ -16,6 +16,7 @@ from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelations
 from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
+from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.services.auth import TeamUser, audit, require_permission
 from app.services.cve_intel import ensure_cve_sources
 from app.services.startup_status import startup_status
@@ -712,6 +713,128 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     },
                 )
             )
+
+            if settings.rag_enabled:
+                vector_version = await session.scalar(
+                    text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                )
+                rag_documents = int(
+                    await session.scalar(
+                        select(func.count()).select_from(RAGDocument).where(
+                            RAGDocument.is_active.is_(True),
+                            RAGDocument.sanitized.is_(True),
+                        )
+                    )
+                    or 0
+                )
+                rag_chunks = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(RAGChunk)
+                        .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
+                        .where(
+                            RAGDocument.is_active.is_(True),
+                            RAGDocument.sanitized.is_(True),
+                        )
+                    )
+                    or 0
+                )
+                ready_embeddings = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(RAGChunk)
+                        .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
+                        .where(
+                            RAGDocument.is_active.is_(True),
+                            RAGDocument.sanitized.is_(True),
+                            RAGChunk.embedding_status == "complete",
+                        )
+                    )
+                    or 0
+                )
+                failed_embeddings = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(RAGChunk)
+                        .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
+                        .where(
+                            RAGDocument.is_active.is_(True),
+                            RAGDocument.sanitized.is_(True),
+                            RAGChunk.embedding_status == "failed",
+                        )
+                    )
+                    or 0
+                )
+                latest_run = (
+                    await session.execute(
+                        select(RAGIndexRun).order_by(RAGIndexRun.created_at.desc()).limit(1)
+                    )
+                ).scalar_one_or_none()
+                attempted_index_problem = bool(
+                    latest_run
+                    and (
+                        latest_run.status in {"failed", "degraded"}
+                        or (
+                            latest_run.status == "completed"
+                            and rag_documents == 0
+                        )
+                    )
+                )
+                rag_status = (
+                    "error"
+                    if not vector_version
+                    else "warning"
+                    if (
+                        attempted_index_problem
+                        or failed_embeddings > 0
+                        or (
+                            settings.rag_embedding_enabled
+                            and rag_chunks > 0
+                            and ready_embeddings == 0
+                        )
+                    )
+                    else "ok"
+                )
+                checks.append(
+                    _check_status(
+                        "rag_index",
+                        rag_status,
+                        "Unified intelligence RAG index is ready."
+                        if rag_status == "ok" and rag_documents > 0
+                        else "Unified intelligence RAG is enabled; run the initial reconciliation before first use."
+                        if rag_status == "ok"
+                        else "Unified intelligence RAG needs an initial/retry reconciliation."
+                        if vector_version
+                        else "PostgreSQL pgvector extension is unavailable.",
+                        {
+                            "pgvector_version": vector_version,
+                            "documents": rag_documents,
+                            "chunks": rag_chunks,
+                            "ready_embeddings": ready_embeddings,
+                            "failed_embeddings": failed_embeddings,
+                            "retrieval_mode": (
+                                "hybrid"
+                                if ready_embeddings > 0
+                                else "exact+fts"
+                            ),
+                            "latest_run_status": latest_run.status if latest_run else "never",
+                            "latest_run_completed_at": (
+                                latest_run.completed_at.isoformat()
+                                if latest_run and latest_run.completed_at
+                                else None
+                            ),
+                        },
+                    )
+                )
+            else:
+                checks.append(
+                    _check_status(
+                        "rag_index",
+                        "ok",
+                        "Unified intelligence RAG is disabled by the operator.",
+                        {"enabled": False},
+                    )
+                )
 
             await ensure_cve_sources(session)
             cve_source_rows = (await session.execute(select(CVESource))).scalars().all()

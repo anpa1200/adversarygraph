@@ -8,7 +8,9 @@ AdversaryGraph now exposes an operator-facing observability layer for controlled
 |---|---|---|
 | Liveness | `/api/health` | Lightweight process/version check; does not prove database readiness |
 | Readiness | `/api/ready` | Deployment acceptance check; returns `503` when the database is unavailable |
-| Self-test | `/api/system/selftest` | Database, Redis, ATT&CK/ATLAS, IOC feed, CVE feed, CPU, memory, and provider-key readiness |
+| Self-test | `/api/system/selftest` | Database, Redis, ATT&CK/ATLAS, IOC/CVE feeds, pgvector/RAG corpus, CPU, memory, storage, dependent-service, and provider-key readiness |
+| RAG status | `/api/rag/status` | Corpus/source counts, indexed freshness, embedding state, active run, retrieval mode, and warnings |
+| RAG run history | `/api/rag/index-runs` | Feed-manager view of reconciliation outcomes, counts, attempts, heartbeat, timing, and bounded failure summary |
 | Dashboard | `/observability` | UI view for API uptime, request counts, latency, recent traces, top routes, log tail, and metrics preview |
 | Summary API | `/api/observability/summary` | JSON snapshot for dashboards and automation |
 | Recent traces | `/api/observability/traces` | Recent request trace ring buffer with request ID, method, path, status, latency, and timestamp |
@@ -35,6 +37,16 @@ reapplies the same filter as defense in depth. Redaction is best effort; do not
 log request bodies or credentials.
 
 Do not treat this as a full SIEM audit replacement. It is an operator dashboard and troubleshooting layer. Security-relevant user actions are still stored through the platform audit-event model where implemented.
+
+RAG generation and maintenance also write bounded governance evidence. Review
+persisted assistance/proposal records and actual audit events such as
+`rag.assist.remote_attempt`, `rag.assist.suggest`, `rag.navigator.confirm`,
+`rag.index.queue`, `rag.index.redispatch`, `rag.retention.purge`, and
+`rag.retention.legal_hold`. Proposal rejection and automatic expiry do not emit
+separate audit events in the current implementation. These records intentionally omit credentials, raw provider
+responses, unrestricted prompts, and deleted source/answer content. Send audit
+metadata to the organization's monitoring system under the same access and
+retention policy as the underlying intelligence.
 
 ## Prometheus Integration
 
@@ -109,10 +121,20 @@ Recommended evidence to capture for release validation:
 2. Authenticated `/troubleshooting` self-test popup or report showing
    `status=ok` rather than `degraded`; a readiness-only fallback is not full
    self-test evidence.
-3. Attack Simulation real-time telemetry page after a lab scenario.
-4. SIEM forwarding result after sending lab telemetry.
-5. CVE Library feed status and correlation detail.
-6. Admin Panel showing role-based access management.
-7. CI run with backend tests, SAST, dependency audit, secret scan, and container scan.
+3. RAG status and recent index-run history showing a non-empty corpus, expected
+   source coverage, current indexed time, and zero unexplained failed
+   embeddings.
+4. One exact IOC/CVE/ATT&CK search, one approved semantic search, and one
+   grounded answer whose citations open the expected canonical source records.
+5. A Navigator proposal preview and confirmation receipt showing domain,
+   ATT&CK version, expiry, Add/Replace mode, and `persisted=false`.
+6. An optional MCP stdio smoke with a dedicated analyst session showing all
+   four bounded tools and no proposal confirmation or state mutation.
+7. Attack Simulation real-time telemetry page after a lab scenario.
+8. SIEM forwarding result after sending lab telemetry.
+9. CVE Library feed status and correlation detail.
+10. Admin Panel showing role-based access management.
+11. CI run with backend tests, SAST, dependency audit, secret scan, pgvector
+    extension/index smoke, and container scan.
 
 These screenshots should be used as validation examples, not as proof of production compromise or real-world attack execution.

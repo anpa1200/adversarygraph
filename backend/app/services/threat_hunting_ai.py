@@ -8,11 +8,13 @@ then reduced to stage-specific allowlists before it can reach the API.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -36,6 +38,7 @@ EXECUTION_BOUNDARY = (
 )
 
 _ATTACK_ID = re.compile(r"^T\d{4}(?:\.\d{3})?$")
+_ATLAS_ID = re.compile(r"^AML\.T\d{4}(?:\.\d{3})?$")
 _MODEL_RE = re.compile(r"^[\w./:@-]{1,160}$")
 _RESTRICTED_CLOUD_TLP = {"TLP:AMBER+STRICT", "TLP:RED"}
 _QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"}
@@ -198,7 +201,11 @@ def _provider_model(provider: str) -> str:
 
 def _provider_configured(provider: str) -> bool:
     return bool({
-        "local": settings.local_llm_base_url,
+        "local": (
+            settings.local_llm_base_url
+            if local_ai_endpoint_is_private(settings.local_llm_base_url)
+            else ""
+        ),
         "claude": settings.anthropic_api_key,
         "openai": settings.openai_api_key,
         "gemini": settings.gemini_api_key,
@@ -252,6 +259,38 @@ def provider_is_remote(provider: str) -> bool:
     return bool(metadata and metadata["remote"])
 
 
+def local_ai_endpoint_is_private(value: str | None) -> bool:
+    """Fail closed unless the operator's local provider is on a private origin."""
+
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 2_048 or any(ord(char) < 32 for char in raw):
+        return False
+    try:
+        parsed = urlsplit(raw)
+        host = str(parsed.hostname or "").casefold().rstrip(".")
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme.casefold() not in {"http", "https"} or not host:
+        return False
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        return False
+    if port is not None and not 1 <= port <= 65_535:
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # Single-label service names and reserved/private DNS suffixes cover
+        # Docker, Kubernetes, lab DNS, and RFC 2606 test deployments without
+        # allowing a public FQDN to be mislabeled as local.
+        return (
+            "." not in host
+            or host == "host.docker.internal"
+            or host.endswith((".localhost", ".internal", ".local", ".svc", ".test"))
+        )
+    return bool(address.is_private or address.is_loopback or address.is_link_local)
+
+
 def create_adapter(
     provider: str,
     model: str | None,
@@ -271,6 +310,11 @@ def create_adapter(
     if model is not None and model.strip() != configured_model:
         raise HTTPException(422, "AI model override is not allowed; use the server-configured provider model")
     if not _provider_configured(provider):
+        if provider == "local" and settings.local_llm_base_url:
+            raise HTTPException(
+                503,
+                "Local AI provider must use a loopback, private IP, or private service DNS origin",
+            )
         raise HTTPException(503, f"AI provider {provider} is not configured")
 
     if _PROVIDERS[provider]["remote"]:
@@ -574,11 +618,17 @@ async def verify_technique_ids(
     *,
     domain: str,
 ) -> tuple[list[str], list[str]]:
-    requested = clean_list([value.upper() for value in values if _ATTACK_ID.fullmatch(value.upper())], max_items=100)
+    identifier_pattern = _ATLAS_ID if domain == "atlas" else _ATTACK_ID
+    requested = clean_list(
+        [value.upper() for value in values if identifier_pattern.fullmatch(value.upper())],
+        max_items=100,
+    )
     invalid_count = len(clean_list(values, max_items=100)) - len(requested)
     warnings: list[str] = []
     if invalid_count:
-        warnings.append(f"Removed {invalid_count} malformed ATT&CK technique suggestion(s).")
+        warnings.append(
+            f"Removed {invalid_count} malformed ATT&CK/ATLAS technique suggestion(s)."
+        )
     if not requested:
         return [], warnings
 
@@ -598,6 +648,7 @@ async def verify_technique_ids(
         select(Technique.attack_id).where(
             Technique.version_id == version_id,
             Technique.attack_id.in_(requested),
+            Technique.is_deprecated.is_(False),
         )
     )
     known = {str(value).upper() for value in rows.scalars().all()}

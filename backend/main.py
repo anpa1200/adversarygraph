@@ -22,7 +22,8 @@ import app.models.auth as _auth_models  # noqa: F401 — register Base metadata
 import app.models.evidence_graph as _evidence_graph_models  # noqa: F401 — register Base metadata
 import app.models.threat_radar as _threat_radar_models  # noqa: F401 — register Base metadata
 import app.models.threat_hunting as _threat_hunting_models  # noqa: F401 — register Base metadata
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
+import app.models.rag as _rag_models  # noqa: F401 — register Base metadata
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, rag, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
@@ -244,6 +245,7 @@ app.include_router(troubleshooting.router, prefix="/api", dependencies=_auth_req
 app.include_router(threat_radar.router, prefix="/api", dependencies=_auth_required)
 app.include_router(threat_hunting.router, prefix="/api", dependencies=_auth_required)
 app.include_router(threat_hunting_ai.router, prefix="/api", dependencies=_auth_required)
+app.include_router(rag.router, prefix="/api", dependencies=_auth_required)
 
 
 @app.get("/api/health")

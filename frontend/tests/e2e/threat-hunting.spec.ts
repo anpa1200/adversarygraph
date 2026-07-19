@@ -106,7 +106,7 @@ test('does not request hunt data until analyst access is resolved', async ({ pag
 
   releaseAuth();
   await expect(page.getByRole('heading', { name: 'Turn intelligence leads into reviewable threat hunts.' })).toBeVisible();
-  expect(huntRequests).toBeGreaterThan(0);
+  await expect.poll(() => huntRequests).toBeGreaterThan(0);
 });
 
 test('explicit run_analysis permission opens hunts without an analyst role', async ({ page }) => {

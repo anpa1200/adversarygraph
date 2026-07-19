@@ -200,3 +200,13 @@ must validate:
 
 Use the matrix as a prioritization and investigation aid, not as an automated
 vulnerability scanner or attribution mechanism.
+
+## Unified Intelligence Search
+
+After reconciliation, sanitized asset records are available to Unified RAG for
+exact, full-text, and optional vector retrieval. Only allowlisted inventory
+fields are indexed; asset-derived chunks are treated as local,
+legal-sensitive context and are not eligible for unacknowledged cloud-provider
+processing. Business-profile or relationship relevance is a triage lead, not
+proof that an asset is exposed, vulnerable, targeted, or compromised. See
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).
