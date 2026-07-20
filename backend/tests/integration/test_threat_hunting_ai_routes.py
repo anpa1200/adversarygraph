@@ -71,6 +71,23 @@ QUERY_ASSIST_OUTPUT = json.dumps({
     "citations": [],
 })
 
+YARAL_QUERY_ASSIST_OUTPUT = json.dumps({
+    "summary": "Generated a YARA-L rule from the saved hunt hypothesis and UDM requirements.",
+    "recommended_actions": ["Validate UDM field mappings in Google SecOps"],
+    "questions": ["Which UDM process fields are populated by the endpoint parser?"],
+    "evidence_gaps": [],
+    "cautions": ["The rule was not executed"],
+    "suggested_patch": {
+        "query_language": "yaral",
+        "query_text": "rule suspicious_encoded_powershell { events: $e.metadata.event_type = \"PROCESS_LAUNCH\" $e.target.process.command_line = /-enc/ nocase condition: $e }",
+        "telemetry_sources": ["Google SecOps UDM process events"],
+        "required_fields": ["metadata.event_type", "target.process.command_line"],
+        "assumptions": "The endpoint parser populates target.process.command_line.",
+    },
+    "finding_drafts": [],
+    "citations": [],
+})
+
 HYPOTHESIS_OUTPUT = json.dumps({
     "candidates": [{
         "title": "Hunt encoded PowerShell launched by Office",
@@ -595,6 +612,36 @@ async def test_query_assistance_honors_explicit_target_language_without_mutating
     assert body["suggested_patch"]["query_language"] == "spl"
     assert body["suggested_patch"]["query_text"].startswith("index=endpoint")
     assert body["prompt_version"] == "threat-hunt-assistant-v2"
+
+    unchanged = await client.get(f"/api/threat-hunting/hunts/{hunt['id']}")
+    assert unchanged.status_code == 200
+    assert unchanged.json()["query_language"] == HUNT["query_language"]
+    assert unchanged.json()["query_text"] == HUNT["query_text"]
+
+
+async def test_query_assistance_accepts_yaral_udm_as_an_explicit_target(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _fake_provider(monkeypatch, YARAL_QUERY_ASSIST_OUTPUT)
+    created = await client.post("/api/threat-hunting/hunts", json=HUNT)
+    assert created.status_code == 201
+    hunt = created.json()
+
+    response = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "local",
+        "stage": "query",
+        "hunt_id": hunt["id"],
+        "context": HUNT,
+        "target_query_language": "yaral",
+        "cloud_processing_acknowledged": False,
+    })
+
+    assert response.status_code == 200, response.text
+    patch = response.json()["suggested_patch"]
+    assert patch["query_language"] == "yaral"
+    assert "metadata.event_type" in patch["query_text"]
+    assert "target.process.command_line" in patch["query_text"]
 
     unchanged = await client.get(f"/api/threat-hunting/hunts/{hunt['id']}")
     assert unchanged.status_code == 200

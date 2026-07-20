@@ -2523,7 +2523,7 @@ export type ThreatHuntDisposition =
   | 'inconclusive'
   | 'telemetry_gap'
   | 'query_failure';
-export type ThreatHuntQueryLanguage = 'generic' | 'sigma' | 'kql' | 'spl' | 'eql' | 'lucene' | 'sql' | 'osquery' | 'yara' | 'other';
+export type ThreatHuntQueryLanguage = 'generic' | 'sigma' | 'kql' | 'spl' | 'eql' | 'lucene' | 'sql' | 'osquery' | 'yara' | 'yaral' | 'other';
 export type ThreatHuntTlp = 'TLP:CLEAR' | 'TLP:GREEN' | 'TLP:AMBER' | 'TLP:AMBER+STRICT' | 'TLP:RED';
 export type ThreatHuntFindingVerdict = 'supports' | 'refutes' | 'inconclusive' | 'benign';
 

@@ -124,10 +124,24 @@ def test_query_prompt_binds_hypothesis_to_explicit_target_language():
         target_query_language="spl",
     )
 
-    assert "target query language is `spl`" in system
+    assert "target query language identifier is `spl` (Splunk SPL)" in system
     assert "suggested_patch.query_language to exactly `spl`" in system
     assert '"target_query_language":"spl"' in user
     assert "hypothesis" in user
+
+
+def test_query_prompt_defines_yaral_as_google_secops_udm_rule():
+    system, user = ai.assist_prompt(
+        "query",
+        {"canonical": {"hypothesis": "Encoded PowerShell should appear in UDM process events"}},
+        "Use Google SecOps",
+        target_query_language="yaral",
+    )
+
+    assert "identifier is `yaral` (YARA-L 2.0 for Google SecOps UDM)" in system
+    assert "complete YARA-L 2.0 rule" in system
+    assert "Unified Data Model (UDM)" in system
+    assert '"target_query_language":"yaral"' in user
 
 
 @pytest.mark.asyncio
@@ -391,7 +405,10 @@ async def test_catalog_overlays_local_runtime_readiness_and_reassigns_default(mo
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "local")
     monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
     monkeypatch.setattr(settings, "openai_api_key", "configured")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "minimax_api_key", "")
     probe = AsyncMock(return_value=ai.LocalProviderReadiness("unreachable", "Safe unavailable reason."))
     monkeypatch.setattr(ai, "probe_local_provider_readiness", probe)
 

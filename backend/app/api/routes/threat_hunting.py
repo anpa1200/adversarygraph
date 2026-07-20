@@ -60,6 +60,7 @@ QueryLanguage = Literal[
     "sql",
     "osquery",
     "yara",
+    "yaral",
     "other",
 ]
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
