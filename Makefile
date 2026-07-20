@@ -1,7 +1,10 @@
-.PHONY: up prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup
+.PHONY: up pull prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup
 
 up:
-	docker compose up
+	docker compose up --build
+
+pull:
+	docker compose pull
 
 prod:
 	./scripts/validate-production-env.sh
@@ -29,8 +32,9 @@ ingest:
 	docker compose exec api python -c "import asyncio; from app.services.attck.ingestor import run_ingest; asyncio.run(run_ingest())"
 
 reset:
-	docker compose down -v
-	docker compose up --build
+	@echo "Automatic reset is disabled: PostgreSQL lives in ADVERSARYGRAPH_DB_DIR, not a Docker volume."
+	@echo "Use the reversible move-aside procedure in docs/quickstart.md#troubleshooting-postgresql-password-mismatch."
+	@exit 2
 
 sync-atlas:
 	./scripts/sync-anomaly-atlas.sh

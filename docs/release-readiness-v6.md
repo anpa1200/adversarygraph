@@ -16,7 +16,8 @@ Use the same toolchain as CI:
 - Python 3.12 with `backend/requirements.txt`, Ruff, Bandit, and pip-audit;
 - Node.js 22 with `npm ci` completed in `frontend/` and the Playwright Chromium
   browser installed;
-- Docker Engine with the Compose v2 plugin; and
+- Docker Engine with its current, mutually compatible Compose v2 plugin (the
+  documented source procedure is validated on Compose 2.40.3); and
 - Gitleaks, Trivy, and Helm available on `PATH` for the full gate.
 
 The backend test runner deliberately selects Python 3.12 so a different active
@@ -69,10 +70,10 @@ release evidence. The release workflow on current `main` independently repeats
 the critical tests, deployment renders, secret scan, seven custom-image scans,
 and three pinned stack-image scans before a future tag can publish packages or
 release notes. Publication is
-tag-only: the workflow requires an immutable `vX.Y.Z` tag whose value exactly
+tag-only: the workflow requires a `vX.Y.Z` tag whose value exactly
 matches the checked-out `VERSION`; it accepts no manual version input. This is
 post-v6.0.0 hardening: historical evidence for the existing `v6.0.0` tag must
-be evaluated against the workflow and commit stored at that immutable tag.
+be evaluated against the workflow and commit stored at that tag.
 
 ### Fresh-container and publication policy on post-v6 `main`
 
@@ -93,23 +94,35 @@ fix. A passing gated scan therefore means no gate-blocking fixable finding was
 reported under that scanner database and policy, not that the image contains no
 known vulnerabilities.
 
-For a future version tag, the current workflow is configured to build each of
-the seven release image families once with both the version and `latest` local
-tags, load that image into the runner, scan the versioned tag, verify that both
-local tags have the same image ID, and only then push those local tags. There is
-no publish-time rebuild between the scan and push steps. Treat this as release
-evidence only when the workflow at the exact tag completes successfully; it is
-post-v6 behavior and does not retroactively describe the existing `v6.0.0` tag.
+For a future version tag, the current workflow builds each of the seven release
+image families once, loads it into the runner, scans that exact local candidate,
+and only then pushes its semantic-version tag. It anonymously resolves each
+public manifest, verifies that its config digest matches the scanned local image
+ID, and writes the immutable manifest digest to `adversarygraph-images.env`.
+Shared `latest` tags are not advanced because the family cannot be updated
+atomically. Treat this as release evidence only when the workflow at the exact
+tag completes successfully; it is post-v6 behavior and does not retroactively
+describe the existing `v6.0.0` tag.
 
-Publication retry is fail-closed and idempotent. If a prior attempt published
-only part of the version family, the workflow pulls an existing version image
-only when its OCI revision, version, and source labels match the current tag,
-rescans that exact candidate, and republishes the same content. A mismatch or
-an ambiguous registry lookup stops the run. Recovery may resume an existing
-draft release, but every already-published GitHub release is immutable and is
-never modified, regardless of which assets it contains. Ambiguous registry or
-GitHub release lookups stop publication, and the workflow rechecks release
-state immediately before creating or updating the draft.
+Publication retry is fail-closed. If a prior attempt published only part of the
+version family, the workflow accepts an existing version image only when its
+content-addressed image ID exactly matches a fresh build from the checked-out
+tag, then rescans that candidate. Labels alone are not trusted. A content
+mismatch or ambiguous registry lookup stops the run and requires review and
+removal of the partial registry version before retry. The workflow refuses to
+modify any published GitHub release. It resumes a stopped run's draft only when
+the title, release notes, and sole manifest asset exactly match the regenerated
+release; a mismatch requires review and draft cleanup. Release state is checked
+again immediately before publication.
+
+The workflow also verifies that the remote release tag still resolves to the
+triggering commit before builds, after image publication, and immediately
+before the draft becomes public. Those checks narrow but cannot eliminate a
+tag-update race. An active repository tag ruleset that blocks updates and
+deletion of existing `v*` tags is therefore a mandatory external release
+control. The workflow requires no-bypass `update` and `deletion` rules that
+cover its exact version tag; retain the ruleset configuration with the release
+evidence.
 
 For Helm acceptance, render with `config.productionMode: "true"`. That mode is
 deliberately fail-closed on the release image digests, remediated PostgreSQL
@@ -161,9 +174,9 @@ expiry, compensating control, and rollback trigger.
 
 An HTTP `200` response from `/api/system/selftest` is not sufficient evidence:
 inspect the JSON `status`. `degraded` means the core checks completed but one or
-more warnings remain, so it is not the required `ok` result. The shell self-test
-can fall back to `/api/ready` when authentication protects the full endpoint;
-that proves database-backed request readiness, not the broader self-test gate.
+more warnings remain, so it is not the required `ok` result. When authentication
+protects the full endpoint, the shell self-test checks `/api/ready` but exits
+`3`; that proves database-backed request readiness, not the broader self-test gate.
 For release evidence, sign in with a user that has `run_analysis`, capture the
 full result, and resolve or explicitly risk-accept every non-`ok` check.
 
@@ -285,11 +298,11 @@ curl -fsS http://localhost:3000/api/ready
 docker compose ps
 ```
 
-When authentication is enabled, `./scripts/selftest.sh` may report only that
-`/api/ready` passed because the broader endpoint is protected. Complete the
-acceptance check from an authenticated browser session or API client with
-`run_analysis`, and require the returned self-test JSON to contain
-`"status":"ok"`.
+When authentication is enabled and the broader endpoint is protected,
+`./scripts/selftest.sh` reports that `/api/ready` passed but exits `3` because
+the full gate is inconclusive. Complete the acceptance check from an
+authenticated browser session or API client with `run_analysis`, and require
+the returned self-test JSON to contain `"status":"ok"`.
 
 If acceptance fails, save relevant logs, return to the previous reviewed
 release tag and immutable image-digest set, redeploy with `--no-build`, and

@@ -1,11 +1,20 @@
-# Production compose file. For development, overlay the dev overrides:
+# Base Compose file for source-built controlled deployments. For development,
+# overlay the dev overrides:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # The dev override file re-adds --reload for the API, source bind-mounts for
 # hot-reloading, and replaces the nginx frontend with the Vite dev server.
+#
+# Custom services use local build tags and pull_policy=never in this source
+# stack. This makes `docker compose pull` skip those build targets instead of
+# querying a registry for unqualified `adversarygraph-*:local-scan` images;
+# `docker compose up --build` creates them on first start or after source changes.
+# The production overlay changes the policy to `missing` and the production
+# preflight requires every custom image to be supplied by immutable digest.
 services:
   postgres:
     image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
+    pull_policy: never
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
@@ -35,6 +44,7 @@ services:
 
   db-apply-env-creds:
     image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
+    pull_policy: never
     profiles: ["tools"]
     restart: "no"
     environment:
@@ -59,6 +69,9 @@ services:
   selftest:
     image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
     restart: "no"
+    environment:
+      SELFTEST_TIMEOUT: ${SELFTEST_TIMEOUT:-900}
+      SELFTEST_INTERVAL: ${SELFTEST_INTERVAL:-3}
     depends_on:
       api:
         condition: service_started
@@ -67,27 +80,54 @@ services:
       - -lc
       - |
         set -eu
-        max=120
+        max="$${SELFTEST_TIMEOUT:-900}"
+        interval="$${SELFTEST_INTERVAL:-3}"
+        case "$$max" in
+          ''|*[!0-9]*) echo "SELFTEST_TIMEOUT must be a non-negative integer." >&2; exit 2 ;;
+        esac
+        case "$$interval" in
+          ''|0|*[!0-9]*) echo "SELFTEST_INTERVAL must be a positive integer." >&2; exit 2 ;;
+        esac
         elapsed=0
         while [ "$$elapsed" -le "$$max" ]; do
+          if startup="$$(wget -q -O - http://api:8000/api/system/startup 2>/tmp/selftest.err)"; then
+            if printf '%s\n' "$$startup" | grep -Eq '^[[:space:]]*\{[[:space:]]*"status"[[:space:]]*:[[:space:]]*"starting"([[:space:]]*,|[[:space:]]*\})'; then
+              echo "Reference ingestion is still running ($$elapsed/$$max seconds)."
+              sleep "$$interval"
+              elapsed=$$((elapsed + interval))
+              continue
+            fi
+            if printf '%s\n' "$$startup" | grep -Eq '^[[:space:]]*\{[[:space:]]*"status"[[:space:]]*:[[:space:]]*"degraded"([[:space:]]*,|[[:space:]]*\})'; then
+              echo "$$startup" >&2
+              echo "AdversaryGraph startup is degraded; reference ingestion failed." >&2
+              exit 1
+            fi
+          fi
           if response="$$(wget -q -O - http://api:8000/api/system/selftest 2>/tmp/selftest.err)"; then
             echo "$$response"
-            echo "$$response" | grep -q '"status":"ok"'
-            echo "AdversaryGraph self-test passed."
-            exit 0
+            if printf '%s\n' "$$response" | grep -Eq '^[[:space:]]*\{[[:space:]]*"status"[[:space:]]*:[[:space:]]*"ok"([[:space:]]*,|[[:space:]]*\})'; then
+              echo "AdversaryGraph self-test passed."
+              exit 0
+            fi
+            echo "AdversaryGraph self-test returned a non-passing status." >&2
+            exit 1
           fi
           err="$$(cat /tmp/selftest.err 2>/dev/null || true)"
           if echo "$$err" | grep -Eq '401|403'; then
             if readiness="$$(wget -q -O - http://api:8000/api/ready 2>/tmp/selftest.err)"; then
               echo "$$readiness"
-              echo "$$readiness" | grep -q '"status":"ready"'
-              echo "AdversaryGraph readiness check passed. Full self-test is auth-protected."
-              exit 0
+              if printf '%s\n' "$$readiness" | grep -Eq '^[[:space:]]*\{[[:space:]]*"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*,|[[:space:]]*\})'; then
+                echo "AdversaryGraph readiness check passed, but the full self-test is auth-protected." >&2
+                echo "Readiness alone is not a passing self-test; run an authenticated full self-test." >&2
+                exit 3
+              fi
+              echo "AdversaryGraph readiness returned a non-ready status." >&2
+              exit 1
             fi
           fi
           echo "Waiting for AdversaryGraph self-test ($$elapsed/$$max seconds): $$err"
-          sleep 3
-          elapsed=$$((elapsed + 3))
+          sleep "$$interval"
+          elapsed=$$((elapsed + interval))
         done
         echo "AdversaryGraph self-test timed out." >&2
         exit 1
@@ -146,6 +186,7 @@ services:
 
   malwaregraph:
     image: ${ADVERSARYGRAPH_MALWAREGRAPH_IMAGE:-adversarygraph-malwaregraph:local-scan}
+    pull_policy: never
     build:
       context: .
       dockerfile: docker/malwaregraph/Dockerfile
@@ -206,6 +247,7 @@ services:
 
   attack-lab-web:
     image: ${ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE:-adversarygraph-attack-lab-web:local-scan}
+    pull_policy: never
     build:
       context: .
       dockerfile: docker/attack-lab-web/Dockerfile
@@ -247,6 +289,7 @@ services:
 
   attack-lab-endpoint:
     image: ${ADVERSARYGRAPH_ATTACK_LAB_ENDPOINT_IMAGE:-adversarygraph-attack-lab-endpoint:local-scan}
+    pull_policy: never
     build:
       context: .
       dockerfile: docker/attack-lab-endpoint/Dockerfile
@@ -319,6 +362,7 @@ services:
 
   api:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
+    pull_policy: never
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -478,6 +522,7 @@ services:
 
   worker:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
+    pull_policy: never
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -587,6 +632,7 @@ services:
 
   beat:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
+    pull_policy: never
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -678,6 +724,7 @@ services:
 
   frontend:
     image: ${ADVERSARYGRAPH_FRONTEND_IMAGE:-adversarygraph-frontend:local-scan}
+    pull_policy: never
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -692,6 +739,7 @@ services:
 
   atlas-builder:
     image: ${ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE:-adversarygraph-anomaly-docs:local-scan}
+    pull_policy: never
     build:
       context: .
       dockerfile: anomaly_detection/docs-site/Dockerfile

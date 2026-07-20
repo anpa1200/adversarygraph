@@ -249,19 +249,37 @@ first startup. The mismatch only appears after an existing `data/postgres`
 directory was created with one password and `.env` is later changed to another
 password.
 
-After changing `DB_PASS` for an existing volume, rotate the database role
-password in place with the Compose helper:
+After changing `DB_PASS` for an existing database directory in a source-build
+deployment, rotate the database role password in place with the Compose helper:
 
 ```bash
 docker compose --profile tools run --rm db-apply-env-creds
 docker compose up -d --force-recreate api worker beat frontend
 ```
 
-Or use the wrapper script:
+Or use the source-deployment wrapper script:
 
 ```bash
 ./scripts/apply-db-env-creds.sh
 ```
+
+With optional authentication enabled, the wrapper reports that credential
+rotation completed but exits `3` because its readiness check cannot replace an
+authenticated full self-test. Complete the gate from the troubleshooting UI or
+an authenticated API client with `run_analysis`, and require `status=ok`.
+
+For a production-overlay deployment, retain both Compose files and the
+`--no-build` artifact boundary throughout the rotation:
+
+```bash
+AUTH_EXISTING_ADMIN_CONFIRMED=true ./scripts/validate-production-env.sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build postgres
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile tools run --rm db-apply-env-creds
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --force-recreate api worker beat frontend
+```
+
+The wrapper above intentionally targets source deployments; it does not infer
+or add the production overlay.
 
 The helper connects through a local PostgreSQL socket shared only between the
 PostgreSQL container and the one-shot helper container. It applies the current
@@ -278,7 +296,7 @@ separate container variables and builds the SQLAlchemy URL inside Python. This
 allows normal strong passwords with URL-special characters such as `@`, `#`,
 `:`, and `/`.
 
-Manual equivalent:
+Manual source-deployment equivalent:
 
 ```bash
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v pass="$POSTGRES_PASSWORD" <<'"'"'SQL'"'"'
@@ -287,9 +305,10 @@ SQL'
 docker compose up -d --force-recreate api worker beat frontend
 ```
 
-If the data is disposable, `docker compose down -v` followed by
-`docker compose up --build` recreates the database with the current `.env`
-credentials.
+If the data is disposable, follow the reversible move-aside reset procedure in
+[`docs/quickstart.md`](quickstart.md#troubleshooting-postgresql-password-mismatch).
+`docker compose down -v` alone does not recreate PostgreSQL because the current
+database is stored in the external `ADVERSARYGRAPH_DB_DIR` bind mount.
 
 ## External DB Directory Migration
 
@@ -313,9 +332,17 @@ For a local source-based development environment:
 
 ```bash
 git pull --ff-only
+docker compose config --quiet
 docker compose pull
-docker compose up -d --build
+docker compose build --pull
+docker compose up -d
 ```
+
+The source checkout builds the custom `adversarygraph-*:local-scan` images
+locally. Their `pull_policy: never` setting makes the pull command update only
+the pinned third-party runtime images rather than treating local build tags as
+Docker Hub repositories. Use a current, Engine-compatible Docker Compose v2
+plugin; this procedure is validated on Compose 2.40.3.
 
 Review `CHANGELOG.md` before upgrading tagged releases.
 
@@ -331,6 +358,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ./scripts/selftest.sh
 ```
+
+Production authentication makes the shell self-test exit `3` after confirming
+readiness because it cannot inherit a browser session. Complete the gate from
+the authenticated troubleshooting UI or an authenticated API client with
+`run_analysis`, and require the full result to return `status=ok`.
 
 This manifest is a post-v6 release artifact. The historical public `v6.0.0`
 release does not contain it; use a later successfully gated tag or document an

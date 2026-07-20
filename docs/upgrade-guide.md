@@ -81,6 +81,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ./scripts/selftest.sh
 ```
 
+Production authentication makes the shell self-test exit `3` after confirming
+readiness because it cannot inherit a browser session. Complete the gate from
+the authenticated troubleshooting UI or an authenticated API client with
+`run_analysis`, and require the full result to return `status=ok`.
+
 Production upgrades consume the prebuilt image digests published and scanned
 for that release. Do not rebuild from a mutable source checkout during the
 rollout: doing so disconnects the deployed artifact from the retained scan
@@ -128,10 +133,10 @@ evidence.
    curl -fsS http://localhost:3000/api/ready
    ```
 
-   With authentication enabled, the shell self-test may report only that
-   `/api/ready` passed. Sign in with a user that has `run_analysis` and require
-   the full `/api/system/selftest` result to return `status=ok`; `degraded` is
-   not a passing upgrade result.
+   With authentication enabled, the shell self-test can report that
+   `/api/ready` passed and exit `3`. Sign in with a user that has
+   `run_analysis` and require the full `/api/system/selftest` result to return
+   `status=ok`; `degraded` is not a passing upgrade result.
 
 7. Open the UI and confirm:
 
@@ -190,7 +195,7 @@ migration tooling is introduced:
    curl -fsS http://localhost:3000/api/ready
    ```
 
-   The shell command can fall back to readiness when the full self-test is
+   The shell command checks readiness and exits `3` when the full self-test is
    auth-protected. Capture a separate authenticated self-test result with
    `status=ok` for the deployed revision.
 

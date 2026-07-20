@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 concurrency:
-  # Serialize every version release so the shared `latest` image family cannot
-  # be interleaved by two different tag workflows.
+  # Serialize releases so registry publication and GitHub release creation for
+  # two semantic versions cannot interleave.
   group: adversarygraph-release
   cancel-in-progress: false
 
@@ -174,7 +174,7 @@ jobs:
             exit 1
           fi
           if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
-            echo "Release publication is allowed only from an immutable version tag." >&2
+            echo "Release publication is allowed only from a version tag." >&2
             exit 1
           fi
           if [[ "${GITHUB_REF_NAME:-}" != "v$version" ]]; then
@@ -184,7 +184,49 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
-      - name: Protect an existing published GitHub release
+      - name: Verify remote release tag target
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}"
+          remote_tag_commit="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          if [[ "$remote_tag_commit" != "$EXPECTED_SHA" ]]; then
+            echo "Remote tag ${RELEASE_TAG} resolves to ${remote_tag_commit}, not workflow commit ${EXPECTED_SHA}." >&2
+            exit 1
+          fi
+
+      - name: Verify immutable release tag rulesets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ruleset_dir="$(mktemp -d)"
+          trap 'rm -rf "$ruleset_dir"' EXIT
+          mapfile -t ruleset_ids < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true" \
+              --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'
+          )
+          if [[ "${#ruleset_ids[@]}" -eq 0 ]]; then
+            echo "No active tag ruleset protects refs/tags/${RELEASE_TAG}." >&2
+            exit 1
+          fi
+          ruleset_files=()
+          for ruleset_id in "${ruleset_ids[@]}"; do
+            ruleset_file="${ruleset_dir}/${ruleset_id}.json"
+            gh api "repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_id}" > "$ruleset_file"
+            ruleset_files+=("$ruleset_file")
+          done
+          python3 scripts/verify-release-tag-rulesets.py \
+            "refs/tags/${RELEASE_TAG}" "${ruleset_files[@]}"
+
+      - name: Protect published release and classify draft recovery
+        id: release_state
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -194,13 +236,15 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>"$lookup_log"; then
             is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')"
             if [[ "$is_draft" != "true" ]]; then
-              echo "Release $RELEASE_TAG is already published; refusing to modify it regardless of its assets." >&2
               rm -f "$lookup_log"
+              echo "Release $RELEASE_TAG is already published; refusing to modify it." >&2
               exit 1
             fi
-            echo "Release $RELEASE_TAG is still a draft; allowing an idempotent partial-publication recovery."
+            echo "resume_draft=true" >> "$GITHUB_OUTPUT"
+            echo "Release $RELEASE_TAG is a draft; it must match the regenerated release exactly before recovery."
           elif grep -Fqi 'release not found' "$lookup_log"; then
-            echo "No existing GitHub release found for $RELEASE_TAG; the workflow will create a draft after publication."
+            echo "resume_draft=false" >> "$GITHUB_OUTPUT"
+            echo "No existing GitHub release found for $RELEASE_TAG; the workflow will create a draft after image publication."
           else
             cat "$lookup_log" >&2
             rm -f "$lookup_log"
@@ -254,10 +298,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-postgres:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-postgres:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -270,10 +314,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-backend:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-backend:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -286,10 +330,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-frontend:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-frontend:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -303,10 +347,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-malwaregraph:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-malwaregraph:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -320,10 +364,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-attack-lab-web:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-attack-lab-web:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -337,10 +381,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-attack-lab-endpoint:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-attack-lab-endpoint:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -354,10 +398,10 @@ jobs:
           push: false
           load: true
           pull: true
+          platforms: linux/amd64
           no-cache: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/adversarygraph-anomaly-docs:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/adversarygraph-anomaly-docs:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
@@ -370,7 +414,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve idempotent publication candidates
+      - name: Bind publication candidates to fresh source builds
         id: publish_ids
         shell: bash
         env:
@@ -394,10 +438,18 @@ jobs:
             image="${item#*:}"
             repository="ghcr.io/${REGISTRY_OWNER}/${image}"
             version_ref="${repository}:${RELEASE_VERSION}"
-            latest_ref="${repository}:latest"
+            fresh_id="$(docker image inspect --format '{{.Id}}' "$version_ref")"
             pull_log="$(mktemp)"
             if docker pull "$version_ref" >"$pull_log" 2>&1; then
-              echo "Reusing previously published partial-release artifact: $version_ref"
+              existing_id="$(docker image inspect --format '{{.Id}}' "$version_ref")"
+              if [[ "$existing_id" != "$fresh_id" ]]; then
+                cat "$pull_log" >&2
+                rm -f "$pull_log"
+                echo "Existing version tag differs from the fresh source build: $version_ref" >&2
+                echo "Refusing label-only recovery; remove the partial registry version after review, then rerun." >&2
+                exit 1
+              fi
+              echo "Existing version tag exactly matches the fresh source build: $version_ref"
             elif grep -Eqi 'manifest unknown|no such manifest|not found' "$pull_log"; then
               echo "No existing version artifact; using the freshly built candidate: $version_ref"
             else
@@ -412,11 +464,15 @@ jobs:
             version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$version_ref")"
             source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$version_ref")"
             if [[ "$revision" != "$EXPECTED_REVISION" || "$version" != "$RELEASE_VERSION" || "$source" != "$EXPECTED_SOURCE" ]]; then
-              echo "Existing or local candidate metadata does not match this release: $version_ref" >&2
+              echo "Fresh candidate metadata does not match this release: $version_ref" >&2
               exit 1
             fi
-            docker tag "$version_ref" "$latest_ref"
-            echo "$key=$(docker image inspect --format '{{.Id}}' "$version_ref")" >> "$GITHUB_OUTPUT"
+            candidate_id="$(docker image inspect --format '{{.Id}}' "$version_ref")"
+            if [[ "$candidate_id" != "$fresh_id" ]]; then
+              echo "Candidate changed while resolving registry state: $version_ref" >&2
+              exit 1
+            fi
+            echo "$key=$fresh_id" >> "$GITHUB_OUTPUT"
           done
 
       - name: Scan PostgreSQL publication candidate
@@ -505,6 +561,15 @@ jobs:
             [adversarygraph-attack-lab-endpoint]="$ATTACK_LAB_ENDPOINT_IMAGE_ID"
             [adversarygraph-anomaly-docs]="$ANOMALY_DOCS_IMAGE_ID"
           )
+          declare -A manifest_keys=(
+            [adversarygraph-postgres]="ADVERSARYGRAPH_POSTGRES_IMAGE"
+            [adversarygraph-backend]="ADVERSARYGRAPH_BACKEND_IMAGE"
+            [adversarygraph-frontend]="ADVERSARYGRAPH_FRONTEND_IMAGE"
+            [adversarygraph-malwaregraph]="ADVERSARYGRAPH_MALWAREGRAPH_IMAGE"
+            [adversarygraph-attack-lab-web]="ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE"
+            [adversarygraph-attack-lab-endpoint]="ADVERSARYGRAPH_ATTACK_LAB_ENDPOINT_IMAGE"
+            [adversarygraph-anomaly-docs]="ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE"
+          )
           images=(
             adversarygraph-postgres
             adversarygraph-backend
@@ -517,11 +582,9 @@ jobs:
           for image in "${images[@]}"; do
             repository="ghcr.io/${REGISTRY_OWNER}/${image}"
             version_ref="${repository}:${RELEASE_VERSION}"
-            latest_ref="${repository}:latest"
             expected_id="${expected_ids[$image]}"
             version_id="$(docker image inspect --format '{{.Id}}' "$version_ref")"
-            latest_id="$(docker image inspect --format '{{.Id}}' "$latest_ref")"
-            if [[ "$version_id" != "$expected_id" || "$latest_id" != "$expected_id" ]]; then
+            if [[ "$version_id" != "$expected_id" ]]; then
               echo "Refusing to publish an image that differs from its scanned local ID: ${repository}." >&2
               exit 1
             fi
@@ -531,91 +594,213 @@ jobs:
             version_ref="${repository}:${RELEASE_VERSION}"
             docker push "$version_ref"
           done
-          # Convenience tags are updated only after the complete immutable
-          # version family was published. Production manifests use digests.
+
+          anonymous_docker_config="$(mktemp -d)"
+          trap 'rm -rf -- "$anonymous_docker_config"' EXIT
+          resolve_anonymous_digest() {
+            local ref="$1"
+            local attempt
+            local digest
+            local output
+            for attempt in 1 2 3 4 5 6; do
+              if output="$(DOCKER_CONFIG="$anonymous_docker_config" docker buildx imagetools inspect "$ref" 2>/dev/null)"; then
+                digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"$output")"
+                if [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                  printf '%s\n' "$digest"
+                  return 0
+                fi
+              fi
+              sleep 5
+            done
+            DOCKER_CONFIG="$anonymous_docker_config" docker buildx imagetools inspect "$ref" >&2 || true
+            echo "::error::${ref} is not anonymously readable with a valid digest. Make the GHCR package public, then rerun this tag workflow." >&2
+            return 1
+          }
+
+          # Resolve every public version tag once, then inspect that immutable
+          # digest and bind it to the scanned local image ID. The release asset
+          # is written from these verified digests, never from a later mutable
+          # tag lookup. Shared `latest` tags are intentionally not published:
+          # a seven-image family cannot be advanced atomically.
+          : > adversarygraph-images.env
+          declare -A published_digests=()
           for image in "${images[@]}"; do
             repository="ghcr.io/${REGISTRY_OWNER}/${image}"
-            latest_ref="${repository}:latest"
-            docker push "$latest_ref"
-          done
-
-      - name: Record published image digests
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-        run: |
-          set -euo pipefail
-          : > adversarygraph-images.env
-          images=(
-            "ADVERSARYGRAPH_POSTGRES_IMAGE:adversarygraph-postgres"
-            "ADVERSARYGRAPH_BACKEND_IMAGE:adversarygraph-backend"
-            "ADVERSARYGRAPH_FRONTEND_IMAGE:adversarygraph-frontend"
-            "ADVERSARYGRAPH_MALWAREGRAPH_IMAGE:adversarygraph-malwaregraph"
-            "ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE:adversarygraph-attack-lab-web"
-            "ADVERSARYGRAPH_ATTACK_LAB_ENDPOINT_IMAGE:adversarygraph-attack-lab-endpoint"
-            "ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE:adversarygraph-anomaly-docs"
-          )
-          for item in "${images[@]}"; do
-            key="${item%%:*}"
-            image="${item#*:}"
-            repository="ghcr.io/${REGISTRY_OWNER}/${image}"
             version_ref="${repository}:${RELEASE_VERSION}"
-            digest="$(docker buildx imagetools inspect "$version_ref" | awk '$1 == "Digest:" {print $2; exit}')"
-            if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-              echo "Could not resolve immutable digest for ${version_ref}." >&2
+            digest="$(resolve_anonymous_digest "$version_ref")"
+            immutable_ref="${repository}@${digest}"
+            raw_manifest="$(mktemp)"
+            if ! DOCKER_CONFIG="$anonymous_docker_config" docker buildx imagetools inspect --raw "$immutable_ref" >"$raw_manifest"; then
+              rm -f "$raw_manifest"
+              echo "Could not inspect immutable public manifest ${immutable_ref}." >&2
               exit 1
             fi
-            printf '%s=%s@%s\n' "$key" "$repository" "$digest" >> adversarygraph-images.env
+            remote_config_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("config", {}).get("digest", ""))' "$raw_manifest")"
+            rm -f "$raw_manifest"
+            if [[ "$remote_config_id" != "${expected_ids[$image]}" ]]; then
+              echo "Public manifest ${immutable_ref} does not contain the scanned image ID ${expected_ids[$image]}." >&2
+              exit 1
+            fi
+            published_digests[$image]="$digest"
+            printf '%s=%s\n' "${manifest_keys[$image]}" "$immutable_ref" >> adversarygraph-images.env
+          done
+
+          # Catch any concurrent/manual movement of a semantic version tag
+          # before the GitHub release is created. The attached deployment file
+          # remains digest-pinned even if a registry tag is changed later.
+          for image in "${images[@]}"; do
+            repository="ghcr.io/${REGISTRY_OWNER}/${image}"
+            observed_digest="$(resolve_anonymous_digest "${repository}:${RELEASE_VERSION}")"
+            if [[ "$observed_digest" != "${published_digests[$image]}" ]]; then
+              echo "Version tag moved during publication: ${repository}:${RELEASE_VERSION}." >&2
+              exit 1
+            fi
           done
           cat adversarygraph-images.env >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Recheck GitHub release state before draft update
+      - name: Recheck remote release tag target after image publication
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}"
+          remote_tag_commit="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          if [[ "$remote_tag_commit" != "$EXPECTED_SHA" ]]; then
+            echo "Remote tag ${RELEASE_TAG} moved during publication." >&2
+            exit 1
+          fi
+
+      - name: Create or verify the draft GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RESUME_DRAFT: ${{ steps.release_state.outputs.resume_draft }}
         run: |
           set -euo pipefail
-          lookup_log="$(mktemp)"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>"$lookup_log"; then
+          release_name="AdversaryGraph v${RELEASE_VERSION}"
+          notes_file="docs/release-notes/v${RELEASE_VERSION}.md"
+
+          if [[ "$RESUME_DRAFT" == "true" ]]; then
             is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')"
-            if [[ "$is_draft" != "true" ]]; then
-              echo "Release $RELEASE_TAG became published while this workflow was running; refusing to modify it." >&2
-              rm -f "$lookup_log"
+            is_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq '.isPrerelease')"
+            actual_name="$(gh release view "$RELEASE_TAG" --json name --jq '.name')"
+            actual_body="$(gh release view "$RELEASE_TAG" --json body --jq '.body')"
+            expected_body="$(cat "$notes_file")"
+            asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | map(.name) | sort | join("\n")')"
+            if [[ "$is_draft" != "true" || "$is_prerelease" != "false" || "$actual_name" != "$release_name" || "$actual_body" != "$expected_body" ]]; then
+              echo "Existing draft metadata does not exactly match this release; refusing to modify it." >&2
               exit 1
             fi
-            echo "Release $RELEASE_TAG remains a draft; allowing the workflow to update it."
+            if [[ "$asset_names" != "adversarygraph-images.env" ]]; then
+              echo "Existing draft assets do not exactly match the expected manifest-only draft." >&2
+              exit 1
+            fi
+            draft_dir="$(mktemp -d)"
+            trap 'rm -rf "$draft_dir"' EXIT
+            gh release download "$RELEASE_TAG" \
+              --pattern adversarygraph-images.env \
+              --dir "$draft_dir"
+            cmp adversarygraph-images.env "$draft_dir/adversarygraph-images.env"
+            echo "Existing draft exactly matches the regenerated release; continuing without modifying it."
+            exit 0
+          fi
+
+          lookup_log="$(mktemp)"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>"$lookup_log"; then
+            rm -f "$lookup_log"
+            echo "Release $RELEASE_TAG already exists; refusing to modify either a draft or a published release." >&2
+            exit 1
           elif grep -Fqi 'release not found' "$lookup_log"; then
-            echo "No existing GitHub release found for $RELEASE_TAG; allowing the workflow to create a draft."
+            rm -f "$lookup_log"
           else
             cat "$lookup_log" >&2
             rm -f "$lookup_log"
-            echo "GitHub release lookup failed ambiguously; refusing to update release state." >&2
+            echo "GitHub release lookup failed ambiguously; refusing to create a release." >&2
             exit 1
           fi
-          rm -f "$lookup_log"
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: AdversaryGraph v${{ steps.version.outputs.version }}
-          body_path: docs/release-notes/v${{ steps.version.outputs.version }}.md
-          draft: true
-          fail_on_unmatched_files: true
-          files: adversarygraph-images.env
+          gh release create "$RELEASE_TAG" adversarygraph-images.env \
+            --verify-tag \
+            --draft \
+            --title "$release_name" \
+            --notes-file "$notes_file"
 
       - name: Verify manifest asset and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          download_dir="$(mktemp -d)"
-          trap 'rm -rf "$download_dir"' EXIT
+          temp_dir="$(mktemp -d)"
+          download_dir="${temp_dir}/download"
+          anonymous_docker_config="${temp_dir}/docker"
+          mkdir -p "$download_dir" "$anonymous_docker_config"
+          trap 'rm -rf "$temp_dir"' EXIT
           gh release download "$RELEASE_TAG" \
             --pattern adversarygraph-images.env \
             --dir "$download_dir" \
             --clobber
           cmp adversarygraph-images.env "$download_dir/adversarygraph-images.env"
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+
+          resolve_anonymous_digest() {
+            local ref="$1"
+            local attempt
+            local digest
+            local output
+            for attempt in 1 2 3 4 5 6; do
+              if output="$(DOCKER_CONFIG="$anonymous_docker_config" docker buildx imagetools inspect "$ref" 2>/dev/null)"; then
+                digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"$output")"
+                if [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                  printf '%s\n' "$digest"
+                  return 0
+                fi
+              fi
+              sleep 5
+            done
+            DOCKER_CONFIG="$anonymous_docker_config" docker buildx imagetools inspect "$ref" >&2 || true
+            return 1
+          }
+
+          # Fail closed if a semantic-version tag moved after the scanned
+          # digest set was recorded but before the public release is exposed.
+          while IFS='=' read -r key immutable_ref; do
+            if [[ -z "$key" || ! "$immutable_ref" =~ @sha256:[a-f0-9]{64}$ ]]; then
+              echo "Malformed release image manifest entry: ${key}=${immutable_ref}" >&2
+              exit 1
+            fi
+            repository="${immutable_ref%@*}"
+            expected_digest="${immutable_ref##*@}"
+            observed_digest="$(resolve_anonymous_digest "${repository}:${RELEASE_VERSION}")"
+            if [[ "$observed_digest" != "$expected_digest" ]]; then
+              echo "Version tag no longer matches the verified release digest: ${repository}:${RELEASE_VERSION}." >&2
+              exit 1
+            fi
+          done < adversarygraph-images.env
+          # Revalidate the remote tag and every draft field after the registry
+          # checks, immediately before making the release public.
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}"
+          remote_tag_commit="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          if [[ "$remote_tag_commit" != "$EXPECTED_SHA" ]]; then
+            echo "Remote tag ${RELEASE_TAG} moved before GitHub release publication." >&2
+            exit 1
+          fi
+          is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')"
+          is_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq '.isPrerelease')"
+          actual_name="$(gh release view "$RELEASE_TAG" --json name --jq '.name')"
+          actual_body="$(gh release view "$RELEASE_TAG" --json body --jq '.body')"
+          expected_body="$(cat "docs/release-notes/v${RELEASE_VERSION}.md")"
+          asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | map(.name) | sort | join("\n")')"
+          gh release download "$RELEASE_TAG" \
+            --pattern adversarygraph-images.env \
+            --dir "$download_dir" \
+            --clobber
+          cmp adversarygraph-images.env "$download_dir/adversarygraph-images.env"
+          if [[ "$is_draft" != "true" || "$is_prerelease" != "false" || "$actual_name" != "AdversaryGraph v${RELEASE_VERSION}" || "$actual_body" != "$expected_body" || "$asset_names" != "adversarygraph-images.env" ]]; then
+            echo "Release draft changed before publication; refusing further changes." >&2
+            exit 1
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false

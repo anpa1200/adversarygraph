@@ -10,6 +10,7 @@
 # and adds a profile-gated backup helper.
 services:
   postgres:
+    pull_policy: missing
     restart: always
     shm_size: 256m
     read_only: false
@@ -32,6 +33,9 @@ services:
           memory: ${POSTGRES_MEMORY_RESERVATION:-1g}
           cpus: '${POSTGRES_CPU_RESERVATION:-0.5}'
 
+  db-apply-env-creds:
+    pull_policy: missing
+
   redis:
     restart: always
     read_only: true
@@ -48,6 +52,7 @@ services:
           cpus: '${REDIS_CPU_LIMIT:-1.0}'
 
   api:
+    pull_policy: missing
     restart: always
     read_only: true
     security_opt:
@@ -79,6 +84,7 @@ services:
           cpus: '${API_CPU_RESERVATION:-0.5}'
 
   worker:
+    pull_policy: missing
     restart: always
     read_only: true
     security_opt:
@@ -100,6 +106,7 @@ services:
           cpus: '${WORKER_CPU_RESERVATION:-0.5}'
 
   beat:
+    pull_policy: missing
     restart: always
     read_only: true
     security_opt:
@@ -117,6 +124,7 @@ services:
           cpus: '${BEAT_CPU_LIMIT:-0.5}'
 
   frontend:
+    pull_policy: missing
     restart: always
     read_only: true
     security_opt:
@@ -134,15 +142,19 @@ services:
           cpus: '${FRONTEND_CPU_LIMIT:-0.5}'
 
   malwaregraph:
+    pull_policy: missing
     restart: always
 
   attack-lab-web:
+    pull_policy: missing
     restart: unless-stopped
 
   attack-lab-endpoint:
+    pull_policy: missing
     restart: unless-stopped
 
   atlas-builder:
+    pull_policy: missing
     restart: unless-stopped
     profiles: ["docs"]
     environment:
@@ -154,6 +166,7 @@ services:
 
   backup:
     image: ${ADVERSARYGRAPH_POSTGRES_IMAGE:-adversarygraph-postgres:local-scan}
+    pull_policy: missing
     profiles: ["tools"]
     restart: "no"
     environment:

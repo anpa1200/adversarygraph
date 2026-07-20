@@ -62,9 +62,11 @@ curl http://localhost:3000/api/health
 ./scripts/selftest.sh
 ```
 
-If authentication is enabled, the script may fall back to `/api/ready`. Also
-sign in with `run_analysis`, rerun the full self-test, and confirm
-`status=ok` rather than `degraded`.
+If authentication is enabled, the script checks `/api/ready` after the full
+endpoint rejects anonymous access, then exits `3` because readiness alone is
+not a passing self-test. Sign in with `run_analysis`, run the full self-test
+from the authenticated troubleshooting UI or API, and confirm `status=ok`
+rather than `degraded`.
 
 ## Fresh Clone Flow
 
@@ -72,9 +74,18 @@ sign in with `run_analysis`, rerun the full self-test, and confirm
 git clone https://github.com/anpa1200/adversarygraph.git
 cd adversarygraph
 cp .env.example .env
+
+# Edit .env and set different generated values for DB_PASS,
+# REDIS_PASSWORD, and RATE_LIMIT_PROXY_SECRET before continuing.
+docker compose config --quiet
+docker compose pull
 docker compose up -d --build
 ./scripts/selftest.sh
 ```
+
+The pull command refreshes pinned third-party images and skips local custom
+build targets. See the [canonical quickstart](quickstart.md) for sizing,
+network access, remote-host tunneling, and first-boot details.
 
 Open:
 
