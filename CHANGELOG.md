@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Self-hosted the Monaco query/code editor and its workers so the production
+  content-security policy no longer leaves Threat Hunting query editing on an
+  indefinite loading screen. Removed the unrelated Google Analytics bootstrap
+  from the self-hosted application to preserve the no-external-script boundary.
 - Fixed existing and fresh Atlas documentation volumes that could be initialized
   as root-owned by another container, leaving the non-root `atlas-builder` in a
   restart loop. A least-privilege one-shot initializer now reconciles ownership

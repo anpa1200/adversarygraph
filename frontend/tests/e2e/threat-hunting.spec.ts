@@ -6,6 +6,24 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
+test('query editor is self-hosted and renders under the production script boundary', async ({ page }) => {
+  const externalScriptRequests: string[] = [];
+  page.on('request', request => {
+    const hostname = new URL(request.url()).hostname;
+    if (request.resourceType() === 'script' && hostname !== '127.0.0.1' && hostname !== 'localhost') {
+      externalScriptRequests.push(request.url());
+    }
+  });
+
+  await page.goto('/threat-hunting/new');
+  await page.getByRole('tab', { name: 'Query and telemetry' }).click();
+
+  const editor = page.getByTestId('code-editor');
+  await expect(editor.locator('.monaco-editor')).toBeVisible();
+  await expect(editor.getByRole('status')).toHaveCount(0);
+  expect(externalScriptRequests).toEqual([]);
+});
+
 test('threat hunting dashboard exposes metrics, queue, templates, and scope boundary', async ({ page }) => {
   await page.goto('/threat-hunting');
 
