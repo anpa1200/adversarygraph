@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { authApi, syncApi } from '@/api/client';
+import { authApi, syncApi, type CurrentUser } from '@/api/client';
 import { REFERENCE_BASE_URL } from '@/config/references';
 import clsx from 'clsx';
 import { GlobalSearch } from '@/components/GlobalSearch';
@@ -10,38 +10,104 @@ import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
 import { useCurrentUser, hasPermission } from '@/hooks/useCurrentUser';
 import packageMetadata from '../../../package.json';
 
-const nav: Array<{ to: string; label: string; icon: string; permission?: string; anyPermission?: string[] }> = [
-  { to: '/discover',      label: 'Discover',      icon: '⌕' },
-  { to: '/navigator',     label: 'Navigator',     icon: '⬡' },
-  { to: '/apt',           label: 'ATT&CK Group Library', icon: '◈' },
-  { to: '/analyze',       label: 'AI Analysis',   icon: '⬢' },
-  { to: '/reports-research', label: 'Reports / Research', icon: '▤' },
-  { to: '/compare',       label: 'Compare',       icon: '⬡' },
-  { to: '/sector-intel',  label: 'Sector Intel', icon: '◎' },
-  { to: '/asset-surface', label: 'Asset Surface', icon: '▥', permission: 'run_analysis' },
-  { to: '/emb3d',         label: 'EMB3D', icon: '▧', permission: 'run_analysis' },
-  { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', permission: 'run_attack_simulation' },
-  { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡', permission: 'run_analysis' },
-  { to: '/retrohunt',     label: 'RetroHunt Signals', icon: '↺' },
-  { to: '/knowledge',     label: 'Knowledge Library', icon: '◎' },
-  { to: '/ioc-library',   label: 'IOC Library', icon: '▣' },
-  { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬', permission: 'run_analysis' },
-  { to: '/cve',           label: 'CVE Library', icon: '▨' },
-  { to: '/threat-radar',  label: 'Threat Radar', icon: '◉', permission: 'run_analysis' },
-  { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', permission: 'run_analysis' },
-  { to: '/feeds',         label: 'Feeds Management', icon: '≋', permission: 'manage_feeds' },
-  { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧', permission: 'run_analysis' },
-  { to: '/virustotal',    label: 'VirusTotal Lookup', icon: '◇', permission: 'run_analysis' },
-  { to: '/report',        label: 'Investigation', icon: '▤', permission: 'run_analysis' },
-  { to: '/operations',    label: 'Operations', icon: '◆', permission: 'run_analysis' },
-  { to: '/pipeline',      label: 'Pipeline', icon: '⇄', permission: 'run_analysis' },
-  { to: '/statistics',    label: 'Statistics', icon: '▥', permission: 'run_analysis' },
-  { to: '/observability', label: 'Observability', icon: '◌', permission: 'view_audit' },
-  { to: '/admin',         label: 'Admin Panel', icon: '⚙', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
-  { to: '/examples',      label: 'DFIR Examples', icon: '▦' },
-  { to: '/help',          label: 'Help / Local Guide', icon: '?' },
-  { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
+type NavItem = {
+  label: string;
+  icon: string;
+  permission?: string;
+  anyPermission?: string[];
+} & (
+  | { to: string; href?: never }
+  | { href: string; to?: never }
+);
+
+type NavSection = {
+  id: string;
+  label: string;
+  items: NavItem[];
+};
+
+const navSections: NavSection[] = [
+  {
+    id: 'workspace',
+    label: 'Workspace',
+    items: [
+      { to: '/discover', label: 'Discover', icon: '⌕' },
+    ],
+  },
+  {
+    id: 'intelligence',
+    label: 'Intelligence',
+    items: [
+      { to: '/threat-radar', label: 'Threat Radar', icon: '◉', permission: 'run_analysis' },
+      { to: '/reports-research', label: 'Reports / Research', icon: '▤' },
+      { to: '/apt', label: 'ATT&CK Group Library', icon: '◈' },
+      { to: '/sector-intel', label: 'Sector Intel', icon: '◎' },
+      { to: '/knowledge', label: 'Knowledge Library', icon: '◎' },
+      { to: '/ioc-library', label: 'IOC Library', icon: '▣' },
+      { to: '/cve', label: 'CVE Library', icon: '▨' },
+      { to: '/retrohunt', label: 'RetroHunt Signals', icon: '↺' },
+    ],
+  },
+  {
+    id: 'analyze-investigate',
+    label: 'Analyze & Investigate',
+    items: [
+      { to: '/analyze', label: 'AI Analysis', icon: '⬢' },
+      { to: '/navigator', label: 'Navigator', icon: '⬡' },
+      { to: '/compare', label: 'Compare', icon: '⬡' },
+      { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬', permission: 'run_analysis' },
+      { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧', permission: 'run_analysis' },
+      { to: '/virustotal', label: 'VirusTotal Lookup', icon: '◇', permission: 'run_analysis' },
+      { to: '/asset-surface', label: 'Asset Surface', icon: '▥', permission: 'run_analysis' },
+      { to: '/emb3d', label: 'EMB3D', icon: '▧', permission: 'run_analysis' },
+      { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡', permission: 'run_analysis' },
+    ],
+  },
+  {
+    id: 'hunt-validate',
+    label: 'Hunt & Validate',
+    items: [
+      { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', permission: 'run_analysis' },
+      { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', permission: 'run_attack_simulation' },
+      { to: '/report', label: 'Investigation', icon: '▤', permission: 'run_analysis' },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { to: '/operations', label: 'Operations', icon: '◆', permission: 'run_analysis' },
+      { to: '/pipeline', label: 'Pipeline', icon: '⇄', permission: 'run_analysis' },
+      { to: '/statistics', label: 'Statistics', icon: '▥', permission: 'run_analysis' },
+    ],
+  },
+  {
+    id: 'platform',
+    label: 'Platform',
+    items: [
+      { to: '/feeds', label: 'Feeds Management', icon: '≋', permission: 'manage_feeds' },
+      { to: '/observability', label: 'Observability', icon: '◌', permission: 'view_audit' },
+      { to: '/admin', label: 'Admin Panel', icon: '⚙', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
+    ],
+  },
+  {
+    id: 'learn-support',
+    label: 'Learn & Support',
+    items: [
+      { to: '/examples', label: 'DFIR Examples', icon: '▦' },
+      { href: `${REFERENCE_BASE_URL}/`, label: 'Reference Book', icon: '▤' },
+      { to: '/help', label: 'Help / Local Guide', icon: '?' },
+      { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
+    ],
+  },
 ];
+
+function canViewNavItem(user: CurrentUser | undefined, item: NavItem): boolean {
+  return (
+    (!item.permission || hasPermission(user, item.permission))
+    && (!item.anyPermission?.length || item.anyPermission.some(permission => hasPermission(user, permission)))
+  );
+}
 
 export function Sidebar() {
   const qc = useQueryClient();
@@ -62,9 +128,12 @@ export function Sidebar() {
     retry: false,
   });
   const hasUpdate = syncStatus?.any_updates_needed ?? false;
+  const visibleSections = navSections
+    .map(section => ({ ...section, items: section.items.filter(item => canViewNavItem(user, item)) }))
+    .filter(section => section.items.length > 0);
 
   return (
-    <aside className="app-sidebar flex min-h-0 w-56 shrink-0 flex-col overflow-hidden border-r border-gray-700 bg-mitre-navy">
+    <aside aria-label="Application navigation" className="app-sidebar flex min-h-0 w-56 shrink-0 flex-col overflow-hidden border-r border-gray-700 bg-mitre-navy">
       {/* Logo */}
       <div className="shrink-0 border-b border-gray-700 px-5 py-4">
         <div className="flex items-center gap-2">
@@ -77,39 +146,58 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav data-testid="sidebar-primary-nav" className="sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-2">
+      <nav aria-label="Primary" data-testid="sidebar-primary-nav" className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2">
         <div className="sticky top-0 z-10 -mx-3 -mt-2 bg-mitre-navy px-3 pb-2 pt-2"><GlobalSearch /></div>
-        {nav.filter(item => (
-          (!item.permission || hasPermission(user, item.permission))
-          && (!item.anyPermission?.length || item.anyPermission.some(permission => hasPermission(user, permission)))
-        )).map(({ to, label, icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              clsx(
-                'flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-mitre-accent/20 text-mitre-accent'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              )
-            }
-            title={label}
-          >
-            <span className="shrink-0 text-base">{icon}</span>
-            <span className="min-w-0 truncate">{label}</span>
-          </NavLink>
-        ))}
-        <a
-          href={`${REFERENCE_BASE_URL}/`}
-          target="_blank"
-          rel="noreferrer"
-          className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-white"
-          title="Reference Book"
-        >
-          <span className="shrink-0 text-base">▤</span>
-          <span className="min-w-0 truncate">Reference Book</span>
-        </a>
+        <div className="space-y-3">
+          {visibleSections.map(section => (
+            <section
+              key={section.id}
+              aria-labelledby={`sidebar-section-${section.id}`}
+              data-testid={`sidebar-section-${section.id}`}
+            >
+              <h2
+                id={`sidebar-section-${section.id}`}
+                className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500"
+              >
+                {section.label}
+              </h2>
+              <ul className="list-none space-y-1 p-0">
+                {section.items.map(item => (
+                  <li key={item.to ?? item.href}>
+                    {item.to ? (
+                      <NavLink
+                        to={item.to}
+                        className={({ isActive }) =>
+                          clsx(
+                            'flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                            isActive
+                              ? 'bg-mitre-accent/20 text-mitre-accent'
+                              : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                          )
+                        }
+                        title={item.label}
+                      >
+                        <span className="shrink-0 text-base">{item.icon}</span>
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </NavLink>
+                    ) : (
+                      <a
+                        href={item.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-white"
+                        title={item.label}
+                      >
+                        <span className="shrink-0 text-base">{item.icon}</span>
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       </nav>
 
       {/* Ecosystem links */}

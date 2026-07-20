@@ -46,7 +46,9 @@ Important settings:
 | `MINIMAX_BASE_URL` | MiniMax OpenAI-compatible API base URL |
 | `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM/embedding endpoint; the `local` provider requires a loopback, private/link-local IP, or recognized private service DNS host |
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
-| `LOCAL_LLM_MODEL` | Local model default |
+| `LOCAL_LLM_MODEL` | Local model default; the Compose-managed Ollama overlay pulls this model with `make local-ai-up` |
+| `OLLAMA_KEEP_ALIVE` | Optional Compose-managed Ollama model retention, default `10m` |
+| `OLLAMA_MEMORY_LIMIT`, `OLLAMA_CPU_LIMIT` | Optional Compose-managed Ollama resource ceilings, defaults `12g` and `8.0` CPUs |
 | `THREAT_HUNTING_AI_ENABLED` | Enable governed Threat Hunting AI endpoints, default `true` |
 | `THREAT_HUNTING_AI_CLOUD_ENABLED` | Permit configured remote providers for eligible markings, default `false` |
 | `THREAT_HUNTING_AI_DEFAULT_PROVIDER` | Default Threat Hunting provider: `local`, `claude`, `openai`, `gemini`, or `minimax`; default `local` |
@@ -180,12 +182,38 @@ Useful read-only provider discovery:
 curl http://localhost:3000/api/threat-hunting/ai/providers | jq
 ```
 
-Provider discovery reports whether an entry is configured, remote, and subject
-to acknowledgment. Provider and model choice remains server-governed: the API
-rejects an unconfigured provider and a client model override that differs from
-the configured model. Do not treat the `local` label as proof of network
-locality: verify `LOCAL_LLM_BASE_URL`, TLS/network routing where applicable,
-provider-side logging, authentication, and retention.
+Provider discovery reports four distinct states: `configured` confirms a key or
+private endpoint setting is present; `available` confirms the provider may be
+selected now; `status` gives a stable machine-readable reason; and `reason`
+provides a safe operator-facing explanation. The local provider is checked with
+a bounded, no-redirect `/models` request, including presence of
+`LOCAL_LLM_MODEL`. Remote credentials are never probed merely to render the
+catalog. A cloud key can therefore be `configured=true` and `available=false`
+with `status=disabled_by_policy`.
+
+Provider and model choice remains server-governed: the API rejects an
+unavailable provider and a client model override that differs from the
+configured model. Do not treat the `local` label as proof of network locality:
+verify `LOCAL_LLM_BASE_URL`, TLS/network routing where applicable, provider-side
+logging, authentication, and retention.
+
+For a Compose-managed private Ollama instance:
+
+```bash
+make local-ai-up
+curl http://localhost:3000/api/threat-hunting/ai/providers | jq
+```
+
+The overlay is defined in `docker-compose.local-ai.yml`, uses an immutable
+versioned image digest by default, stores model data in `ollama_models`, and
+does not expose port `11434` on the host or LAN.
+
+Budget CPU-hosted generation separately from cloud latency. An 8B-class model
+typically needs at least 16 GB of host memory and roughly 12 GB of free disk for
+the pinned runtime image, model, and update headroom. If a reviewed performance
+test exceeds the default 45-second assistant deadline, raise
+`THREAT_HUNTING_AI_TIMEOUT_SECONDS` for that deployment (maximum `180`) rather
+than disabling request bounds.
 
 The assistant returns `lifecycle_status=suggested` and never executes a query,
 saves a hunt or finding, changes lifecycle state, selects a disposition, or

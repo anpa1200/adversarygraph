@@ -350,9 +350,9 @@ export async function mockApi(page: Page) {
     }
     if (path === '/threat-hunting/ai/providers' && route.request().method() === 'GET') {
       return json([
-        { id: 'local', label: 'Local', model: 'llama3.1:8b', configured: true, remote: false, requires_acknowledgement: false, default: true },
-        { id: 'openai', label: 'OpenAI', model: 'gpt-4.1', configured: true, remote: true, requires_acknowledgement: true, default: false },
-        { id: 'claude', label: 'Claude', model: '', configured: false, remote: true, requires_acknowledgement: true, default: false },
+        { id: 'local', label: 'Local', model: 'llama3.1:8b', configured: true, available: true, status: 'ready', reason: 'Configured local model is reachable.', remote: false, requires_acknowledgement: false, default: true },
+        { id: 'openai', label: 'OpenAI', model: 'gpt-4.1', configured: true, available: true, status: 'ready', reason: 'Configured and permitted by operator policy.', remote: true, requires_acknowledgement: true, default: false },
+        { id: 'claude', label: 'Claude', model: '', configured: false, available: false, status: 'missing_credential', reason: 'Configure ANTHROPIC_API_KEY to use this provider.', remote: true, requires_acknowledgement: true, default: false },
       ]);
     }
     if (path === '/threat-hunting/ai/hypotheses' && route.request().method() === 'POST') {

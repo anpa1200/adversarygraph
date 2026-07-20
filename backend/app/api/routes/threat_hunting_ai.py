@@ -31,6 +31,9 @@ class ProviderOut(BaseModel):
     label: str
     model: str
     configured: bool
+    available: bool
+    status: hunt_ai.AIProviderStatus
+    reason: str
     remote: bool
     requires_acknowledgement: bool
     default: bool
@@ -170,7 +173,7 @@ class AssistanceHistoryOut(BaseModel):
 
 @router.get("/providers", response_model=list[ProviderOut])
 async def providers(_: TeamUser = Depends(run_hunt_ai)) -> list[dict[str, Any]]:
-    return hunt_ai.provider_catalog()
+    return await hunt_ai.provider_catalog_with_readiness()
 
 
 @router.post("/assist", response_model=AssistResponse)

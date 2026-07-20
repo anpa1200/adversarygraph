@@ -214,6 +214,7 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.local-ai.yml config --quiet
           ./scripts/validate-production-env.sh
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
       - name: Set up Helm

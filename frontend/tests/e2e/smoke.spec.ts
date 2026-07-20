@@ -2,6 +2,50 @@ import { expect, test } from '@playwright/test';
 
 import { mockApi } from './support/mock-api';
 
+const sidebarSectionOrder = [
+  'Workspace',
+  'Intelligence',
+  'Analyze & Investigate',
+  'Hunt & Validate',
+  'Operations',
+  'Platform',
+  'Learn & Support',
+];
+
+const sidebarLinkOrder = [
+  'Discover',
+  'Threat Radar',
+  'Reports / Research',
+  'ATT&CK Group Library',
+  'Sector Intel',
+  'Knowledge Library',
+  'IOC Library',
+  'CVE Library',
+  'RetroHunt Signals',
+  'AI Analysis',
+  'Navigator',
+  'Compare',
+  'IOC Investigation',
+  'Malware Analysis',
+  'VirusTotal Lookup',
+  'Asset Surface',
+  'EMB3D',
+  'Evidence Graph',
+  'Threat Hunting',
+  'Attack Simulation',
+  'Investigation',
+  'Operations',
+  'Pipeline',
+  'Statistics',
+  'Feeds Management',
+  'Observability',
+  'Admin Panel',
+  'DFIR Examples',
+  'Reference Book',
+  'Help / Local Guide',
+  'Troubleshooting',
+];
+
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
@@ -26,6 +70,53 @@ test('discover workspace renders with mocked platform health', async ({ page }) 
   const sidebarScroll = page.getByTestId('sidebar-primary-nav');
   await expect(sidebarScroll).toBeVisible();
   await expect.poll(async () => sidebarScroll.evaluate(node => node.scrollHeight > node.clientHeight)).toBeTruthy();
+  await expect(sidebarScroll.getByRole('heading', { level: 2 })).toHaveText(sidebarSectionOrder);
+  await expect.poll(async () => sidebarScroll.getByRole('link').evaluateAll(
+    links => links.map(link => link.getAttribute('title')),
+  )).toEqual(sidebarLinkOrder);
+
+  await page.goto('/threat-hunting/hunt-1');
+  await expect(page.getByTestId('sidebar-primary-nav').locator('a[href="/threat-hunting"]'))
+    .toHaveAttribute('aria-current', 'page');
+});
+
+test('sidebar omits workflow sections with no viewer-visible destinations', async ({ page }) => {
+  await page.route('**/api/auth/status', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      auth_enabled: true,
+      native_login_enabled: true,
+      user_count: 1,
+      bootstrap_configured: false,
+      bootstrap_required: false,
+    }),
+  }));
+  await page.route('**/api/auth/me', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      auth_enabled: true,
+      name: 'Viewer',
+      username: 'viewer',
+      role: 'viewer',
+      roles: ['viewer'],
+      permissions: ['read'],
+    }),
+  }));
+
+  await page.goto('/discover');
+
+  const sidebar = page.getByTestId('sidebar-primary-nav');
+  await expect(sidebar.getByRole('heading', { level: 2 })).toHaveText([
+    'Workspace',
+    'Intelligence',
+    'Analyze & Investigate',
+    'Learn & Support',
+  ]);
+  await expect(page.getByTestId('sidebar-section-hunt-validate')).toHaveCount(0);
+  await expect(page.getByTestId('sidebar-section-operations')).toHaveCount(0);
+  await expect(page.getByTestId('sidebar-section-platform')).toHaveCount(0);
 });
 
 test('attack simulation matrix and saved-flow history render', async ({ page }) => {

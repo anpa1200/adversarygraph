@@ -44,6 +44,14 @@ def _rag_defaults(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
     monkeypatch.setattr(settings, "local_llm_model", "test-local-model")
     monkeypatch.setattr(
+        governed_ai,
+        "probe_local_provider_readiness",
+        AsyncMock(return_value=governed_ai.LocalProviderReadiness(
+            "ready",
+            "Local AI endpoint is reachable and the configured model is available.",
+        )),
+    )
+    monkeypatch.setattr(
         rag_routes,
         "_proposal_sources_current",
         AsyncMock(return_value=True),
@@ -144,6 +152,16 @@ def _attack_version(version: str = "19.1") -> AttackVersion:
     )
     conftest._mock_session.add(row)
     return row
+
+
+async def test_rag_provider_route_exposes_runtime_availability(client: AsyncClient):
+    response = await client.get("/api/rag/providers")
+
+    assert response.status_code == 200
+    local = next(row for row in response.json() if row["id"] == "local")
+    assert local["configured"] is True
+    assert local["available"] is True
+    assert local["status"] == "ready"
 
 
 async def test_rag_route_permission_boundaries(

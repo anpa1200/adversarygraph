@@ -87,6 +87,8 @@ run_step "Release tag ruleset verifier tests" \
 run_step "Default Compose configuration" docker compose config --quiet
 run_step "Development Compose configuration" \
   docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+run_step "Private local-AI Compose configuration" \
+  docker compose -f docker-compose.yml -f docker-compose.local-ai.yml config --quiet
 run_step "Production environment policy" ./scripts/validate-production-env.sh
 run_step "Production Compose configuration" \
   docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet

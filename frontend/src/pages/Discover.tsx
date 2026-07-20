@@ -387,7 +387,7 @@ function SelfTestReportPopup({
   const apiCheck = result?.checks.find(check => check.name === 'api_keys');
   const syncCheck = result?.checks.find(check => check.name === 'ioc_sync');
   const providers = getProviderEntries(apiCheck?.details.providers);
-  const enabledProviders = providers
+  const configuredProviders = providers
       .filter(([, value]) => value.configured)
       .map(([key]) => key);
   const syncDetails = syncCheck?.details as {
@@ -446,7 +446,10 @@ function SelfTestReportPopup({
               </div>
 
               <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
-                <h3 className="text-sm font-semibold text-white">Enabled APIs</h3>
+                <h3 className="text-sm font-semibold text-white">Configured integrations</h3>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  This inventory confirms credentials or endpoint settings are present. Feature policy and live service readiness are reported in the relevant module.
+                </p>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {providers.map(([name, provider]) => (
                     <div key={name} className="flex items-center justify-between rounded border border-gray-800 bg-gray-950/50 px-3 py-2 text-xs">
@@ -455,12 +458,12 @@ function SelfTestReportPopup({
                         <span className="ml-2 font-mono text-gray-600">{provider.env_var}</span>
                       </span>
                       <span className={provider.configured ? 'text-emerald-300' : 'text-gray-500'}>
-                        {provider.configured ? 'enabled' : 'not configured'}
+                        {provider.configured ? 'configured' : 'not configured'}
                       </span>
                     </div>
                   ))}
                 </div>
-                <p className="mt-3 text-xs text-gray-500">Enabled: {enabledProviders.length ? enabledProviders.map(providerLabel).join(', ') : 'none'}</p>
+                <p className="mt-3 text-xs text-gray-500">Configured: {configuredProviders.length ? configuredProviders.map(providerLabel).join(', ') : 'none'}</p>
               </section>
 
               <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
