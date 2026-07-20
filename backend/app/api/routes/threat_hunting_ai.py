@@ -24,7 +24,7 @@ run_hunt_ai = require_permission("run_analysis")
 
 AIProvider = Literal["local", "claude", "openai", "gemini", "minimax"]
 AIStage = Literal["plan", "query", "findings", "outcome"]
-AIQueryLanguage = Literal["generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"]
+AIQueryLanguage = Literal["generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "yaral", "other"]
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
 _VALID_TLP_MARKINGS = {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}
 

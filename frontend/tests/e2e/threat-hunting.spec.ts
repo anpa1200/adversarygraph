@@ -464,28 +464,29 @@ test('query assistance generates the selected language and explicitly replaces t
   await page.goto('/threat-hunting/hunt-1');
   await page.getByRole('tab', { name: 'Query and telemetry' }).click();
   await expect(page.getByText('AdversaryGraph does not claim this query was executed.')).toBeVisible();
-  await page.getByRole('button', { name: 'AI assist query' }).click();
-  await page.getByLabel('AI target query language').selectOption('spl');
-  await page.getByRole('button', { name: 'Assist with query and telemetry' }).click();
+  await expect(page.getByLabel('Query language').locator('option[value="yaral"]')).toHaveText('YARA-L 2.0 (Google SecOps UDM)');
+  await page.getByRole('button', { name: 'Generate query' }).click();
+  await page.getByLabel('AI target query language').selectOption('yaral');
+  await page.getByRole('button', { name: 'Generate YARA-L 2.0 (Google SecOps UDM) query' }).click();
   await expect.poll(() => assistRequest).not.toBeNull();
-  expect(assistRequest?.target_query_language).toBe('spl');
-  expect((assistRequest?.context as Record<string, unknown>).query_language).toBe('spl');
+  expect(assistRequest?.target_query_language).toBe('yaral');
+  expect((assistRequest?.context as Record<string, unknown>).query_language).toBe('yaral');
   await expect(page.getByText('No telemetry query was executed and no hunt or finding record was changed.')).toBeVisible();
   await expect(page.getByText('This explicit action replaces the current unsaved query text and query type.')).toBeVisible();
-  await page.getByRole('button', { name: 'Replace query with Splunk SPL draft' }).click();
+  await page.getByRole('button', { name: 'Replace query with YARA-L 2.0 (Google SecOps UDM) draft' }).click();
   expect(patchRequests).toBe(0);
   await page.getByRole('button', { name: 'Close' }).click();
 
-  await expect(page.getByLabel('Query language')).toHaveValue('spl');
+  await expect(page.getByLabel('Query language')).toHaveValue('yaral');
   await expect(page.getByLabel('Telemetry sources')).toHaveValue('Process creation, PowerShell Script Block Logging, Identity provider audit logs');
   await expect(page.getByLabel('Required fields')).toHaveValue('@timestamp, host.name, process.command_line, operation.name, actor.id, source.ip');
   await page.getByRole('button', { name: 'Copy query' }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('index=endpoint');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('metadata.event_type');
   expect(patchRequests).toBe(0);
 
   await page.getByLabel('Query language').selectOption('eql');
   await expect(page.getByLabel('Query language')).toHaveValue('eql');
-  await page.getByLabel('Query language').selectOption('spl');
+  await page.getByLabel('Query language').selectOption('yaral');
 
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect.poll(() => patchRequests).toBe(1);

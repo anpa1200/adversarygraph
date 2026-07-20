@@ -540,9 +540,10 @@ grouping: host + user + process entity
 exceptions: signed approved automation with matching change context
 ```
 
-Then create implementations for Sigma, KQL, SPL, EQL, Lucene, SQL, osquery, or
-another backend. Record which parts were changed because the backend lacks a
-field, sequence operator, lookup, or aggregation.
+Then create implementations for Sigma, KQL, SPL, EQL, Lucene, SQL, osquery,
+YARA, YARA-L 2.0 over Google SecOps UDM, or another backend. Record which parts
+were changed because the backend lacks a field, sequence operator, lookup, or
+aggregation.
 
 ### 9.2 Version every analytic
 
@@ -968,7 +969,8 @@ replace an event reference, reviewed finding, or external query-run record.
 In the UI, **Apply safe fields** or **Apply safe suggestions** copies only
 permitted scalar values into blank draft fields and merges permitted list
 values into the unsaved hunt form. Query assistance is intentionally different:
-select **Target query language**, generate the suggestion, inspect the proposed
+select **Generate query**, choose **Target query language** (including YARA-L
+2.0 for Google SecOps UDM), generate the suggestion, inspect the proposed
 text and assumptions, then choose **Use … query draft** or **Replace query with
 … draft**. That explicit action copies both query text and language into the
 unsaved editor. It does not save the hunt, execute the query, or mark the
@@ -1251,7 +1253,7 @@ behavioral evidence rather than hunt on the technique label alone.
 3. Limit scope to managed Windows endpoints in the administration tier for the
    last seven days. Add process creation, EDR ancestry, and PowerShell Script
    Block Logging; record hosts without script logging as an explicit limitation.
-4. Select KQL, SPL, EQL, or another language matching the destination. Replace
+4. Select KQL, SPL, EQL, YARA-L 2.0 (Google SecOps UDM), or another language matching the destination. Replace
    illustrative field names with the organization’s schema, document approved
    deployment systems as alternatives, and save the hunt as `draft` while it is
    peer reviewed.

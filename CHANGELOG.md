@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a direct **Generate query** action to Threat Hunting and made YARA-L
+  2.0 for Google SecOps UDM a first-class query target across the editor, AI
+  request contract, prompt guardrails, and query-draft replacement workflow.
 - Fixed Threat Hunting query assistance so the analyst selects an explicit
   target language, the AI generates from the saved hypothesis and telemetry
   context for that language, and a clearly labeled Use/Replace action copies

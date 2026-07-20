@@ -434,6 +434,7 @@ export async function mockApi(page: Page) {
         sql: 'SELECT * FROM process_events WHERE process_name IN (\'powershell.exe\', \'pwsh.exe\') AND (command_line LIKE \'%-enc%\' OR command_line LIKE \'%FromBase64String%\')',
         osquery: 'SELECT * FROM processes WHERE name IN (\'powershell.exe\', \'pwsh.exe\') AND (cmdline LIKE \'%-enc%\' OR cmdline LIKE \'%FromBase64String%\')',
         yara: 'rule Suspicious_Encoded_PowerShell { strings: $a = "FromBase64String" ascii nocase $b = "-enc" ascii nocase condition: any of them }',
+        yaral: 'rule suspicious_encoded_powershell { meta: author = "AdversaryGraph draft" events: $e.metadata.event_type = "PROCESS_LAUNCH" $e.target.process.file.full_path = /powershell|pwsh/ nocase $e.target.process.command_line = /(-enc|FromBase64String)/ nocase condition: $e }',
         generic: 'process is PowerShell AND command line contains encoded-command indicators',
         other: 'process is PowerShell AND command line contains encoded-command indicators',
       };

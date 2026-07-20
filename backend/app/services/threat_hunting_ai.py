@@ -56,7 +56,20 @@ _ATTACK_ID = re.compile(r"^T\d{4}(?:\.\d{3})?$")
 _ATLAS_ID = re.compile(r"^AML\.T\d{4}(?:\.\d{3})?$")
 _MODEL_RE = re.compile(r"^[\w./:@-]{1,160}$")
 _RESTRICTED_CLOUD_TLP = {"TLP:AMBER+STRICT", "TLP:RED"}
-QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"}
+QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "yaral", "other"}
+QUERY_LANGUAGE_NAMES = {
+    "generic": "generic pseudocode",
+    "sigma": "Sigma",
+    "kql": "Microsoft KQL",
+    "spl": "Splunk SPL",
+    "eql": "Elastic EQL",
+    "lucene": "Lucene",
+    "sql": "SQL",
+    "osquery": "osquery SQL",
+    "yara": "YARA",
+    "yaral": "YARA-L 2.0 for Google SecOps UDM",
+    "other": "the analyst-specified format",
+}
 _PRIORITIES = {"P0 Emergency", "P1 High", "P2 Medium", "P3 Monitor", "P4 Low/Archive"}
 _SEVERITIES = {"informational", "low", "medium", "high", "critical"}
 _LOCAL_PROVIDER_PROBE_TIMEOUT_SECONDS = 2.0
@@ -528,13 +541,18 @@ def assist_prompt(
     query_instructions = ""
     if stage == "query":
         target = target_query_language if target_query_language in QUERY_LANGUAGES else "generic"
+        target_name = QUERY_LANGUAGE_NAMES[target]
         query_instructions = f"""
 Query-generation contract:
 - Generate exactly one non-empty, read-only hunt query derived from the supplied hypothesis, scope,
   ATT&CK techniques, telemetry sources, required fields, and analyst focus.
-- The target query language is `{target}`. Set suggested_patch.query_language to exactly `{target}`
-  and write suggested_patch.query_text only in `{target}` syntax. Do not mix KQL, SPL, EQL, Lucene,
-  SQL, Sigma, osquery, YARA, or generic predicate syntax.
+- The target query language identifier is `{target}` ({target_name}). Set
+  suggested_patch.query_language to exactly `{target}` and write suggested_patch.query_text only in
+  {target_name} syntax. Do not mix KQL, SPL, EQL, Lucene, SQL, Sigma, osquery, YARA, YARA-L, or
+  generic predicate syntax.
+- For `yaral`, generate a complete YARA-L 2.0 rule over Google SecOps Unified Data Model (UDM)
+  fields, including meta, events, match when needed, condition, and outcome sections appropriate to
+  the hypothesis. Put tenant-specific UDM field and event-type assumptions in suggested_patch.assumptions.
 - Preserve the hypothesis intent. Put backend-specific field/index/table assumptions in
   suggested_patch.assumptions and list missing mappings in questions or evidence_gaps.
 - Do not repeat the current query merely because it is present; improve or regenerate it for the

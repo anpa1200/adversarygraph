@@ -13,6 +13,7 @@ export const THREAT_HUNT_QUERY_LANGUAGE_OPTIONS: ReadonlyArray<{
   { value: 'sql', label: 'SQL' },
   { value: 'osquery', label: 'osquery SQL' },
   { value: 'yara', label: 'YARA' },
+  { value: 'yaral', label: 'YARA-L 2.0 (Google SecOps UDM)' },
   { value: 'other', label: 'Other' },
 ];
 

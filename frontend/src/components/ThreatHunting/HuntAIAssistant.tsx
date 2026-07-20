@@ -518,7 +518,11 @@ export function HuntAIAssistant({
                 disabled={!canGenerate}
                 onClick={run}
               >
-                {pending ? 'Generating suggestions…' : mode === 'hypothesis' ? 'Generate hunt hypotheses' : `Assist with ${MODE_LABELS[mode].toLowerCase()}`}
+                {pending
+                  ? mode === 'query' ? `Generating ${queryLanguageLabel(targetQueryLanguage)} query…` : 'Generating suggestions…'
+                  : mode === 'hypothesis' ? 'Generate hunt hypotheses'
+                    : mode === 'query' ? `Generate ${queryLanguageLabel(targetQueryLanguage)} query`
+                      : `Assist with ${MODE_LABELS[mode].toLowerCase()}`}
               </button>
               {pending && <p role="status" aria-live="polite" className="text-center text-xs text-cyan-200">AI generation is in progress. Your current hunt draft remains unchanged.</p>}
               {requestError && <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs leading-5 text-red-200">{requestError}</p>}

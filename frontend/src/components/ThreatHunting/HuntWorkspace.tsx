@@ -397,7 +397,7 @@ export function HuntWorkspace({
                     <p className="mt-1 text-[11px] text-gray-600">Store and review the query here, then copy it into an approved telemetry tool.</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" className="secondary-action min-h-8 px-3" onClick={() => openAssistant('query')}>AI assist query</button>
+                    <button type="button" className="secondary-action min-h-8 px-3" onClick={() => openAssistant('query')}>Generate query</button>
                     <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
                       Query type
                       <select disabled={terminal} aria-label="Query language" className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs font-normal normal-case tracking-normal text-gray-300 disabled:opacity-60" value={draft.query_language} onChange={event => setDraft({ ...draft, query_language: event.target.value as ThreatHuntQueryLanguage })}>
