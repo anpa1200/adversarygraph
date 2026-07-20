@@ -197,7 +197,7 @@ class AssistResponseOut(BaseModel):
 async def providers(_: TeamUser = Depends(run_rag)) -> list[dict[str, Any]]:
     if not settings.rag_enabled:
         return []
-    return governed_ai.provider_catalog()
+    return await governed_ai.provider_catalog_with_readiness()
 
 
 @router.get("/status")
@@ -206,6 +206,7 @@ async def status(
     _: TeamUser = Depends(read_rag),
 ) -> dict[str, Any]:
     result = await rag_service.get_index_status(db)
+    providers = await governed_ai.provider_catalog_with_readiness() if settings.rag_enabled else []
     latest_payload = result.get("latest_run")
     if isinstance(latest_payload, dict):
         try:
@@ -227,7 +228,7 @@ async def status(
         "embedding_dimensions": settings.rag_embedding_dimensions,
         "default_result_limit": settings.rag_default_result_limit,
         "supported_source_types": list(rag_service.SUPPORTED_SOURCE_TYPES),
-        "providers": governed_ai.provider_catalog() if settings.rag_enabled else [],
+        "providers": providers,
     })
     document_count = int(result.get("documents_sanitized") or 0)
     result["ready"] = bool(settings.rag_enabled and document_count > 0)

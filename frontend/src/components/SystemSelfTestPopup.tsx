@@ -141,7 +141,8 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
     <div className="space-y-3 text-xs">
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="rounded border border-white/10 bg-black/15 p-2">
-          <p className="font-semibold">Enabled LLM APIs</p>
+          <p className="font-semibold">Configured LLM credentials / endpoints</p>
+          <p className="mt-1 text-[11px] leading-4 opacity-70">Provider policy and live readiness are checked in each AI module.</p>
           <div className="mt-2 flex flex-wrap gap-1">
             {llmProviders.length > 0
               ? llmProviders.map(provider => (

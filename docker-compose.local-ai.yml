@@ -1,0 +1,71 @@
+# Optional private local-AI overlay.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local-ai.yml up -d ollama
+#   docker compose -f docker-compose.yml -f docker-compose.local-ai.yml exec -T ollama sh -ec 'ollama pull "$LOCAL_LLM_MODEL"'
+#   docker compose -f docker-compose.yml -f docker-compose.local-ai.yml up -d --build api worker frontend
+#
+# Ollama is reachable only on the Compose network; no host/LAN port is published.
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.32.1@sha256:6345fbc18bd73a1e16404be681dbc6fd291a027cab43ed541abe78c4c81051b0}
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-llama3.1:8b}
+    expose:
+      - "11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,nosuid,nodev
+    networks:
+      - local_ai
+    deploy:
+      resources:
+        limits:
+          memory: ${OLLAMA_MEMORY_LIMIT:-12g}
+          cpus: '${OLLAMA_CPU_LIMIT:-8.0}'
+
+  api:
+    environment:
+      LOCAL_LLM_BASE_URL: http://ollama:11434/v1
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - default
+      - malwaregraph_internal
+      - local_ai
+
+  worker:
+    environment:
+      LOCAL_LLM_BASE_URL: http://ollama:11434/v1
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-local}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - default
+      - local_ai
+
+volumes:
+  ollama_models:
+
+networks:
+  local_ai:
+    driver: bridge

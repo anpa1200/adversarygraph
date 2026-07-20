@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -165,7 +167,7 @@ def test_local_provider_rejects_public_endpoint_label(monkeypatch: pytest.Monkey
     assert "private" in str(exc.value.detail).lower()
 
 
-def test_remote_provider_catalog_is_not_usable_when_cloud_is_disabled(monkeypatch: pytest.MonkeyPatch):
+def test_remote_provider_catalog_separates_configuration_from_cloud_policy(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
     monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "openai")
@@ -175,10 +177,148 @@ def test_remote_provider_catalog_is_not_usable_when_cloud_is_disabled(monkeypatc
     openai = next(row for row in catalog if row["id"] == "openai")
     local = next(row for row in catalog if row["id"] == "local")
 
-    assert openai["configured"] is False
+    assert openai["configured"] is True
+    assert openai["available"] is False
+    assert openai["status"] == "disabled_by_policy"
     assert openai["default"] is False
     assert local["default"] is True
     assert "disabled" in openai["reason"].lower()
+
+
+def test_remote_provider_catalog_reports_missing_credential(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "")
+
+    openai = next(row for row in ai.provider_catalog() if row["id"] == "openai")
+
+    assert openai["configured"] is False
+    assert openai["available"] is False
+    assert openai["status"] == "missing_credential"
+    assert openai["reason"] == "Configure OPENAI_API_KEY to use this provider."
+
+
+def test_remote_provider_catalog_reports_ready_without_network_probe(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "configured")
+
+    openai = next(row for row in ai.provider_catalog() if row["id"] == "openai")
+
+    assert openai["configured"] is True
+    assert openai["available"] is True
+    assert openai["status"] == "ready"
+    assert openai["default"] is True
+
+
+def test_configured_provider_is_unavailable_when_threat_hunting_ai_is_disabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", False)
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "configured")
+
+    openai = next(row for row in ai.provider_catalog() if row["id"] == "openai")
+
+    assert openai["configured"] is True
+    assert openai["available"] is False
+    assert openai["status"] == "disabled_by_policy"
+    assert openai["reason"] == "Threat Hunting AI is disabled by the operator."
+
+
+@pytest.mark.asyncio
+async def test_local_provider_probe_reports_unreachable_without_leaking_error(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "local_llm_api_key", "super-secret-local-key")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("secret upstream network detail", request=request)
+
+    readiness = await ai.probe_local_provider_readiness(transport=httpx.MockTransport(handler))
+
+    assert readiness.status == "unreachable"
+    assert readiness.available is False
+    assert "secret" not in readiness.reason
+
+
+@pytest.mark.asyncio
+async def test_local_provider_probe_reports_model_missing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "local_llm_model", "configured-model")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == httpx.URL("http://local-llm.test/v1/models")
+        return httpx.Response(200, json={"object": "list", "data": [{"id": "different-model"}]})
+
+    readiness = await ai.probe_local_provider_readiness(transport=httpx.MockTransport(handler))
+
+    assert readiness.status == "model_missing"
+    assert readiness.available is False
+
+
+@pytest.mark.asyncio
+async def test_local_provider_probe_reports_auth_error(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "local_llm_api_key", "super-secret-local-key")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer super-secret-local-key"
+        return httpx.Response(401, text="credential detail that must not be returned")
+
+    readiness = await ai.probe_local_provider_readiness(transport=httpx.MockTransport(handler))
+
+    assert readiness.status == "auth_error"
+    assert readiness.available is False
+    assert "credential detail" not in readiness.reason
+    assert "super-secret" not in readiness.reason
+
+
+@pytest.mark.asyncio
+async def test_local_provider_probe_reports_ready_and_does_not_follow_redirects(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "local_llm_model", "configured-model")
+    requests: list[httpx.Request] = []
+
+    def ready_handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"object": "list", "data": [{"id": "configured-model"}]})
+
+    readiness = await ai.probe_local_provider_readiness(transport=httpx.MockTransport(ready_handler))
+
+    assert readiness.status == "ready"
+    assert readiness.available is True
+    assert len(requests) == 1
+
+    def redirect_handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(302, headers={"location": "https://public.example/models"})
+
+    readiness = await ai.probe_local_provider_readiness(transport=httpx.MockTransport(redirect_handler))
+
+    assert readiness.status == "endpoint_error"
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_catalog_overlays_local_runtime_readiness_and_reassigns_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "local")
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
+    monkeypatch.setattr(settings, "openai_api_key", "configured")
+    probe = AsyncMock(return_value=ai.LocalProviderReadiness("unreachable", "Safe unavailable reason."))
+    monkeypatch.setattr(ai, "probe_local_provider_readiness", probe)
+
+    catalog = await ai.provider_catalog_with_readiness()
+    local = next(row for row in catalog if row["id"] == "local")
+    openai = next(row for row in catalog if row["id"] == "openai")
+
+    assert local["configured"] is True
+    assert local["available"] is False
+    assert local["status"] == "unreachable"
+    assert local["reason"] == "Safe unavailable reason."
+    assert local["default"] is False
+    assert openai["default"] is True
+    probe.assert_awaited_once_with()
 
 
 def test_source_coverage_is_explicit_and_hashes_are_deterministic(monkeypatch: pytest.MonkeyPatch):

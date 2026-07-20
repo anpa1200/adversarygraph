@@ -17,6 +17,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -29,6 +30,19 @@ from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
 
 AIProvider = Literal["local", "claude", "openai", "gemini", "minimax"]
 AIStage = Literal["plan", "query", "findings", "outcome"]
+AIProviderStatus = Literal[
+    "ready",
+    "disabled_by_policy",
+    "missing_credential",
+    "missing_configuration",
+    "invalid_endpoint",
+    "runtime_check_required",
+    "unreachable",
+    "model_missing",
+    "auth_error",
+    "endpoint_error",
+    "invalid_response",
+]
 
 PROMPT_VERSION = "threat-hunt-assistant-v1"
 HYPOTHESIS_PROMPT_VERSION = "threat-hunt-report-hypothesis-v1"
@@ -44,6 +58,8 @@ _RESTRICTED_CLOUD_TLP = {"TLP:AMBER+STRICT", "TLP:RED"}
 _QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"}
 _PRIORITIES = {"P0 Emergency", "P1 High", "P2 Medium", "P3 Monitor", "P4 Low/Archive"}
 _SEVERITIES = {"informational", "low", "medium", "high", "critical"}
+_LOCAL_PROVIDER_PROBE_TIMEOUT_SECONDS = 2.0
+_LOCAL_PROVIDER_MODELS_MAX_BYTES = 256 * 1024
 _DESTRUCTIVE_QUERY_PATTERNS = (
     re.compile(r"\bdelete\s+from\b", re.IGNORECASE),
     re.compile(r"\bdrop\s+(?:table|index|database|schema|view)\b", re.IGNORECASE),
@@ -75,6 +91,16 @@ class AIProviderTimeoutError(TimeoutError):
 
 class AIProviderCallError(RuntimeError):
     """The provider failed without exposing its potentially sensitive detail."""
+
+
+@dataclass(frozen=True)
+class LocalProviderReadiness:
+    status: AIProviderStatus
+    reason: str
+
+    @property
+    def available(self) -> bool:
+        return self.status == "ready"
 
 
 @dataclass(frozen=True)
@@ -214,43 +240,181 @@ def _provider_configured(provider: str) -> bool:
 
 
 def provider_catalog() -> list[dict[str, Any]]:
-    """Return provider readiness metadata without exposing credentials."""
-    default_provider = settings.threat_hunting_ai_default_provider.strip().lower()
-    if default_provider not in _PROVIDERS:
-        default_provider = "local"
-    default_metadata = _PROVIDERS[default_provider]
-    default_usable = (
-        settings.threat_hunting_ai_enabled
-        and _provider_configured(default_provider)
-        and (not default_metadata["remote"] or settings.threat_hunting_ai_cloud_enabled)
-    )
-    if not default_usable:
-        default_provider = "local"
+    """Return configuration and policy metadata without making network requests."""
     rows: list[dict[str, Any]] = []
     for provider, metadata in _PROVIDERS.items():
-        provider_ready = _provider_configured(provider)
+        configured = _provider_configured(provider)
         cloud_blocked = bool(metadata["remote"]) and not settings.threat_hunting_ai_cloud_enabled
-        configured = settings.threat_hunting_ai_enabled and provider_ready and not cloud_blocked
+        if not configured:
+            if provider == "local":
+                status: AIProviderStatus = (
+                    "invalid_endpoint"
+                    if str(settings.local_llm_base_url or "").strip()
+                    else "missing_configuration"
+                )
+                reason = (
+                    "LOCAL_LLM_BASE_URL must use a loopback, private IP, or private service DNS origin."
+                    if status == "invalid_endpoint"
+                    else "Configure LOCAL_LLM_BASE_URL to use the local AI provider."
+                )
+            else:
+                status = "missing_credential"
+                reason = f"Configure {metadata['env_var']} to use this provider."
+            available = False
+        elif not settings.threat_hunting_ai_enabled:
+            status = "disabled_by_policy"
+            reason = "Threat Hunting AI is disabled by the operator."
+            available = False
+        elif cloud_blocked:
+            status = "disabled_by_policy"
+            reason = "Cloud AI processing is disabled by the operator."
+            available = False
+        elif provider == "local":
+            status = "runtime_check_required"
+            reason = "Local AI endpoint readiness has not been checked."
+            available = False
+        else:
+            status = "ready"
+            reason = "Configured and permitted by the operator."
+            available = True
         rows.append({
             "id": provider,
             "label": metadata["label"],
             "model": _provider_model(provider),
             "configured": configured,
+            "available": available,
+            "status": status,
+            "reason": reason,
             "remote": bool(metadata["remote"]),
             "requires_acknowledgement": bool(metadata["remote"]),
-            "default": provider == default_provider,
+            "default": False,
             "env_var": metadata["env_var"],
-            "reason": (
-                "Threat Hunting AI is disabled by the operator."
-                if not settings.threat_hunting_ai_enabled
-                else "Cloud AI processing is disabled by the operator."
-                if cloud_blocked
-                else "Configured"
-                if configured
-                else f"Configure {metadata['env_var']} to use this provider."
-            ),
         })
+    _assign_default_provider(rows)
     return rows
+
+
+async def provider_catalog_with_readiness() -> list[dict[str, Any]]:
+    """Return selectable provider state, including a bounded local runtime check."""
+    rows = provider_catalog()
+    local = next(row for row in rows if row["id"] == "local")
+    if local["status"] == "runtime_check_required":
+        readiness = await probe_local_provider_readiness()
+        local.update({
+            "available": readiness.available,
+            "status": readiness.status,
+            "reason": readiness.reason,
+        })
+    _assign_default_provider(rows)
+    return rows
+
+
+async def probe_local_provider_readiness(
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> LocalProviderReadiness:
+    """Check the private OpenAI-compatible models endpoint without leaking failures."""
+    base_url = str(settings.local_llm_base_url or "").strip().rstrip("/")
+    if not base_url:
+        return LocalProviderReadiness(
+            "missing_configuration",
+            "Configure LOCAL_LLM_BASE_URL to use the local AI provider.",
+        )
+    if not local_ai_endpoint_is_private(base_url):
+        return LocalProviderReadiness(
+            "invalid_endpoint",
+            "LOCAL_LLM_BASE_URL must use a loopback, private IP, or private service DNS origin.",
+        )
+
+    try:
+        async with asyncio.timeout(_LOCAL_PROVIDER_PROBE_TIMEOUT_SECONDS):
+            async with httpx.AsyncClient(
+                follow_redirects=False,
+                timeout=httpx.Timeout(_LOCAL_PROVIDER_PROBE_TIMEOUT_SECONDS),
+                transport=transport,
+                trust_env=False,
+            ) as client:
+                async with client.stream(
+                    "GET",
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {settings.local_llm_api_key or 'local'}"},
+                ) as response:
+                    if response.status_code in {401, 403}:
+                        return LocalProviderReadiness(
+                            "auth_error",
+                            "Local AI endpoint rejected the configured authentication.",
+                        )
+                    if not 200 <= response.status_code < 300:
+                        return LocalProviderReadiness(
+                            "endpoint_error",
+                            "Local AI endpoint models check failed.",
+                        )
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        content.extend(chunk)
+                        if len(content) > _LOCAL_PROVIDER_MODELS_MAX_BYTES:
+                            return LocalProviderReadiness(
+                                "invalid_response",
+                                "Local AI endpoint returned an invalid models response.",
+                            )
+    except (TimeoutError, httpx.RequestError):
+        return LocalProviderReadiness(
+            "unreachable",
+            "Local AI endpoint is not reachable from the API service.",
+        )
+    except Exception:
+        return LocalProviderReadiness(
+            "endpoint_error",
+            "Local AI endpoint models check failed.",
+        )
+
+    try:
+        payload = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return LocalProviderReadiness(
+            "invalid_response",
+            "Local AI endpoint returned an invalid models response.",
+        )
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        return LocalProviderReadiness(
+            "invalid_response",
+            "Local AI endpoint returned an invalid models response.",
+        )
+    model_ids = {
+        str(item.get("id") or "")
+        for item in payload["data"]
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if settings.local_llm_model not in model_ids:
+        return LocalProviderReadiness(
+            "model_missing",
+            "Configured local AI model is not available at the endpoint.",
+        )
+    return LocalProviderReadiness(
+        "ready",
+        "Local AI endpoint is reachable and the configured model is available.",
+    )
+
+
+def _assign_default_provider(rows: list[dict[str, Any]]) -> None:
+    preferred = settings.threat_hunting_ai_default_provider.strip().lower()
+    if preferred not in _PROVIDERS:
+        preferred = "local"
+    selected = next(
+        (row for row in rows if row["id"] == preferred and row["available"]),
+        None,
+    )
+    if selected is None:
+        selected = next(
+            (row for row in rows if row["id"] == "local" and row["available"]),
+            None,
+        )
+    if selected is None:
+        selected = next((row for row in rows if row["available"]), None)
+    if selected is None:
+        selected = next((row for row in rows if row["id"] == "local"), rows[0])
+    for row in rows:
+        row["default"] = row is selected
 
 
 def provider_is_remote(provider: str) -> bool:

@@ -9,6 +9,7 @@ from app.services.ai.base import LLMAdapter
 
 DEFAULT_MODEL = "llama3.1:8b"
 MAX_TOKENS = 8192
+TIMEOUT_SECONDS = 180.0
 
 
 class LocalLLMAdapter(LLMAdapter):
@@ -24,7 +25,10 @@ class LocalLLMAdapter(LLMAdapter):
         self._api_client = AsyncOpenAI(
             api_key=api_key or settings.local_llm_api_key or "local",
             base_url=self._base_url,
-            timeout=30.0,
+            # Stage-specific callers enforce their own shorter deadline. Keep
+            # the transport ceiling high enough for CPU-hosted local models so
+            # it does not pre-empt THREAT_HUNTING_AI_TIMEOUT_SECONDS.
+            timeout=TIMEOUT_SECONDS,
             max_retries=1,
         )
 

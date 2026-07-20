@@ -76,7 +76,8 @@ export function HuntAIAssistant({
     queryKey: ['threat-hunting-ai-providers'],
     queryFn: threatHuntingApi.aiProviders,
     enabled: open,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     retry: 1,
   });
   const reports = useInfiniteQuery({
@@ -114,7 +115,10 @@ export function HuntAIAssistant({
   const requiresSavedHunt = mode !== 'hypothesis' && mode !== 'plan' && !huntId;
   const remoteBlockedForDraft = mode === 'plan' && !huntId;
   const remoteBlocked = Boolean(selectedProvider?.remote && (restrictedTlp || remoteBlockedForDraft));
-  const needsAcknowledgement = Boolean(selectedProvider?.remote || selectedProvider?.requires_acknowledgement);
+  const needsAcknowledgement = Boolean(
+    selectedProvider?.available
+    && (selectedProvider.remote || selectedProvider.requires_acknowledgement),
+  );
   const contextFingerprint = useMemo(() => assistantContextFingerprint(context), [context]);
 
   useEffect(() => {
@@ -150,16 +154,16 @@ export function HuntAIAssistant({
   useEffect(() => {
     if (!providers.data?.length) return;
     const current = providers.data.find(provider => provider.id === providerId);
-    const currentUsable = current?.configured && !(current.remote && (restrictedTlp || remoteBlockedForDraft));
+    const currentUsable = current?.available && !(current.remote && (restrictedTlp || remoteBlockedForDraft));
     if (currentUsable && providerInitialized.current) return;
-    const configuredDefault = providers.data.find(provider => provider.default && provider.configured && !(
+    const availableDefault = providers.data.find(provider => provider.default && provider.available && !(
       provider.remote && (restrictedTlp || remoteBlockedForDraft)
     ));
-    const local = providers.data.find(provider => provider.id === 'local' && provider.configured);
-    const first = providers.data.find(provider => provider.configured && !(
+    const local = providers.data.find(provider => provider.id === 'local' && provider.available);
+    const first = providers.data.find(provider => provider.available && !(
       provider.remote && (restrictedTlp || remoteBlockedForDraft)
     ));
-    const selected = configuredDefault || (currentUsable ? current : null) || local || first;
+    const selected = availableDefault || (currentUsable ? current : null) || local || first;
     providerInitialized.current = true;
     if (selected) setProviderId(selected.id);
   }, [providerId, providers.data, remoteBlockedForDraft, restrictedTlp]);
@@ -218,10 +222,10 @@ export function HuntAIAssistant({
 
   const pending = assistMutation.isPending || hypothesisMutation.isPending;
   const requestError = errorMessage(assistMutation.error || hypothesisMutation.error || providers.error);
-  const selectedConfigured = Boolean(selectedProvider?.configured);
+  const selectedAvailable = Boolean(selectedProvider?.available);
   const acknowledged = !needsAcknowledgement || cloudAcknowledged;
   const sourceReady = mode !== 'hypothesis' || (Boolean(sourceSessionId) && selectedSourceEligible);
-  const canGenerate = selectedConfigured && !remoteBlocked && acknowledged && sourceReady && !requiresSavedHunt && !pending;
+  const canGenerate = selectedAvailable && !remoteBlocked && acknowledged && sourceReady && !requiresSavedHunt && !pending;
   const assistResult = lastAssist?.stage === mode ? lastAssist : null;
   const hypothesisResult = mode === 'hypothesis' && lastHypotheses?.source_session_id === sourceSessionId
     ? lastHypotheses
@@ -298,15 +302,34 @@ export function HuntAIAssistant({
                   {(providers.data ?? []).map(provider => {
                     const blocked = provider.remote && (restrictedTlp || remoteBlockedForDraft);
                     return (
-                      <option key={provider.id} value={provider.id} disabled={!provider.configured || blocked}>
+                      <option key={provider.id} value={provider.id} disabled={!provider.available || blocked}>
                         {provider.label}{provider.model ? ` · ${provider.model}` : ''}
-                        {!provider.configured ? ' · not configured' : blocked ? ` · blocked for ${restrictedTlp ? effectiveRequestTlp : 'unsaved hunts'}` : ''}
+                        {!provider.available ? ` · ${providerStatusLabel(provider.status)}` : blocked ? ` · blocked for ${restrictedTlp ? effectiveRequestTlp : 'unsaved hunts'}` : ''}
                       </option>
                     );
                   })}
                   {!providers.data?.length && <option value="local">{providers.isLoading ? 'Loading providers…' : 'No provider available'}</option>}
                 </select>
               </label>
+
+              <div className="-mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-600">
+                <span>Configuration, policy, endpoint, and model readiness</span>
+                <button
+                  type="button"
+                  className="text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
+                  disabled={providers.isFetching || pending}
+                  onClick={() => void providers.refetch()}
+                >
+                  {providers.isFetching ? 'Checking…' : 'Recheck'}
+                </button>
+              </div>
+
+              {selectedProvider && !selectedProvider.available && (
+                <p role="status" className="rounded border border-amber-800/60 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100">
+                  <b className="block">{selectedProvider.label}: {providerStatusLabel(selectedProvider.status)}</b>
+                  {selectedProvider.reason}
+                </p>
+              )}
 
               {mode === 'hypothesis' && (
                 <div className="space-y-2">
@@ -452,10 +475,12 @@ export function HuntAIAssistant({
               </button>
               {pending && <p role="status" aria-live="polite" className="text-center text-xs text-cyan-200">AI generation is in progress. Your current hunt draft remains unchanged.</p>}
               {requestError && <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs leading-5 text-red-200">{requestError}</p>}
-              {providers.data && !providers.data.some(provider => provider.configured && !(
+              {providers.data && !providers.data.some(provider => provider.available && !(
                 provider.remote && (restrictedTlp || remoteBlockedForDraft)
               )) && (
-                <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">No permitted AI provider is configured for this hunt.</p>
+                <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">
+                  No AI provider is currently available for this hunt. Review the provider status above or ask an operator to restore the configured local model.
+                </p>
               )}
             </div>
 
@@ -492,6 +517,22 @@ export function HuntAIAssistant({
       </DialogContent>
     </Dialog>
   );
+}
+
+function providerStatusLabel(status: string) {
+  return ({
+    ready: 'ready',
+    disabled_by_policy: 'disabled by policy',
+    missing_credential: 'not configured',
+    missing_configuration: 'not configured',
+    invalid_endpoint: 'invalid endpoint',
+    runtime_check_required: 'readiness check required',
+    unreachable: 'endpoint unreachable',
+    model_missing: 'model not installed',
+    auth_error: 'authentication failed',
+    endpoint_error: 'endpoint error',
+    invalid_response: 'invalid endpoint response',
+  } as Record<string, string>)[status] ?? 'unavailable';
 }
 
 function HypothesisResult({

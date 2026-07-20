@@ -31,6 +31,9 @@ interface ProviderStatus {
   label: string;
   model: string;
   configured: boolean;
+  available: boolean;
+  status: string;
+  reason: string;
   remote: boolean;
   isDefault: boolean;
 }
@@ -113,6 +116,9 @@ const FALLBACK_PROVIDERS: ProviderStatus[] = [
     label: 'Local',
     model: '',
     configured: true,
+    available: true,
+    status: 'ready',
+    reason: 'Configured and available.',
     remote: false,
     isDefault: true,
   },
@@ -121,6 +127,9 @@ const FALLBACK_PROVIDERS: ProviderStatus[] = [
     label: 'Claude',
     model: '',
     configured: true,
+    available: true,
+    status: 'ready',
+    reason: 'Configured and available.',
     remote: true,
     isDefault: false,
   },
@@ -129,6 +138,9 @@ const FALLBACK_PROVIDERS: ProviderStatus[] = [
     label: 'OpenAI',
     model: '',
     configured: true,
+    available: true,
+    status: 'ready',
+    reason: 'Configured and available.',
     remote: true,
     isDefault: false,
   },
@@ -137,6 +149,9 @@ const FALLBACK_PROVIDERS: ProviderStatus[] = [
     label: 'Gemini',
     model: '',
     configured: true,
+    available: true,
+    status: 'ready',
+    reason: 'Configured and available.',
     remote: true,
     isDefault: false,
   },
@@ -145,6 +160,9 @@ const FALLBACK_PROVIDERS: ProviderStatus[] = [
     label: 'MiniMax',
     model: '',
     configured: true,
+    available: true,
+    status: 'ready',
+    reason: 'Configured and available.',
     remote: true,
     isDefault: false,
   },
@@ -252,10 +270,10 @@ export function RAGAssistant({
   useEffect(() => {
     if (!providers.length) return;
     const current = providers.find(provider => provider.id === providerId);
-    if (current?.configured) return;
-    const next = providers.find(provider => provider.isDefault && provider.configured)
-      ?? providers.find(provider => !provider.remote && provider.configured)
-      ?? providers.find(provider => provider.configured);
+    if (current?.available) return;
+    const next = providers.find(provider => provider.isDefault && provider.available)
+      ?? providers.find(provider => !provider.remote && provider.available)
+      ?? providers.find(provider => provider.available);
     if (next && next.id !== providerId) setProviderId(next.id);
   }, [providerId, providers]);
 
@@ -314,7 +332,7 @@ export function RAGAssistant({
   }
 
   const indexReady = !statusQuery.isLoading && !statusQuery.isError && status?.ready !== false;
-  const providerConfigured = Boolean(selectedProvider?.configured);
+  const providerAvailable = Boolean(selectedProvider?.available);
   const remoteProvider = Boolean(selectedProvider?.remote);
   const hasSources = sourceFilters.size > 0;
   const hasPrompt = Boolean(prompt.trim());
@@ -327,7 +345,7 @@ export function RAGAssistant({
   );
   const canSearch = hasPrompt && hasSources && clientProfileValid && indexReady && !pending && !confirming;
   const canAssist = canSearch
-    && providerConfigured
+    && providerAvailable
     && (!remoteProvider || cloudAcknowledged);
 
   const toggleSource = (source: SourceFilter) => {
@@ -637,12 +655,18 @@ export function RAGAssistant({
                     onChange={event => setProviderId(event.target.value)}
                   >
                     {providers.map(provider => (
-                      <option key={provider.id} value={provider.id} disabled={!provider.configured}>
-                        {provider.label}{provider.model ? ` · ${provider.model}` : ''}{provider.remote ? ' · remote' : ' · local'}{!provider.configured ? ' · not configured' : ''}
+                      <option key={provider.id} value={provider.id} disabled={!provider.available}>
+                        {provider.label}{provider.model ? ` · ${provider.model}` : ''}{provider.remote ? ' · remote' : ' · local'}{!provider.available ? ` · ${providerStatusLabel(provider.status)}` : ''}
                       </option>
                     ))}
                   </select>
                 </label>
+                {selectedProvider && !selectedProvider.available && (
+                  <p role="status" className="rounded border border-amber-800/60 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100">
+                    <b className="block">{selectedProvider.label}: {providerStatusLabel(selectedProvider.status)}</b>
+                    {selectedProvider.reason}
+                  </p>
+                )}
 
                 <label className="block text-xs text-gray-500">
                   Business profile <span className="text-gray-700">(optional)</span>
@@ -771,7 +795,7 @@ export function RAGAssistant({
                   <span className="mt-1 block text-right text-[10px] text-gray-700">{prompt.length}/4000</span>
                 </label>
 
-                {remoteProvider && (
+                {remoteProvider && providerAvailable && (
                   <label className="flex items-start gap-2 rounded border border-amber-800/60 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100">
                     <input
                       type="checkbox"
@@ -1395,9 +1419,28 @@ function normalizeProvider(value: unknown): ProviderStatus | null {
     label: stringValue(source.label) || id,
     model: stringValue(source.model),
     configured: source.configured !== false,
+    available: source.available !== false && source.configured !== false,
+    status: stringValue(source.status) || (source.configured === false ? 'missing_configuration' : 'ready'),
+    reason: stringValue(source.reason),
     remote: source.remote === true,
     isDefault: source.default === true || source.is_default === true,
   };
+}
+
+function providerStatusLabel(status: string) {
+  return ({
+    ready: 'ready',
+    disabled_by_policy: 'disabled by policy',
+    missing_credential: 'not configured',
+    missing_configuration: 'not configured',
+    invalid_endpoint: 'invalid endpoint',
+    runtime_check_required: 'readiness check required',
+    unreachable: 'endpoint unreachable',
+    model_missing: 'model not installed',
+    auth_error: 'authentication failed',
+    endpoint_error: 'endpoint error',
+    invalid_response: 'invalid endpoint response',
+  } as Record<string, string>)[status] ?? 'unavailable';
 }
 
 function normalizeResult(value: unknown): RAGResult {

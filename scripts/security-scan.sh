@@ -84,6 +84,8 @@ scanner_step gitleaks "Secret scan (gitleaks)" gitleaks detect --source . --no-b
 run_step "Docker Compose config validation" docker compose config --quiet
 run_step "Development Docker Compose config validation" \
   docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+run_step "Private local-AI Docker Compose config validation" \
+  docker compose -f docker-compose.yml -f docker-compose.local-ai.yml config --quiet
 run_step "Production Docker Compose config validation" \
   docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 scanner_step helm "Helm lint" helm lint helm/adversarygraph

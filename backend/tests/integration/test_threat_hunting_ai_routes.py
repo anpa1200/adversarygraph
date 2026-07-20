@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -101,6 +102,14 @@ def _ai_defaults(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
     monkeypatch.setattr(settings, "local_llm_base_url", "http://local-llm.test/v1")
     monkeypatch.setattr(settings, "local_llm_model", "test-local-model")
+    monkeypatch.setattr(
+        hunt_ai,
+        "probe_local_provider_readiness",
+        AsyncMock(return_value=hunt_ai.LocalProviderReadiness(
+            "ready",
+            "Local AI endpoint is reachable and the configured model is available.",
+        )),
+    )
 
 
 def _fake_provider(monkeypatch: pytest.MonkeyPatch, response: str):
@@ -138,6 +147,9 @@ async def test_provider_catalog_and_unsaved_plan_assistance_are_safe(
         "label": "Local / private OpenAI-compatible",
         "model": "test-local-model",
         "configured": True,
+        "available": True,
+        "status": "ready",
+        "reason": "Local AI endpoint is reachable and the configured model is available.",
         "remote": False,
         "requires_acknowledgement": False,
         "default": True,
@@ -174,6 +186,68 @@ async def test_provider_catalog_and_unsaved_plan_assistance_are_safe(
         if model is AuditEvent and row.object_id == stored["id"]
     )
     assert audit_event.details["cloud_processing_acknowledged"] is False
+
+
+async def test_provider_route_separates_remote_credentials_from_operator_policy(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
+
+    disabled_response = await client.get("/api/threat-hunting/ai/providers")
+    disabled = next(row for row in disabled_response.json() if row["id"] == "openai")
+    assert disabled_response.status_code == 200
+    assert disabled["configured"] is True
+    assert disabled["available"] is False
+    assert disabled["status"] == "disabled_by_policy"
+    assert disabled["reason"] == "Cloud AI processing is disabled by the operator."
+
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    enabled_response = await client.get("/api/threat-hunting/ai/providers")
+    enabled = next(row for row in enabled_response.json() if row["id"] == "openai")
+    assert enabled_response.status_code == 200
+    assert enabled["configured"] is True
+    assert enabled["available"] is True
+    assert enabled["status"] == "ready"
+    assert enabled["default"] is True
+
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    missing_response = await client.get("/api/threat-hunting/ai/providers")
+    missing = next(row for row in missing_response.json() if row["id"] == "openai")
+    assert missing_response.status_code == 200
+    assert missing["configured"] is False
+    assert missing["available"] is False
+    assert missing["status"] == "missing_credential"
+    assert missing["reason"] == "Configure OPENAI_API_KEY to use this provider."
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        ("unreachable", "Local AI endpoint is not reachable from the API service."),
+        ("model_missing", "Configured local AI model is not available at the endpoint."),
+    ],
+)
+async def test_provider_route_exposes_safe_local_runtime_failures(
+    status: hunt_ai.AIProviderStatus,
+    reason: str,
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    probe = AsyncMock(return_value=hunt_ai.LocalProviderReadiness(status, reason))
+    monkeypatch.setattr(hunt_ai, "probe_local_provider_readiness", probe)
+
+    response = await client.get("/api/threat-hunting/ai/providers")
+    local = next(row for row in response.json() if row["id"] == "local")
+
+    assert response.status_code == 200
+    assert local["configured"] is True
+    assert local["available"] is False
+    assert local["status"] == status
+    assert local["reason"] == reason
+    probe.assert_awaited_once_with()
 
 
 async def test_remote_assistance_persists_cloud_acknowledgement(

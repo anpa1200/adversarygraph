@@ -309,6 +309,71 @@ test('plan assistance merges safe arrays but does not overwrite or auto-save hun
   await expect.poll(() => patchRequests).toBe(1);
 });
 
+test('AI provider status distinguishes policy, configuration, and local runtime failures', async ({ page }) => {
+  let localReady = false;
+  await page.route('**/api/threat-hunting/ai/providers', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([
+      {
+        id: 'local',
+        label: 'Local / private OpenAI-compatible',
+        model: 'qwen3:8b',
+        configured: true,
+        available: localReady,
+        status: localReady ? 'ready' : 'unreachable',
+        reason: localReady
+          ? 'Local AI endpoint is reachable and the configured model is available.'
+          : 'The configured local AI endpoint could not be reached.',
+        remote: false,
+        requires_acknowledgement: false,
+        default: true,
+      },
+      {
+        id: 'openai',
+        label: 'OpenAI',
+        model: 'gpt-4.1',
+        configured: true,
+        available: false,
+        status: 'disabled_by_policy',
+        reason: 'Configured, but cloud AI processing is disabled by the operator.',
+        remote: true,
+        requires_acknowledgement: true,
+        default: false,
+      },
+      {
+        id: 'claude',
+        label: 'Anthropic Claude',
+        model: 'claude-opus-4-8',
+        configured: false,
+        available: false,
+        status: 'missing_credential',
+        reason: 'Configure ANTHROPIC_API_KEY to use this provider.',
+        remote: true,
+        requires_acknowledgement: true,
+        default: false,
+      },
+    ]),
+  }));
+
+  await page.goto('/threat-hunting/new');
+  await page.getByRole('button', { name: 'AI assist plan and scope' }).click();
+
+  const provider = page.getByLabel('Threat hunting AI provider');
+  await expect(provider.locator('option[value="local"]')).toContainText('endpoint unreachable');
+  await expect(provider.locator('option[value="openai"]')).toContainText('disabled by policy');
+  await expect(provider.locator('option[value="claude"]')).toContainText('not configured');
+  await expect(page.getByText('The configured local AI endpoint could not be reached.')).toBeVisible();
+  await expect(page.getByText('No AI provider is currently available for this hunt.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Assist with plan and scope' })).toBeDisabled();
+
+  localReady = true;
+  await page.getByRole('button', { name: 'Recheck' }).click();
+  await expect(provider.locator('option[value="local"]')).not.toContainText('endpoint unreachable');
+  await expect(page.getByText('No AI provider is currently available for this hunt.')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Assist with plan and scope' })).toBeEnabled();
+});
+
 test('query assistance preserves existing query text, merges telemetry, and never claims execution', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   let patchRequests = 0;

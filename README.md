@@ -114,6 +114,30 @@ Open:
 The default Compose deployment binds the public UI and reference docs to localhost and keeps the API, Redis, malware-analysis service, and lab fixtures on the internal Compose network.
 Local configuration is stored in `.env`; the default persistent database is `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}`. See [local storage and permissions](docs/local-storage-and-permissions.md) before deleting data directories or Docker volumes.
 
+### Run a private local AI model
+
+AdversaryGraph includes an optional Compose overlay for a private Ollama service.
+It publishes no host or LAN port, persists models in the `ollama_models` volume,
+and connects the API and workers over the internal Compose network. Set
+`LOCAL_LLM_MODEL` in `.env`, then run:
+
+```bash
+make local-ai-up
+```
+
+The first run downloads the configured model and can take several minutes.
+Open **Threat Hunting**, launch an AI assistant stage, and confirm the provider
+shows **ready**. The provider endpoint also exposes safe operator diagnostics:
+
+```bash
+curl http://localhost:3000/api/threat-hunting/ai/providers | jq
+```
+
+The response distinguishes configuration, operator policy, and live local-model
+readiness. A configured cloud credential remains unavailable to Threat Hunting
+until `THREAT_HUNTING_AI_CLOUD_ENABLED=true`; restricted TLP and unsaved-plan
+local-only controls still apply.
+
 ### Enable unified intelligence search
 
 The unified RAG subsystem is enabled by default, but semantic embeddings are

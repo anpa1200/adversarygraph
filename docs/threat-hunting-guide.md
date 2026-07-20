@@ -1608,6 +1608,23 @@ input will leave the deployment before each cloud-backed request is accepted.
 Cloud eligibility is still subject to organizational provider, model, data-term,
 region, and retention policy.
 
+Provider status deliberately separates three questions that were historically
+easy to confuse:
+
+- `configured`: is the required key or private endpoint setting present?
+- `available`: do operator policy and local runtime checks permit selection?
+- `status` and `reason`: if unavailable, is the cause missing configuration,
+  policy, an unreachable local endpoint, authentication, or a missing model?
+
+The platform does not test cloud credentials while rendering the provider
+catalog. It does perform a bounded local `/models` readiness check because an
+endpoint URL alone does not prove a private model server is running. The
+self-test integration inventory likewise means *configured*, not live and
+policy-approved.
+
+For an isolated Compose-managed Ollama service, set `LOCAL_LLM_MODEL` and run
+`make local-ai-up`. The overlay exposes Ollama only inside the Compose network.
+
 `TLP:AMBER+STRICT` and `TLP:RED` assistant inputs are local-only; enabling cloud
 AI does not override that rule. `TLP:CLEAR`, `TLP:GREEN`, and `TLP:AMBER` may use
 an approved cloud provider only after both gates are satisfied. A stored report

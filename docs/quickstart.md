@@ -82,6 +82,26 @@ To add semantic vector retrieval, configure an OpenAI-compatible private
 endpoint that serves both the selected chat model and a separate embedding
 model. An Ollama example is:
 
+The simplest private deployment is the included Compose overlay. It does not
+publish Ollama outside the Compose network:
+
+```bash
+make local-ai-up
+```
+
+This starts Ollama, pulls `LOCAL_LLM_MODEL`, and recreates the application
+services that use it. For an 8B-class CPU model, allocate at least 16 GB of host
+memory and roughly 12 GB of free disk for the runtime image, model, and update
+headroom. To use the same endpoint for semantic RAG, pull the
+embedding model and then enable embeddings:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local-ai.yml exec ollama ollama pull nomic-embed-text
+```
+
+If Ollama is already installed directly on the Docker host, use the host-managed
+alternative instead:
+
 ```bash
 ollama pull llama3.1:8b
 ollama pull nomic-embed-text
@@ -102,6 +122,15 @@ dimension before first indexing; changing `RAG_EMBEDDING_DIMENSIONS` on an
 existing database requires an explicit schema migration and complete reindex.
 Keep embeddings disabled when no reviewed private service is available—exact
 identifier and PostgreSQL full-text search continue to work.
+
+Threat Hunting provider discovery reports separate `configured`, `available`,
+`status`, and `reason` values. `configured=true` confirms a credential or a
+private endpoint setting exists; it does not prove the endpoint is reachable or
+permitted by policy. Check the live result after startup:
+
+```bash
+curl http://localhost:3000/api/threat-hunting/ai/providers | jq
+```
 
 Optional native authentication:
 

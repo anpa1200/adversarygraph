@@ -1,4 +1,6 @@
-.PHONY: up pull prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup
+.PHONY: up pull prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup local-ai-start local-ai-pull local-ai-up
+
+LOCAL_AI_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local-ai.yml
 
 up:
 	docker compose up --build
@@ -50,3 +52,12 @@ security-scan-strict:
 
 backup:
 	./scripts/backup.sh
+
+local-ai-start:
+	$(LOCAL_AI_COMPOSE) up -d ollama
+
+local-ai-pull: local-ai-start
+	$(LOCAL_AI_COMPOSE) exec -T ollama sh -ec 'ollama pull "$$LOCAL_LLM_MODEL"'
+
+local-ai-up: local-ai-pull
+	$(LOCAL_AI_COMPOSE) up -d --build api worker frontend
