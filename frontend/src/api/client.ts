@@ -1571,7 +1571,7 @@ export const operationsApi = {
 // ── Collection, Enrichment, and Detection Pipeline ───────────────────────────
 
 export interface CollectionSource {
-  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas' | 'sigma' | 'yara' | 'sandbox'; url: string; enabled: boolean;
+  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas' | 'sigma' | 'yara' | 'yaral' | 'sandbox'; url: string; enabled: boolean;
   interval_minutes: number; config: Record<string, unknown>; last_run_at: string | null; created_at: string; updated_at: string;
 }
 export interface CollectionRun {
