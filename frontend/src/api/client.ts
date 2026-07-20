@@ -2668,6 +2668,7 @@ export interface ThreatHuntAIAssistRequest {
   stage: ThreatHuntAIStage;
   hunt_id?: string;
   context: ThreatHuntInput;
+  target_query_language?: ThreatHuntQueryLanguage;
   analyst_focus?: string;
   cloud_processing_acknowledged: boolean;
 }

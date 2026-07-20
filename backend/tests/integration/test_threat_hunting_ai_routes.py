@@ -54,6 +54,23 @@ ASSIST_OUTPUT = json.dumps({
     }],
 })
 
+QUERY_ASSIST_OUTPUT = json.dumps({
+    "summary": "Generated a Splunk query from the saved hunt hypothesis and telemetry requirements.",
+    "recommended_actions": ["Validate the index and field aliases in Splunk"],
+    "questions": ["Which endpoint index contains process creation events?"],
+    "evidence_gaps": [],
+    "cautions": ["The query was not executed"],
+    "suggested_patch": {
+        "query_language": "spl",
+        "query_text": "index=endpoint process_name=powershell.exe command_line=*-enc*",
+        "telemetry_sources": ["Process creation"],
+        "required_fields": ["process_name", "command_line"],
+        "assumptions": "The endpoint index uses process_name and command_line aliases.",
+    },
+    "finding_drafts": [],
+    "citations": [],
+})
+
 HYPOTHESIS_OUTPUT = json.dumps({
     "candidates": [{
         "title": "Hunt encoded PowerShell launched by Office",
@@ -553,6 +570,36 @@ async def test_saved_hunt_assistance_does_not_mutate_hunt(
     assert unchanged.json()["title"] == HUNT["title"]
     assert unchanged.json()["hypothesis"] == HUNT["hypothesis"]
     assert unchanged.json()["query_versions"][0]["version"] == 1
+
+
+async def test_query_assistance_honors_explicit_target_language_without_mutating_hunt(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _fake_provider(monkeypatch, QUERY_ASSIST_OUTPUT)
+    created = await client.post("/api/threat-hunting/hunts", json=HUNT)
+    assert created.status_code == 201
+    hunt = created.json()
+
+    response = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "local",
+        "stage": "query",
+        "hunt_id": hunt["id"],
+        "context": HUNT,
+        "target_query_language": "spl",
+        "cloud_processing_acknowledged": False,
+    })
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["suggested_patch"]["query_language"] == "spl"
+    assert body["suggested_patch"]["query_text"].startswith("index=endpoint")
+    assert body["prompt_version"] == "threat-hunt-assistant-v2"
+
+    unchanged = await client.get(f"/api/threat-hunting/hunts/{hunt['id']}")
+    assert unchanged.status_code == 200
+    assert unchanged.json()["query_language"] == HUNT["query_language"]
+    assert unchanged.json()["query_text"] == HUNT["query_text"]
 
 
 async def test_hypotheses_use_stored_source_and_bind_exact_evidence(

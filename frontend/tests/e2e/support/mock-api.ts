@@ -424,6 +424,19 @@ export async function mockApi(page: Page) {
       }
       if (remoteProvider && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(context.tlp)) return apiError(403, `${context.tlp} context is local-only`);
       if (remoteProvider && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
+      const targetQueryLanguage = String(body.target_query_language || context.query_language || 'generic');
+      const queryByLanguage: Record<string, string> = {
+        kql: 'DeviceProcessEvents | where FileName in~ ("powershell.exe", "pwsh.exe") | where ProcessCommandLine has_any ("-enc", "FromBase64String")',
+        spl: 'index=endpoint (process_name="powershell.exe" OR process_name="pwsh.exe") (command_line="*-enc*" OR command_line="*FromBase64String*")',
+        eql: 'process where process.name in ("powershell.exe", "pwsh.exe") and process.command_line : ("*-enc*", "*FromBase64String*")',
+        lucene: 'process.name:(powershell.exe OR pwsh.exe) AND process.command_line:(*-enc* OR *FromBase64String*)',
+        sigma: 'selection:\n  Image|endswith:\n    - "\\\\powershell.exe"\n    - "\\\\pwsh.exe"\n  CommandLine|contains:\n    - "-enc"\n    - "FromBase64String"\ncondition: selection',
+        sql: 'SELECT * FROM process_events WHERE process_name IN (\'powershell.exe\', \'pwsh.exe\') AND (command_line LIKE \'%-enc%\' OR command_line LIKE \'%FromBase64String%\')',
+        osquery: 'SELECT * FROM processes WHERE name IN (\'powershell.exe\', \'pwsh.exe\') AND (cmdline LIKE \'%-enc%\' OR cmdline LIKE \'%FromBase64String%\')',
+        yara: 'rule Suspicious_Encoded_PowerShell { strings: $a = "FromBase64String" ascii nocase $b = "-enc" ascii nocase condition: any of them }',
+        generic: 'process is PowerShell AND command line contains encoded-command indicators',
+        other: 'process is PowerShell AND command line contains encoded-command indicators',
+      };
       const stagePatch: Record<string, unknown> = {
         plan: {
           title: 'AI must not overwrite an existing hunt title',
@@ -433,8 +446,8 @@ export async function mockApi(page: Page) {
           assumptions: 'Clock synchronization and identity audit retention are verified.',
         },
         query: {
-          query_language: 'kql',
-          query_text: 'operation.name : "Update federation trust"',
+          query_language: targetQueryLanguage,
+          query_text: queryByLanguage[targetQueryLanguage] || queryByLanguage.generic,
           telemetry_sources: ['Identity provider audit logs'],
           required_fields: ['operation.name', 'actor.id', 'source.ip'],
         },

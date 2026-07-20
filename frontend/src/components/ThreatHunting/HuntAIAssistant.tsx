@@ -14,6 +14,7 @@ import {
   type ThreatHuntAIStage,
   type ThreatHuntFindingInput,
   type ThreatHuntInput,
+  type ThreatHuntQueryLanguage,
 } from '@/api/client';
 import {
   Dialog,
@@ -23,6 +24,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { queryLanguageLabel, THREAT_HUNT_QUERY_LANGUAGE_OPTIONS } from './queryLanguages';
 
 export type HuntAIAssistantMode = ThreatHuntAIStage | 'hypothesis';
 
@@ -61,6 +63,7 @@ export function HuntAIAssistant({
 }) {
   const [providerId, setProviderId] = useState<ThreatHuntAIProviderId>('local');
   const [analystFocus, setAnalystFocus] = useState('');
+  const [targetQueryLanguage, setTargetQueryLanguage] = useState<ThreatHuntQueryLanguage>(context.query_language);
   const [cloudAcknowledged, setCloudAcknowledged] = useState(false);
   const [sourceSessionId, setSourceSessionId] = useState(initialSourceSessionId ?? '');
   const [sourceType, setSourceType] = useState<'report' | 'research'>(initialSourceType === 'research' ? 'research' : 'report');
@@ -133,8 +136,12 @@ export function HuntAIAssistant({
   }, [initialSourceType]);
 
   useEffect(() => {
+    if (open && mode === 'query') setTargetQueryLanguage(context.query_language);
+  }, [context.query_language, mode, open]);
+
+  useEffect(() => {
     setCloudAcknowledged(false);
-  }, [analystFocus, contextFingerprint, mode, providerId, sourceRevision, sourceSessionId, sourceType]);
+  }, [analystFocus, contextFingerprint, mode, providerId, sourceRevision, sourceSessionId, sourceType, targetQueryLanguage]);
 
   useEffect(() => {
     setLastAssist(null);
@@ -148,7 +155,7 @@ export function HuntAIAssistant({
     setLastHypotheses(null);
     setApplyState('');
     appliedContext.current = '';
-  }, [analystFocus, mode, providerId, sourceRevision, sourceSessionId, sourceType]);
+  }, [analystFocus, mode, providerId, sourceRevision, sourceSessionId, sourceType, targetQueryLanguage]);
 
   useEffect(() => {
     if (!providers.data?.length) return;
@@ -175,7 +182,8 @@ export function HuntAIAssistant({
         model: selectedProvider?.model || undefined,
         stage: mode,
         hunt_id: huntId || undefined,
-        context,
+        context: mode === 'query' ? { ...context, query_language: targetQueryLanguage } : context,
+        target_query_language: mode === 'query' ? targetQueryLanguage : undefined,
         analyst_focus: analystFocus.trim() || undefined,
         cloud_processing_acknowledged: needsAcknowledgement ? cloudAcknowledged : false,
       });
@@ -255,7 +263,9 @@ export function HuntAIAssistant({
   const applyPatch = (patch: Partial<ThreatHuntInput>, stage: HuntAIAssistantMode) => {
     appliedContext.current = contextFingerprint;
     onApplyPatch(patch, stage);
-    setApplyState('Suggestions added to the unsaved hunt draft. Review them, then save explicitly.');
+    setApplyState(stage === 'query' && patch.query_text
+      ? `${queryLanguageLabel((patch.query_language || targetQueryLanguage) as ThreatHuntQueryLanguage)} query added to the unsaved hunt draft. Review it in the query editor, then save explicitly.`
+      : 'Suggestions added to the unsaved hunt draft. Review them, then save explicitly.');
   };
 
   const useFindingDraft = (draft: Partial<ThreatHuntFindingInput>) => {
@@ -440,6 +450,26 @@ export function HuntAIAssistant({
                 </div>
               )}
 
+              {mode === 'query' && (
+                <label className="block text-xs text-gray-500">
+                  Target query language
+                  <select
+                    aria-label="AI target query language"
+                    className="field mt-1"
+                    value={targetQueryLanguage}
+                    disabled={pending}
+                    onChange={event => setTargetQueryLanguage(event.target.value as ThreatHuntQueryLanguage)}
+                  >
+                    {THREAT_HUNT_QUERY_LANGUAGE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-[10px] leading-4 text-gray-600">
+                    The assistant must generate one query in this language from the hunt hypothesis, scope, ATT&amp;CK techniques, and telemetry requirements.
+                  </span>
+                </label>
+              )}
+
               <label className="block text-xs text-gray-500">
                 Analyst focus <span className="text-gray-700">(optional)</span>
                 <textarea
@@ -516,6 +546,7 @@ export function HuntAIAssistant({
                 <AssistResult
                   result={assistResult}
                   readOnly={readOnly}
+                  hasExistingQuery={Boolean(context.query_text.trim())}
                   onApplyPatch={patch => applyPatch(patch, assistResult.stage)}
                   onUseFindingDraft={useFindingDraft}
                 />
@@ -599,15 +630,24 @@ function HypothesisResult({
 function AssistResult({
   result,
   readOnly,
+  hasExistingQuery,
   onApplyPatch,
   onUseFindingDraft,
 }: {
   result: ThreatHuntAIAssistResponse;
   readOnly: boolean;
+  hasExistingQuery: boolean;
   onApplyPatch: (patch: Partial<ThreatHuntInput>) => void;
   onUseFindingDraft: (draft: Partial<ThreatHuntFindingInput>) => void;
 }) {
   const hasPatch = meaningfulPatchEntries(result.suggested_patch).length > 0;
+  const hasQueryDraft = result.stage === 'query' && Boolean(result.suggested_patch.query_text?.trim());
+  const queryLanguage = result.suggested_patch.query_language || 'generic';
+  const applyLabel = hasQueryDraft
+    ? hasExistingQuery
+      ? `Replace query with ${queryLanguageLabel(queryLanguage)} draft`
+      : `Use ${queryLanguageLabel(queryLanguage)} query draft`
+    : 'Apply safe suggestions';
   return (
     <section className="space-y-4" aria-label={`${MODE_LABELS[result.stage]} AI suggestions`}>
       <ResultMeta
@@ -627,10 +667,15 @@ function AssistResult({
           </div>
           {hasPatch && (
             <button type="button" className="secondary-action" disabled={readOnly} onClick={() => onApplyPatch(result.suggested_patch)}>
-              Apply safe suggestions
+              {applyLabel}
             </button>
           )}
         </div>
+        {hasQueryDraft && hasExistingQuery && (
+          <p className="mt-3 rounded border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100">
+            This explicit action replaces the current unsaved query text and query type. It does not save the hunt or execute the query; save only after reviewing the generated syntax and field mappings.
+          </p>
+        )}
         <PatchPreview patch={result.suggested_patch} />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
