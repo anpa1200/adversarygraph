@@ -160,6 +160,10 @@ services:
     environment:
       ATLAS_SYNC_INTERVAL: "0"
 
+  atlas-site-permissions:
+    pull_policy: missing
+    profiles: ["docs"]
+
   atlas-docs:
     restart: unless-stopped
     profiles: ["docs"]

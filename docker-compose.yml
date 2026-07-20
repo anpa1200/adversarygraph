@@ -737,6 +737,38 @@ services:
     depends_on:
       - api
 
+  # Reconcile the named Atlas output volume before the non-root builder starts.
+  # Existing installations may have a root-owned volume from an older image or
+  # deployment, while the builder intentionally runs as the image's `atlas`
+  # user. Resolve that UID/GID from the builder image instead of hard-coding it.
+  atlas-site-permissions:
+    image: ${ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE:-adversarygraph-anomaly-docs:local-scan}
+    pull_policy: never
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        owner="$$(id -u atlas):$$(id -g atlas)"
+        mkdir -p /output
+        chown -R "$$owner" /output
+        chmod -R u+rwX,go+rX,go-w /output
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    volumes:
+      - type: volume
+        source: atlas_site
+        target: /output
+        volume:
+          nocopy: true
+    restart: "no"
+
   atlas-builder:
     image: ${ADVERSARYGRAPH_ANOMALY_DOCS_IMAGE:-adversarygraph-anomaly-docs:local-scan}
     pull_policy: never
@@ -749,13 +781,25 @@ services:
       ATLAS_REPOSITORY_REF: ${ATLAS_REPOSITORY_REF:-819995c5681668ffd0c6a4e0f86b170b5a6bbbac}
       ATLAS_SYNC_INTERVAL: ${ATLAS_SYNC_INTERVAL:-0}
     volumes:
-      - atlas_site:/output
+      - type: volume
+        source: atlas_site
+        target: /output
+        volume:
+          nocopy: true
+    depends_on:
+      atlas-site-permissions:
+        condition: service_completed_successfully
 
   atlas-docs:
     image: ${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46}
     restart: unless-stopped
     volumes:
-      - atlas_site:/usr/share/nginx/html:ro
+      - type: volume
+        source: atlas_site
+        target: /usr/share/nginx/html
+        read_only: true
+        volume:
+          nocopy: true
       - ./anomaly_detection/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "127.0.0.1:3001:80"

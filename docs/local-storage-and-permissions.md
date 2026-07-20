@@ -47,12 +47,22 @@ organization's legal-hold and deletion policy to those separately.
 | `/app/data/attck` | API, worker, beat | One-shot `attck-data-permissions` service creates the directory and grants write access for the app UID. |
 | `/app/logs` | API and attack-lab services | Docker named volume; writable by the service users. |
 | `/app/storage` inside MalwareGraph | MalwareGraph service | Docker named volume; service runs with restricted capabilities. |
+| `/output` inside Atlas builder | Atlas documentation builder | One-shot `atlas-site-permissions` service reconciles the persistent volume to the non-root `atlas` UID/GID before each builder start. Image copy-up is disabled for every consumer of the shared volume. |
 
 If `attck_storage_writable` fails in self-test, run:
 
 ```bash
 docker compose run --rm attck-data-permissions
 docker compose up -d --force-recreate api worker beat
+```
+
+If `atlas-builder` reports that `/output/anomaly-detection-atlas.next` is not
+writable, reconcile the existing named volume and recreate the documentation
+services:
+
+```bash
+docker compose run --rm atlas-site-permissions
+docker compose up -d --force-recreate atlas-builder atlas-docs
 ```
 
 Then validate:
