@@ -351,19 +351,29 @@ export async function mockApi(page: Page) {
     if (path === '/threat-hunting/ai/providers' && route.request().method() === 'GET') {
       return json([
         { id: 'local', label: 'Local', model: 'llama3.1:8b', configured: true, available: true, status: 'ready', reason: 'Configured local model is reachable.', remote: false, requires_acknowledgement: false, default: true },
-        { id: 'openai', label: 'OpenAI', model: 'gpt-4.1', configured: true, available: true, status: 'ready', reason: 'Configured and permitted by operator policy.', remote: true, requires_acknowledgement: true, default: false },
-        { id: 'claude', label: 'Claude', model: '', configured: false, available: false, status: 'missing_credential', reason: 'Configure ANTHROPIC_API_KEY to use this provider.', remote: true, requires_acknowledgement: true, default: false },
+        { id: 'claude', label: 'Anthropic Claude', model: 'claude-opus-4-8', configured: true, available: true, status: 'configured_and_permitted', reason: 'Credential is configured and operator policy permits selection. Connectivity and model access are checked when a request runs.', remote: true, requires_acknowledgement: true, default: false },
+        { id: 'openai', label: 'OpenAI', model: 'gpt-4.1', configured: true, available: true, status: 'configured_and_permitted', reason: 'Credential is configured and operator policy permits selection. Connectivity and model access are checked when a request runs.', remote: true, requires_acknowledgement: true, default: false },
+        { id: 'gemini', label: 'Google Gemini', model: 'gemini-3.5-flash', configured: true, available: true, status: 'configured_and_permitted', reason: 'Credential is configured and operator policy permits selection. Connectivity and model access are checked when a request runs.', remote: true, requires_acknowledgement: true, default: false },
+        { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M2.7', configured: true, available: true, status: 'configured_and_permitted', reason: 'Credential is configured and operator policy permits selection. Connectivity and model access are checked when a request runs.', remote: true, requires_acknowledgement: true, default: false },
       ]);
     }
     if (path === '/threat-hunting/ai/hypotheses' && route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
+      const remoteProvider = ['claude', 'openai', 'gemini', 'minimax'].includes(String(body.provider));
+      const providerModels: Record<string, string> = {
+        local: 'llama3.1:8b',
+        claude: 'claude-opus-4-8',
+        openai: 'gpt-4.1',
+        gemini: 'gemini-3.5-flash',
+        minimax: 'MiniMax-M2.7',
+      };
       if (body.source_session_id !== reportSessionId) return apiError(404, 'Stored report or research session not found');
-      if (body.provider === 'openai' && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
-      if (body.provider === 'openai' && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(body.tlp)) return apiError(422, `${body.tlp} context is local-only`);
+      if (remoteProvider && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(body.tlp)) return apiError(403, `${body.tlp} context is local-only`);
+      if (remoteProvider && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
       return json({
         assistance_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         provider: body.provider,
-        model: body.provider === 'openai' ? 'gpt-4.1' : 'llama3.1:8b',
+        model: providerModels[String(body.provider)] ?? 'llama3.1:8b',
         lifecycle_status: 'suggested',
         generated_at: '2026-07-18T08:00:00Z',
         prompt_version: 'threat-hunt-hypothesis-v1',
@@ -398,11 +408,22 @@ export async function mockApi(page: Page) {
       const body = route.request().postDataJSON();
       const stage = String(body.stage || '');
       const context = body.context || {};
+      const remoteProvider = ['claude', 'openai', 'gemini', 'minimax'].includes(String(body.provider));
+      const providerModels: Record<string, string> = {
+        local: 'llama3.1:8b',
+        claude: 'claude-opus-4-8',
+        openai: 'gpt-4.1',
+        gemini: 'gemini-3.5-flash',
+        minimax: 'MiniMax-M2.7',
+      };
+      const validTlpMarkings = ['TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED'];
       if (!['plan', 'query', 'findings', 'outcome'].includes(stage)) return apiError(422, 'Unsupported AI assistance stage');
       if (!body.hunt_id && stage !== 'plan') return apiError(422, 'Save the hunt before requesting this stage');
-      if (!body.hunt_id && body.provider !== 'local') return apiError(422, 'Unsaved hunt assistance is local-only');
-      if (body.provider === 'openai' && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
-      if (body.provider === 'openai' && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(context.tlp)) return apiError(422, `${context.tlp} context is local-only`);
+      if (!body.hunt_id && stage === 'plan' && remoteProvider && !validTlpMarkings.includes(context.tlp)) {
+        return apiError(422, 'Unsaved remote AI assistance requires an explicit valid TLP marking');
+      }
+      if (remoteProvider && ['TLP:AMBER+STRICT', 'TLP:RED'].includes(context.tlp)) return apiError(403, `${context.tlp} context is local-only`);
+      if (remoteProvider && !body.cloud_processing_acknowledged) return apiError(422, 'Remote AI processing requires explicit acknowledgment');
       const stagePatch: Record<string, unknown> = {
         plan: {
           title: 'AI must not overwrite an existing hunt title',
@@ -427,7 +448,7 @@ export async function mockApi(page: Page) {
       return json({
         assistance_id: `bbbbbbbb-bbbb-4bbb-8bbb-${stage.padEnd(12, '0').slice(0, 12)}`,
         provider: body.provider,
-        model: body.provider === 'openai' ? 'gpt-4.1' : 'llama3.1:8b',
+        model: providerModels[String(body.provider)] ?? 'llama3.1:8b',
         stage,
         lifecycle_status: 'suggested',
         generated_at: '2026-07-18T08:10:00Z',

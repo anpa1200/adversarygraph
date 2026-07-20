@@ -2643,9 +2643,9 @@ export interface ThreatHuntAIProvider {
   model: string;
   /** Credentials or a private endpoint are present; this does not imply policy/runtime readiness. */
   configured: boolean;
-  /** Provider is selectable after operator policy and local runtime checks. */
+  /** Provider is selectable under operator policy; the local provider also passed its runtime probe. */
   available: boolean;
-  status: 'ready' | 'disabled_by_policy' | 'missing_credential' | 'missing_configuration' | 'invalid_endpoint' | 'runtime_check_required' | 'unreachable' | 'model_missing' | 'auth_error' | 'endpoint_error' | 'invalid_response';
+  status: 'ready' | 'configured_and_permitted' | 'disabled_by_policy' | 'missing_credential' | 'missing_configuration' | 'invalid_endpoint' | 'runtime_check_required' | 'unreachable' | 'model_missing' | 'auth_error' | 'endpoint_error' | 'invalid_response';
   reason: string;
   remote: boolean;
   requires_acknowledgement: boolean;

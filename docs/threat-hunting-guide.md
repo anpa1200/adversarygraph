@@ -971,8 +971,11 @@ values into the unsaved hunt form. It does not save the hunt or mark the
 assistance record accepted. **Open editable draft** opens the ordinary unsaved
 finding form; it does not create a finding. Review every copied value, then use
 the normal Save action. Query, findings, and outcome assistance require a saved
-hunt so the server can enforce canonical context. An unsaved plan may use only
-the configured local provider.
+hunt so the server can enforce canonical context. An unsaved plan may use the
+configured local provider, or an operator-enabled remote provider when the
+draft has an explicit `TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` marking and the
+analyst acknowledges that specific remote-processing request. Unsaved
+`TLP:AMBER+STRICT` and `TLP:RED` plans remain local-only.
 
 Stage-specific application stays narrow. Query assistance may fill only blank
 query/evidence/assumption fields and merge telemetry sources and required
@@ -1617,9 +1620,11 @@ easy to confuse:
   policy, an unreachable local endpoint, authentication, or a missing model?
 
 The platform does not test cloud credentials while rendering the provider
-catalog. It does perform a bounded local `/models` readiness check because an
-endpoint URL alone does not prove a private model server is running. The
-self-test integration inventory likewise means *configured*, not live and
+catalog. Eligible remote entries therefore say `configured_and_permitted`, not
+`ready`; credential validity, connectivity, and model access are checked on
+generation. The platform does perform a bounded local `/models` readiness check
+because an endpoint URL alone does not prove a private model server is running.
+The self-test integration inventory likewise means *configured*, not live and
 policy-approved.
 
 For an isolated Compose-managed Ollama service, set `LOCAL_LLM_MODEL` and run
@@ -1627,29 +1632,35 @@ For an isolated Compose-managed Ollama service, set `LOCAL_LLM_MODEL` and run
 
 `TLP:AMBER+STRICT` and `TLP:RED` assistant inputs are local-only; enabling cloud
 AI does not override that rule. `TLP:CLEAR`, `TLP:GREEN`, and `TLP:AMBER` may use
-an approved cloud provider only after both gates are satisfied. A stored report
-has an authoritative server-side marking and defaults conservatively to
-`TLP:AMBER+STRICT`. Only the `manage_intel` report-edit path may change it. A
-hypothesis request may raise the effective marking but cannot lower the stored
-value; the effective marking must cover every source and hunt field included in
-the request.
+an approved cloud provider only after both gates are satisfied. This also
+applies to an unsaved **Plan and scope** draft when it carries an explicit valid
+TLP marking; the response remains a suggestion and does not create or save a
+hunt. Query, findings, and outcome assistance still require a saved hunt so the
+server can use canonical state. A stored report has an authoritative server-side
+marking and defaults conservatively to `TLP:AMBER+STRICT`. Only the
+`manage_intel` report-edit path may change it. A hypothesis request may raise
+the effective marking but cannot lower the stored value; the effective marking
+must cover every source and hunt field included in the request.
 
 The label `local` means an operator-configured OpenAI-compatible endpoint. The
 operator must verify that its address, hosting, logging, retention, and access
 controls satisfy the intended local/private policy; the label alone does not
 prove that data stays on the host.
 
-Generated content is marked and linked to provenance metadata. The append-only
-assistance record retains the optional hunt and stored-session IDs, task/stage,
-`suggested` lifecycle, provider/model, prompt version, effective TLP, sanitized
-source references, the recorded remote-processing acknowledgment state,
-offsets, and bounded server-validated citation excerpts of at most 300
-characters each, input/output checksums, validated structured
-output, warnings, and actor/time. It does not retain the raw prompt, full raw
-report, raw provider response, credentials, or provider exception. Prompt
-injection inside a source report remains possible model input; the fixed task
-boundary, structured validation, citations, and human review reduce risk but do
-not make the output authoritative.
+Generated content is marked and linked to provenance metadata. Before a remote
+call, the server commits a redacted, correlation-ID-based egress attempt audit;
+a matching immutable event records success or a safe failure category. The
+events retain provider/model, effective TLP, acknowledgement state, actor, and
+input checksum, but no prompt, draft text, raw response, credential, or
+exception. A successful generation also creates the append-only assistance
+record with the optional hunt and stored-session IDs, task/stage, `suggested`
+lifecycle, provider/model, prompt version, effective TLP, sanitized source
+references, recorded remote-processing acknowledgement, bounded validated
+citations, input/output checksums, structured output, warnings, and actor/time.
+It does not retain the raw prompt, full raw report, raw provider response,
+credentials, or provider exception. Prompt injection inside a source report
+remains possible model input; the fixed task boundary, structured validation,
+citations, and human review reduce risk but do not make the output authoritative.
 
 ### 15.6 Response boundary
 

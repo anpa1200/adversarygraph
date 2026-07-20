@@ -135,8 +135,11 @@ curl http://localhost:3000/api/threat-hunting/ai/providers | jq
 
 The response distinguishes configuration, operator policy, and live local-model
 readiness. A configured cloud credential remains unavailable to Threat Hunting
-until `THREAT_HUNTING_AI_CLOUD_ENABLED=true`; restricted TLP and unsaved-plan
-local-only controls still apply.
+until `THREAT_HUNTING_AI_CLOUD_ENABLED=true`. An unsaved **Plan and scope** draft
+may use an enabled remote provider only when the draft carries an explicit
+eligible TLP marking and the analyst acknowledges remote processing for that
+request. `TLP:AMBER+STRICT` and `TLP:RED` remain local-only, and later hunt
+stages still require a saved hunt.
 
 ### Enable unified intelligence search
 

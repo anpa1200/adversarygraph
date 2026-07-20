@@ -14,12 +14,12 @@ import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 
-const PROVIDERS: { id: Provider; label: string; model: string }[] = [
-  { id: 'local', label: 'Local', model: 'qwen3:8b' },
-  { id: 'claude', label: 'Claude', model: 'claude-opus-4-8' },
-  { id: 'openai', label: 'OpenAI', model: 'gpt-4.1' },
-  { id: 'gemini', label: 'Gemini', model: 'gemini-3.5-flash' },
-  { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M3' },
+const PROVIDERS: { id: Provider; label: string }[] = [
+  { id: 'local', label: 'Local' },
+  { id: 'claude', label: 'Claude' },
+  { id: 'openai', label: 'OpenAI' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'minimax', label: 'MiniMax' },
 ];
 
 const SAMPLE = `asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
@@ -228,7 +228,7 @@ export function AssetSurface() {
                   }`}
                 >
                   <span>{item.label}</span>
-                  <span className="font-mono text-[10px] opacity-70">{item.model}</span>
+                  <span className="text-[10px] opacity-70">server-selected model</span>
                 </button>
               ))}
             </div>
