@@ -51,6 +51,7 @@ const Troubleshooting = lazy(() => import('@/pages/Troubleshooting').then(module
 const VirusTotalLookup = lazy(() => import('@/pages/VirusTotalLookup').then(module => ({ default: module.VirusTotalLookup })));
 const IOCInvestigation = lazy(() => import('@/pages/IOCInvestigation').then(module => ({ default: module.IOCInvestigation })));
 const ThreatHunting = lazy(() => import('@/pages/ThreatHunting').then(module => ({ default: module.ThreatHunting })));
+const QueryLibrary = lazy(() => import('@/pages/QueryLibrary').then(module => ({ default: module.QueryLibrary })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -125,6 +126,7 @@ function AppShell() {
                   <Route path="/threat-hunting" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
                   <Route path="/threat-hunting/new" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
                   <Route path="/threat-hunting/:huntId" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/query-library" element={<RoleGate permission="run_analysis"><QueryLibrary /></RoleGate>} />
                   <Route path="/evidence-graph" element={<RoleGate permission="run_analysis"><EvidenceGraph /></RoleGate>} />
                   <Route path="/admin" element={<RoleGate anyPermission={['manage_users', 'manage_auth', 'view_audit']}><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />

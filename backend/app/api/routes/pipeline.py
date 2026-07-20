@@ -38,7 +38,7 @@ manage_pipeline_detections = require_permission("manage_detections")
 
 class SourceBody(BoundedPayloadModel):
     name: str = Field(..., min_length=1, max_length=255)
-    kind: str = Field(..., pattern="^(rss|taxii|misp|atlas|sigma|yara|sandbox)$")
+    kind: str = Field(..., pattern="^(rss|taxii|misp|atlas|sigma|yara|yaral|sandbox)$")
     url: str = Field("", max_length=1000)
     enabled: bool = True
     interval_minutes: int = Field(default=60, ge=5, le=10080)
@@ -254,7 +254,7 @@ async def update_source(source_id: str, body: SourceBody, db: AsyncSession = Dep
 @router.post("/sources/{source_id}/run")
 async def run_source(source_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     source = await source_or_404(db, source_id)
-    if source.kind in {"sigma", "yara"}:
+    if source.kind in {"sigma", "yara", "yaral"}:
         run = await sync_detection_rule_feed(db, source)
         await audit(db, user, "rule_feed.sync", "collection_source", source_id, {"status": run.status, "kind": source.kind})
         await db.commit()
@@ -288,6 +288,8 @@ async def create_default_rule_feeds(db: AsyncSession = Depends(get_session), use
     rows = await ensure_default_detection_feeds(db)
     await audit(db, user, "rule_feed.defaults", "collection_source", details={"count": len(rows)})
     await db.commit()
+    for row in rows:
+        await db.refresh(row)
     return [source_out(row) for row in rows]
 
 

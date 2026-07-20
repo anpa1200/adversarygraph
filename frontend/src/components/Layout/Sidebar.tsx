@@ -68,6 +68,7 @@ const navSections: NavSection[] = [
     label: 'Hunt & Validate',
     items: [
       { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', permission: 'run_analysis' },
+      { to: '/query-library', label: 'Query Library', icon: '⌕', permission: 'run_analysis' },
       { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', permission: 'run_attack_simulation' },
       { to: '/report', label: 'Investigation', icon: '▤', permission: 'run_analysis' },
     ],

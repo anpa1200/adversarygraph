@@ -35,6 +35,11 @@ Core capabilities:
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
 - Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, and PSIRT/Hunt/IR/Detection workflows.
 - Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, auditable Threat Radar handoff, and governed AI suggestions from stored reports or hunt context. Report-to-hunt AI on current `main` supports Enterprise ATT&CK. The assistant can draft hypotheses, plans, queries, finding summaries, and outcome summaries, but it does not create evidence, execute a query, or make lifecycle and disposition decisions.
+- Threat Hunting Query Library with reviewed Sigma/YARA-L examples, indexed
+  community rules from bounded Git-backed feeds, fielded search and
+  autocomplete, provenance and ATT&CK links, deterministic IOC-to-query
+  generation across ten formats, and one-click creation of a canonical hunt
+  draft.
 - Unified hybrid RAG over normalized IOC, CVE, ATT&CK/TTP, actor, actor sector/region/technology observations, campaign, report, knowledge, Threat Radar signal, Threat Hunting, Evidence Graph, and sanitized asset records, with bounded one-hop expansion across allowlisted stored relationships, saved business profiles used as private request context, PostgreSQL full-text plus pgvector search, citation-bound AI answers, and expiring analyst-confirmed Navigator proposals. Relationship relevance remains an evidence-review lead, not proof of targeting or compromise.
 - A bounded MCP server for authenticated read-only/advisory intelligence search, entity retrieval, grounded answers, and Navigator proposals without automatic platform mutation.
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
@@ -208,6 +213,7 @@ for dedicated-account and client configuration.
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
 | Threat Hunting operational guide | [docs/threat-hunting-guide.md](docs/threat-hunting-guide.md) |
+| Threat Hunting Query Library | [docs/query-library.md](docs/query-library.md) |
 | Unified intelligence RAG and MCP | [docs/unified-rag-and-mcp.md](docs/unified-rag-and-mcp.md) |
 | MCP server configuration | [docs/mcp-server.md](docs/mcp-server.md) |
 | EMB3D embedded threat modeling | [docs/emb3d.md](docs/emb3d.md) |
