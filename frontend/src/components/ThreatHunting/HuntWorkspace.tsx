@@ -20,11 +20,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HuntAIAssistant, type HuntAIAssistantMode } from './HuntAIAssistant';
 import { HuntFindingsPanel } from './HuntFindingsPanel';
 import { HuntPriorityPill, HuntStatusPill } from './HuntStatusPill';
+import { THREAT_HUNT_QUERY_LANGUAGES, THREAT_HUNT_QUERY_LANGUAGE_OPTIONS } from './queryLanguages';
 import { useHasPermission } from '@/hooks/useCurrentUser';
 
 const PRIORITIES: ThreatHuntPriority[] = ['P0 Emergency', 'P1 High', 'P2 Medium', 'P3 Monitor', 'P4 Low/Archive'];
 const TLP_OPTIONS: ThreatHuntTlp[] = ['TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED'];
-const QUERY_LANGUAGES: ThreatHuntQueryLanguage[] = ['generic', 'sigma', 'kql', 'spl', 'eql', 'lucene', 'sql', 'osquery', 'yara', 'other'];
 const DISPOSITIONS: Array<{ value: ThreatHuntDisposition; label: string; help: string }> = [
   { value: 'undetermined', label: 'Undetermined', help: 'The hunt has not reached a reviewed outcome.' },
   { value: 'no_matches', label: 'No matches observed', help: 'No matching evidence was found in the searched scope; this does not mean the environment is clean.' },
@@ -398,9 +398,12 @@ export function HuntWorkspace({
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" className="secondary-action min-h-8 px-3" onClick={() => openAssistant('query')}>AI assist query</button>
-                    <select disabled={terminal} aria-label="Query language" className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 disabled:opacity-60" value={draft.query_language} onChange={event => setDraft({ ...draft, query_language: event.target.value as ThreatHuntQueryLanguage })}>
-                      {QUERY_LANGUAGES.map(value => <option key={value}>{value}</option>)}
-                    </select>
+                    <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                      Query type
+                      <select disabled={terminal} aria-label="Query language" className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs font-normal normal-case tracking-normal text-gray-300 disabled:opacity-60" value={draft.query_language} onChange={event => setDraft({ ...draft, query_language: event.target.value as ThreatHuntQueryLanguage })}>
+                        {THREAT_HUNT_QUERY_LANGUAGE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
                     <button type="button" className="secondary-action min-h-8 px-3" disabled={!draft.query_text} onClick={copyQuery}>{copyState || 'Copy query'}</button>
                   </div>
                 </div>
@@ -589,7 +592,13 @@ function applySafeAssistantPatch(
   for (const field of SAFE_ASSISTANT_SCALARS[stage]) {
     const existing = currentRecord[field];
     const proposed = patchRecord[field];
-    if (typeof existing === 'string' && !existing.trim() && typeof proposed === 'string' && proposed.trim()) {
+    const explicitlyReplaceQuery = stage === 'query' && field === 'query_text';
+    if (
+      typeof existing === 'string'
+      && (explicitlyReplaceQuery || !existing.trim())
+      && typeof proposed === 'string'
+      && proposed.trim()
+    ) {
       nextRecord[field] = proposed.trim();
     }
   }
@@ -609,10 +618,12 @@ function applySafeAssistantPatch(
 
   if (
     (stage === 'hypothesis' || stage === 'query')
-    && current.query_language === 'generic'
-    && !current.query_text.trim()
     && typeof patch.query_language === 'string'
-    && QUERY_LANGUAGES.includes(patch.query_language as ThreatHuntQueryLanguage)
+    && THREAT_HUNT_QUERY_LANGUAGES.includes(patch.query_language as ThreatHuntQueryLanguage)
+    && (
+      stage === 'query'
+      || (current.query_language === 'generic' && !current.query_text.trim())
+    )
   ) {
     next.query_language = patch.query_language as ThreatHuntQueryLanguage;
   }

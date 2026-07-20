@@ -94,6 +94,43 @@ async def test_query_stage_removes_destructive_query_text():
 
 
 @pytest.mark.asyncio
+async def test_query_stage_requires_provider_output_to_match_selected_language():
+    parsed = ai.parse_assist_output(_assist_payload(patch={
+        "query_language": "kql",
+        "query_text": "DeviceProcessEvents | where FileName =~ \"powershell.exe\"",
+        "required_fields": ["FileName"],
+    }))
+
+    output, warnings = await ai.sanitize_assist_output(
+        parsed,
+        stage="query",
+        effective_tlp="TLP:AMBER",
+        source_texts=[],
+        target_query_language="spl",
+        db=None,
+    )
+
+    assert "query_language" not in output["suggested_patch"]
+    assert "query_text" not in output["suggested_patch"]
+    assert output["suggested_patch"]["required_fields"] == ["FileName"]
+    assert any("instead of the requested spl query" in warning for warning in warnings)
+
+
+def test_query_prompt_binds_hypothesis_to_explicit_target_language():
+    system, user = ai.assist_prompt(
+        "query",
+        {"canonical": {"hypothesis": "Encoded PowerShell should appear in process telemetry"}},
+        "Use endpoint data",
+        target_query_language="spl",
+    )
+
+    assert "target query language is `spl`" in system
+    assert "suggested_patch.query_language to exactly `spl`" in system
+    assert '"target_query_language":"spl"' in user
+    assert "hypothesis" in user
+
+
+@pytest.mark.asyncio
 async def test_hypothesis_screen_removes_destructive_candidate_query():
     raw = json.dumps({
         "candidates": [{

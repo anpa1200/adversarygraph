@@ -967,19 +967,28 @@ replace an event reference, reviewed finding, or external query-run record.
 
 In the UI, **Apply safe fields** or **Apply safe suggestions** copies only
 permitted scalar values into blank draft fields and merges permitted list
-values into the unsaved hunt form. It does not save the hunt or mark the
-assistance record accepted. **Open editable draft** opens the ordinary unsaved
-finding form; it does not create a finding. Review every copied value, then use
-the normal Save action. Query, findings, and outcome assistance require a saved
-hunt so the server can enforce canonical context. An unsaved plan may use the
-configured local provider, or an operator-enabled remote provider when the
-draft has an explicit `TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` marking and the
-analyst acknowledges that specific remote-processing request. Unsaved
-`TLP:AMBER+STRICT` and `TLP:RED` plans remain local-only.
+values into the unsaved hunt form. Query assistance is intentionally different:
+select **Target query language**, generate the suggestion, inspect the proposed
+text and assumptions, then choose **Use … query draft** or **Replace query with
+… draft**. That explicit action copies both query text and language into the
+unsaved editor. It does not save the hunt, execute the query, or mark the
+assistance record accepted. Changing the query-language selector directly also
+changes only the recorded type; it does not translate existing text.
+**Open editable draft** opens the ordinary unsaved finding form; it does not
+create a finding. Review every copied value, then use the normal Save action.
+Query, findings, and outcome assistance require a saved hunt so the server can
+enforce canonical context. An unsaved plan may use the configured local
+provider, or an operator-enabled remote provider when the draft has an explicit
+`TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` marking and the analyst acknowledges
+that specific remote-processing request. Unsaved `TLP:AMBER+STRICT` and
+`TLP:RED` plans remain local-only.
 
-Stage-specific application stays narrow. Query assistance may fill only blank
-query/evidence/assumption fields and merge telemetry sources and required
-fields. A findings-stage hunt patch is ignored. An opened AI finding draft is
+Stage-specific application stays narrow. The explicit query Use/Replace action
+may replace only the unsaved query text and language, fill blank
+evidence/assumption fields, and merge telemetry sources and required fields.
+The backend binds the requested target language into the prompt and removes
+query text when the provider labels it as a different language. A
+findings-stage hunt patch is ignored. An opened AI finding draft is
 forced to status `new`, verdict `inconclusive`, the hunt TLP, evidence type
 `analysis`, and blank evidence reference, event time, observables, and query
 version; the analyst must add canonical evidence. Outcome assistance may fill
@@ -3516,13 +3525,17 @@ conversion_or_retirement_condition: [value]
 - [ ] `TLP:AMBER+STRICT` and `TLP:RED` context remained local-only.
 - [ ] Every technique, field assumption, citation, query fragment, and scope
       statement was reviewed against the source and local environment.
+- [ ] For query assistance, the selected target language matches the destination
+      platform, the returned query label matches that language, and the explicit
+      Use/Replace action was followed by syntax and field validation.
 - [ ] Dropped-citation and truncation warnings were resolved or recorded as
       limitations; any stale-context conflict was retried against current data,
       and later source/hunt edits were checked manually.
 - [ ] AI prose was not recorded as evidence and did not replace a source event,
       external run ID, reviewed finding, or analyst decision.
-- [ ] **Apply safe fields**, **Apply safe suggestions**, or **Open editable
-      draft** was followed by review and a separate normal Save action.
+- [ ] **Apply safe fields**, **Apply safe suggestions**, **Use/Replace query
+      draft**, or **Open editable draft** was followed by review and a separate
+      normal Save action.
 - [ ] No generated content changed lifecycle, disposition, finding review state,
       incident handling, response, or production detection state automatically.
 - [ ] The append-only assistance record contains only the validated structured

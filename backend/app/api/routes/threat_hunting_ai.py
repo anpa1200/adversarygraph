@@ -24,6 +24,7 @@ run_hunt_ai = require_permission("run_analysis")
 
 AIProvider = Literal["local", "claude", "openai", "gemini", "minimax"]
 AIStage = Literal["plan", "query", "findings", "outcome"]
+AIQueryLanguage = Literal["generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"]
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
 _VALID_TLP_MARKINGS = {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}
 
@@ -59,6 +60,7 @@ class AssistRequest(BaseModel):
     stage: AIStage
     hunt_id: UUID | None = None
     context: dict[str, Any] = Field(default_factory=dict, max_length=40)
+    target_query_language: AIQueryLanguage | None = None
     analyst_focus: str = Field("", max_length=2_000)
     cloud_processing_acknowledged: bool = False
 
@@ -66,6 +68,8 @@ class AssistRequest(BaseModel):
     def bound_context(self):
         if len(hunt_ai.canonical_json(self.context)) > 60_000:
             raise ValueError("Threat Hunting AI context exceeds the 60,000 character request limit")
+        if self.target_query_language is not None and self.stage != "query":
+            raise ValueError("target_query_language is only valid for query assistance")
         return self
 
 
@@ -186,6 +190,10 @@ async def assist(
 ) -> AssistResponse:
     requested_draft_tlp = str(body.context.get("tlp") or "")
     draft_context = hunt_ai.sanitize_client_context(body.stage, body.context)
+    target_query_language = body.target_query_language
+    if body.stage == "query" and target_query_language is None:
+        context_language = str(draft_context.get("query_language") or "")
+        target_query_language = context_language if context_language in hunt_ai.QUERY_LANGUAGES else "generic"
     source_session_id: UUID | None = None
     context_warnings: list[str] = []
 
@@ -229,6 +237,7 @@ async def assist(
     input_payload = {
         "stage": body.stage,
         "provider_context": provider_context,
+        "target_query_language": target_query_language,
         "analyst_focus": body.analyst_focus,
     }
     input_checksum = hunt_ai.checksum(input_payload)
@@ -240,7 +249,12 @@ async def assist(
         effective_tlp=effective_tlp,
         cloud_processing_acknowledged=body.cloud_processing_acknowledged,
     )
-    system, prompt = hunt_ai.assist_prompt(body.stage, provider_context, body.analyst_focus)
+    system, prompt = hunt_ai.assist_prompt(
+        body.stage,
+        provider_context,
+        body.analyst_focus,
+        target_query_language=target_query_language,
+    )
     cloud_attempt = None
     if hunt_ai.provider_is_remote(adapter.provider):
         cloud_attempt = await _start_cloud_egress_audit(
@@ -286,6 +300,7 @@ async def assist(
             fresh_checksum = hunt_ai.checksum({
                 "stage": body.stage,
                 "provider_context": fresh_context,
+                "target_query_language": target_query_language,
                 "analyst_focus": body.analyst_focus,
             })
         except Exception:
@@ -307,6 +322,7 @@ async def assist(
             stage=body.stage,
             effective_tlp=effective_tlp,
             source_texts=source_texts,
+            target_query_language=target_query_language,
             db=db,
         )
     except hunt_ai.AIOutputError as exc:

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed Threat Hunting query assistance so the analyst selects an explicit
+  target language, the AI generates from the saved hypothesis and telemetry
+  context for that language, and a clearly labeled Use/Replace action copies
+  both query text and type into the unsaved editor draft. Mislabeled provider
+  output is rejected instead of being presented under the wrong query type.
 - Self-hosted the Monaco query/code editor and its workers so the production
   content-security policy no longer leaves Threat Hunting query editing on an
   indefinite loading screen. Removed the unrelated Google Analytics bootstrap

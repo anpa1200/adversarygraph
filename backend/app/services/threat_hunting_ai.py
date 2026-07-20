@@ -45,7 +45,7 @@ AIProviderStatus = Literal[
     "invalid_response",
 ]
 
-PROMPT_VERSION = "threat-hunt-assistant-v1"
+PROMPT_VERSION = "threat-hunt-assistant-v2"
 HYPOTHESIS_PROMPT_VERSION = "threat-hunt-report-hypothesis-v1"
 EXECUTION_BOUNDARY = (
     "AI output is an unvalidated suggestion for analyst review. AdversaryGraph did not execute a query, "
@@ -56,7 +56,7 @@ _ATTACK_ID = re.compile(r"^T\d{4}(?:\.\d{3})?$")
 _ATLAS_ID = re.compile(r"^AML\.T\d{4}(?:\.\d{3})?$")
 _MODEL_RE = re.compile(r"^[\w./:@-]{1,160}$")
 _RESTRICTED_CLOUD_TLP = {"TLP:AMBER+STRICT", "TLP:RED"}
-_QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"}
+QUERY_LANGUAGES = {"generic", "sigma", "kql", "spl", "eql", "lucene", "sql", "osquery", "yara", "other"}
 _PRIORITIES = {"P0 Emergency", "P1 High", "P2 Medium", "P3 Monitor", "P4 Low/Archive"}
 _SEVERITIES = {"informational", "low", "medium", "high", "critical"}
 _LOCAL_PROVIDER_PROBE_TIMEOUT_SECONDS = 2.0
@@ -512,13 +512,34 @@ async def complete(adapter, system: str, user: str) -> str:
         raise AIProviderCallError from exc
 
 
-def assist_prompt(stage: str, context: dict[str, Any], analyst_focus: str) -> tuple[str, str]:
+def assist_prompt(
+    stage: str,
+    context: dict[str, Any],
+    analyst_focus: str,
+    *,
+    target_query_language: str | None = None,
+) -> tuple[str, str]:
     allowed = {
         "plan": "title, hypothesis, description, scope, priority, technique_ids, tactics, telemetry_sources, required_fields, tags, expected_evidence, false_positive_notes, assumptions",
         "query": "query_language, query_text, telemetry_sources, required_fields, expected_evidence, false_positive_notes, assumptions",
         "findings": "no hunt fields; finding drafts may contain only title, summary, severity, confidence, technique_ids, and notes",
         "outcome": "result_summary and assumptions only; never disposition or lifecycle status",
     }[stage]
+    query_instructions = ""
+    if stage == "query":
+        target = target_query_language if target_query_language in QUERY_LANGUAGES else "generic"
+        query_instructions = f"""
+Query-generation contract:
+- Generate exactly one non-empty, read-only hunt query derived from the supplied hypothesis, scope,
+  ATT&CK techniques, telemetry sources, required fields, and analyst focus.
+- The target query language is `{target}`. Set suggested_patch.query_language to exactly `{target}`
+  and write suggested_patch.query_text only in `{target}` syntax. Do not mix KQL, SPL, EQL, Lucene,
+  SQL, Sigma, osquery, YARA, or generic predicate syntax.
+- Preserve the hypothesis intent. Put backend-specific field/index/table assumptions in
+  suggested_patch.assumptions and list missing mappings in questions or evidence_gaps.
+- Do not repeat the current query merely because it is present; improve or regenerate it for the
+  selected target language.
+"""
     system = f"""You are the AdversaryGraph Threat Hunting AI assistant.
 
 You produce advisory drafts for a human threat hunter. You cannot execute queries, create evidence,
@@ -551,9 +572,12 @@ Rules:
 - Citations must be verbatim substrings of supplied context. Never fabricate a citation.
 - Keep all arrays concise and return no keys outside the schema.
 
+{query_instructions}
+
 {TAXONOMY_SYSTEM_INSTRUCTIONS}"""
     user = "Review this bounded threat-hunt context and suggest improvements:\n" + canonical_json({
         "stage": stage,
+        "target_query_language": target_query_language if stage == "query" else None,
         "analyst_focus": analyst_focus[:2_000],
         "context": context,
     })
@@ -651,6 +675,7 @@ async def sanitize_assist_output(
     stage: str,
     effective_tlp: str,
     source_texts: list[CitationSource],
+    target_query_language: str | None = None,
     db: AsyncSession,
 ) -> tuple[dict[str, Any], list[str]]:
     warnings: list[str] = []
@@ -670,7 +695,7 @@ async def sanitize_assist_output(
     patch = {key: value for key, value in patch_data.items() if key in allowed}
     if patch.get("priority") not in _PRIORITIES:
         patch.pop("priority", None)
-    if patch.get("query_language") not in _QUERY_LANGUAGES:
+    if patch.get("query_language") not in QUERY_LANGUAGES:
         patch.pop("query_language", None)
         warnings.append("An unsupported query language suggestion was removed.")
     for field in ("tactics", "telemetry_sources", "required_fields", "tags"):
@@ -707,9 +732,26 @@ async def sanitize_assist_output(
         warnings.append("Finding drafts were removed because they are only allowed in the findings stage.")
 
     if stage == "query":
+        query_removed = False
         if patch.get("query_text") and is_destructive_query(str(patch["query_text"])):
             patch.pop("query_text", None)
+            query_removed = True
             warnings.append("A query suggestion containing an apparent write or destructive operation was removed.")
+        if target_query_language in QUERY_LANGUAGES:
+            returned_language = patch.get("query_language")
+            if patch.get("query_text") and returned_language != target_query_language:
+                patch.pop("query_text", None)
+                query_removed = True
+                warnings.append(
+                    f"The provider returned {returned_language or 'an unlabeled query'} instead of the requested "
+                    f"{target_query_language} query. The mismatched query text was removed; regenerate or choose the matching target language."
+                )
+            if patch.get("query_text"):
+                patch["query_language"] = target_query_language
+            else:
+                patch.pop("query_language", None)
+                if not query_removed:
+                    warnings.append("The provider did not return a query draft for the selected language; regenerate the request.")
         warnings.append("The suggested query is unvalidated and was not executed by AdversaryGraph.")
     if stage == "outcome":
         warnings.append("AI cannot select a disposition or complete, escalate, or close a hunt.")
@@ -745,8 +787,8 @@ async def sanitize_hypothesis_output(
     for item in parsed.candidates[:count]:
         techniques, technique_warnings = await verify_technique_ids(db, item.technique_ids, domain=domain)
         warnings.extend(technique_warnings)
-        query_language = item.query_language if item.query_language in _QUERY_LANGUAGES else "generic"
-        if item.query_language not in _QUERY_LANGUAGES:
+        query_language = item.query_language if item.query_language in QUERY_LANGUAGES else "generic"
+        if item.query_language not in QUERY_LANGUAGES:
             warnings.append("An unsupported query language was replaced with generic.")
         query_text = item.query_text.strip()
         if query_text and is_destructive_query(query_text):

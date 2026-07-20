@@ -448,11 +448,16 @@ test('AI provider status distinguishes policy, configuration, and local runtime 
   await expect(page.getByRole('button', { name: 'Assist with plan and scope' })).toBeEnabled();
 });
 
-test('query assistance preserves existing query text, merges telemetry, and never claims execution', async ({ page, context }) => {
+test('query assistance generates the selected language and explicitly replaces the editable query draft', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   let patchRequests = 0;
+  let assistRequest: Record<string, unknown> | null = null;
   await page.route('**/api/threat-hunting/hunts/hunt-1', async route => {
     if (route.request().method() === 'PATCH') patchRequests += 1;
+    await route.fallback();
+  });
+  await page.route('**/api/threat-hunting/ai/assist', async route => {
+    if (route.request().method() === 'POST') assistRequest = route.request().postDataJSON();
     await route.fallback();
   });
 
@@ -460,18 +465,27 @@ test('query assistance preserves existing query text, merges telemetry, and neve
   await page.getByRole('tab', { name: 'Query and telemetry' }).click();
   await expect(page.getByText('AdversaryGraph does not claim this query was executed.')).toBeVisible();
   await page.getByRole('button', { name: 'AI assist query' }).click();
+  await page.getByLabel('AI target query language').selectOption('spl');
   await page.getByRole('button', { name: 'Assist with query and telemetry' }).click();
+  await expect.poll(() => assistRequest).not.toBeNull();
+  expect(assistRequest?.target_query_language).toBe('spl');
+  expect((assistRequest?.context as Record<string, unknown>).query_language).toBe('spl');
   await expect(page.getByText('No telemetry query was executed and no hunt or finding record was changed.')).toBeVisible();
-  await page.getByRole('button', { name: 'Apply safe suggestions' }).click();
+  await expect(page.getByText('This explicit action replaces the current unsaved query text and query type.')).toBeVisible();
+  await page.getByRole('button', { name: 'Replace query with Splunk SPL draft' }).click();
   expect(patchRequests).toBe(0);
   await page.getByRole('button', { name: 'Close' }).click();
 
-  await expect(page.getByLabel('Query language')).toHaveValue('kql');
+  await expect(page.getByLabel('Query language')).toHaveValue('spl');
   await expect(page.getByLabel('Telemetry sources')).toHaveValue('Process creation, PowerShell Script Block Logging, Identity provider audit logs');
   await expect(page.getByLabel('Required fields')).toHaveValue('@timestamp, host.name, process.command_line, operation.name, actor.id, source.ip');
   await page.getByRole('button', { name: 'Copy query' }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('process.name : "powershell.exe"');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('index=endpoint');
   expect(patchRequests).toBe(0);
+
+  await page.getByLabel('Query language').selectOption('eql');
+  await expect(page.getByLabel('Query language')).toHaveValue('eql');
+  await page.getByLabel('Query language').selectOption('spl');
 
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect.poll(() => patchRequests).toBe(1);
