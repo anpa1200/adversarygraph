@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import AliasChoices, BaseModel, Field, model_validator
@@ -24,6 +25,7 @@ run_hunt_ai = require_permission("run_analysis")
 AIProvider = Literal["local", "claude", "openai", "gemini", "minimax"]
 AIStage = Literal["plan", "query", "findings", "outcome"]
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
+_VALID_TLP_MARKINGS = {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}
 
 
 class ProviderOut(BaseModel):
@@ -190,10 +192,10 @@ async def assist(
     if body.hunt_id is None:
         if body.stage != "plan":
             raise HTTPException(422, "Unsaved hunt AI assistance is limited to the plan stage")
-        if body.provider != "local":
-            raise HTTPException(403, "Unsaved hunt context can only be processed by the configured local/private provider")
+        if hunt_ai.provider_is_remote(body.provider) and requested_draft_tlp not in _VALID_TLP_MARKINGS:
+            raise HTTPException(422, "Unsaved remote AI assistance requires an explicit valid TLP marking")
         effective_tlp = requested_draft_tlp or "TLP:AMBER"
-        if effective_tlp not in {"TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"}:
+        if effective_tlp not in _VALID_TLP_MARKINGS:
             effective_tlp = "TLP:AMBER"
         provider_context = {"draft": draft_context, "effective_tlp": effective_tlp}
         source_texts = [hunt_ai.CitationSource("hunt", "draft-context", _source_text(draft_context))]
@@ -239,31 +241,64 @@ async def assist(
         cloud_processing_acknowledged=body.cloud_processing_acknowledged,
     )
     system, prompt = hunt_ai.assist_prompt(body.stage, provider_context, body.analyst_focus)
-    raw = await _complete_or_http(adapter, system, prompt)
+    cloud_attempt = None
+    if hunt_ai.provider_is_remote(adapter.provider):
+        cloud_attempt = await _start_cloud_egress_audit(
+            db,
+            user,
+            task="assist",
+            stage=body.stage,
+            hunt_id=canonical_hunt_id,
+            source_session_id=source_session_id,
+            provider=adapter.provider,
+            model=adapter.model,
+            cloud_processing_acknowledged=body.cloud_processing_acknowledged,
+            prompt_version=hunt_ai.PROMPT_VERSION,
+            effective_tlp=effective_tlp,
+            input_checksum=input_checksum,
+        )
+    raw = await _complete_or_http(
+        adapter,
+        system,
+        prompt,
+        db=db,
+        user=user,
+        cloud_attempt=cloud_attempt,
+    )
     if canonical_hunt_id is not None:
         # Every hunt/finding/query mutation locks the parent hunt first. Keep
         # that lock through the state check and assistance insert so the saved
         # checksum and structured suggestion describe one canonical snapshot.
-        fresh_hunt = await hunts.get_hunt(db, canonical_hunt_id, for_update=True)
-        fresh_findings = await hunts.list_findings(db, canonical_hunt_id)
-        fresh_versions = await hunts.list_query_versions(db, canonical_hunt_id)
-        fresh_effective_tlp = _maximum_tlp([
-            fresh_hunt.tlp,
-            *[finding.tlp for finding in fresh_findings],
-            requested_draft_tlp,
-        ])
-        fresh_context = {
-            "canonical": _canonical_hunt_context(fresh_hunt, fresh_findings, fresh_versions),
-            "unsaved_draft": draft_context,
-            "effective_tlp": fresh_effective_tlp,
-        }
-        fresh_checksum = hunt_ai.checksum({
-            "stage": body.stage,
-            "provider_context": fresh_context,
-            "analyst_focus": body.analyst_focus,
-        })
+        try:
+            fresh_hunt = await hunts.get_hunt(db, canonical_hunt_id, for_update=True)
+            fresh_findings = await hunts.list_findings(db, canonical_hunt_id)
+            fresh_versions = await hunts.list_query_versions(db, canonical_hunt_id)
+            fresh_effective_tlp = _maximum_tlp([
+                fresh_hunt.tlp,
+                *[finding.tlp for finding in fresh_findings],
+                requested_draft_tlp,
+            ])
+            fresh_context = {
+                "canonical": _canonical_hunt_context(fresh_hunt, fresh_findings, fresh_versions),
+                "unsaved_draft": draft_context,
+                "effective_tlp": fresh_effective_tlp,
+            }
+            fresh_checksum = hunt_ai.checksum({
+                "stage": body.stage,
+                "provider_context": fresh_context,
+                "analyst_focus": body.analyst_focus,
+            })
+        except Exception:
+            await _finalize_cloud_egress_failure(
+                db,
+                user,
+                cloud_attempt,
+                "canonical_context_revalidation_failed",
+            )
+            raise
         if fresh_checksum != input_checksum:
             await db.rollback()
+            await _finalize_cloud_egress_failure(db, user, cloud_attempt, "canonical_context_changed")
             raise HTTPException(409, "Threat hunt changed while AI assistance was being generated; retry with the current hunt state")
     try:
         parsed = hunt_ai.parse_assist_output(raw)
@@ -275,7 +310,11 @@ async def assist(
             db=db,
         )
     except hunt_ai.AIOutputError as exc:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "invalid_provider_output")
         raise HTTPException(502, str(exc)) from exc
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "output_validation_failed")
+        raise
     warnings = [*context_warnings, *warnings]
 
     generated_at = datetime.now(timezone.utc)
@@ -291,26 +330,31 @@ async def assist(
         "requires_human_review": True,
         "execution_boundary": hunt_ai.EXECUTION_BOUNDARY,
     }
-    row = await _persist_assistance(
-        db,
-        user,
-        task="assist",
-        stage=body.stage,
-        hunt_id=canonical_hunt_id,
-        source_session_id=source_session_id,
-        provider=adapter.provider,
-        model=adapter.model,
-        cloud_processing_acknowledged=(
-            body.cloud_processing_acknowledged and hunt_ai.provider_is_remote(adapter.provider)
-        ),
-        prompt_version=hunt_ai.PROMPT_VERSION,
-        effective_tlp=effective_tlp,
-        source_refs=source_refs,
-        input_checksum=input_checksum,
-        output=response_payload,
-        warnings=response_payload["warnings"],
-        created_at=generated_at,
-    )
+    try:
+        row = await _persist_assistance(
+            db,
+            user,
+            task="assist",
+            stage=body.stage,
+            hunt_id=canonical_hunt_id,
+            source_session_id=source_session_id,
+            provider=adapter.provider,
+            model=adapter.model,
+            cloud_processing_acknowledged=(
+                body.cloud_processing_acknowledged and hunt_ai.provider_is_remote(adapter.provider)
+            ),
+            prompt_version=hunt_ai.PROMPT_VERSION,
+            effective_tlp=effective_tlp,
+            source_refs=source_refs,
+            input_checksum=input_checksum,
+            output=response_payload,
+            warnings=response_payload["warnings"],
+            created_at=generated_at,
+            cloud_egress_attempt=cloud_attempt,
+        )
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "assistance_persistence_failed")
+        raise
     return AssistResponse(assistance_id=row.id, **response_payload)
 
 
@@ -379,17 +423,49 @@ async def hypotheses(
         analyst_focus=body.analyst_focus,
         count=effective_count,
     )
-    raw = await _complete_or_http(adapter, system, prompt)
-    current_source = (
-        await db.execute(
-            select(AnalysisSession)
-            .where(AnalysisSession.id == source_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
+    cloud_attempt = None
+    if hunt_ai.provider_is_remote(adapter.provider):
+        cloud_attempt = await _start_cloud_egress_audit(
+            db,
+            user,
+            task="hypotheses",
+            stage="plan",
+            hunt_id=None,
+            source_session_id=source_id,
+            provider=adapter.provider,
+            model=adapter.model,
+            cloud_processing_acknowledged=body.cloud_processing_acknowledged,
+            prompt_version=hunt_ai.HYPOTHESIS_PROMPT_VERSION,
+            effective_tlp=effective_tlp,
+            input_checksum=hunt_ai.checksum(input_payload),
         )
-    ).scalar_one_or_none()
-    if current_source is None or hunt_ai.checksum(_source_state(current_source)) != source_state_checksum:
+    raw = await _complete_or_http(
+        adapter,
+        system,
+        prompt,
+        db=db,
+        user=user,
+        cloud_attempt=cloud_attempt,
+    )
+    try:
+        current_source = (
+            await db.execute(
+                select(AnalysisSession)
+                .where(AnalysisSession.id == source_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        source_context_changed = (
+            current_source is None
+            or hunt_ai.checksum(_source_state(current_source)) != source_state_checksum
+        )
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "source_context_revalidation_failed")
+        raise
+    if source_context_changed:
         await db.rollback()
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "source_context_changed")
         raise HTTPException(409, "Stored report/research changed while hypotheses were being generated; retry with the current source")
     try:
         parsed = hunt_ai.parse_hypothesis_output(raw)
@@ -401,7 +477,11 @@ async def hypotheses(
             db=db,
         )
     except hunt_ai.AIOutputError as exc:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "invalid_provider_output")
         raise HTTPException(502, str(exc)) from exc
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "output_validation_failed")
+        raise
     warnings = [*coverage_warnings, *warnings]
     generated_at = datetime.now(timezone.utc)
     response_payload = {
@@ -419,34 +499,39 @@ async def hypotheses(
         "requires_human_review": True,
         "execution_boundary": hunt_ai.EXECUTION_BOUNDARY,
     }
-    row = await _persist_assistance(
-        db,
-        user,
-        task="hypotheses",
-        stage="plan",
-        hunt_id=None,
-        source_session_id=source_id,
-        provider=adapter.provider,
-        model=adapter.model,
-        cloud_processing_acknowledged=(
-            body.cloud_processing_acknowledged and hunt_ai.provider_is_remote(adapter.provider)
-        ),
-        prompt_version=hunt_ai.HYPOTHESIS_PROMPT_VERSION,
-        effective_tlp=effective_tlp,
-        source_refs=[{
-            "type": body.source_type,
-            "ref": str(source_id),
-            "source_hash": source_hash,
-            "stored_tlp": stored_tlp,
-            "tlp": effective_tlp,
-            "coverage_chars": len(bounded_text),
-            "source_chars": len(source_text),
-        }],
-        input_checksum=hunt_ai.checksum(input_payload),
-        output=response_payload,
-        warnings=response_payload["warnings"],
-        created_at=generated_at,
-    )
+    try:
+        row = await _persist_assistance(
+            db,
+            user,
+            task="hypotheses",
+            stage="plan",
+            hunt_id=None,
+            source_session_id=source_id,
+            provider=adapter.provider,
+            model=adapter.model,
+            cloud_processing_acknowledged=(
+                body.cloud_processing_acknowledged and hunt_ai.provider_is_remote(adapter.provider)
+            ),
+            prompt_version=hunt_ai.HYPOTHESIS_PROMPT_VERSION,
+            effective_tlp=effective_tlp,
+            source_refs=[{
+                "type": body.source_type,
+                "ref": str(source_id),
+                "source_hash": source_hash,
+                "stored_tlp": stored_tlp,
+                "tlp": effective_tlp,
+                "coverage_chars": len(bounded_text),
+                "source_chars": len(source_text),
+            }],
+            input_checksum=hunt_ai.checksum(input_payload),
+            output=response_payload,
+            warnings=response_payload["warnings"],
+            created_at=generated_at,
+            cloud_egress_attempt=cloud_attempt,
+        )
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "assistance_persistence_failed")
+        raise
     return HypothesisResponse(assistance_id=row.id, **response_payload)
 
 
@@ -467,13 +552,106 @@ async def history(
     return list((await db.execute(statement)).scalars().all())
 
 
-async def _complete_or_http(adapter, system: str, prompt: str) -> str:
+async def _complete_or_http(
+    adapter,
+    system: str,
+    prompt: str,
+    *,
+    db: AsyncSession,
+    user: TeamUser,
+    cloud_attempt: CloudEgressAttempt | None,
+) -> str:
     try:
         return await hunt_ai.complete(adapter, system, prompt)
+    except asyncio.CancelledError:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "request_cancelled")
+        raise
     except hunt_ai.AIProviderTimeoutError as exc:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "provider_timeout")
         raise HTTPException(504, "AI provider timed out before returning a suggestion") from exc
     except hunt_ai.AIProviderCallError as exc:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "provider_call_failed")
         raise HTTPException(502, "AI provider failed. Review provider configuration and retry.") from exc
+    except Exception:
+        await _finalize_cloud_egress_failure(db, user, cloud_attempt, "provider_request_failed")
+        raise
+
+
+CloudEgressAttempt = tuple[UUID, dict[str, Any]]
+
+
+async def _start_cloud_egress_audit(
+    db: AsyncSession,
+    user: TeamUser,
+    *,
+    task: str,
+    stage: str,
+    hunt_id: UUID | None,
+    source_session_id: UUID | None,
+    provider: str,
+    model: str,
+    cloud_processing_acknowledged: bool,
+    prompt_version: str,
+    effective_tlp: str,
+    input_checksum: str,
+) -> CloudEgressAttempt:
+    """Durably record redacted cloud egress metadata before sending a prompt."""
+
+    if not cloud_processing_acknowledged:
+        raise RuntimeError("Cloud egress audit requires explicit processing acknowledgement")
+    correlation_id = uuid4()
+    details: dict[str, Any] = {
+        "task": task,
+        "stage": stage,
+        "hunt_id": str(hunt_id) if hunt_id else "",
+        "source_session_id": str(source_session_id) if source_session_id else "",
+        "provider": provider,
+        "model": model[:160],
+        "cloud_processing_acknowledged": True,
+        "prompt_version": prompt_version,
+        "effective_tlp": effective_tlp,
+        "input_checksum": input_checksum,
+        "status": "attempted",
+    }
+    await audit(
+        db,
+        user,
+        "threat_hunting.ai.egress.attempt",
+        "threat_hunting.ai.cloud_egress",
+        str(correlation_id),
+        details,
+    )
+    # This commit is the egress gate: no remote request is made unless the
+    # redacted attempt and acknowledgement are durable first.
+    await db.commit()
+    return correlation_id, details
+
+
+async def _finalize_cloud_egress_failure(
+    db: AsyncSession,
+    user: TeamUser,
+    attempt: CloudEgressAttempt | None,
+    error_category: str,
+) -> None:
+    """Append a terminal egress event without retaining provider error text."""
+
+    if attempt is None:
+        return
+    await db.rollback()
+    correlation_id, attempt_details = attempt
+    await audit(
+        db,
+        user,
+        "threat_hunting.ai.egress.failed",
+        "threat_hunting.ai.cloud_egress",
+        str(correlation_id),
+        {
+            **attempt_details,
+            "status": "failed",
+            "error_category": error_category,
+        },
+    )
+    await db.commit()
 
 
 async def _persist_assistance(
@@ -494,6 +672,7 @@ async def _persist_assistance(
     output: dict[str, Any],
     warnings: list[str],
     created_at: datetime,
+    cloud_egress_attempt: CloudEgressAttempt | None = None,
 ) -> ThreatHuntAIAssistance:
     stored_output = _json_safe(output)
     row = ThreatHuntAIAssistance(
@@ -517,6 +696,7 @@ async def _persist_assistance(
     )
     db.add(row)
     await db.flush()
+    correlation_id = cloud_egress_attempt[0] if cloud_egress_attempt is not None else None
     await audit(
         db,
         user,
@@ -536,8 +716,25 @@ async def _persist_assistance(
             "input_checksum": input_checksum,
             "output_checksum": row.output_checksum,
             "warning_count": len(warnings),
+            "lifecycle_status": "suggested",
+            "cloud_egress_correlation_id": str(correlation_id) if correlation_id else "",
         },
     )
+    if cloud_egress_attempt is not None:
+        _, attempt_details = cloud_egress_attempt
+        await audit(
+            db,
+            user,
+            "threat_hunting.ai.egress.succeeded",
+            "threat_hunting.ai.cloud_egress",
+            str(correlation_id),
+            {
+                **attempt_details,
+                "status": "succeeded",
+                "assistance_id": str(row.id),
+                "output_checksum": row.output_checksum,
+            },
+        )
     await db.commit()
     return row
 

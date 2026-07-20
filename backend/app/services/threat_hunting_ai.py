@@ -32,6 +32,7 @@ AIProvider = Literal["local", "claude", "openai", "gemini", "minimax"]
 AIStage = Literal["plan", "query", "findings", "outcome"]
 AIProviderStatus = Literal[
     "ready",
+    "configured_and_permitted",
     "disabled_by_policy",
     "missing_credential",
     "missing_configuration",
@@ -274,8 +275,11 @@ def provider_catalog() -> list[dict[str, Any]]:
             reason = "Local AI endpoint readiness has not been checked."
             available = False
         else:
-            status = "ready"
-            reason = "Configured and permitted by the operator."
+            status = "configured_and_permitted"
+            reason = (
+                "Credential is configured and operator policy permits selection. "
+                "Connectivity and model access are checked when a request runs."
+            )
             available = True
         rows.append({
             "id": provider,

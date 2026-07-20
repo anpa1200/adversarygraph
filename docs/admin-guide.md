@@ -42,7 +42,7 @@ Important settings:
 | `GEMINI_API_KEY` | Gemini provider |
 | `GEMINI_MODEL` | Gemini model default, currently `gemini-3.5-flash` |
 | `MINIMAX_API_KEY` | MiniMax provider |
-| `MINIMAX_MODEL` | MiniMax model default |
+| `MINIMAX_MODEL` | MiniMax model default, currently `MiniMax-M2.7` |
 | `MINIMAX_BASE_URL` | MiniMax OpenAI-compatible API base URL |
 | `LOCAL_LLM_BASE_URL` | OpenAI-compatible local LLM/embedding endpoint; the `local` provider requires a loopback, private/link-local IP, or recognized private service DNS host |
 | `LOCAL_LLM_API_KEY` | Local endpoint API key placeholder |
@@ -94,6 +94,11 @@ The bundled development image builds checksum-pinned pgvector **0.8.2**.
 | `DYNAMIC_DB_IOC_SYNC_DAYS` | Daily IOC sync window, clamped to 1-7 days |
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
+
+The built-in MiniMax adapter caps generated output at 2,048 completion tokens
+and enables MiniMax reasoning separation. Only the final response content is
+passed to AdversaryGraph's strict JSON validation; provider reasoning is not
+treated as analyst-facing or machine-actionable output.
 
 See [`local-storage-and-permissions.md`](local-storage-and-permissions.md) for
 the exact local database, cache, log, and artifact storage locations.
@@ -164,7 +169,7 @@ The policy is enforced in two layers:
 |---|---|
 | `TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` | Local by default; an enabled/configured remote provider also requires explicit analyst acknowledgment for the request |
 | `TLP:AMBER+STRICT` or `TLP:RED` | Local-only; operator cloud enablement and analyst acknowledgment cannot override the block |
-| Unsaved plan context | Local-only; save the draft before remote plan assistance so the server can apply canonical hunt context and TLP controls |
+| Unsaved plan context | Local, or an enabled/configured remote provider when the draft includes an explicit eligible TLP and the analyst acknowledges remote processing; generated output remains an unsaved suggestion |
 | Unsaved query, findings, or outcome context | Assistant request is blocked until the hunt exists |
 
 The source-report selector uses completed reports or research sessions with
@@ -188,14 +193,25 @@ selected now; `status` gives a stable machine-readable reason; and `reason`
 provides a safe operator-facing explanation. The local provider is checked with
 a bounded, no-redirect `/models` request, including presence of
 `LOCAL_LLM_MODEL`. Remote credentials are never probed merely to render the
-catalog. A cloud key can therefore be `configured=true` and `available=false`
-with `status=disabled_by_policy`.
+catalog. An eligible cloud key is reported as
+`status=configured_and_permitted`, not `ready`; connectivity, credential
+validity, and model access are checked when a generation request runs. A cloud
+key can also be `configured=true` and `available=false` with
+`status=disabled_by_policy`.
 
 Provider and model choice remains server-governed: the API rejects an
 unavailable provider and a client model override that differs from the
 configured model. Do not treat the `local` label as proof of network locality:
 verify `LOCAL_LLM_BASE_URL`, TLS/network routing where applicable, provider-side
 logging, authentication, and retention.
+
+Before Threat Hunting sends context to a remote provider, it commits a
+`threat_hunting.ai.egress.attempt` audit event containing only the correlation
+ID, provider/model, effective TLP, acknowledgement state, actor, and input
+checksum. A matching `threat_hunting.ai.egress.succeeded` or redacted
+`threat_hunting.ai.egress.failed` event records the terminal outcome. These
+events do not store the prompt, draft text, raw response, credential, or
+provider exception.
 
 For a Compose-managed private Ollama instance:
 

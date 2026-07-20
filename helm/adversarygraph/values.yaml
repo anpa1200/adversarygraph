@@ -197,7 +197,7 @@ config:
   logLevel: info
   openaiModel: gpt-4.1
   geminiModel: gemini-3.5-flash
-  minimaxModel: MiniMax-M3
+  minimaxModel: MiniMax-M2.7
   minimaxBaseUrl: https://api.minimax.io/v1
   # Kubernetes has no portable host.docker.internal mapping. Set this to a
   # reachable in-cluster Service or reviewed private gateway to enable local AI.

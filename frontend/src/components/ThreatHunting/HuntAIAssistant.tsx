@@ -113,8 +113,7 @@ export function HuntAIAssistant({
     : context.tlp;
   const restrictedTlp = effectiveRequestTlp === 'TLP:AMBER+STRICT' || effectiveRequestTlp === 'TLP:RED';
   const requiresSavedHunt = mode !== 'hypothesis' && mode !== 'plan' && !huntId;
-  const remoteBlockedForDraft = mode === 'plan' && !huntId;
-  const remoteBlocked = Boolean(selectedProvider?.remote && (restrictedTlp || remoteBlockedForDraft));
+  const remoteBlocked = Boolean(selectedProvider?.remote && restrictedTlp);
   const needsAcknowledgement = Boolean(
     selectedProvider?.available
     && (selectedProvider.remote || selectedProvider.requires_acknowledgement),
@@ -154,19 +153,19 @@ export function HuntAIAssistant({
   useEffect(() => {
     if (!providers.data?.length) return;
     const current = providers.data.find(provider => provider.id === providerId);
-    const currentUsable = current?.available && !(current.remote && (restrictedTlp || remoteBlockedForDraft));
+    const currentUsable = current?.available && !(current.remote && restrictedTlp);
     if (currentUsable && providerInitialized.current) return;
     const availableDefault = providers.data.find(provider => provider.default && provider.available && !(
-      provider.remote && (restrictedTlp || remoteBlockedForDraft)
+      provider.remote && restrictedTlp
     ));
     const local = providers.data.find(provider => provider.id === 'local' && provider.available);
     const first = providers.data.find(provider => provider.available && !(
-      provider.remote && (restrictedTlp || remoteBlockedForDraft)
+      provider.remote && restrictedTlp
     ));
     const selected = availableDefault || (currentUsable ? current : null) || local || first;
     providerInitialized.current = true;
     if (selected) setProviderId(selected.id);
-  }, [providerId, providers.data, remoteBlockedForDraft, restrictedTlp]);
+  }, [providerId, providers.data, restrictedTlp]);
 
   const assistMutation = useMutation({
     mutationFn: async () => {
@@ -300,11 +299,16 @@ export function HuntAIAssistant({
                   onChange={event => setProviderId(event.target.value as ThreatHuntAIProviderId)}
                 >
                   {(providers.data ?? []).map(provider => {
-                    const blocked = provider.remote && (restrictedTlp || remoteBlockedForDraft);
+                    const blocked = provider.remote && restrictedTlp;
+                    const requestStatus = !provider.available
+                      ? providerStatusLabel(provider.status)
+                      : blocked
+                        ? `blocked for ${effectiveRequestTlp}`
+                        : providerStatusLabel(provider.status);
                     return (
                       <option key={provider.id} value={provider.id} disabled={!provider.available || blocked}>
                         {provider.label}{provider.model ? ` · ${provider.model}` : ''}
-                        {!provider.available ? ` · ${providerStatusLabel(provider.status)}` : blocked ? ` · blocked for ${restrictedTlp ? effectiveRequestTlp : 'unsaved hunts'}` : ''}
+                        {` · ${provider.remote ? 'remote' : 'local/private'} · ${requestStatus}`}
                       </option>
                     );
                   })}
@@ -313,7 +317,7 @@ export function HuntAIAssistant({
               </label>
 
               <div className="-mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-600">
-                <span>Configuration, policy, endpoint, and model readiness</span>
+                <span>Configuration and policy; local endpoint/model readiness</span>
                 <button
                   type="button"
                   className="text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
@@ -324,11 +328,29 @@ export function HuntAIAssistant({
                 </button>
               </div>
 
-              {selectedProvider && !selectedProvider.available && (
-                <p role="status" className="rounded border border-amber-800/60 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100">
-                  <b className="block">{selectedProvider.label}: {providerStatusLabel(selectedProvider.status)}</b>
-                  {selectedProvider.reason}
-                </p>
+              {selectedProvider && (
+                <div
+                  role="status"
+                  data-testid="threat-hunt-provider-status"
+                  className={selectedProvider.available && !remoteBlocked
+                    ? 'rounded border border-emerald-900/70 bg-emerald-950/20 px-3 py-2 text-xs leading-5 text-emerald-100'
+                    : 'rounded border border-amber-800/60 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100'}
+                >
+                  <b className="block">
+                    {selectedProvider.label}: {remoteBlocked ? `blocked for ${effectiveRequestTlp}` : providerStatusLabel(selectedProvider.status)}
+                    {' · '}{selectedProvider.remote ? 'remote processing' : 'local/private processing'}
+                  </b>
+                  <span>
+                    {remoteBlocked
+                      ? `${effectiveRequestTlp} content cannot be sent to a remote AI provider.`
+                      : selectedProvider.reason}
+                  </span>
+                  {selectedProvider.remote && selectedProvider.available && !remoteBlocked && (
+                    <span className="mt-1 block text-amber-100">
+                      Operator policy permits this provider for {effectiveRequestTlp}. Nothing is sent until you explicitly acknowledge this request below.
+                    </span>
+                  )}
+                </div>
               )}
 
               {mode === 'hypothesis' && (
@@ -442,7 +464,7 @@ export function HuntAIAssistant({
                     onChange={event => setCloudAcknowledged(event.target.checked)}
                   />
                   <span>
-                    I acknowledge that stage-scoped hunt context will be processed by the selected remote AI provider under my organization’s data-handling policy.
+                    I explicitly authorize sending {mode === 'hypothesis' ? 'the selected report context' : !huntId && mode === 'plan' ? 'this unsaved plan draft and analyst focus' : 'this stage-scoped hunt context'} to <b>{selectedProvider?.label}</b> for this request. The content is marked {effectiveRequestTlp} and will be processed under my organization’s data-handling policy. This authorization resets after the request or any provider or scope change.
                   </span>
                 </label>
               )}
@@ -452,11 +474,6 @@ export function HuntAIAssistant({
                   {mode === 'hypothesis'
                     ? `Selected report is ${effectiveRequestTlp} and is local-only. Remote providers are unavailable for this request.`
                     : `${effectiveRequestTlp} hunt context is local-only. Remote providers are unavailable for this request.`}
-                </p>
-              )}
-              {remoteBlocked && !restrictedTlp && (
-                <p role="status" className="rounded border border-amber-800/60 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100">
-                  Unsaved plan assistance is local-only. Save the draft before using a remote provider.
                 </p>
               )}
               {requiresSavedHunt && (
@@ -475,11 +492,9 @@ export function HuntAIAssistant({
               </button>
               {pending && <p role="status" aria-live="polite" className="text-center text-xs text-cyan-200">AI generation is in progress. Your current hunt draft remains unchanged.</p>}
               {requestError && <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs leading-5 text-red-200">{requestError}</p>}
-              {providers.data && !providers.data.some(provider => provider.available && !(
-                provider.remote && (restrictedTlp || remoteBlockedForDraft)
-              )) && (
+              {providers.data && !providers.data.some(provider => provider.available && !(provider.remote && restrictedTlp)) && (
                 <p role="alert" className="rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-200">
-                  No AI provider is currently available for this hunt. Review the provider status above or ask an operator to restore the configured local model.
+                  No AI provider is available for this request under the current TLP, operator policy, and runtime state. Recheck provider status or ask an operator to review the AI configuration.
                 </p>
               )}
             </div>
@@ -522,6 +537,7 @@ export function HuntAIAssistant({
 function providerStatusLabel(status: string) {
   return ({
     ready: 'ready',
+    configured_and_permitted: 'configured and permitted',
     disabled_by_policy: 'disabled by policy',
     missing_credential: 'not configured',
     missing_configuration: 'not configured',

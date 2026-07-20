@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import httpx
@@ -167,6 +167,55 @@ def test_local_provider_rejects_public_endpoint_label(monkeypatch: pytest.Monkey
     assert "private" in str(exc.value.detail).lower()
 
 
+def test_remote_provider_requires_policy_acknowledgement_and_permitted_tlp(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    adapter = SimpleNamespace(provider="openai", model=settings.openai_model)
+    factory = MagicMock(return_value=adapter)
+    monkeypatch.setattr(ai, "get_adapter", factory)
+
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
+    with pytest.raises(HTTPException) as cloud_disabled:
+        ai.create_adapter(
+            "openai",
+            None,
+            effective_tlp="TLP:AMBER",
+            cloud_processing_acknowledged=True,
+        )
+    assert cloud_disabled.value.status_code == 403
+    assert "disabled" in str(cloud_disabled.value.detail).lower()
+
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    with pytest.raises(HTTPException) as acknowledgement_required:
+        ai.create_adapter(
+            "openai",
+            None,
+            effective_tlp="TLP:AMBER",
+            cloud_processing_acknowledged=False,
+        )
+    assert acknowledgement_required.value.status_code == 422
+    assert "acknowledgement" in str(acknowledgement_required.value.detail).lower()
+
+    with pytest.raises(HTTPException) as restricted_tlp:
+        ai.create_adapter(
+            "openai",
+            None,
+            effective_tlp="TLP:RED",
+            cloud_processing_acknowledged=True,
+        )
+    assert restricted_tlp.value.status_code == 403
+    assert "TLP:RED" in str(restricted_tlp.value.detail)
+
+    created = ai.create_adapter(
+        "openai",
+        None,
+        effective_tlp="TLP:AMBER",
+        cloud_processing_acknowledged=True,
+    )
+    assert created is adapter
+    factory.assert_called_once_with("openai", settings.openai_model)
+
+
 def test_remote_provider_catalog_separates_configuration_from_cloud_policy(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
@@ -198,7 +247,7 @@ def test_remote_provider_catalog_reports_missing_credential(monkeypatch: pytest.
     assert openai["reason"] == "Configure OPENAI_API_KEY to use this provider."
 
 
-def test_remote_provider_catalog_reports_ready_without_network_probe(monkeypatch: pytest.MonkeyPatch):
+def test_remote_provider_catalog_reports_configuration_without_network_probe(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_default_provider", "openai")
@@ -208,7 +257,8 @@ def test_remote_provider_catalog_reports_ready_without_network_probe(monkeypatch
 
     assert openai["configured"] is True
     assert openai["available"] is True
-    assert openai["status"] == "ready"
+    assert openai["status"] == "configured_and_permitted"
+    assert "checked when a request runs" in openai["reason"]
     assert openai["default"] is True
 
 

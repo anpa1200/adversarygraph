@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash"
     minimax_api_key: str = ""
-    minimax_model: str = "MiniMax-M3"
+    minimax_model: str = "MiniMax-M2.7"
     minimax_base_url: str = "https://api.minimax.io/v1"
     local_llm_base_url: str = "http://host.docker.internal:11434/v1"
     local_llm_api_key: str = "local"

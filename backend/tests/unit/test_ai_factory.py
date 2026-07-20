@@ -7,4 +7,4 @@ def test_minimax_provider_is_registered():
     adapter = get_adapter("minimax")
 
     assert adapter.provider == "minimax"
-    assert adapter.model == "MiniMax-M3"
+    assert adapter.model == "MiniMax-M2.7"

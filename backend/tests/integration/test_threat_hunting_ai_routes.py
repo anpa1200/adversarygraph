@@ -210,7 +210,7 @@ async def test_provider_route_separates_remote_credentials_from_operator_policy(
     assert enabled_response.status_code == 200
     assert enabled["configured"] is True
     assert enabled["available"] is True
-    assert enabled["status"] == "ready"
+    assert enabled["status"] == "configured_and_permitted"
     assert enabled["default"] is True
 
     monkeypatch.setattr(settings, "openai_api_key", "")
@@ -248,6 +248,254 @@ async def test_provider_route_exposes_safe_local_runtime_failures(
     assert local["status"] == status
     assert local["reason"] == reason
     probe.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize(
+    ("provider", "credential_setting"),
+    [
+        ("claude", "anthropic_api_key"),
+        ("openai", "openai_api_key"),
+        ("gemini", "gemini_api_key"),
+        ("minimax", "minimax_api_key"),
+    ],
+)
+async def test_configured_remote_provider_can_assist_unsaved_plan_with_explicit_acknowledgement(
+    provider: str,
+    credential_setting: str,
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, credential_setting, "configured-test-key")
+    _fake_provider(monkeypatch, ASSIST_OUTPUT)
+
+    response = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": provider,
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER"},
+        "cloud_processing_acknowledged": True,
+    })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provider"] == provider
+    history = await client.get("/api/threat-hunting/ai/history")
+    stored = history.json()[0]
+    assert stored["provider"] == provider
+    assert stored["hunt_id"] is None
+    assert stored["lifecycle_status"] == "suggested"
+    assert stored["effective_tlp"] == "TLP:AMBER"
+    assert stored["cloud_processing_acknowledged"] is True
+    suggestion_event = next(
+        row for (model, _), row in conftest._mock_session._objects.items()
+        if model is AuditEvent
+        and row.object_id == stored["id"]
+        and row.action == "threat_hunting.ai.suggest"
+    )
+    correlation_id = suggestion_event.details["cloud_egress_correlation_id"]
+    egress_events = [
+        row for (model, _), row in conftest._mock_session._objects.items()
+        if model is AuditEvent
+        and row.object_type == "threat_hunting.ai.cloud_egress"
+        and row.object_id == correlation_id
+    ]
+    assert {row.action for row in egress_events} == {
+        "threat_hunting.ai.egress.attempt",
+        "threat_hunting.ai.egress.succeeded",
+    }
+    attempt = next(row for row in egress_events if row.action.endswith(".attempt"))
+    succeeded = next(row for row in egress_events if row.action.endswith(".succeeded"))
+    assert attempt.details["status"] == "attempted"
+    assert attempt.details["cloud_processing_acknowledged"] is True
+    assert attempt.details["effective_tlp"] == "TLP:AMBER"
+    assert succeeded.details["status"] == "succeeded"
+    assert succeeded.details["assistance_id"] == stored["id"]
+    assert suggestion_event.details["lifecycle_status"] == "suggested"
+
+
+async def test_unsaved_remote_plan_fails_closed_on_policy_acknowledgement_and_tlp(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    _fake_provider(monkeypatch, ASSIST_OUTPUT)
+    provider_call = AsyncMock(side_effect=AssertionError("blocked context must not reach the provider"))
+    monkeypatch.setattr(hunt_ai, "complete", provider_call)
+
+    cloud_disabled = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER"},
+        "cloud_processing_acknowledged": True,
+    })
+    assert cloud_disabled.status_code == 403
+    assert "disabled" in cloud_disabled.text.lower()
+
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    acknowledgement_missing = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER"},
+        "cloud_processing_acknowledged": False,
+    })
+    assert acknowledgement_missing.status_code == 422
+    assert "acknowledgement" in acknowledgement_missing.text.lower()
+
+    restricted = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER+STRICT"},
+        "cloud_processing_acknowledged": True,
+    })
+    assert restricted.status_code == 403
+    assert "TLP:AMBER+STRICT" in restricted.text
+
+    invalid_marking = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:BLUE"},
+        "cloud_processing_acknowledged": True,
+    })
+    assert invalid_marking.status_code == 422
+    assert "valid TLP" in invalid_marking.text
+
+    missing_marking = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": HUNT,
+        "cloud_processing_acknowledged": True,
+    })
+    assert missing_marking.status_code == 422
+    assert "valid TLP" in missing_marking.text
+
+    provider_call.assert_not_awaited()
+    history = await client.get("/api/threat-hunting/ai/history")
+    assert history.json() == []
+
+
+async def test_unsaved_remote_plan_audits_redacted_attempt_before_timeout(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    _fake_provider(monkeypatch, ASSIST_OUTPUT)
+    commit = AsyncMock(wraps=conftest._mock_session.commit)
+    monkeypatch.setattr(conftest._mock_session, "commit", commit)
+
+    async def timeout_after_durable_attempt(adapter, system, prompt):
+        attempts = [
+            row for (model, _), row in conftest._mock_session._objects.items()
+            if model is AuditEvent and row.action == "threat_hunting.ai.egress.attempt"
+        ]
+        assert len(attempts) == 1
+        assert attempts[0].details["status"] == "attempted"
+        assert attempts[0].details["cloud_processing_acknowledged"] is True
+        assert attempts[0].details["effective_tlp"] == "TLP:AMBER"
+        assert commit.await_count == 1
+        raise hunt_ai.AIProviderTimeoutError
+
+    monkeypatch.setattr(hunt_ai, "complete", timeout_after_durable_attempt)
+    response = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER"},
+        "analyst_focus": "REMOTE_DRAFT_SECRET",
+        "cloud_processing_acknowledged": True,
+    })
+
+    assert response.status_code == 504
+    history = await client.get("/api/threat-hunting/ai/history")
+    assert history.status_code == 200
+    assert history.json() == []
+    assert commit.await_count == 2
+
+    audit_events = [
+        row for (model, _), row in conftest._mock_session._objects.items()
+        if model is AuditEvent and row.object_type == "threat_hunting.ai.cloud_egress"
+    ]
+    assert {row.action for row in audit_events} == {
+        "threat_hunting.ai.egress.attempt",
+        "threat_hunting.ai.egress.failed",
+    }
+    failed = next(row for row in audit_events if row.action.endswith(".failed"))
+    attempt = next(row for row in audit_events if row.action.endswith(".attempt"))
+    assert failed.object_id == attempt.object_id
+    assert failed.details["error_category"] == "provider_timeout"
+    serialized = json.dumps({
+        "audit": [row.details for row in audit_events],
+    })
+    assert "REMOTE_DRAFT_SECRET" not in serialized
+    assert "AI provider timed out" not in serialized
+
+
+async def test_unsaved_remote_plan_does_not_retain_invalid_raw_provider_output(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    _fake_provider(monkeypatch, "RAW_PROVIDER_SECRET outside a valid JSON object")
+
+    response = await client.post("/api/threat-hunting/ai/assist", json={
+        "provider": "openai",
+        "stage": "plan",
+        "context": {**HUNT, "tlp": "TLP:AMBER"},
+        "cloud_processing_acknowledged": True,
+    })
+
+    assert response.status_code == 502
+    history = await client.get("/api/threat-hunting/ai/history")
+    assert history.json() == []
+    audit_events = [
+        row for (model, _), row in conftest._mock_session._objects.items()
+        if model is AuditEvent and row.object_type == "threat_hunting.ai.cloud_egress"
+    ]
+    assert {row.action for row in audit_events} == {
+        "threat_hunting.ai.egress.attempt",
+        "threat_hunting.ai.egress.failed",
+    }
+    failed = next(row for row in audit_events if row.action.endswith(".failed"))
+    assert failed.details["error_category"] == "invalid_provider_output"
+    serialized = json.dumps({
+        "audit": [row.details for row in audit_events],
+    })
+    assert "RAW_PROVIDER_SECRET" not in serialized
+
+
+async def test_unsaved_remote_plan_finalizes_unexpected_post_egress_failure(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
+    _fake_provider(monkeypatch, ASSIST_OUTPUT)
+    monkeypatch.setattr(
+        hunt_ai,
+        "sanitize_assist_output",
+        AsyncMock(side_effect=RuntimeError("RAW_INTERNAL_FAILURE_DETAIL")),
+    )
+
+    with pytest.raises(RuntimeError, match="RAW_INTERNAL_FAILURE_DETAIL"):
+        await client.post("/api/threat-hunting/ai/assist", json={
+            "provider": "openai",
+            "stage": "plan",
+            "context": {**HUNT, "tlp": "TLP:AMBER"},
+            "cloud_processing_acknowledged": True,
+        })
+
+    history = await client.get("/api/threat-hunting/ai/history")
+    assert history.json() == []
+    audit_events = [
+        row for (model, _), row in conftest._mock_session._objects.items()
+        if model is AuditEvent and row.object_type == "threat_hunting.ai.cloud_egress"
+    ]
+    assert {row.action for row in audit_events} == {
+        "threat_hunting.ai.egress.attempt",
+        "threat_hunting.ai.egress.failed",
+    }
+    failed = next(row for row in audit_events if row.action.endswith(".failed"))
+    assert failed.details["error_category"] == "output_validation_failed"
+    assert "RAW_INTERNAL_FAILURE_DETAIL" not in json.dumps([row.details for row in audit_events])
 
 
 async def test_remote_assistance_persists_cloud_acknowledgement(

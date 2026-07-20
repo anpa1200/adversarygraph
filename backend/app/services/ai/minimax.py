@@ -7,8 +7,9 @@ from typing import AsyncIterator
 from app.core.config import settings
 from app.services.ai.base import LLMAdapter
 
-DEFAULT_MODEL = "MiniMax-M3"
-MAX_TOKENS = 8192
+DEFAULT_MODEL = "MiniMax-M2.7"
+MAX_COMPLETION_TOKENS = 2048
+TIMEOUT_SECONDS = 120.0
 
 
 class MiniMaxAdapter(LLMAdapter):
@@ -19,6 +20,8 @@ class MiniMaxAdapter(LLMAdapter):
         self._api_client = AsyncOpenAI(
             api_key=settings.minimax_api_key,
             base_url=settings.minimax_base_url.rstrip("/"),
+            timeout=TIMEOUT_SECONDS,
+            max_retries=1,
         )
 
     @property
@@ -32,8 +35,9 @@ class MiniMaxAdapter(LLMAdapter):
     async def _raw_complete(self, system: str, user: str) -> str:
         resp = await self._api_client.chat.completions.create(
             model=self._model,
-            max_tokens=MAX_TOKENS,
+            max_completion_tokens=MAX_COMPLETION_TOKENS,
             temperature=0.1,
+            extra_body={"reasoning_split": True},
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -44,8 +48,9 @@ class MiniMaxAdapter(LLMAdapter):
     async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:
         stream = await self._api_client.chat.completions.create(
             model=self._model,
-            max_tokens=MAX_TOKENS,
+            max_completion_tokens=MAX_COMPLETION_TOKENS,
             temperature=0.1,
+            extra_body={"reasoning_split": True},
             stream=True,
             messages=[
                 {"role": "system", "content": system},

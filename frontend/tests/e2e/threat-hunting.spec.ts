@@ -309,6 +309,62 @@ test('plan assistance merges safe arrays but does not overwrite or auto-save hun
   await expect.poll(() => patchRequests).toBe(1);
 });
 
+test('every configured cloud provider can assist an unsaved plan after explicit authorization', async ({ page }) => {
+  const assistBodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/threat-hunting/ai/assist', async route => {
+    assistBodies.push(route.request().postDataJSON());
+    await route.fallback();
+  });
+
+  await page.goto('/threat-hunting/new');
+  await expect(page.getByLabel('TLP')).toHaveValue('TLP:AMBER');
+  await page.getByRole('button', { name: 'AI assist plan and scope' }).click();
+
+  const providerSelect = page.getByLabel('Threat hunting AI provider');
+  const generate = page.getByRole('button', { name: 'Assist with plan and scope' });
+  await expect(providerSelect.locator('option[value="local"]')).toContainText('local/private · ready');
+
+  const configuredCloudProviders = [
+    { id: 'claude', label: 'Anthropic Claude', model: 'claude-opus-4-8' },
+    { id: 'openai', label: 'OpenAI', model: 'gpt-4.1' },
+    { id: 'gemini', label: 'Google Gemini', model: 'gemini-3.5-flash' },
+    { id: 'minimax', label: 'MiniMax', model: 'MiniMax-M2.7' },
+  ];
+  for (const [index, provider] of configuredCloudProviders.entries()) {
+    const option = providerSelect.locator(`option[value="${provider.id}"]`);
+    await expect(option).toBeEnabled();
+    await expect(option).toContainText('remote · configured and permitted');
+    await expect(option).toContainText(provider.model);
+    await providerSelect.selectOption(provider.id);
+
+    const status = page.getByTestId('threat-hunt-provider-status');
+    await expect(status).toContainText(`${provider.label}: configured and permitted · remote processing`);
+    await expect(status).toContainText('Operator policy permits this provider for TLP:AMBER');
+    const authorization = page.getByRole('checkbox', {
+      name: new RegExp(`I explicitly authorize sending this unsaved plan draft and analyst focus to ${provider.label}`),
+    });
+    await expect(authorization).not.toBeChecked();
+    await expect(generate).toBeDisabled();
+    await authorization.check();
+    await expect(generate).toBeEnabled();
+    await generate.click();
+
+    await expect.poll(() => assistBodies.length).toBe(index + 1);
+    expect(assistBodies[index]).toMatchObject({
+      provider: provider.id,
+      model: provider.model,
+      stage: 'plan',
+      cloud_processing_acknowledged: true,
+      context: { tlp: 'TLP:AMBER' },
+    });
+    expect(assistBodies[index].hunt_id).toBeUndefined();
+    await expect(page.getByText('AI suggestions for the plan stage are ready for analyst review.')).toBeVisible();
+    await expect(authorization).not.toBeChecked();
+  }
+
+  expect(assistBodies.map(body => body.provider)).toEqual(configuredCloudProviders.map(provider => provider.id));
+});
+
 test('AI provider status distinguishes policy, configuration, and local runtime failures', async ({ page }) => {
   let localReady = false;
   await page.route('**/api/threat-hunting/ai/providers', route => route.fulfill({
@@ -364,13 +420,13 @@ test('AI provider status distinguishes policy, configuration, and local runtime 
   await expect(provider.locator('option[value="openai"]')).toContainText('disabled by policy');
   await expect(provider.locator('option[value="claude"]')).toContainText('not configured');
   await expect(page.getByText('The configured local AI endpoint could not be reached.')).toBeVisible();
-  await expect(page.getByText('No AI provider is currently available for this hunt.')).toBeVisible();
+  await expect(page.getByText('No AI provider is available for this request under the current TLP, operator policy, and runtime state.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Assist with plan and scope' })).toBeDisabled();
 
   localReady = true;
   await page.getByRole('button', { name: 'Recheck' }).click();
   await expect(provider.locator('option[value="local"]')).not.toContainText('endpoint unreachable');
-  await expect(page.getByText('No AI provider is currently available for this hunt.')).toHaveCount(0);
+  await expect(page.getByText('No AI provider is available for this request under the current TLP, operator policy, and runtime state.')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Assist with plan and scope' })).toBeEnabled();
 });
 
@@ -484,8 +540,8 @@ test('remote AI requires acknowledgment and restrictive TLP remains local-only',
 
   const generate = page.getByRole('button', { name: 'Generate hunt hypotheses' });
   await expect(generate).toBeDisabled();
-  const acknowledgment = page.getByText('I acknowledge that stage-scoped hunt context will be processed by the selected remote AI provider');
-  const acknowledgmentCheckbox = page.getByRole('checkbox', { name: /I acknowledge that stage-scoped hunt context/ });
+  const acknowledgment = page.getByText(/I explicitly authorize sending the selected report context to OpenAI/);
+  const acknowledgmentCheckbox = page.getByRole('checkbox', { name: /I explicitly authorize sending the selected report context to OpenAI/ });
   await expect(acknowledgment).toBeVisible();
   await acknowledgment.click();
   await expect(generate).toBeEnabled();

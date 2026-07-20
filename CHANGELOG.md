@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Enabled configured cloud providers for unsaved Threat Hunting plan drafts
+  only when the draft has an explicit cloud-eligible TLP marking and the
+  analyst authorizes that individual request. Restricted TLP markings remain
+  local-only, later hunt stages still require saved canonical state, and every
+  remote request now commits a redacted pre-egress audit event before any
+  prompt leaves the deployment. Remote catalog entries now distinguish
+  configured-and-permitted state from locally probed runtime readiness.
+- Corrected the active MiniMax default to `MiniMax-M2.7` and aligned its
+  OpenAI-compatible transport with the provider contract: bounded 2,048-token
+  completions, separated reasoning output, a bounded timeout, and one retry.
 - Fixed fresh source-checkout image handling: buildable AdversaryGraph services
   now stay on local build targets during `docker compose pull`, while the
   production overlay retains digest-pinned registry pulls. The next release
