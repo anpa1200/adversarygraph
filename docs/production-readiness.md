@@ -1,7 +1,7 @@
 # Production Readiness
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
-controlled deployments. The latest immutable release tag is `v6.0.0`; the
+controlled deployments. The latest reviewed release tag is `v6.0.0`; the
 current development checkout also contains the post-v6 work listed under
 [Unreleased](../CHANGELOG.md). This document tracks the checked-out repository,
 so every production review must record the exact tag or commit and must not
@@ -9,7 +9,7 @@ transfer evidence from a different revision.
 
 ## Current Status
 
-The immutable AdversaryGraph v6.0.0 tag is suitable for:
+The reviewed AdversaryGraph v6.0.0 tag is suitable for:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
@@ -101,6 +101,9 @@ deployment with documented compensating controls:
 - Add digest-pinned build-stage and runtime bases to every custom Dockerfile;
   current fresh builds scan the resulting artifact, but upstream Dockerfile
   `FROM` references are still mutable at build time.
+- Enable an active GitHub tag ruleset that blocks updates and deletion of
+  existing `v*` release tags without bypass actors; the workflow fails closed
+  until both rules cover its exact tag.
 - Add signature verification for commit-pinned MalwareGraph and optional Atlas
   source updates; current defaults are immutable reviewed SHAs but the upstream
   commits are not signature-verified by the build.
@@ -138,6 +141,7 @@ internet-facing use, place AdversaryGraph behind:
 For production-like Compose deployments, use the hardened overlay:
 
 ```bash
+./scripts/validate-production-env.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ```
@@ -168,17 +172,22 @@ inventory need an additional unfiltered scan and risk review. This reduces
 stale-image acceptance; it is not bit-for-bit reproducibility and does not
 remove the remaining base-image digest-pinning blocker.
 
-The future-tag workflow is configured to load and scan each versioned local
-image, verify its version and `latest` local tags identify the same image, and
-then push those already scanned local tags without rebuilding. It serializes
-release jobs and attaches the published digest set as
-`adversarygraph-images.env`. Every published GitHub release is immutable,
-regardless of its assets; only a release that is still a draft may be resumed.
+The future-tag workflow loads and scans each versioned local image, then pushes
+that exact candidate without rebuilding. It serializes release jobs, verifies
+that each anonymously readable public manifest contains the scanned image ID,
+and attaches the verified immutable digest set as
+`adversarygraph-images.env`. Shared `latest` tags are not advanced because the
+seven-image family cannot be updated atomically. The workflow refuses to
+modify a published GitHub release. It resumes a draft only when the title,
+notes, and sole manifest asset exactly match the regenerated release; otherwise
+it stops for explicit review. The workflow currently publishes Linux/AMD64
+images; multi-architecture publication remains future work.
 On retry after a partial publication, the workflow reuses an existing version
-image only when its OCI source, version, and revision labels match the current
-tag commit, and it rescans the selected artifact before an idempotent push;
-mismatches and ambiguous registry or GitHub release lookups stop publication.
-The workflow rechecks release state immediately before its draft update.
+image only when its content-addressed image ID exactly matches a fresh source
+build, and it rescans that artifact before pushing; labels alone are not
+trusted. Mismatches and ambiguous registry or GitHub release lookups stop
+publication and require explicit partial-version cleanup after review.
+The workflow rechecks release state immediately before publishing the draft.
 A successful run for the exact tag is required evidence; the workflow currently
 on a development branch is not evidence for the historical `v6.0.0` artifact.
 

@@ -10,12 +10,19 @@ the 1200km mirror or Medium publication:
 
 ## Prerequisites
 
-- Docker Engine and Docker Compose v2.
-- 8 GB RAM available to Docker.
+- Git, `curl`, Python 3, and standard POSIX host utilities.
+- Docker Engine and its current, mutually compatible Docker Compose v2 plugin.
+  This guide is validated on Compose 2.40.3; do not pair an old standalone
+  Compose binary with a newer Engine.
+- 4 CPU cores, 8–12 GB RAM, and at least 80 GB free storage for the small
+  evaluation profile.
 - OpenSSL or another cryptographically secure secret generator.
-- At least one configured cloud or private LLM provider for AI generation.
-  Provider configuration is not required for exact/full-text intelligence
-  search.
+- Free local ports `3000`, `3001`, and `5432`.
+- Outbound HTTPS and DNS access for Docker Hub, GitHub, Debian/Alpine package
+  mirrors, PyPI, and npm during the source build and first reference ingestion.
+- Optional: a configured cloud or private LLM provider for AI generation.
+  Provider configuration is not required for the base platform or exact/full-text
+  intelligence search.
 
 The public browser workspace at <https://1200km.com/threat-matrix/> does not require Docker, but it also does not process private reports or store backend analyses.
 
@@ -49,7 +56,8 @@ gateway, so enforce per-client throttling there as well. The frontend
 overwrites browser-supplied forwarding headers. Do not reuse any value or leave
 the `CHANGE_ME...` examples in place.
 
-Then set at least one provider key for AI features:
+To enable cloud-backed AI features, set at least one provider key; otherwise
+leave these optional values empty:
 
 ```env
 ANTHROPIC_API_KEY=
@@ -207,8 +215,25 @@ custom feeds, and synced public reference data.
 ## 3. Start
 
 ```bash
-docker compose up --build
+docker compose config --quiet
+docker compose pull
+docker compose up -d --build
+docker compose ps
 ```
+
+The default checkout is a source-build stack. `docker compose pull` refreshes
+the pinned BusyBox, Redis, and Nginx runtime images and skips every buildable
+`adversarygraph-*:local-scan` target. The following `up --build` command builds
+the seven custom image families locally. It does not require Docker Hub
+repositories named `adversarygraph-*`.
+
+Do not point source installs at mutable GHCR `latest` tags. The historical
+`v6.0.0` release contains only five of the seven current image families and has
+no `adversarygraph-images.env` digest manifest. A prebuilt production rollout
+requires a later successfully gated release—or an independently built, scanned,
+and digest-pinned artifact set. The release workflow currently publishes
+Linux/AMD64 images; other architectures use an independently validated source
+build until a multi-architecture release gate is implemented.
 
 First startup creates the external DB directory, installs the bundled pgvector
 extension, creates the RAG tables and indexes, and ingests MITRE ATT&CK STIX
@@ -225,6 +250,17 @@ reconciliation after startup.
 | Liveness | http://localhost:3000/api/health |
 | Readiness | http://localhost:3000/api/ready |
 | Anomaly Detection Atlas | http://localhost:3001/anomaly-detection-atlas/ |
+
+The Compose ports bind to server loopback by design. From a remote workstation,
+use an SSH tunnel for evaluation instead of opening the ports publicly:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 -L 3001:127.0.0.1:3001 user@server
+```
+
+Then open `http://localhost:3000` on the workstation. For shared or production
+access, use a reviewed authenticated TLS reverse proxy rather than a public
+Docker port.
 
 ## 5. Smoke Test
 
@@ -253,21 +289,25 @@ docker compose run --rm selftest
 The self-test validates API startup, database connectivity, Redis,
 ATT&CK/ATLAS data ingestion, the pgvector extension, RAG corpus state, and
 provider key configuration without exposing secret values. A fresh deployment
-with no RAG run and an empty corpus remains `ok` and tells the operator to run
-the initial reconciliation. The RAG check becomes degraded after a failed or
-degraded run, a completed-but-empty run, failed embeddings, or enabled
-embeddings without completed vectors. The same check is available in the UI through error-popup
-`Recheck` actions and the internal troubleshooting page:
+waits up to fifteen minutes for reference ingestion before evaluating the full
+self-test; set `SELFTEST_TIMEOUT` when the host wrapper needs a longer window.
+The containerized self-test uses the same fifteen-minute startup gate. A fresh
+deployment with no RAG run and an empty corpus remains `ok` and tells the
+operator to run the initial reconciliation. The RAG check becomes degraded
+after a failed or degraded run, a completed-but-empty run, failed embeddings,
+or enabled embeddings without completed vectors. The same check is available
+in the UI through error-popup `Recheck` actions and the internal troubleshooting
+page:
 
 ```text
 http://localhost:3000/troubleshooting
 ```
 
-When authentication is enabled, the container command may fall back to
-database-backed `/api/ready` because `/api/system/selftest` is protected. Sign
-in with a user that has `run_analysis` and confirm the full result is
-`status=ok`; `degraded` means at least one warning still needs remediation or
-explicit risk acceptance.
+When authentication is enabled, the container command checks database-backed
+`/api/ready` if `/api/system/selftest` is protected, reports that the full gate
+is inconclusive, and exits `3`. Sign in with a user that has `run_analysis` and
+confirm the full result is `status=ok`; `degraded` means at least one warning
+still needs remediation or explicit risk acceptance.
 
 The API service is intentionally not published as `localhost:8000` by the
 default Compose file. Use the frontend proxy at `localhost:3000/api/...` unless
@@ -297,21 +337,35 @@ If the API exits during startup with:
 asyncpg.exceptions.InvalidPasswordError: password authentication failed for user "ag_user"
 ```
 
-the PostgreSQL volume was probably created with an older `DB_PASS`. Docker does
-not reinitialize an existing database volume when `.env` changes.
+the external PostgreSQL data directory was probably created with an older
+`DB_PASS`. Docker does not reinitialize an existing database directory when
+`.env` changes.
 
 This does not affect a fresh clone on a new machine when `.env` is created
 before the first `docker compose up --build`. In that case, PostgreSQL
-initializes the new volume with the current `DB_NAME`, `DB_USER`, and `DB_PASS`
+initializes the new directory with the current `DB_NAME`, `DB_USER`, and `DB_PASS`
 values.
 
-For a development deployment where you can discard local database state, reset
-the volumes:
+For a development deployment where you can discard local database state, stop
+the stack and move the database directory aside. The move is intentionally
+reversible:
 
 ```bash
-docker compose down -v
-docker compose up --build
+docker compose down
+mv ./data "${HOME}/adversarygraph-data-pre-reset-$(date -u +%Y%m%dT%H%M%SZ)"
+docker compose up -d --build
 ```
+
+Moving the whole default `./data` tree from the repository-owned parent works
+even when PostgreSQL created container-owned children. The destination is
+outside the Git checkout so the private database cannot become an accidental
+untracked commit. Store it on a protected filesystem with adequate capacity. If
+`ADVERSARYGRAPH_DB_DIR` points elsewhere, move that configured directory from
+a writable parent instead; an administrator may need to perform the move.
+
+`docker compose down -v` alone does **not** reset PostgreSQL because the
+database is a host bind mount. It removes other named runtime volumes while
+leaving the password mismatch intact.
 
 To keep the existing database, apply the current `.env` credentials to the
 existing PostgreSQL role:
@@ -326,6 +380,11 @@ Or use the wrapper script:
 ```bash
 ./scripts/apply-db-env-creds.sh
 ```
+
+With optional authentication enabled, the wrapper reports that credential
+rotation completed but exits `3` because its readiness check cannot replace an
+authenticated full self-test. Complete the gate from the troubleshooting UI or
+an authenticated API client with `run_analysis`, and require `status=ok`.
 
 Manual equivalent:
 

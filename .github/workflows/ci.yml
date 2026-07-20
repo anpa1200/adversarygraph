@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Check release metadata
         run: ./scripts/check-version-consistency.sh
+      - name: Test release tag ruleset verifier
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -q
 
   backend-tests:
     name: Backend tests

@@ -87,9 +87,22 @@ platform. To use them, configure an approved local OpenAI-compatible endpoint
 or an operator-approved cloud provider as described in the relevant guide.
 
 ```bash
+docker compose config --quiet
+docker compose pull
 docker compose up -d --build
 ./scripts/selftest.sh
 ```
+
+This checkout is a source-build installation. Its custom
+`adversarygraph-*:local-scan` images are built locally; `docker compose pull`
+only refreshes pinned third-party runtime images and intentionally skips those
+build targets. Do not replace the custom image variables with mutable `latest`
+tags. A prebuilt production deployment requires all seven immutable image
+digests from the exact release's `adversarygraph-images.env` attachment; the
+historical `v6.0.0` release does not contain that complete artifact set.
+The self-test waits up to fifteen minutes for first-boot ATT&CK/ATLAS reference
+ingestion; override this with `SELFTEST_TIMEOUT` when operating across a slower
+network.
 
 Open:
 

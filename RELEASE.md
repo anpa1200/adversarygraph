@@ -11,6 +11,10 @@ Use this checklist for reviewer-friendly AdversaryGraph releases.
 - Add `docs/release-notes/vX.Y.Z.md`.
 - Confirm sample outputs and demo dataset still match the documented workflow.
 - Confirm no secrets, private reports, credentials, or customer data are added.
+- Confirm an active GitHub tag ruleset blocks updates and deletion of existing
+  `v*` tags without bypass actors. The workflow verifies this policy and
+  repeatedly checks the remote tag target; publication stops when either gate
+  is absent.
 - If unified RAG schema or embedding settings changed, document the database
   migration, pgvector prerequisite, reindex plan, derived-data retention, and
   rollback behavior. Never change `RAG_EMBEDDING_DIMENSIONS` on an existing
@@ -74,15 +78,28 @@ retrieval smoke test. In a staging environment that matches production:
 1. Commit the release changes.
 2. Create tag `vX.Y.Z`.
 3. Push `main` and the tag.
-4. Wait for the tag workflow to build, scan, and publish the immutable image
-   family. Do not create the GitHub release manually: the workflow creates it
-   from `docs/release-notes/vX.Y.Z.md`. Every published release is immutable,
-   regardless of its attached assets. Only a release that is still a draft may
-   be resumed by the workflow's same-commit recovery checks.
-5. Verify the workflow-generated GitHub release contains
+4. Wait for the tag workflow to build and scan the image family, publish the
+   semantic-version tags, and record their immutable digests. Do not create the
+   GitHub release manually: the workflow creates it from
+   `docs/release-notes/vX.Y.Z.md`. The workflow never modifies a published
+   release. It resumes an existing draft only when its title, notes, and sole
+   manifest asset exactly match the regenerated release; otherwise it stops for
+   explicit review and draft cleanup.
+5. Confirm all seven GHCR packages are public. The workflow uses a clean,
+   unauthenticated Docker configuration to bind every public version manifest
+   to the scanned local image before it creates the public GitHub release. A
+   first publication can stop here if GitHub created a new package as private;
+   change that package's visibility to public, then rerun the same tag workflow.
+   A previously pushed version image is accepted on retry only when its image ID
+   exactly matches the new source build; review and remove a mismatched partial
+   registry version before retrying.
+   Do not create or replace the release manually. Shared `latest` tags are not
+   advanced because a seven-image family cannot be updated atomically; deploy
+   only from `adversarygraph-images.env`. Current artifacts target Linux/AMD64.
+6. Verify the workflow-generated GitHub release contains
    `adversarygraph-images.env`, and independently compare every recorded digest
    with the registry before deployment.
-6. Confirm the public hub and docs links still resolve.
+7. Confirm the public hub and docs links still resolve.
 
 ## Post-Release
 

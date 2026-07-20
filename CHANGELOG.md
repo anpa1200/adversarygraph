@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Fixed fresh source-checkout image handling: buildable AdversaryGraph services
+  now stay on local build targets during `docker compose pull`, while the
+  production overlay retains digest-pinned registry pulls. The next release
+  workflow also fails closed unless all seven versioned GHCR images are
+  anonymously readable and match the scanned image IDs before the GitHub
+  release is published. Shared `latest` tags are no longer advanced; the
+  release attachment records the verified immutable deployment digests. The
+  workflow also rechecks the remote tag commit and exact draft metadata/assets
+  immediately before publication, and fails unless active no-bypass tag
+  rulesets protect the version tag from updates and deletion.
+- Made host and container self-tests wait for first-boot reference ingestion
+  instead of treating the first normal in-progress response as a terminal
+  failure; a real failed ingestion still fails immediately. An auth-protected
+  full self-test now exits `3` after a readiness-only check instead of reporting
+  a false pass.
+- Corrected reset guidance for the external PostgreSQL bind directory and made
+  the legacy `make reset` target fail closed instead of deleting named volumes
+  while silently preserving the database and its old credentials.
 - Fixed source-build Compose startup for existing MalwareGraph volumes with a
   least-privilege one-shot ownership initializer shared by the UID 10001
   MalwareGraph service and GID 999 backend export path.
