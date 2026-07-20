@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed existing and fresh Atlas documentation volumes that could be initialized
+  as root-owned by another container, leaving the non-root `atlas-builder` in a
+  restart loop. A least-privilege one-shot initializer now reconciles ownership
+  before the builder starts, and all Atlas volume mounts disable image copy-up.
 - Enabled configured cloud providers for unsaved Threat Hunting plan drafts
   only when the draft has an explicit cloud-eligible TLP marking and the
   analyst authorizes that individual request. Restricted TLP markings remain
