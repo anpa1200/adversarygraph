@@ -487,23 +487,33 @@ Management. The API accepts
 `/api/ioc/sync/threatfox`, `/api/ioc/sync/otx`, `/api/ioc/sync/{source_id}`,
 and `/api/ioc/enrich/ttps`.
 
-## Sigma / YARA Rule Feed Synchronization
+## Sigma / YARA / YARA-L Rule Feed Synchronization
 
-Detection Studio supports operator-managed Sigma and YARA rule feeds. Use the
-Pipeline page to add the SigmaHQ default feed, the public Yara-Rules malware
-feed, a private raw rule file, a URL list, or a GitHub tree URL.
+Detection Studio supports operator-managed Sigma, YARA, and YARA-L rule feeds.
+Use the Pipeline page to add the SigmaHQ default feed, the public Yara-Rules
+malware feed, the Google SecOps community YARA-L tree, a private raw rule file,
+a URL list, or a GitHub tree URL.
 
 Useful endpoints:
 
 - `POST /api/pipeline/rule-feeds/defaults`
-- `POST /api/pipeline/sources` with `kind` set to `sigma` or `yara`
+- `POST /api/pipeline/sources` with `kind` set to `sigma`, `yara`, or `yaral`
 - `POST /api/pipeline/sources/{source_id}/run`
 - `GET /api/pipeline/detections/versions`
 
 The sync imports rules into `detection_versions`, preserves the source URL in
 validation metadata, and maps a rule to the first ATT&CK technique ID found in
 the rule text or Sigma tags. Large feeds should use `config.limit` to keep first
-syncs bounded.
+syncs bounded. A successful rule-feed run also upserts the normalized Threat
+Hunting Query Library index. The Query Library sync action indexes detection
+versions already stored in the database without fetching external content.
+
+Query Library access is deliberately split by permission. Analysts with
+<code>run_analysis</code> can search, inspect, copy, create hunt drafts, and
+build deterministic IOC queries. Indexing stored community detections requires
+<code>manage_feeds</code>. See [Threat Hunting Query Library](query-library.md)
+for source provenance, search syntax, API contracts, and the production review
+checklist.
 
 The Pipeline detection generator also supports YARA-L skeleton output for
 Chronicle / Google SecOps-style rule handoff. Generated YARA-L rules are

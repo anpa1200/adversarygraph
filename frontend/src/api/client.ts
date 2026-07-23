@@ -1571,7 +1571,7 @@ export const operationsApi = {
 // ── Collection, Enrichment, and Detection Pipeline ───────────────────────────
 
 export interface CollectionSource {
-  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas' | 'sigma' | 'yara' | 'sandbox'; url: string; enabled: boolean;
+  id: string; name: string; kind: 'rss' | 'taxii' | 'misp' | 'atlas' | 'sigma' | 'yara' | 'yaral' | 'sandbox'; url: string; enabled: boolean;
   interval_minutes: number; config: Record<string, unknown>; last_run_at: string | null; created_at: string; updated_at: string;
 }
 export interface CollectionRun {
@@ -2779,6 +2779,67 @@ export const threatHuntingApi = {
   archiveFinding: (huntId: string, findingId: string): Promise<ThreatHuntFinding> =>
     http.post(`/threat-hunting/hunts/${huntId}/findings/${findingId}/archive`).then(r => r.data),
   exportUrl: (huntId: string) => `/api/threat-hunting/hunts/${huntId}/export`,
+};
+
+// ── Threat Hunting Query Library ─────────────────────────────────────────────
+export interface HuntQueryLibraryItem {
+  id: string;
+  stable_key: string;
+  title: string;
+  description: string;
+  language: ThreatHuntQueryLanguage;
+  query_text: string;
+  technique_ids: string[];
+  tactics: string[];
+  tags: string[];
+  data_sources: string[];
+  platforms: string[];
+  ioc_types: string[];
+  source_name: string;
+  source_url: string;
+  source_license: string;
+  source_rule_id: string;
+  quality_score: number;
+  validation: { valid?: boolean; errors?: string[]; warnings?: string[]; [key: string]: unknown };
+  community: boolean;
+  updated_at: string;
+  last_synced_at: string | null;
+}
+
+export interface HuntQueryLibraryFacets {
+  total: number;
+  languages: Array<{ value: string; count: number }>;
+  techniques: Array<{ value: string; count: number }>;
+  tags: Array<{ value: string; count: number }>;
+  sources: Array<{ value: string; count: number }>;
+  platforms: Array<{ value: string; count: number }>;
+  ioc_types: Array<{ value: string; count: number }>;
+}
+
+export interface IOCQueryBuildResult {
+  title: string;
+  description: string;
+  query_language: ThreatHuntQueryLanguage;
+  query_text: string;
+  technique_ids: string[];
+  tags: string[];
+  observables: Array<{ value: string; type: string }>;
+  warnings: string[];
+}
+
+export const queryLibraryApi = {
+  search: (params?: { q?: string; language?: string; technique?: string; tag?: string; source?: string; platform?: string; ioc_type?: string; limit?: number; offset?: number }): Promise<{ items: HuntQueryLibraryItem[]; total: number; limit: number; offset: number }> =>
+    http.get('/query-library', { params }).then(r => r.data),
+  get: (id: string): Promise<HuntQueryLibraryItem> =>
+    http.get('/query-library/' + id).then(r => r.data),
+  facets: (): Promise<HuntQueryLibraryFacets> =>
+    http.get('/query-library/facets').then(r => r.data),
+  autocomplete: (q: string): Promise<{ items: Array<{ type: string; value: string; label: string; count: number }> }> =>
+    http.get('/query-library/autocomplete', { params: { q } }).then(r => r.data),
+  buildFromIoc: (body: { ioc_ids?: number[]; observables?: Array<{ value: string; type?: string }>; language: ThreatHuntQueryLanguage; title: string; technique_ids?: string[] }): Promise<IOCQueryBuildResult> =>
+    http.post('/query-library/build-from-ioc', body).then(r => r.data),
+  sync: (): Promise<{ seen: number; created: number; updated: number }> =>
+    http.post('/query-library/sync').then(r => r.data),
 };
 
 // ── Knowledge Library ─────────────────────────────────────────────────────────

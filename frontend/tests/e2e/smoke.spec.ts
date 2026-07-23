@@ -32,6 +32,7 @@ const sidebarLinkOrder = [
   'EMB3D',
   'Evidence Graph',
   'Threat Hunting',
+  'Query Library',
   'Attack Simulation',
   'Investigation',
   'Operations',

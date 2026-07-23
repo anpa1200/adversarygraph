@@ -2,7 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { threatHuntingApi } from '@/api/client';
+import { queryLibraryApi, threatHuntingApi, type HuntQueryLibraryItem, type IOCQueryBuildResult } from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { HuntDashboard, type HuntFilters } from '@/components/ThreatHunting/HuntDashboard';
 import { HuntWorkspace } from '@/components/ThreatHunting/HuntWorkspace';
@@ -57,6 +57,20 @@ export function ThreatHunting() {
     queryFn: () => threatHuntingApi.get(huntId),
     enabled: canReadHunts && Boolean(huntId),
   });
+  const libraryId = searchParams.get('library') || '';
+  const libraryItem = useQuery({
+    queryKey: ['query-library-item', libraryId],
+    queryFn: () => queryLibraryApi.get(libraryId),
+    enabled: canReadHunts && isNew && Boolean(libraryId),
+  });
+  const sessionDraft = useMemo(() => {
+    if (!isNew || searchParams.get('library_draft') !== 'session') return null;
+    try {
+      return JSON.parse(sessionStorage.getItem('adversarygraph:query-library-draft') || 'null') as IOCQueryBuildResult | null;
+    } catch {
+      return null;
+    }
+  }, [isNew, searchParams]);
 
   const initialTechniques = useMemo(() => {
     const requested = searchParams.get('technique') || searchParams.get('technique_id') || '';
@@ -92,6 +106,7 @@ export function ThreatHunting() {
           initialSourceRef={searchParams.get('source_ref') || ''}
           initialSourceSessionId={searchParams.get('source_session_id') || ''}
           initialAssistantMode={initialAssistantMode}
+          initialLibraryItem={(libraryItem.data ?? sessionDraft) as HuntQueryLibraryItem | IOCQueryBuildResult | null}
           defaultOwner={currentUser.data?.name ?? ''}
           loading={Boolean(huntId) && detail.isLoading}
           loadError={errorMessage(detail.error)}

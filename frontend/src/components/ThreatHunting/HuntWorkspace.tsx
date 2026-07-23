@@ -14,6 +14,8 @@ import {
   type ThreatHuntStatus,
   type ThreatHuntTemplate,
   type ThreatHuntTlp,
+  type HuntQueryLibraryItem,
+  type IOCQueryBuildResult,
 } from '@/api/client';
 import { CodeEditor } from '@/components/ui/code-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -60,6 +62,7 @@ export function HuntWorkspace({
   initialSourceRef,
   initialSourceSessionId,
   initialAssistantMode,
+  initialLibraryItem,
   defaultOwner,
   loading,
   loadError,
@@ -74,6 +77,7 @@ export function HuntWorkspace({
   initialSourceRef: string;
   initialSourceSessionId: string;
   initialAssistantMode: HuntAIAssistantMode | '';
+  initialLibraryItem: HuntQueryLibraryItem | IOCQueryBuildResult | null;
   defaultOwner: string;
   loading: boolean;
   loadError: string;
@@ -98,7 +102,8 @@ export function HuntWorkspace({
   const initialTechniquesKey = initialTechniques.join('\u0000');
 
   useEffect(() => {
-    const key = hunt ? `hunt:${hunt.id}` : `new:${initialTemplateId}:${initialTechniquesKey}:${initialSourceType}:${initialSourceRef}:${initialSourceSessionId}`;
+    const libraryKey = initialLibraryItem ? String(initialLibraryItem.query_text.length) : '';
+    const key = hunt ? `hunt:${hunt.id}` : `new:${initialTemplateId}:${initialTechniquesKey}:${initialSourceType}:${initialSourceRef}:${initialSourceSessionId}:${libraryKey}`;
     if (initialized.current === key) return;
     if (!hunt && initialTemplateId && !templates.length) return;
     initialized.current = key;
@@ -113,6 +118,17 @@ export function HuntWorkspace({
 
     const template = templates.find(item => item.id === initialTemplateId);
     const next = template ? applyTemplate(emptyHunt(defaultOwner), template) : emptyHunt(defaultOwner);
+    if (initialLibraryItem) {
+      next.title = initialLibraryItem.title.replace(/\s+—\s+(Sigma|YARA-L)$/i, '');
+      next.hypothesis = `If activity matching “${next.title}” is present in the scoped environment, then selected telemetry should contain events matching the reviewed query.`;
+      next.description = initialLibraryItem.description;
+      next.query_language = ('query_language' in initialLibraryItem ? initialLibraryItem.query_language : initialLibraryItem.language) as ThreatHuntQueryLanguage;
+      next.query_text = initialLibraryItem.query_text;
+      next.technique_ids = [...initialLibraryItem.technique_ids];
+      next.tags = unique([...next.tags, ...initialLibraryItem.tags, 'query-library']);
+      if ('data_sources' in initialLibraryItem) next.telemetry_sources = [...initialLibraryItem.data_sources];
+      next.assumptions = 'Imported from the AdversaryGraph query library. Validate destination schema, field mappings, data availability, time range, exclusions, syntax, and IOC freshness before execution.';
+    }
     const requestedTechniques = initialTechniquesKey ? initialTechniquesKey.split('\u0000') : [];
     next.technique_ids = unique([...next.technique_ids, ...requestedTechniques.map(value => value.toUpperCase())]);
     const triggerType = initialSourceType || (requestedTechniques.length ? 'navigator' : '');
@@ -124,7 +140,7 @@ export function HuntWorkspace({
     setDraft(next);
     setSavedFingerprint(draftFingerprint(emptyHunt(defaultOwner)));
     setFindingFormDirty(false);
-  }, [defaultOwner, hunt, initialSourceRef, initialSourceSessionId, initialSourceType, initialTechniquesKey, initialTemplateId, templates]);
+  }, [defaultOwner, hunt, initialLibraryItem, initialSourceRef, initialSourceSessionId, initialSourceType, initialTechniquesKey, initialTemplateId, templates]);
 
   useEffect(() => {
     if (!initialAssistantMode) return;

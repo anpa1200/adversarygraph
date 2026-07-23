@@ -24,6 +24,7 @@ ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 SIGMAHQ_RULES_URL = "https://github.com/SigmaHQ/sigma/tree/master/rules"
 YARA_RULES_URL = "https://github.com/Yara-Rules/rules/tree/master/malware"
+YARAL_RULES_URL = "https://github.com/chronicle/detection-rules/tree/main/rules/community"
 YARA_RULE_URLS = [
     "https://raw.githubusercontent.com/Yara-Rules/rules/master/malware/APT_Duqu2.yar",
     "https://raw.githubusercontent.com/Yara-Rules/rules/master/malware/APT_Hikit.yar",
@@ -58,7 +59,11 @@ async def ensure_default_detection_feeds(session: AsyncSession) -> list[Collecti
             "url": SIGMAHQ_RULES_URL,
             "enabled": True,
             "interval_minutes": 1440,
-            "config": {"limit": 250},
+            "config": {
+                "limit": 250,
+                "license": "DRL-1.1",
+                "source": "https://github.com/SigmaHQ/sigma",
+            },
         },
         {
             "name": "Yara-Rules Malware Rules",
@@ -73,6 +78,18 @@ async def ensure_default_detection_feeds(session: AsyncSession) -> list[Collecti
                 "rule_urls": YARA_RULE_URLS,
             },
         },
+        {
+            "name": "Google SecOps Community YARA-L Rules",
+            "kind": "yaral",
+            "url": YARAL_RULES_URL,
+            "enabled": True,
+            "interval_minutes": 1440,
+            "config": {
+                "limit": 100,
+                "license": "Apache-2.0",
+                "source": "https://github.com/chronicle/detection-rules",
+            },
+        },
     ]
     rows: list[CollectionSource] = []
     for item in defaults:
@@ -82,21 +99,26 @@ async def ensure_default_detection_feeds(session: AsyncSession) -> list[Collecti
             )
         ).scalar_one_or_none()
         if existing:
+            config = dict(existing.config or {})
+            for key in ("license", "source", "rule_urls"):
+                if key not in config and key in item["config"]:
+                    config[key] = item["config"][key]
+            existing.config = config
             rows.append(existing)
             continue
         row = CollectionSource(**item)
         session.add(row)
         await session.flush()
         rows.append(row)
-    await session.commit()
+    await session.flush()
     return rows
 
 
 async def sync_detection_rule_feed(session: AsyncSession, source: CollectionSource) -> CollectionRun:
-    if source.kind not in {"sigma", "yara"}:
-        raise ValueError(f"{source.kind.upper()} is not a Sigma/YARA detection-rule feed")
+    if source.kind not in {"sigma", "yara", "yaral"}:
+        raise ValueError(f"{source.kind.upper()} is not a Sigma/YARA/YARA-L detection-rule feed")
     limit = int((source.config or {}).get("limit") or 100)
-    limit = max(1, min(limit, 100))
+    limit = max(1, min(limit, 500))
     run = CollectionRun(source_id=source.id)
     session.add(run)
     await session.flush()
@@ -104,7 +126,12 @@ async def sync_detection_rule_feed(session: AsyncSession, source: CollectionSour
         items = fetch_detection_rules(source.url, source.kind, limit=limit, explicit_urls=(source.config or {}).get("rule_urls"))
         imported = 0
         for item in items:
-            if await _upsert_detection_version(session, item, source.name):
+            if await _upsert_detection_version(
+                session,
+                item,
+                source.name,
+                source_license=str((source.config or {}).get("license") or ""),
+            ):
                 imported += 1
         run.status = "complete"
         run.items_seen = len(items)
@@ -116,6 +143,10 @@ async def sync_detection_rule_feed(session: AsyncSession, source: CollectionSour
     run.completed_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(run)
+    if run.status == "complete":
+        from app.services.query_library import import_detection_versions
+
+        await import_detection_versions(session)
     return run
 
 
@@ -262,7 +293,13 @@ def _parse_rule_text(text: str, kind: str, source_url: str) -> DetectionRuleItem
     )
 
 
-async def _upsert_detection_version(session: AsyncSession, item: DetectionRuleItem, source_name: str) -> bool:
+async def _upsert_detection_version(
+    session: AsyncSession,
+    item: DetectionRuleItem,
+    source_name: str,
+    *,
+    source_license: str = "",
+) -> bool:
     created_by = f"feed:{source_name}"
     existing = (
         await session.execute(
@@ -276,6 +313,7 @@ async def _upsert_detection_version(session: AsyncSession, item: DetectionRuleIt
     validation = validate_detection(item.format, item.content)
     validation["source_url"] = item.source_url
     validation["rule_id"] = item.rule_id
+    validation["source_license"] = source_license
     if existing:
         existing.content = item.content
         existing.technique_id = item.technique_id
@@ -315,4 +353,6 @@ def _path_matches_kind(path: str, kind: str) -> bool:
         return path.endswith((".yml", ".yaml")) and (path.startswith("rules/") or "/rules/" in path)
     if kind == "yara":
         return path.endswith((".yar", ".yara"))
+    if kind == "yaral":
+        return path.endswith(".yaral")
     return False

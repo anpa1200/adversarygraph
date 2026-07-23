@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added a production Threat Hunting Query Library with more than thirty
+  reviewed Sigma and YARA-L examples, normalized tags and ATT&CK links,
+  provenance and parser state, server-side fielded search, typed autocomplete,
+  facets, community-feed indexing, and direct handoff into canonical hunt
+  drafts.
+- Added deterministic IOC-to-query generation for Sigma, YARA-L, YARA, KQL,
+  SPL, EQL, Lucene, SQL, osquery, and generic output. Values are typed and
+  escaped locally, stored IOC ATT&CK mappings can be retained, and every result
+  carries explicit destination-validation warnings.
+- Added the official Google SecOps community YARA-L GitHub tree as a bounded
+  default rule source alongside SigmaHQ and Yara-Rules. Successful rule-feed
+  runs now refresh the normalized Query Library index while preserving
+  upstream URLs, identifiers, license context, and validation metadata.
 - Added a direct **Generate query** action to Threat Hunting and made YARA-L
   2.0 for Google SecOps UDM a first-class query target across the editor, AI
   request contract, prompt guardrails, and query-draft replacement workflow.

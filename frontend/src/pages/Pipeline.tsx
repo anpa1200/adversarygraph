@@ -93,13 +93,13 @@ function SandboxBehaviors(){
 function DetectionStudio(){
   const canManageFeeds = useHasPermission('manage_feeds');
   const canManageDetections = useHasPermission('manage_detections');
-  const qc=useQueryClient();const{data=[]}=useQuery({queryKey:['pipeline-detection-versions'],queryFn:pipelineApi.versions});const{data:sources=[]}=useQuery({queryKey:['pipeline-sources'],queryFn:pipelineApi.sources});const[title,setTitle]=useState('');const[ttp,setTtp]=useState('T1059.001');const[format,setFormat]=useState('sigma');const[active,setActive]=useState<DetectionVersion|null>(null);const[feedName,setFeedName]=useState('');const[feedUrl,setFeedUrl]=useState('');const[feedKind,setFeedKind]=useState<'sigma'|'yara'>('sigma');const[useAi,setUseAi]=useState(false);const[provider,setProvider]=useState<'local'|'claude'|'openai'|'gemini'|'minimax'>('local');const[model,setModel]=useState('');const[telemetry,setTelemetry]=useState('process_creation');const[context,setContext]=useState('');
+  const qc=useQueryClient();const{data=[]}=useQuery({queryKey:['pipeline-detection-versions'],queryFn:pipelineApi.versions});const{data:sources=[]}=useQuery({queryKey:['pipeline-sources'],queryFn:pipelineApi.sources});const[title,setTitle]=useState('');const[ttp,setTtp]=useState('T1059.001');const[format,setFormat]=useState('sigma');const[active,setActive]=useState<DetectionVersion|null>(null);const[feedName,setFeedName]=useState('');const[feedUrl,setFeedUrl]=useState('');const[feedKind,setFeedKind]=useState<'sigma'|'yara'|'yaral'>('sigma');const[useAi,setUseAi]=useState(false);const[provider,setProvider]=useState<'local'|'claude'|'openai'|'gemini'|'minimax'>('local');const[model,setModel]=useState('');const[telemetry,setTelemetry]=useState('process_creation');const[context,setContext]=useState('');
   const generate=useMutation({mutationFn:()=>pipelineApi.generate({title,technique_id:ttp,format,telemetry:telemetry.split(',').map(item=>item.trim()).filter(Boolean),use_ai:useAi,provider,model:model.trim()||undefined,context}),onSuccess:row=>{setActive(row);qc.invalidateQueries({queryKey:['pipeline-detection-versions']})}});
   const validate=useMutation({mutationFn:()=>pipelineApi.validate(active!.format,active!.content),onSuccess:validation=>active&&setActive({...active,validation})});
   const createDefaults=useMutation({mutationFn:pipelineApi.createDefaultRuleFeeds,onSuccess:()=>qc.invalidateQueries({queryKey:['pipeline-sources']})});
   const createFeed=useMutation({mutationFn:()=>pipelineApi.createSource({name:feedName,kind:feedKind,url:feedUrl,enabled:true,interval_minutes:1440,config:{limit:250}}),onSuccess:()=>{setFeedName('');setFeedUrl('');qc.invalidateQueries({queryKey:['pipeline-sources']})}});
   const syncFeed=useMutation({mutationFn:pipelineApi.runSource,onSuccess:()=>{qc.invalidateQueries({queryKey:['pipeline-runs']});qc.invalidateQueries({queryKey:['pipeline-detection-versions']});qc.invalidateQueries({queryKey:['pipeline-sources']})}});
-  const ruleFeeds=sources.filter(source=>source.kind==='sigma'||source.kind==='yara');
+  const ruleFeeds=sources.filter(source=>source.kind==='sigma'||source.kind==='yara'||source.kind==='yaral');
   return <div className="max-w-7xl mx-auto grid lg:grid-cols-[420px_1fr] gap-4">
     <div className="space-y-4">
       <Panel title="Connect Sigma / YARA Rule Feeds">
@@ -111,7 +111,7 @@ function DetectionStudio(){
               <input className={input} value={feedName} onChange={e=>setFeedName(e.target.value)} placeholder="Feed name"/>
               <input className={input} value={feedUrl} onChange={e=>setFeedUrl(e.target.value)} placeholder="Raw file, URL list, or GitHub tree URL"/>
               <div className="grid grid-cols-[1fr_auto] gap-2">
-                <select className={input} value={feedKind} onChange={e=>setFeedKind(e.target.value as typeof feedKind)}><option value="sigma">Sigma</option><option value="yara">YARA</option></select>
+                <select className={input} value={feedKind} onChange={e=>setFeedKind(e.target.value as typeof feedKind)}><option value="sigma">Sigma</option><option value="yara">YARA</option><option value="yaral">YARA-L</option></select>
                 <button className="primary" disabled={!feedName.trim()||!feedUrl.trim()||createFeed.isPending} onClick={()=>createFeed.mutate()}>Add Feed</button>
               </div>
             </div>

@@ -242,10 +242,22 @@ cancelled, and archived hunts are read-only, and archive actions preserve the
 record instead of deleting it. Navigator can prefill a hunt from a selected
 technique, while Threat Radar writes directly into the same canonical queue.
 
+The adjacent **Query Library** provides reviewed Sigma and YARA-L starting
+points plus source-backed community rules collected through Pipeline. Search
+supports ordinary text, typed autocomplete, facets, and fielded filters such as
+<code>tag:persistence</code>, <code>ttp:T1059.001</code>, and
+<code>lang:yaral</code>. Each result preserves its source URL, license context,
+parser status, tags, platforms, and direct ATT&CK links. Analysts can create a
+hunt draft from a result or build a deterministic Sigma, YARA-L, YARA, KQL,
+SPL, EQL, Lucene, SQL, osquery, or generic query from supplied IOCs.
+
 See the comprehensive
 [`Threat Hunting: From Hypothesis to Defensible Detection`](threat-hunting-guide.md)
 guide for program design, telemetry engineering, execution controls, templates,
 checklists, and twenty worked playbooks.
+Query Library operation, search syntax, feed indexing, IOC drafting, and the
+production review checklist are documented in
+[Threat Hunting Query Library](query-library.md).
 
 ### Knowledge Library
 

@@ -177,6 +177,29 @@ export async function mockApi(page: Page) {
     end: 209,
     verified: true,
   };
+  const queryLibraryItem = {
+    id: 'query-library-1',
+    stable_key: 'curated:sigma:encoded-powershell',
+    title: 'Encoded PowerShell execution — Sigma',
+    description: 'Hunt for encoded PowerShell execution using process creation telemetry.',
+    language: 'sigma',
+    query_text: 'title: Encoded PowerShell execution\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine|contains: -enc\n  condition: selection',
+    technique_ids: ['T1059.001'],
+    tactics: ['execution'],
+    tags: ['threat-hunting', 'execution', 'powershell'],
+    data_sources: ['process_creation'],
+    platforms: ['Windows'],
+    ioc_types: ['process'],
+    source_name: 'AdversaryGraph Reviewed Examples',
+    source_url: 'https://attack.mitre.org/techniques/T1059/001/',
+    source_license: 'Apache-2.0',
+    source_rule_id: 'ag-encoded-powershell',
+    quality_score: 85,
+    validation: { valid: true, errors: [], warnings: [] },
+    community: false,
+    updated_at: '2026-07-20T10:00:00Z',
+    last_synced_at: null,
+  };
 
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
@@ -494,7 +517,16 @@ export async function mockApi(page: Page) {
         execution_boundary: 'No telemetry query was executed and no hunt or finding record was changed.',
       });
     }
-    if (path === '/threat-hunting/templates') return json([huntTemplate]);
+   if (path === '/threat-hunting/templates') return json([huntTemplate]);
+    if (path === '/query-library/facets') return json({ total: 1, languages: [{ value: 'sigma', count: 1 }], techniques: [{ value: 'T1059.001', count: 1 }], tags: queryLibraryItem.tags.map(value => ({ value, count: 1 })), sources: [{ value: queryLibraryItem.source_name, count: 1 }], platforms: [{ value: 'Windows', count: 1 }], ioc_types: [{ value: 'process', count: 1 }] });
+    if (path === '/query-library/autocomplete') return json({ items: [{ type: 'technique', value: 'T1059.001', label: 'technique:T1059.001', count: 1 }] });
+    if (path === '/query-library/query-library-1') return json(queryLibraryItem);
+    if (path === '/query-library' && route.request().method() === 'GET') return json({ items: [queryLibraryItem], total: 1, limit: 60, offset: 0 });
+    if (path === '/query-library/sync' && route.request().method() === 'POST') return json({ seen: 1, created: 0, updated: 1 });
+    if (path === '/query-library/build-from-ioc' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      return json({ title: body.title, description: 'Match 2 supplied IOCs. Generated locally without an LLM.', query_language: body.language, query_text: 'rule ag_ioc_match {\n  events:\n    ($e.target.ip = "203.0.113.10")\n  condition:\n    $e\n}', technique_ids: body.technique_ids || [], tags: ['ioc-hunt', 'ip'], observables: body.observables, warnings: ['Validate field mappings before execution.'] });
+    }
     if (path === '/threat-hunting/stats') {
       const visibleFindings = findings.filter(item => !item.archived_at);
       return json({

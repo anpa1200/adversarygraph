@@ -148,6 +148,10 @@ async def create_tables() -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_source_type ON threat_hunt_requests (source_type)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_disposition ON threat_hunt_requests (disposition)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_threat_hunt_requests_archived_at ON threat_hunt_requests (archived_at)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hunt_query_library_techniques_gin ON hunt_query_library USING gin (technique_ids)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hunt_query_library_tags_gin ON hunt_query_library USING gin (tags)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hunt_query_library_language_quality ON hunt_query_library (language, quality_score)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hunt_query_library_source_name ON hunt_query_library (source_name)"))
         await conn.execute(text("""
             DO $$
             BEGIN

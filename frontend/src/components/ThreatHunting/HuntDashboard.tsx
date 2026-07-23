@@ -101,6 +101,7 @@ export function HuntDashboard({
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={onCreate} className="primary min-h-10 px-4 text-sm">Create threat hunt</button>
+                <a href="/query-library" className="secondary-action inline-flex min-h-10 items-center px-4 text-xs">Browse query library</a>
                 <a href="/help#threat-hunting" className="secondary-action inline-flex min-h-10 items-center px-4 text-xs">Open hunting guide</a>
               </div>
             </div>
