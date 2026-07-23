@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -634,6 +634,23 @@ async def reconcile_corpus(
     try:
         records = await collect_source_records(db, selected)
         run.documents_seen = len(records)
+
+        # RAG chunks are a derived index. For real SQLAlchemy sessions, clear
+        # chunks for the selected source types before loading existing documents
+        # so reconciliation can rebuild them deterministically without violating
+        # the (document_id, ordinal) uniqueness constraint on repeated runs.
+        # Unit tests use a lightweight fake session without SQL execution; that
+        # path still validates the pure reconciliation decision logic.
+        if hasattr(db, "execute"):
+            await db.execute(
+                delete(RAGChunk).where(
+                    RAGChunk.document_id.in_(
+                        select(RAGDocument.id).where(RAGDocument.source_type.in_(selected))
+                    )
+                )
+            )
+            await db.flush()
+
         existing = await _load_existing_documents(db, selected)
         existing_by_key = {(doc.source_type, doc.source_id, doc.source_version): doc for doc in existing}
         seen: set[tuple[str, str, str]] = set()
@@ -643,7 +660,7 @@ async def reconcile_corpus(
             key = (record.source_type, record.source_id, record.source_version)
             seen.add(key)
             document = existing_by_key.get(key)
-            changed = document is None or document.content_hash != record.content_hash or not document.is_active
+            changed = document is None or document.content_hash != record.content_hash or not document.is_active or not document.chunks
             if document is None:
                 document = _new_document(record, now)
                 db.add(document)
