@@ -2,6 +2,8 @@ import pytest
 
 from app.services.ioc_intel import (
     IOCImportItem,
+    _SQL_IN_BATCH_SIZE,
+    enrich_ioc_ttp_mappings,
     _otx_get_json,
     _otx_subscribed_pulses,
     _item_technique_ids,
@@ -68,6 +70,37 @@ def test_ioc_ttp_mapping_evidence_preserves_priority():
     assert by_id["T1105"] == "strict-report"
     assert by_id["T1059"] == "enrichment-platform"
     assert by_id["T1566"] == "enrichment-platform"
+
+
+async def test_enrich_ioc_ttp_mappings_batches_large_indicator_id_lists():
+    class EmptyRows:
+        class EmptyScalars:
+            def all(self):
+                return []
+
+        def scalars(self):
+            return self.EmptyScalars()
+
+    class FakeSession:
+        def __init__(self):
+            self.execute_calls = 0
+            self.flushed = False
+
+        async def execute(self, _stmt):
+            self.execute_calls += 1
+            return EmptyRows()
+
+        async def flush(self):
+            self.flushed = True
+
+    session = FakeSession()
+    indicator_ids = list(range((_SQL_IN_BATCH_SIZE * 3) + 5))
+
+    result = await enrich_ioc_ttp_mappings(session, indicator_ids=indicator_ids, use_ai=False)
+
+    assert session.execute_calls == 4
+    assert session.flushed is True
+    assert result["checked"] == 0
 
 
 async def test_otx_get_json_retries_transient_timeout(monkeypatch):

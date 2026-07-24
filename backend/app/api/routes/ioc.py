@@ -41,7 +41,7 @@ from app.services.ioc_intel import (
     update_ioc_source,
 )
 from app.services.virustotal import classify_indicator, lookup_virustotal_ioc
-from app.services.ioc_investigation import InvestigationOptions, investigate_ioc
+from app.services.ioc_investigation import InvestigationOptions, investigate_ioc as run_ioc_investigation
 from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
 from app.services.opencti_sync import (
     OpenCTISyncError,
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 _limit_10mb = require_body_size(10 * 1024 * 1024)
 MAX_REPORT_UPLOAD_BYTES = 50 * 1024 * 1024
 
-investigate_ioc = require_permission("run_analysis")
+investigate_ioc_permission = require_permission("run_analysis")
 manage_ioc_feeds = require_permission("manage_feeds")
 manage_ioc_intel = require_permission("manage_intel")
 export_ioc = require_permission("export_data")
@@ -426,7 +426,7 @@ async def sources(session: AsyncSession = Depends(get_session), _: TeamUser = De
 
 
 @router.post("/virustotal/lookup", response_model=VirusTotalLookupOut)
-async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(investigate_ioc)):
+async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(investigate_ioc_permission)):
     try:
         return await lookup_virustotal_ioc(session, payload.indicator, domain=payload.domain)
     except ValueError as exc:
@@ -453,9 +453,9 @@ async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession =
 
 
 @router.post("/investigate", response_model=IOCInvestigationOut)
-async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc)):
+async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)):
     try:
-        result = await investigate_ioc(
+        result = await run_ioc_investigation(
             session,
             payload.artifact,
             options=InvestigationOptions(
@@ -539,7 +539,7 @@ async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends
 
 
 @router.delete("/investigations/{session_id}", status_code=204)
-async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc)):
+async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:

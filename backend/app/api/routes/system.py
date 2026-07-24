@@ -5,7 +5,7 @@ from time import perf_counter, sleep
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
@@ -19,6 +19,7 @@ from app.models.ioc import IOCIndicator, IOCSource
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.services.auth import TeamUser, audit, require_permission
 from app.services.cve_intel import ensure_cve_sources
+from app.services.data_integrity import ioc_cve_integrity_snapshot
 from app.services.startup_status import startup_status
 from app.services.taxonomy_migration import normalize_existing_taxonomy, taxonomy_normalization_status
 
@@ -42,9 +43,91 @@ class SelfTestResult(BaseModel):
     checks: list[SelfTestCheck]
 
 
+class ApiOperationCapability(BaseModel):
+    method: str
+    path: str
+    operation_id: str
+    summary: str
+    success_codes: list[str]
+    deprecated: bool = False
+
+
+class ApiModuleCapability(BaseModel):
+    name: str
+    operation_count: int
+    operations: list[ApiOperationCapability]
+
+
+class ApiCapabilitiesOut(BaseModel):
+    name: str
+    version: str
+    openapi_url: str
+    docs_url: str
+    redoc_url: str
+    module_count: int
+    path_count: int
+    operation_count: int
+    generated_at: str
+    modules: list[ApiModuleCapability]
+
+
 @router.get("/startup")
 async def startup() -> dict[str, Any]:
     return startup_status.snapshot()
+
+
+@router.get(
+    "/capabilities",
+    response_model=ApiCapabilitiesOut,
+    summary="List every supported API module and operation",
+)
+async def api_capabilities(request: Request) -> ApiCapabilitiesOut:
+    """Return a machine-readable inventory derived from the active OpenAPI contract."""
+    schema = request.app.openapi()
+    modules: dict[str, list[ApiOperationCapability]] = {}
+    methods = {"delete", "get", "head", "options", "patch", "post", "put"}
+
+    for path, path_item in schema.get("paths", {}).items():
+        for method, operation in path_item.items():
+            if method.lower() not in methods:
+                continue
+            tags = operation.get("tags") or ["System"]
+            success_codes = sorted(
+                str(code)
+                for code in operation.get("responses", {})
+                if str(code).startswith("2")
+            )
+            capability = ApiOperationCapability(
+                method=method.upper(),
+                path=path,
+                operation_id=str(operation.get("operationId") or ""),
+                summary=str(operation.get("summary") or ""),
+                success_codes=success_codes,
+                deprecated=bool(operation.get("deprecated", False)),
+            )
+            for tag in tags:
+                modules.setdefault(str(tag), []).append(capability)
+
+    module_items = [
+        ApiModuleCapability(
+            name=name,
+            operation_count=len(operations),
+            operations=sorted(operations, key=lambda item: (item.path, item.method)),
+        )
+        for name, operations in sorted(modules.items())
+    ]
+    return ApiCapabilitiesOut(
+        name=str(schema.get("info", {}).get("title") or request.app.title),
+        version=str(schema.get("info", {}).get("version") or request.app.version),
+        openapi_url=request.app.openapi_url or "/openapi.json",
+        docs_url=request.app.docs_url or "/docs",
+        redoc_url=request.app.redoc_url or "/redoc",
+        module_count=len(module_items),
+        path_count=len(schema.get("paths", {})),
+        operation_count=sum(item.operation_count for item in module_items),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        modules=module_items,
+    )
 
 
 @router.get("/taxonomy/status")
@@ -90,6 +173,41 @@ def _overall_selftest_status(checks: list[SelfTestCheck]) -> str:
     if any(check.status in {"warning", "degraded"} for check in checks):
         return "degraded"
     return "ok"
+
+
+def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
+    duplicate_groups = summary.get("duplicate_groups") or {}
+    scan_status = summary.get("status")
+    if scan_status in {"pending", "running"}:
+        return _check_status(
+            "ioc_cve_dedup_integrity",
+            "warning",
+            "IOC/CVE deduplication integrity scan is running in the background.",
+            summary,
+        )
+    if scan_status == "unavailable":
+        return _check_status(
+            "ioc_cve_dedup_integrity",
+            "error",
+            "IOC/CVE deduplication integrity scan could not complete. See server logs.",
+            summary,
+        )
+    status = "ok" if scan_status == "ok" else "error"
+    normalized_ioc = int(duplicate_groups.get("normalized_ioc_value_type_source") or 0)
+    cve_duplicates = int(duplicate_groups.get("normalized_cve_id") or 0)
+    cross_source = int(duplicate_groups.get("cross_source_ioc_overlap") or 0)
+    if status == "ok":
+        message = (
+            "IOC/CVE deduplication integrity passed"
+            + (f"; {cross_source} cross-source IOC overlap sample group(s) observed." if cross_source else ".")
+        )
+    else:
+        message = (
+            "IOC/CVE duplicate integrity failed: "
+            f"{normalized_ioc} normalized IOC duplicate group(s), "
+            f"{cve_duplicates} CVE duplicate group(s)."
+        )
+    return _check_status("ioc_cve_dedup_integrity", status, message, summary)
 
 
 def _api_key_check() -> SelfTestCheck:
@@ -876,6 +994,7 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     },
                 )
             )
+            checks.append(_data_integrity_check(ioc_cve_integrity_snapshot()))
             checks.append(_taxonomy_normalization_check(await taxonomy_normalization_status(session)))
     except Exception as exc:
         checks.append(

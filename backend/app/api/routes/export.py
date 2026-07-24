@@ -27,6 +27,41 @@ _PDF_HEADERS = {
     "Cache-Control": "no-store",
 }
 
+_PDF_RESPONSE = {
+    200: {
+        "description": "Generated PDF document.",
+        "content": {
+            "application/pdf": {
+                "schema": {"type": "string", "format": "binary"},
+            },
+        },
+    },
+    202: {
+        "description": "The source analysis is not complete yet.",
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                    "required": ["detail"],
+                },
+            },
+        },
+    },
+}
+
+_STIX_RESPONSE = {
+    200: {
+        "description": "STIX 2.1 bundle.",
+        "content": {
+            "application/stix+json": {
+                "schema": {"type": "string", "format": "binary"},
+            },
+        },
+    },
+    202: _PDF_RESPONSE[202],
+}
+
 
 def _technique_export_query(
     attack_ids: set[str],
@@ -54,8 +89,8 @@ def _group_export_query(
 
 # ── Analysis PDF ──────────────────────────────────────────────────────────────
 
-@router.get("/analysis/{session_id}", response_class=Response)
-@router.post("/analysis/{session_id}", response_class=Response)
+@router.get("/analysis/{session_id}", response_class=Response, responses=_PDF_RESPONSE)
+@router.post("/analysis/{session_id}", response_class=Response, responses=_PDF_RESPONSE)
 async def export_analysis_pdf(
     session_id: str,
     db: AsyncSession = Depends(get_session),
@@ -110,7 +145,7 @@ async def export_analysis_pdf(
 
 # ── Analysis STIX 2.1 / OpenCTI ───────────────────────────────────────────────
 
-@router.get("/analysis/{session_id}/stix", response_class=Response)
+@router.get("/analysis/{session_id}/stix", response_class=Response, responses=_STIX_RESPONSE)
 async def export_analysis_stix(
     session_id: str,
     db: AsyncSession = Depends(get_session),
@@ -215,7 +250,7 @@ class LayerPdfRequest(BaseModel):
     version: str | None = None
 
 
-@router.post("/layer", response_class=Response)
+@router.post("/layer", response_class=Response, responses={200: _PDF_RESPONSE[200]})
 async def export_layer_pdf(
     req: LayerPdfRequest,
     db: AsyncSession = Depends(get_session),

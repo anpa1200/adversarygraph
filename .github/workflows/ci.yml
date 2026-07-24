@@ -38,6 +38,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Validate OpenAPI and frontend API contracts
+        working-directory: .
+        env:
+          DB_PASS: ci_test_password
+          LOG_DIR: /tmp/adversarygraph-test-logs
+        run: ./scripts/check-api-contracts.py
       - name: Run unit tests
         env:
           DB_PASS: ci_test_password
@@ -400,6 +406,20 @@ jobs:
         run: docker compose up -d --build postgres redis malwaregraph attack-lab-web attack-lab-endpoint api frontend
       - name: Run self-test service
         run: docker compose run --rm selftest
+      - name: Exercise every live read-only API operation
+        run: |
+          ./scripts/test-api-live.py \
+            --base-url http://127.0.0.1:3000 \
+            --timeout 20 \
+            --workers 4 \
+            --json-output /tmp/adversarygraph-live-api.json
+      - name: Upload live API results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: live-api-smoke-results
+          path: /tmp/adversarygraph-live-api.json
+          if-no-files-found: warn
       - name: Show logs on failure
         if: failure()
         run: docker compose logs --tail=200 api frontend postgres redis malwaregraph attack-lab-web attack-lab-endpoint

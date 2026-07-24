@@ -908,31 +908,46 @@ async def statistics_overview(
     cross_rows = await _rows(
         session,
         """
-        SELECT t.attack_id AS id, t.name AS label,
-               (COUNT(DISTINCT gt.group_id)
-                + COUNT(DISTINCT ctl.cve_id)
-                + COUNT(DISTINCT i.id)
-                + COUNT(DISTINCT ct.campaign_id))::int AS value,
-               CONCAT('actors=', COUNT(DISTINCT gt.group_id),
-                      ', cves=', COUNT(DISTINCT ctl.cve_id),
-                      ', iocs=', COUNT(DISTINCT i.id),
-                      ', campaigns=', COUNT(DISTINCT ct.campaign_id)) AS secondary
-        FROM techniques t
-        LEFT JOIN apt_group_techniques gt ON gt.technique_id = t.id
-        LEFT JOIN campaign_techniques ct ON ct.technique_id = t.id
-        LEFT JOIN cve_technique_links ctl ON ctl.attack_id = t.attack_id
-        LEFT JOIN LATERAL (
-            SELECT i.id
+        WITH actor_counts AS (
+            SELECT technique_id, COUNT(DISTINCT group_id)::int AS value
+            FROM apt_group_techniques
+            GROUP BY technique_id
+        ),
+        campaign_counts AS (
+            SELECT technique_id, COUNT(DISTINCT campaign_id)::int AS value
+            FROM campaign_techniques
+            GROUP BY technique_id
+        ),
+        cve_counts AS (
+            SELECT attack_id, COUNT(DISTINCT cve_id)::int AS value
+            FROM cve_technique_links
+            GROUP BY attack_id
+        ),
+        ioc_counts AS (
+            SELECT tid AS attack_id, COUNT(DISTINCT i.id)::int AS value
             FROM ioc_indicators i,
                  LATERAL jsonb_array_elements_text(i.technique_ids) AS tid
-            WHERE tid = t.attack_id
-        ) i ON true
+            GROUP BY tid
+        )
+        SELECT t.attack_id AS id, t.name AS label,
+               (COALESCE(ac.value, 0)
+                + COALESCE(cc.value, 0)
+                + COALESCE(vc.value, 0)
+                + COALESCE(ic.value, 0))::int AS value,
+               CONCAT('actors=', COALESCE(ac.value, 0),
+                      ', cves=', COALESCE(vc.value, 0),
+                      ', iocs=', COALESCE(ic.value, 0),
+                      ', campaigns=', COALESCE(cc.value, 0)) AS secondary
+        FROM techniques t
+        LEFT JOIN actor_counts ac ON ac.technique_id = t.id
+        LEFT JOIN campaign_counts cc ON cc.technique_id = t.id
+        LEFT JOIN cve_counts vc ON vc.attack_id = t.attack_id
+        LEFT JOIN ioc_counts ic ON ic.attack_id = t.attack_id
         WHERE t.domain = :domain AND t.is_deprecated = false
-        GROUP BY t.id, t.attack_id, t.name
-        HAVING (COUNT(DISTINCT gt.group_id)
-                + COUNT(DISTINCT ctl.cve_id)
-                + COUNT(DISTINCT i.id)
-                + COUNT(DISTINCT ct.campaign_id)) > 0
+          AND (COALESCE(ac.value, 0)
+               + COALESCE(cc.value, 0)
+               + COALESCE(vc.value, 0)
+               + COALESCE(ic.value, 0)) > 0
         ORDER BY value DESC, t.attack_id ASC
         LIMIT :limit
         """,

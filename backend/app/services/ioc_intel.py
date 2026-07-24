@@ -35,6 +35,7 @@ OTX_SOURCE_ID = "alienvault-otx"
 MALPEDIA_SOURCE_ID = "malpedia"
 MANUAL_SOURCE_ID = "manual-report-import"
 CUSTOM_FEED_KINDS = {"custom-json", "custom-csv", "custom-txt"}
+_SQL_IN_BATCH_SIZE = 10_000
 OTX_TRANSIENT_HTTP_STATUS_CODES = {429, 502, 503, 504}
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
@@ -960,13 +961,18 @@ async def enrich_ioc_ttp_mappings(
     strict report/source evidence, enrichment platform evidence, optional AI.
     """
     if indicator_ids:
-        stmt = select(IOCIndicator).where(IOCIndicator.id.in_(list(dict.fromkeys(indicator_ids))))
+        deduped_ids = list(dict.fromkeys(indicator_ids))
+        indicators = []
+        for offset in range(0, len(deduped_ids), _SQL_IN_BATCH_SIZE):
+            batch = deduped_ids[offset : offset + _SQL_IN_BATCH_SIZE]
+            rows = await session.execute(select(IOCIndicator).where(IOCIndicator.id.in_(batch)))
+            indicators.extend(rows.scalars().all())
     else:
         stmt = select(IOCIndicator).order_by(IOCIndicator.updated_at.desc()).limit(max(1, min(limit, 20000)))
         if source_ids:
             stmt = stmt.where(IOCIndicator.source_id.in_(source_ids))
-    rows = await session.execute(stmt)
-    indicators = list(rows.scalars().all())
+        rows = await session.execute(stmt)
+        indicators = list(rows.scalars().all())
     updated = 0
     normalized_types = 0
     ai_attempted = 0
@@ -1993,19 +1999,22 @@ def _dedupe_tags(values: list[str]) -> list[str]:
 
 async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple[int, bool]:
     item.indicator_type = _normalize_ioc_type(item.indicator_type, item.value)
+    item.value = item.value.strip()
     if _is_network_fingerprint_type(item.indicator_type):
-        item.value = item.value.strip().lower()
+        item.value = item.value.lower()
         item.tags = _dedupe_tags([*(item.tags or []), "network-fingerprint", item.indicator_type])
     technique_ids = _item_technique_ids(item)
     existing = await session.execute(
         select(IOCIndicator).where(
-            IOCIndicator.value == item.value,
-            IOCIndicator.indicator_type == item.indicator_type,
+            func.lower(func.trim(IOCIndicator.value)) == item.value.lower(),
+            func.lower(func.trim(IOCIndicator.indicator_type)) == item.indicator_type.lower(),
             IOCIndicator.source_id == item.source,
         )
     )
     existing_indicator = existing.scalar_one_or_none()
     if existing_indicator:
+        item.value = existing_indicator.value
+        item.indicator_type = existing_indicator.indicator_type
         technique_ids = _dedupe_attack_ids([*(existing_indicator.technique_ids or []), *technique_ids])
     raw = dict(item.raw or {})
     if _is_network_fingerprint_type(item.indicator_type):

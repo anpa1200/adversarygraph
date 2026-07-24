@@ -81,6 +81,7 @@ run_step() {
 
 run_step "Release metadata" ./scripts/check-version-consistency.sh
 select_backend_python
+run_step "Backend/OpenAPI/frontend API contract" ./scripts/check-api-contracts.py
 run_step "Patch hygiene (tracked, staged, and untracked)" check_patch_hygiene
 run_step "Release tag ruleset verifier tests" \
   "$BACKEND_PYTHON" -m unittest discover -s scripts/tests -p 'test_*.py' -q

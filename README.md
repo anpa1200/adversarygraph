@@ -205,6 +205,7 @@ for dedicated-account and client configuration.
 | Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
 | Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
+| Complete generated API reference | [docs/api-reference.md](docs/api-reference.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | Complete v5 overview | [docs/v5-overview.md](docs/v5-overview.md) |
 | v6 release readiness | [docs/release-readiness-v6.md](docs/release-readiness-v6.md) |
