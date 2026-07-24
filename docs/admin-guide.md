@@ -86,6 +86,12 @@ The bundled development image builds checksum-pinned pgvector **0.8.2**.
 | `ABUSEIPDB_API_KEY` | Optional AbuseIPDB key for IP abuse confidence, ISP, hostname, and usage-type pivots |
 | `CENSYS_API_KEY` | Optional Censys Platform personal access token for host, DNS, service, ASN, and certificate pivots |
 | `CENSYS_ORG_ID` | Optional Censys organization ID for organization-scoped Platform API calls |
+| `ASSET_SCANNER_ENABLED` | Enable inventory-bound Threat Radar asset assessments; default `true` |
+| `ASSET_SCANNER_NMAP_ENABLED` | Permit the fixed safe Nmap service-discovery stage; default `true` |
+| `ASSET_SCANNER_NMAP_BINARY` | Operator-controlled Nmap executable path; default `/usr/bin/nmap` in the backend image |
+| `ASSET_SCANNER_TIMEOUT_SECONDS` | Per-assessment Nmap host timeout; default `120`, allowed range `15`–`600` seconds |
+| `ASSET_SCANNER_TOP_PORTS` | Bounded Nmap top-port count; default `100`, allowed range `10`–`1000` |
+| `ASSET_SCANNER_MAX_RESOLVED_IPS` | Maximum authorized addresses scanned after an inventory hostname resolves; default `4`, range `1`–`16` |
 | `OPENCTI_URL` | Optional OpenCTI base URL for symmetric CTI sync |
 | `OPENCTI_TOKEN` | Optional OpenCTI API token for indicator, observable, label, and report sync |
 | `OPENCTI_SYNC_LIMIT` | Default OpenCTI object limit per sync action |

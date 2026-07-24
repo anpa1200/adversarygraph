@@ -1,4 +1,5 @@
 from app.api.routes.system import (
+    _asset_scanner_readiness_check,
     _cpu_percent_from_totals,
     _data_integrity_check,
     _format_bytes,
@@ -165,6 +166,23 @@ def test_storage_writable_check_creates_and_removes_probe(tmp_path):
     assert check.status == "ok"
     assert check.details["writable"] is True
     assert not (tmp_path / ".adversarygraph-selftest").exists()
+
+
+def test_asset_scanner_readiness_requires_configured_nmap_binary(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_enabled", True)
+    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nmap_enabled", True)
+    monkeypatch.setattr(
+        "app.api.routes.system.settings.asset_scanner_nmap_binary",
+        str(tmp_path / "missing-nmap"),
+    )
+    missing = _asset_scanner_readiness_check()
+    assert missing.status == "error"
+    assert missing.details["profile"] == "safe-service-discovery"
+
+    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nmap_enabled", False)
+    passive_only = _asset_scanner_readiness_check()
+    assert passive_only.status == "ok"
+    assert passive_only.details["nmap_enabled"] is False
 
 
 def test_taxonomy_normalization_check_warns_on_raw_tags():

@@ -123,6 +123,7 @@ function AppShell() {
                   <Route path="/statistics" element={<RoleGate permission="run_analysis"><Statistics /></RoleGate>} />
                   <Route path="/threat-radar" element={<RoleGate permission="run_analysis"><ThreatRadar /></RoleGate>} />
                   <Route path="/threat-radar/assets" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
+                  <Route path="/threat-radar/assets/:spaceId/:assetId" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
                   <Route path="/threat-hunting" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
                   <Route path="/threat-hunting/new" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
                   <Route path="/threat-hunting/:huntId" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />

@@ -64,6 +64,60 @@ class InvestigationOptions:
     ai_provider: str = "local"
 
 
+PASSIVE_ENRICHMENT_SOURCES = frozenset({
+    "local-db",
+    "virustotal",
+    "otx",
+    "urlscan",
+    "greynoise",
+    "abuseipdb",
+    "shodan",
+    "censys",
+})
+
+
+async def enrich_ioc_sources(
+    session: AsyncSession,
+    artifact: str,
+    *,
+    sources: list[str] | None = None,
+    options: InvestigationOptions | None = None,
+) -> list[dict[str, Any]]:
+    """Run selected passive providers without creating an investigation record.
+
+    Asset assessment uses this small public boundary so provider credentials,
+    request shaping, error sanitization, and response compaction stay identical
+    to IOC Investigation. Callers remain responsible for authorization and for
+    deciding whether a private target may leave the deployment boundary.
+    """
+
+    value = artifact.strip()
+    if not value:
+        raise ValueError("Artifact is empty")
+    target = _classify_investigation_artifact(value)
+    normalized = target.value
+    selected = list(dict.fromkeys(sources or sorted(PASSIVE_ENRICHMENT_SOURCES)))
+    unknown = sorted(set(selected) - PASSIVE_ENRICHMENT_SOURCES)
+    if unknown:
+        raise ValueError(f"Unsupported passive enrichment source(s): {', '.join(unknown)}")
+    options = options or InvestigationOptions()
+
+    runners = {
+        "local-db": lambda: _local_enrichment(session, normalized, target.type, options.domain),
+        "virustotal": lambda: _virustotal_enrichment(session, normalized, options.domain, target.type),
+        "otx": lambda: _otx_enrichment(normalized, target.type),
+        "urlscan": lambda: _urlscan_enrichment(normalized, target.type, options),
+        "greynoise": lambda: _greynoise_enrichment(normalized, target.type),
+        "abuseipdb": lambda: _abuseipdb_enrichment(normalized, target.type),
+        "shodan": lambda: _shodan_enrichment(normalized, target.type),
+        "censys": lambda: _censys_enrichment(normalized, target.type),
+    }
+    return [
+        await _safe_source(source, runners[source])
+        for source in selected
+    ]
+
+
 async def investigate_ioc(
     session: AsyncSession,
     artifact: str,

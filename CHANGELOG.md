@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a searchable saved-asset registry and dedicated Threat Radar asset
+  intelligence pages. Each asset exposes its normalized inventory, alerts,
+  assessment history, CVEs, ATT&CK techniques, and IOCs through a server-side
+  evidence-labelled correlation API. Exact identity matches, source-backed
+  signal relationships, inventory candidates, and scan-derived candidates are
+  kept distinct, and the authorized passive/Nmap/AI assessment workflow is
+  available directly on the asset page.
+- Added an authorized Asset Exposure Assessment workflow to Threat Radar.
+  Analysts can select only IP addresses and HTTP(S) hosts recorded in the
+  asset inventory, correlate them with configured passive OSINT sources,
+  optionally run a bounded unprivileged Nmap service-discovery profile, review
+  explicitly unconfirmed local CVE candidates, and request governed
+  multi-provider AI analysis. Explicit authorization, attack-simulation
+  permission, cloud-egress acknowledgement, private-target egress protection,
+  persistent results, audit events, self-test readiness, and human-review
+  warnings are enforced.
 - Added a production Threat Hunting Query Library with more than thirty
   reviewed Sigma and YARA-L examples, normalized tags and ATT&CK links,
   provenance and parser state, server-side fielded search, typed autocomplete,

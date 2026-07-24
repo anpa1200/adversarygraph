@@ -203,6 +203,104 @@ Store provider summaries, case IDs, URLs, hashes, tags, confidence, and
 sanitized metadata only. Legal-sensitive categories automatically add handling
 notes and redaction.
 
+## Inventory-Bound Asset Exposure Assessment
+
+> **Current development:** this workflow is implemented on `main` after the
+> v6.0.0 release. It is not part of the immutable v6.0.0 release tag.
+
+### Saved asset registry and detail pages
+
+After **Asset Surface** parses and saves an inventory into a Threat Radar
+company space, open **Threat Radar -> Asset Inventory**. The registry retrieves
+the persisted assets from the API, supports name, inventory-ID, owner, IP,
+domain, product, component, technology, criticality, and exposure filtering,
+and links every row to:
+
+`/threat-radar/assets/{space_id}/{asset_id}`
+
+The dedicated page contains the normalized inventory record, risk summary,
+matching Threat Radar alerts, recent assessment history, and bounded
+correlations to the local CVE, IOC, and ATT&CK libraries. Correlation evidence
+is labelled by origin:
+
+- `exact-inventory-identity` means an exact saved IP/domain/URL identity is
+  present in the IOC Library;
+- `matched-signal` means a Threat Radar signal was matched to this asset;
+- `cve-linked` and `cve-technique-link` are stored, source-backed
+  relationships;
+- `inventory-cpe` is a CPE-based candidate from the saved inventory;
+- `inventory-name-candidate` is a lower-confidence product/component candidate;
+- `scan-cpe-candidate` is inferred from an observed service CPE.
+
+None of these labels proves compromise or confirms that a vulnerability
+applies. Exact IOC identity matches still require ownership and freshness
+review. CVE candidates require deployed-version, affected-range,
+configuration, reachability, and compensating-control validation.
+
+The **Threat Radar -> Asset Inventory** page can assess an IP address or
+HTTP(S) URL host that is already recorded on the selected asset. It combines:
+
+1. passive lookup in the local IOC Library;
+2. configured VirusTotal, OTX, urlscan.io, GreyNoise Community, AbuseIPDB,
+   Shodan, and Censys sources;
+3. optional, authorized Nmap service discovery;
+4. product-family CPE correlation against the local CVE Library; and
+5. deterministic or governed AI-assisted interpretation.
+
+The target field is not an arbitrary internet scanner. The API normalizes the
+requested IP, domain, or URL and rejects it unless the exact host is present in
+that asset's `ip_addresses` or `domains` inventory field. URL credentials,
+query strings, and fragments are rejected or removed before storage and
+provider use. External providers are skipped for private, reserved, and
+internal-only targets so internal asset names and addresses do not leave the
+deployment.
+
+### Safe active-discovery profile
+
+Active discovery is disabled independently with
+`ASSET_SCANNER_NMAP_ENABLED`. When enabled, it requires:
+
+- the `run_attack_simulation` permission;
+- a per-request authorization confirmation;
+- an inventory-bound target; and
+- the fixed `safe-service-discovery` profile.
+
+The profile uses an unprivileged TCP connect scan, the configured top-port
+limit, light service/version detection, bounded retries, and a host timeout. It
+does **not** use NSE vulnerability or exploit scripts, UDP scanning, OS
+fingerprinting, evasion flags, credential testing, or exploitation. Nmap XML is
+parsed with a hardened XML parser and stored as structured evidence.
+
+An open port is an observation, not a vulnerability. Shodan/Censys
+vulnerability references and local CPE-to-CVE matches are explicitly labelled
+as candidates requiring analyst confirmation of the detected product, deployed
+version, affected version range, reachability, and compensating controls.
+
+### AI evidence boundary
+
+The scanner always produces a deterministic summary. Optional AI analysis uses
+the same provider readiness, TLP, cloud-policy, timeout, and explicit remote
+processing acknowledgement controls as Threat Hunting AI. The model receives
+bounded structured evidence and must separate observed services from provider
+claims and inferred CVE candidates. Its output is advisory and always marked
+for human review; it cannot run another scan, exploit a target, create evidence,
+or assign a confirmed vulnerability.
+
+### Analyst procedure
+
+1. Import or create the asset with its exact IP addresses and domains.
+2. Open **Threat Radar -> Asset Inventory**, search or filter the registry,
+   then open the asset's dedicated intelligence page.
+3. Select one inventory target and the configured passive providers.
+4. Optionally enable **Run safe Nmap discovery**.
+5. Optionally select an available AI provider. Remote providers require the
+   explicit TLP:AMBER processing acknowledgement shown in the UI.
+6. Confirm authorization for that exact inventory target.
+7. Run the assessment and review provider status, open services, CVE
+   candidates, caveats, and prioritized actions.
+8. Validate product/version evidence in the authoritative scanner, CMDB,
+   firewall, EDR, and vulnerability-management systems before triage.
+
 ## Scoring
 
 Each signal and case receives a 0-100 score using normalized factors:
@@ -265,6 +363,7 @@ Actions are recommendations until an analyst creates the work item.
 | Cases | Work a case, create actions, and generate reports. |
 | Case Graph | Visualize signal, case, CVE, TTP, product, component, and dependency links. |
 | Product Exposure | Review affected products, components, versions, environments, and blast radius. |
+| Asset Inventory | Review normalized assets and run inventory-bound passive/Nmap/AI exposure assessments. |
 | Exposure Monitoring | Check provider readiness, build watch plans, classify breach/leak/prototype hits, and ingest sanitized hits into cases. |
 | Watchlists | CVE, zero-day, supply-chain, hardware, and marketplace queues. |
 | Workflows | Hunt, PSIRT, IR, Detection, action, and audit queues. |
@@ -295,6 +394,12 @@ The backend exposes the module under `/api/threat-radar`:
 - `POST /exposure/plan`
 - `POST /exposure/classify`
 - `POST /exposure/ingest`
+- `GET /spaces/{space_id}/assets`
+- `GET /spaces/{space_id}/assets/{asset_id}/intelligence`
+- `GET /asset-scanner/providers`
+- `GET /spaces/{space_id}/assets/{asset_id}/scans`
+- `POST /spaces/{space_id}/assets/{asset_id}/scans`
+- `GET /spaces/{space_id}/assets/{asset_id}/scans/{scan_id}`
 - `GET /watchlists/{cve|zero-day|supply-chain|hardware}`
 - `GET /queues/{hunts|psirt|ir|detections|reports|actions|marketplace|supply-chain|audit}`
 

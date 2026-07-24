@@ -504,6 +504,48 @@ def _storage_writable_check(path: str | Path, name: str = "storage_writable") ->
         )
 
 
+def _asset_scanner_readiness_check() -> SelfTestCheck:
+    if not settings.asset_scanner_enabled:
+        return _check_status(
+            "asset_scanner",
+            "ok",
+            "Threat Radar asset assessment is disabled by the operator.",
+            {"enabled": False, "nmap_enabled": False},
+        )
+    binary = Path(settings.asset_scanner_nmap_binary)
+    nmap_ready = binary.is_file() and os.access(binary, os.X_OK)
+    if settings.asset_scanner_nmap_enabled and not nmap_ready:
+        return _check_status(
+            "asset_scanner",
+            "error",
+            "Asset assessment is enabled, but the configured Nmap executable is unavailable.",
+            {
+                "enabled": True,
+                "nmap_enabled": True,
+                "nmap_binary": str(binary),
+                "profile": "safe-service-discovery",
+            },
+        )
+    return _check_status(
+        "asset_scanner",
+        "ok",
+        (
+            "Inventory-bound passive and safe Nmap service discovery are ready."
+            if settings.asset_scanner_nmap_enabled
+            else "Inventory-bound passive assessment is ready; Nmap is disabled by the operator."
+        ),
+        {
+            "enabled": True,
+            "nmap_enabled": settings.asset_scanner_nmap_enabled,
+            "nmap_binary": str(binary),
+            "nmap_ready": nmap_ready,
+            "top_ports": settings.asset_scanner_top_ports,
+            "timeout_seconds": settings.asset_scanner_timeout_seconds,
+            "profile": "safe-service-discovery",
+        },
+    )
+
+
 async def _service_health_check(name: str, base_url: str, *, timeout_seconds: float = 3.0) -> SelfTestCheck:
     url = base_url.rstrip("/") + "/health"
     started = perf_counter()
@@ -1042,6 +1084,7 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
         checks.append(_check("memory_usage", False, f"Memory usage self-test failed: {type(exc).__name__}: {exc}"))
 
     checks.append(_api_key_check())
+    checks.append(_asset_scanner_readiness_check())
     checks.append(_storage_writable_check(settings.log_dir, "log_storage_writable"))
     checks.append(_storage_writable_check(settings.attck_data_dir, "attck_storage_writable"))
     checks.append(

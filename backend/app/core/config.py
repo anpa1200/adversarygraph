@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     censys_api_key: str = ""
     censys_org_id: str = ""
 
+    # Threat Radar asset scanner. The only active profile is intentionally
+    # conservative: unprivileged TCP connect plus light service detection
+    # against an inventory-bound target. No NSE vulnerability/exploit scripts,
+    # UDP scan, OS fingerprinting, or evasion flags are permitted.
+    asset_scanner_enabled: bool = True
+    asset_scanner_nmap_enabled: bool = True
+    asset_scanner_nmap_binary: str = "/usr/bin/nmap"
+    asset_scanner_timeout_seconds: int = Field(default=120, ge=15, le=600)
+    asset_scanner_top_ports: int = Field(default=100, ge=10, le=1000)
+    asset_scanner_max_resolved_ips: int = Field(default=4, ge=1, le=16)
+
     # RetroHunt collectors
     nvd_api_key: str = ""          # Optional — increases NVD rate limit from 5 to 50 req/30s
     github_token: str = ""         # Optional — increases GitHub API rate limit

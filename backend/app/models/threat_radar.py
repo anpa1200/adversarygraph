@@ -66,6 +66,38 @@ class ThreatSpaceAsset(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ThreatAssetScan(Base):
+    """Auditable, inventory-bound passive and active asset assessment."""
+
+    __tablename__ = "threat_asset_scans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    target: Mapped[str] = mapped_column(String(2048))
+    target_host: Mapped[str] = mapped_column(String(255), index=True)
+    target_type: Mapped[str] = mapped_column(String(40), index=True)
+    status: Mapped[str] = mapped_column(String(40), default="running", index=True)
+    scan_profile: Mapped[str] = mapped_column(String(80), default="safe-service-discovery")
+    requested_providers: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    passive_results: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    nmap_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    nmap_result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    findings: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    ai_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_provider: Mapped[str] = mapped_column(String(40), default="")
+    ai_model: Mapped[str] = mapped_column(String(160), default="")
+    ai_analysis: Mapped[dict] = mapped_column(JSONB, default=dict)
+    authorization_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    cloud_processing_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    error: Mapped[str] = mapped_column(Text, default="")
+    requested_by: Mapped[str] = mapped_column(String(255), default="local")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ThreatInventoryAsset(Base):
     __tablename__ = "threat_inv_assets"
     __table_args__ = (UniqueConstraint("space_id", "asset_id", name="uq_threat_inv_asset_space_asset_id"),)

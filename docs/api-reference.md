@@ -4,7 +4,7 @@
 
 - Version: **6.0.0**
 - Modules: **28**
-Operations: **311**
+Operations: **317**
 
 Interactive contracts are available from a running deployment at `/docs`,
 `/redoc`, and `/openapi.json`. All platform operations use `/api`; protected
@@ -454,10 +454,11 @@ suite rather than by the live smoke command.
 
 ## Threat Radar
 
-39 operations.
+45 operations.
 
 | Method | Path | Operation | Success |
 |---|---|---|---|
+| `GET` | `/api/threat-radar/asset-scanner/providers` | Asset Scanner Providers | 200 |
 | `GET` | `/api/threat-radar/cases` | List Cases | 200 |
 | `GET` | `/api/threat-radar/cases/{case_id}` | Get Case | 200 |
 | `POST` | `/api/threat-radar/cases/{case_id}/create-detection-requirement` | Create Detection | 201 |
@@ -489,7 +490,12 @@ suite rather than by the live smoke command.
 | `POST` | `/api/threat-radar/spaces/{space_id}/ai-assistant` | Company Space Ai Assistant | 200 |
 | `GET` | `/api/threat-radar/spaces/{space_id}/alerts` | List Space Alerts | 200 |
 | `POST` | `/api/threat-radar/spaces/{space_id}/alerts/{alert_id}/status` | Update Alert Status | 200 |
+| `GET` | `/api/threat-radar/spaces/{space_id}/assets` | List Space Assets | 200 |
 | `POST` | `/api/threat-radar/spaces/{space_id}/assets` | Create Space Asset | 201 |
+| `GET` | `/api/threat-radar/spaces/{space_id}/assets/{asset_id}/intelligence` | Get Space Asset Intelligence | 200 |
+| `GET` | `/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans` | List Asset Scans | 200 |
+| `POST` | `/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans` | Create Asset Scan | 201 |
+| `GET` | `/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans/{scan_id}` | Get Asset Scan | 200 |
 | `POST` | `/api/threat-radar/spaces/{space_id}/dashboards` | Create Space Dashboard | 201 |
 | `POST` | `/api/threat-radar/spaces/{space_id}/dashboards/generate` | Generate Space Dashboard | 201 |
 | `POST` | `/api/threat-radar/spaces/{space_id}/monitors` | Create Space Monitor | 201 |

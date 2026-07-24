@@ -3683,6 +3683,177 @@ export interface ThreatSpaceAIStep {
   created_at?: string;
 }
 
+export interface ThreatAssetScanProviderCatalog {
+  enabled: boolean;
+  nmap: {
+    enabled: boolean;
+    profile: string;
+    top_ports: number;
+    timeout_seconds: number;
+    permission: string;
+    boundary: string;
+  };
+  passive: Array<{
+    id: string;
+    label: string;
+    configured: boolean;
+    enabled: boolean;
+    mode: string;
+  }>;
+  ai: ThreatHuntAIProvider[];
+}
+
+export interface ThreatAssetScan {
+  id: string;
+  space_id: string;
+  asset_id: string;
+  target: string;
+  target_host: string;
+  target_type: 'ip' | 'domain' | 'url';
+  status: 'running' | 'completed' | 'partial' | 'failed';
+  scan_profile: string;
+  requested_providers: string[];
+  passive_results: Array<Record<string, unknown>>;
+  nmap_requested: boolean;
+  nmap_result: Record<string, unknown>;
+  findings: Array<{
+    category?: string;
+    severity?: string;
+    title?: string;
+    evidence?: string;
+    source?: string;
+    status?: string;
+    verification_required?: boolean;
+    recommendation?: string;
+  }>;
+  ai_requested: boolean;
+  ai_provider: string;
+  ai_model: string;
+  ai_analysis: Record<string, unknown> & {
+    summary?: string;
+    risk_level?: string;
+    observations?: string[];
+    recommended_actions?: string[];
+    caveats?: string[];
+    requires_human_review?: boolean;
+    evidence_boundary?: string;
+    resolved_ips?: string[];
+    cve_candidates?: Array<Record<string, unknown>>;
+  };
+  authorization_confirmed: boolean;
+  warnings: string[];
+  error: string;
+  requested_by: string;
+  started_at?: string;
+  completed_at?: string | null;
+  created_at?: string;
+}
+
+export interface ThreatAssetIntelligenceEvidence {
+  kind: string;
+  label: string;
+  source: string;
+  source_url?: string;
+  signal_id?: string;
+  scan_id?: string;
+  confidence?: number;
+  evidence?: string;
+  matched_cpe?: string;
+}
+
+export interface ThreatAssetIntelligence {
+  space: { id: string; name: string; slug: string };
+  asset: ThreatSpaceAsset;
+  summary: {
+    risk_score: number;
+    risk_level: string;
+    alerts: number;
+    cves: number;
+    known_exploited_cves: number;
+    ttps: number;
+    iocs: number;
+    direct_ioc_matches: number;
+    assessments: number;
+    latest_open_services: number;
+    last_assessed_at?: string | null;
+  };
+  cves: Array<{
+    cve_id: string;
+    description: string;
+    severity: string;
+    score: string;
+    known_exploited: boolean;
+    published?: string | null;
+    last_modified?: string | null;
+    references: unknown[];
+    status: string;
+    evidence_level: string;
+    evidence: ThreatAssetIntelligenceEvidence[];
+    verification_required: boolean;
+  }>;
+  ttps: Array<{
+    attack_id: string;
+    name: string;
+    description: string;
+    url: string;
+    platforms: string[];
+    data_sources: string[];
+    evidence_level: string;
+    evidence: ThreatAssetIntelligenceEvidence[];
+    verification_required: boolean;
+  }>;
+  iocs: Array<{
+    id: string;
+    value: string;
+    indicator_type: string;
+    source_id: string;
+    source_url: string;
+    confidence: number;
+    last_seen: string;
+    malware_family: string;
+    campaign: string;
+    technique_ids: string[];
+    status: string;
+    evidence_level: string;
+    matched_on: string[];
+    verification_required: boolean;
+    note: string;
+  }>;
+  alerts: Array<Record<string, unknown>>;
+  recent_scans: Array<{
+    id: string;
+    target: string;
+    status: string;
+    scan_profile: string;
+    nmap_requested: boolean;
+    open_port_count: number;
+    finding_count: number;
+    ai_requested: boolean;
+    ai_provider: string;
+    risk_level: string;
+    requested_by: string;
+    completed_at?: string | null;
+    created_at?: string;
+  }>;
+  evidence_boundary: string;
+  generated_at: string;
+}
+
+export interface ThreatAssetList {
+  space: { id: string; name: string; slug: string };
+  items: ThreatSpaceAsset[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: {
+    q: string;
+    asset_type: string;
+    environment: string;
+    criticality: string;
+    exposure: string;
+  };
+}
+
 export interface ThreatMonitorSearchResult {
   query: string;
   total: number;
@@ -3709,6 +3880,43 @@ export const threatRadarApi = {
   spaceDetail: (id: string): Promise<ThreatCompanySpaceDetail> => http.get(`/threat-radar/spaces/${id}`).then(r => r.data),
   createSpaceAsset: (spaceId: string, body: Partial<ThreatSpaceAsset> & { name: string }): Promise<ThreatSpaceAsset> =>
     http.post(`/threat-radar/spaces/${spaceId}/assets`, body).then(r => r.data),
+  spaceAssets: (
+    spaceId: string,
+    params?: {
+      q?: string;
+      asset_type?: string;
+      environment?: string;
+      criticality?: string;
+      exposure?: string;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<ThreatAssetList> =>
+    http.get(`/threat-radar/spaces/${spaceId}/assets`, { params }).then(r => r.data),
+  assetIntelligence: (spaceId: string, assetId: string): Promise<ThreatAssetIntelligence> =>
+    http.get(`/threat-radar/spaces/${spaceId}/assets/${assetId}/intelligence`).then(r => r.data),
+  assetScannerProviders: (): Promise<ThreatAssetScanProviderCatalog> =>
+    http.get('/threat-radar/asset-scanner/providers').then(r => r.data),
+  assetScans: (spaceId: string, assetId: string, limit = 25): Promise<ThreatAssetScan[]> =>
+    http.get(`/threat-radar/spaces/${spaceId}/assets/${assetId}/scans`, { params: { limit } }).then(r => r.data),
+  assetScan: (spaceId: string, assetId: string, scanId: string): Promise<ThreatAssetScan> =>
+    http.get(`/threat-radar/spaces/${spaceId}/assets/${assetId}/scans/${scanId}`).then(r => r.data),
+  createAssetScan: (
+    spaceId: string,
+    assetId: string,
+    body: {
+      target: string;
+      providers?: string[];
+      run_nmap?: boolean;
+      ai_analyze?: boolean;
+      ai_provider?: ThreatHuntAIProviderId;
+      ai_model?: string;
+      cloud_processing_acknowledged?: boolean;
+      authorization_confirmed: boolean;
+      tlp?: ThreatHuntTlp;
+    },
+  ): Promise<ThreatAssetScan> =>
+    http.post(`/threat-radar/spaces/${spaceId}/assets/${assetId}/scans`, body, { skipGlobalError: true } as any).then(r => r.data),
   createSpaceDashboard: (spaceId: string, body: Partial<ThreatSpaceDashboard>): Promise<ThreatSpaceDashboard> =>
     http.post(`/threat-radar/spaces/${spaceId}/dashboards`, body).then(r => r.data),
   generateSpaceDashboard: (spaceId: string): Promise<ThreatSpaceDashboard> =>

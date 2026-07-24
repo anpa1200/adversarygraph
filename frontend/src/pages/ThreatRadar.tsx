@@ -709,7 +709,7 @@ function AlertCenter({
                   <td className="py-3 text-xs text-gray-300">
                     <p className="font-semibold text-white">{String(row.asset_name || 'inventory match')}</p>
                     <p className="mt-1 text-gray-500">{String(row.match_type || 'match')}</p>
-                    {row.asset_uuid && <a className="mt-2 inline-block text-mitre-accent hover:underline" href={`/threat-radar/assets?space_id=${encodeURIComponent(String(row.space_id || selectedSpaceId))}&asset_id=${encodeURIComponent(String(row.asset_uuid))}`}>Open asset</a>}
+                    {row.asset_uuid && <a className="mt-2 inline-block text-mitre-accent hover:underline" href={`/threat-radar/assets/${encodeURIComponent(String(row.space_id || selectedSpaceId))}/${encodeURIComponent(String(row.asset_uuid))}`}>Open asset</a>}
                   </td>
                   <td className="max-w-sm py-3">
                     <EvidenceTags row={row} />
@@ -829,7 +829,7 @@ function InventoryPanel({ detail, loading }: { detail: ThreatCompanySpaceDetail 
             {detail.assets.map(asset => (
               <tr key={asset.id} className="align-top hover:bg-gray-900/60">
                 <td className="p-3">
-                  <a className="font-semibold text-mitre-accent hover:underline" href={`/threat-radar/assets?space_id=${encodeURIComponent(asset.space_id)}&asset_id=${encodeURIComponent(asset.id)}`}>{asset.name}</a>
+                  <a className="font-semibold text-mitre-accent hover:underline" href={`/threat-radar/assets/${encodeURIComponent(asset.space_id)}/${encodeURIComponent(asset.id)}`}>{asset.name}</a>
                   <p className="mt-1 text-xs text-gray-500">{asset.asset_id} · {asset.asset_type} · {asset.environment}</p>
                 </td>
                 <td className="py-3"><StatusPill value={`${asset.exposure || 'unknown'} / ${asset.criticality || 'unknown'}`} /></td>
@@ -1265,7 +1265,7 @@ function inferEntityType(value: string, fallback: string) {
 
 function entityHref(value: string, type: string) {
   const encoded = encodeURIComponent(value);
-  if (type === 'cve') return `/cve-library?search=${encoded}`;
+  if (type === 'cve') return `/cve?search=${encoded}`;
   if (type === 'ttp') return `/navigator?technique=${encoded}`;
   if (type === 'actor') return `/apt?search=${encoded}`;
   if (type === 'ioc') return `/ioc-library?search=${encoded}`;

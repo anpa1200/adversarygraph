@@ -299,6 +299,90 @@ async def test_company_space_assets_monitors_and_ai_steps(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_saved_assets_are_listed_and_have_evidence_labelled_detail(client: AsyncClient):
+    space = await client.post(
+        "/api/threat-radar/spaces",
+        json={"name": "Asset Registry Detail Test"},
+    )
+    assert space.status_code == 201
+    space_id = space.json()["id"]
+    asset = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/assets",
+        json={
+            "asset_id": "edge-prod-01",
+            "name": "Production edge appliance",
+            "asset_type": "appliance",
+            "environment": "production",
+            "owner": "Platform Security",
+            "criticality": "critical",
+            "exposure": "internet",
+            "products": ["EdgeShield"],
+            "components": ["Management API"],
+            "technologies": ["nginx"],
+            "ip_addresses": ["192.0.2.44"],
+            "domains": ["edge.example.test"],
+            "metadata": {"ttp_candidates": ["T1190"]},
+        },
+    )
+    assert asset.status_code == 201
+    asset_id = asset.json()["id"]
+
+    signal = await client.post(
+        "/api/threat-radar/signals",
+        json={
+            "title": "EdgeShield exploitation report",
+            "signal_type": "cisa_kev_active_exploitation",
+            "description": "A source-backed report references the EdgeShield management API.",
+            "source": {"name": "Vendor advisory", "source_type": "advisory"},
+            "confidence": 88,
+            "severity": "critical",
+            "cve_ids": ["CVE-2026-45678"],
+            "technique_ids": ["T1190"],
+            "iocs": [{"value": "198.51.100.8", "type": "ip", "confidence": 75}],
+            "product_mappings": [{
+                "product": "EdgeShield",
+                "component": "Management API",
+                "exposure": "internet",
+                "environment": "production",
+                "relevance": 5,
+                "blast_radius": 4,
+            }],
+        },
+    )
+    assert signal.status_code == 201
+    dashboard = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/dashboards/generate"
+    )
+    assert dashboard.status_code == 201
+
+    registry = await client.get(
+        f"/api/threat-radar/spaces/{space_id}/assets",
+        params={"q": "edge", "criticality": "critical"},
+    )
+    assert registry.status_code == 200
+    assert registry.json()["total"] == 1
+    assert registry.json()["items"][0]["id"] == asset_id
+
+    detail = await client.get(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/intelligence"
+    )
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["asset"]["asset_id"] == "edge-prod-01"
+    assert body["space"]["id"] == space_id
+    assert body["summary"]["alerts"] >= 1
+    assert any(row["cve_id"] == "CVE-2026-45678" for row in body["cves"])
+    assert any(row["attack_id"] == "T1190" for row in body["ttps"])
+    assert any(
+        row["value"] == "198.51.100.8"
+        and row["evidence_level"] == "matched-signal"
+        for row in body["iocs"]
+    )
+    assert body["evidence_boundary"]
+    assert body["recent_scans"] == []
+
+
+@pytest.mark.asyncio
 async def test_exposure_monitoring_classifies_prototype_sale(client: AsyncClient):
     response = await client.post(
         "/api/threat-radar/exposure/classify",
@@ -381,6 +465,191 @@ async def test_detection_engineer_cannot_mutate_cti_or_read_radar_audit(app, cli
             "/api/threat-radar/cases/not-a-uuid/create-detection-requirement"
         )
         assert detection.status_code == 400
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(current_user, None)
+        else:
+            app.dependency_overrides[current_user] = previous
+
+
+@pytest.mark.asyncio
+async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, monkeypatch):
+    from app.api.routes import threat_radar as threat_radar_route
+
+    space_response = await client.post(
+        "/api/threat-radar/spaces",
+        json={"name": "Authorized Scanner Test", "sector": "Technology"},
+    )
+    assert space_response.status_code == 201
+    space_id = space_response.json()["id"]
+    asset_response = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/assets",
+        json={
+            "asset_id": "edge-scanner-001",
+            "name": "Authorized edge endpoint",
+            "asset_type": "server",
+            "environment": "production",
+            "criticality": "high",
+            "exposure": "internet",
+            "ip_addresses": ["192.0.2.10"],
+            "domains": ["edge.example.test"],
+        },
+    )
+    assert asset_response.status_code == 201
+    asset_id = asset_response.json()["id"]
+
+    provider_response = await client.get("/api/threat-radar/asset-scanner/providers")
+    assert provider_response.status_code == 200
+    assert provider_response.json()["nmap"]["profile"] == "safe-service-discovery"
+    assert "No NSE scripts" in provider_response.json()["nmap"]["boundary"]
+
+    missing_authorization = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans",
+        json={"target": "192.0.2.10"},
+    )
+    assert missing_authorization.status_code == 422
+
+    outside_inventory = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans",
+        json={"target": "192.0.2.11", "authorization_confirmed": True},
+    )
+    assert outside_inventory.status_code == 422
+    assert "not recorded" in outside_inventory.json()["detail"]
+
+    async def fake_resolve(target):
+        assert target.host == "192.0.2.10"
+        return ["192.0.2.10"]
+
+    async def fake_passive(session, target, providers, resolved):
+        return ([{
+            "source": "shodan",
+            "status": "ok",
+            "summary": "Shodan returned 1 open port.",
+            "relationships": [{
+                "source": target.value,
+                "target": "443",
+                "target_type": "service-port",
+                "evidence_source": "shodan",
+                "tier": 1,
+                "evidence": "Open service port",
+            }],
+            "raw": {},
+        }], [])
+
+    async def fake_nmap(target, resolved):
+        return {
+            "status": "ok",
+            "profile": "safe-service-discovery",
+            "summary": "Nmap found 1 open service.",
+            "open_port_count": 1,
+            "hosts": [{
+                "status": "up",
+                "addresses": [{"address": "192.0.2.10", "type": "ipv4"}],
+                "hostnames": [],
+                "ports": [{
+                    "port": 443,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "reason": "syn-ack",
+                    "service": "https",
+                    "product": "nginx",
+                    "version": "1.24",
+                    "extra_info": "",
+                    "tunnel": "ssl",
+                    "cpes": ["cpe:/a:nginx:nginx:1.24"],
+                }],
+            }],
+        }
+
+    async def fake_cves(session, result):
+        return [{
+            "cve_id": "CVE-2026-12345",
+            "severity": "HIGH",
+            "score": "8.1",
+            "known_exploited": False,
+            "description": "Candidate only.",
+            "matched_cpe": "cpe:/a:nginx:nginx:1.24",
+            "status": "candidate",
+            "verification_required": True,
+            "note": "Verify the affected range.",
+        }]
+
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "resolve_target", fake_resolve)
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "run_passive_assessment", fake_passive)
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "run_nmap_discovery", fake_nmap)
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "match_local_cves", fake_cves)
+
+    response = await client.post(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans",
+        json={
+            "target": "192.0.2.10",
+            "providers": ["shodan"],
+            "run_nmap": True,
+            "authorization_confirmed": True,
+        },
+    )
+    assert response.status_code == 201
+    scan = response.json()
+    assert scan["status"] == "completed"
+    assert scan["nmap_result"]["open_port_count"] == 1
+    assert scan["ai_analysis"]["provider"] == "deterministic"
+    assert scan["ai_analysis"]["cve_candidates"][0]["verification_required"] is True
+    assert any(item["category"] == "open-service" for item in scan["findings"])
+    assert any(item["category"] == "local-cve-candidate" for item in scan["findings"])
+
+    history = await client.get(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans"
+    )
+    assert history.status_code == 200
+    assert history.json()[0]["id"] == scan["id"]
+
+    detail = await client.get(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans/{scan['id']}"
+    )
+    assert detail.status_code == 200
+    assert detail.json()["target_host"] == "192.0.2.10"
+
+
+@pytest.mark.asyncio
+async def test_active_asset_assessment_requires_simulation_permission(
+    app,
+    client,
+    monkeypatch,
+):
+    async def analyst_without_active_scan():
+        return TeamUser(
+            name="analyst",
+            roles=["analyst"],
+            permissions=["read", "run_analysis", "manage_intel"],
+        )
+
+    previous = app.dependency_overrides.get(current_user)
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[current_user] = analyst_without_active_scan
+    try:
+        space = await client.post(
+            "/api/threat-radar/spaces",
+            json={"name": "Permission Scanner Test"},
+        )
+        assert space.status_code == 201
+        asset = await client.post(
+            f"/api/threat-radar/spaces/{space.json()['id']}/assets",
+            json={
+                "name": "Inventory target",
+                "ip_addresses": ["192.0.2.20"],
+            },
+        )
+        assert asset.status_code == 201
+        denied = await client.post(
+            f"/api/threat-radar/spaces/{space.json()['id']}/assets/{asset.json()['id']}/scans",
+            json={
+                "target": "192.0.2.20",
+                "run_nmap": True,
+                "authorization_confirmed": True,
+            },
+        )
+        assert denied.status_code == 403
+        assert "run_attack_simulation" in denied.json()["detail"]
     finally:
         if previous is None:
             app.dependency_overrides.pop(current_user, None)

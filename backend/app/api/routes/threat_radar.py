@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 import hashlib
+import logging
 from datetime import UTC, datetime
 from collections.abc import Sequence
 from typing import Any, Literal, cast
@@ -9,12 +10,14 @@ from typing import Any, Literal, cast
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.config import settings
 from app.models.threat_radar import (
     ThreatAction,
+    ThreatAssetScan,
     ThreatAuditLog,
     ThreatCase,
     ThreatCaseLink,
@@ -48,6 +51,9 @@ from app.models.threat_radar import (
     ThreatSupplyChainFinding,
 )
 from app.services.auth import TeamUser, analyst, has_permission, require_permission
+from app.services import asset_vulnerability_scanner as asset_scanner
+from app.services import asset_detail_intelligence
+from app.services import threat_hunting_ai as governed_ai
 from app.services.exposure_monitoring import (
     classify_exposure_hit,
     ingest_exposure_hit,
@@ -79,8 +85,10 @@ from app.services.unified_model import (
 )
 
 router = APIRouter(prefix="/threat-radar", tags=["Threat Radar"])
+logger = logging.getLogger(__name__)
 manage_threat_radar = require_permission("manage_intel")
 manage_threat_radar_detections = require_permission("manage_detections")
+run_asset_assessment = require_permission("run_analysis")
 
 TLP = Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
 
@@ -371,6 +379,20 @@ class AlertStatusIn(BaseModel):
     case_id: str | None = None
 
 
+class AssetScanIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    target: str = Field(..., min_length=1, max_length=2048)
+    providers: list[str] = Field(default_factory=list, max_length=20)
+    run_nmap: bool = False
+    ai_analyze: bool = False
+    ai_provider: Literal["local", "claude", "openai", "gemini", "minimax"] = "local"
+    ai_model: str | None = Field(None, max_length=160)
+    cloud_processing_acknowledged: bool = False
+    authorization_confirmed: bool = False
+    tlp: TLP = "TLP:AMBER"
+
+
 @router.get("/spaces", response_model=list[CompanySpaceOut])
 async def list_company_spaces(
     session: AsyncSession = Depends(get_session),
@@ -465,6 +487,358 @@ async def create_space_asset(
     await session.commit()
     await session.refresh(asset)
     return _asset_obj(asset)
+
+
+@router.get("/spaces/{space_id}/assets", response_model=dict[str, Any])
+async def list_space_assets(
+    space_id: str,
+    q: str = Query("", max_length=200),
+    asset_type: str = Query("", max_length=80),
+    environment: str = Query("", max_length=80),
+    criticality: str = Query("", max_length=40),
+    exposure: str = Query("", max_length=80),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_asset_assessment),
+):
+    space = await _get_space(session, space_id)
+    criteria: list[Any] = [ThreatSpaceAsset.space_id == space.id]
+    if asset_type.strip():
+        criteria.append(ThreatSpaceAsset.asset_type == asset_type.strip().lower())
+    if environment.strip():
+        criteria.append(ThreatSpaceAsset.environment == environment.strip().lower())
+    if criticality.strip():
+        criteria.append(ThreatSpaceAsset.criticality == criticality.strip().lower())
+    if exposure.strip():
+        criteria.append(ThreatSpaceAsset.exposure == exposure.strip().lower())
+    if q.strip():
+        pattern = f"%{_escape_like(q.strip().lower())}%"
+        criteria.append(or_(
+            func.lower(ThreatSpaceAsset.name).like(pattern, escape="\\"),
+            func.lower(ThreatSpaceAsset.asset_id).like(pattern, escape="\\"),
+            func.lower(ThreatSpaceAsset.owner).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.products, Text)).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.components, Text)).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.technologies, Text)).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.ip_addresses, Text)).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.domains, Text)).like(pattern, escape="\\"),
+            func.lower(cast(ThreatSpaceAsset.tags, Text)).like(pattern, escape="\\"),
+        ))
+    stmt = select(ThreatSpaceAsset)
+    for criterion in criteria:
+        stmt = stmt.where(criterion)
+    rows = (
+        await session.execute(
+            stmt.order_by(
+                ThreatSpaceAsset.updated_at.desc(),
+                ThreatSpaceAsset.name.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "space": _space_summary(space),
+        "items": [_asset_obj(row) for row in rows],
+        "total": await _count(session, ThreatSpaceAsset, *criteria),
+        "limit": limit,
+        "offset": offset,
+        "filters": {
+            "q": q.strip(),
+            "asset_type": asset_type.strip().lower(),
+            "environment": environment.strip().lower(),
+            "criticality": criticality.strip().lower(),
+            "exposure": exposure.strip().lower(),
+        },
+    }
+
+
+@router.get(
+    "/spaces/{space_id}/assets/{asset_id}/intelligence",
+    response_model=dict[str, Any],
+)
+async def get_space_asset_intelligence(
+    space_id: str,
+    asset_id: str,
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_asset_assessment),
+):
+    space = await _get_space(session, space_id)
+    asset = await _get_space_asset(session, space.id, asset_id)
+    intelligence = await asset_detail_intelligence.build_asset_intelligence(
+        session,
+        asset,
+    )
+    return {
+        "space": _space_summary(space),
+        "asset": _asset_obj(asset),
+        **intelligence,
+        "generated_at": datetime.now(UTC),
+    }
+
+
+@router.get("/asset-scanner/providers", response_model=dict[str, Any])
+async def asset_scanner_providers(
+    _: TeamUser = Depends(run_asset_assessment),
+):
+    return {
+        "enabled": settings.asset_scanner_enabled,
+        "nmap": {
+            "enabled": settings.asset_scanner_nmap_enabled,
+            "profile": "safe-service-discovery",
+            "top_ports": settings.asset_scanner_top_ports,
+            "timeout_seconds": settings.asset_scanner_timeout_seconds,
+            "permission": "run_attack_simulation",
+            "boundary": (
+                "Unprivileged TCP connect and light service detection only. "
+                "No NSE scripts, UDP scan, OS fingerprinting, evasion, or exploitation."
+            ),
+        },
+        "passive": asset_scanner.provider_catalog(),
+        "ai": await governed_ai.provider_catalog_with_readiness(),
+    }
+
+
+@router.get(
+    "/spaces/{space_id}/assets/{asset_id}/scans",
+    response_model=list[dict[str, Any]],
+)
+async def list_asset_scans(
+    space_id: str,
+    asset_id: str,
+    limit: int = 25,
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_asset_assessment),
+):
+    space = await _get_space(session, space_id)
+    asset = await _get_space_asset(session, space.id, asset_id)
+    rows = (
+        await session.execute(
+            select(ThreatAssetScan)
+            .where(
+                ThreatAssetScan.space_id == space.id,
+                ThreatAssetScan.asset_id == asset.id,
+            )
+            .order_by(ThreatAssetScan.created_at.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+    ).scalars().all()
+    return [_asset_scan_obj(row) for row in rows]
+
+
+@router.get(
+    "/spaces/{space_id}/assets/{asset_id}/scans/{scan_id}",
+    response_model=dict[str, Any],
+)
+async def get_asset_scan(
+    space_id: str,
+    asset_id: str,
+    scan_id: str,
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_asset_assessment),
+):
+    space = await _get_space(session, space_id)
+    asset = await _get_space_asset(session, space.id, asset_id)
+    scan = await session.get(ThreatAssetScan, _uuid_or_400(scan_id))
+    if not scan or scan.space_id != space.id or scan.asset_id != asset.id:
+        raise HTTPException(404, "Asset assessment not found")
+    return _asset_scan_obj(scan)
+
+
+@router.post(
+    "/spaces/{space_id}/assets/{asset_id}/scans",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_asset_scan(
+    space_id: str,
+    asset_id: str,
+    payload: AssetScanIn,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(run_asset_assessment),
+):
+    if not settings.asset_scanner_enabled:
+        raise HTTPException(503, "Threat Radar asset assessment is disabled by the operator")
+    if not payload.authorization_confirmed:
+        raise HTTPException(
+            422,
+            "Confirm that you are authorized to assess this inventory asset",
+        )
+    if payload.run_nmap and not has_permission(user, "run_attack_simulation"):
+        raise HTTPException(
+            403,
+            "Active Nmap discovery requires the run_attack_simulation permission",
+        )
+
+    space = await _get_space(session, space_id)
+    asset = await _get_space_asset(session, space.id, asset_id)
+    try:
+        target = asset_scanner.normalize_inventory_target(asset, payload.target)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    active = await session.scalar(
+        select(ThreatAssetScan).where(
+            ThreatAssetScan.asset_id == asset.id,
+            ThreatAssetScan.status == "running",
+        )
+    )
+    if active:
+        raise HTTPException(409, "An assessment is already running for this asset")
+
+    requested_providers = payload.providers or [
+        row["id"] for row in asset_scanner.provider_catalog() if row["enabled"]
+    ]
+    scan = ThreatAssetScan(
+        space_id=space.id,
+        asset_id=asset.id,
+        target=target.value,
+        target_host=target.host,
+        target_type=target.target_type,
+        status="running",
+        requested_providers=requested_providers,
+        nmap_requested=payload.run_nmap,
+        ai_requested=payload.ai_analyze,
+        ai_provider=payload.ai_provider if payload.ai_analyze else "",
+        ai_model=payload.ai_model or "",
+        authorization_confirmed=True,
+        cloud_processing_acknowledged=payload.cloud_processing_acknowledged,
+        requested_by=user.name,
+    )
+    session.add(scan)
+    await session.flush()
+    await audit_log(
+        session,
+        user.name,
+        "threat_radar.asset_scan_started",
+        "threat_asset_scan",
+        str(scan.id),
+        {
+            "space_id": str(space.id),
+            "asset_id": str(asset.id),
+            "target_type": target.target_type,
+            "providers": requested_providers,
+            "nmap_requested": payload.run_nmap,
+            "ai_requested": payload.ai_analyze,
+        },
+    )
+    await session.commit()
+
+    try:
+        resolved_ips = await asset_scanner.resolve_target(target)
+        warnings: list[str] = []
+        if target.target_type != "ip" and not resolved_ips:
+            warnings.append(
+                "The target hostname could not be resolved by the API container; "
+                "IP-specific OSINT pivots may be incomplete."
+            )
+        passive_results, passive_warnings = await asset_scanner.run_passive_assessment(
+            session,
+            target,
+            requested_providers,
+            resolved_ips,
+        )
+        warnings.extend(passive_warnings)
+        nmap_result = (
+            await asset_scanner.run_nmap_discovery(target, resolved_ips)
+            if payload.run_nmap
+            else {
+                "status": "not_requested",
+                "summary": "Active service discovery was not requested.",
+                "hosts": [],
+                "open_port_count": 0,
+            }
+        )
+        cve_candidates = await asset_scanner.match_local_cves(session, nmap_result)
+        findings = asset_scanner.build_findings(
+            passive_results,
+            nmap_result,
+            cve_candidates,
+        )
+        analysis = asset_scanner.deterministic_analysis(
+            passive_results,
+            nmap_result,
+            cve_candidates,
+        )
+        if payload.ai_analyze:
+            try:
+                analysis = await asset_scanner.analyze_with_ai(
+                    asset=asset,
+                    target=target,
+                    passive_results=passive_results,
+                    nmap_result=nmap_result,
+                    cve_candidates=cve_candidates,
+                    provider=payload.ai_provider,
+                    model=payload.ai_model,
+                    cloud_processing_acknowledged=payload.cloud_processing_acknowledged,
+                    effective_tlp=payload.tlp,
+                )
+            except (
+                governed_ai.AIOutputError,
+                governed_ai.AIProviderCallError,
+                governed_ai.AIProviderTimeoutError,
+                ValueError,
+            ):
+                warnings.append(
+                    "AI interpretation failed; the deterministic evidence summary is shown."
+                )
+                logger.exception(
+                    "Threat Radar asset assessment AI failed provider=%s",
+                    payload.ai_provider,
+                )
+
+        degraded = any(
+            row.get("status") in {"error", "not_configured"}
+            for row in passive_results
+        ) or nmap_result.get("status") in {"error", "timeout", "unavailable", "unresolved"}
+        scan.passive_results = jsonable_encoder(passive_results)
+        scan.nmap_result = jsonable_encoder(nmap_result)
+        scan.findings = jsonable_encoder(findings)
+        scan.ai_analysis = jsonable_encoder({
+            **analysis,
+            "cve_candidates": cve_candidates,
+            "resolved_ips": resolved_ips,
+        })
+        scan.ai_model = str(analysis.get("model") or scan.ai_model)
+        scan.warnings = warnings
+        scan.status = "partial" if degraded else "completed"
+        scan.completed_at = datetime.now(UTC)
+        await audit_log(
+            session,
+            user.name,
+            "threat_radar.asset_scan_completed",
+            "threat_asset_scan",
+            str(scan.id),
+            {
+                "status": scan.status,
+                "finding_count": len(findings),
+                "open_port_count": int(nmap_result.get("open_port_count") or 0),
+                "passive_source_count": len(passive_results),
+            },
+        )
+        await session.commit()
+        await session.refresh(scan)
+        return _asset_scan_obj(scan)
+    except HTTPException:
+        scan.status = "failed"
+        scan.error = "Asset assessment policy validation failed."
+        scan.completed_at = datetime.now(UTC)
+        await session.commit()
+        raise
+    except ValueError as exc:
+        scan.status = "failed"
+        scan.error = str(exc)[:1_000]
+        scan.completed_at = datetime.now(UTC)
+        await session.commit()
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Threat Radar asset assessment failed scan_id=%s", scan.id)
+        scan.status = "failed"
+        scan.error = "Asset assessment failed. See server logs."
+        scan.completed_at = datetime.now(UTC)
+        await session.commit()
+        raise HTTPException(502, scan.error) from exc
 
 
 @router.post("/spaces/{space_id}/dashboards", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
@@ -1264,6 +1638,17 @@ async def _get_space(session: AsyncSession, space_id: str | None) -> ThreatCompa
     return space
 
 
+async def _get_space_asset(
+    session: AsyncSession,
+    space_id: uuid.UUID,
+    asset_id: str,
+) -> ThreatSpaceAsset:
+    asset = await session.get(ThreatSpaceAsset, _uuid_or_400(asset_id))
+    if not asset or asset.space_id != space_id:
+        raise HTTPException(404, "Asset not found in this company space")
+    return asset
+
+
 async def _space_out(session: AsyncSession, space: ThreatCompanySpace) -> CompanySpaceOut:
     counts = {
         "assets": await _count(session, ThreatSpaceAsset, ThreatSpaceAsset.space_id == space.id),
@@ -1953,7 +2338,7 @@ def _alert_row(signal: ThreatSignal, score: Any, asset: ThreatSpaceAsset, match_
         "ioc_count": len(iocs),
         "iocs": iocs[:8],
         "matched_terms": matches[:12],
-        "route": f"/threat-radar/assets?space_id={asset.space_id}&asset_id={asset.id}",
+        "route": f"/threat-radar/assets/{asset.space_id}/{asset.id}",
     }
 
 
@@ -2142,13 +2527,43 @@ def _asset_obj(asset: ThreatSpaceAsset) -> dict[str, Any]:
     }
 
 
+def _asset_scan_obj(scan: ThreatAssetScan) -> dict[str, Any]:
+    return {
+        "id": str(scan.id),
+        "space_id": str(scan.space_id),
+        "asset_id": str(scan.asset_id),
+        "target": scan.target,
+        "target_host": scan.target_host,
+        "target_type": scan.target_type,
+        "status": scan.status,
+        "scan_profile": scan.scan_profile,
+        "requested_providers": scan.requested_providers or [],
+        "passive_results": scan.passive_results or [],
+        "nmap_requested": scan.nmap_requested,
+        "nmap_result": scan.nmap_result or {},
+        "findings": scan.findings or [],
+        "ai_requested": scan.ai_requested,
+        "ai_provider": scan.ai_provider,
+        "ai_model": scan.ai_model,
+        "ai_analysis": scan.ai_analysis or {},
+        "authorization_confirmed": scan.authorization_confirmed,
+        "cloud_processing_acknowledged": scan.cloud_processing_acknowledged,
+        "warnings": scan.warnings or [],
+        "error": scan.error,
+        "requested_by": scan.requested_by,
+        "started_at": scan.started_at,
+        "completed_at": scan.completed_at,
+        "created_at": scan.created_at,
+    }
+
+
 def _asset_dashboard_row(asset: ThreatSpaceAsset) -> dict[str, Any]:
     row = _asset_obj(asset)
     row.update(
         {
             "title": asset.name,
             "description": _asset_description(asset),
-            "route": f"/threat-radar/assets?space_id={asset.space_id}&asset_id={asset.id}",
+            "route": f"/threat-radar/assets/{asset.space_id}/{asset.id}",
         }
     )
     return row
@@ -2373,6 +2788,10 @@ def _ai_step_obj(step: ThreatSpaceAIStep) -> dict[str, Any]:
 
 def _slug(value: str) -> str:
     return "-".join("".join(ch.lower() if ch.isalnum() else " " for ch in value).split())[:120]
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _uuid_or_400(value: str) -> uuid.UUID:
