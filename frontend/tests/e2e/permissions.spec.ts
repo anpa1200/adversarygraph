@@ -99,6 +99,56 @@ test.beforeEach(async ({ page }) => {
   await mockPermissionWorkspaces(page);
 });
 
+test('administrator can validate and create a named user', async ({ page }) => {
+  await authenticate(page, 'admin', allPermissions, ['admin']);
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('**/api/auth/users', async route => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return;
+    }
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'created-user',
+        username: submitted.username,
+        display_name: submitted.display_name,
+        role: submitted.role,
+        permissions: submitted.permissions,
+        effective_permissions: ['read'],
+        effective_modules: [],
+        group_ids: submitted.group_ids,
+        groups: [],
+        auth_provider: 'local',
+        mfa_enabled: false,
+        enabled: true,
+        last_login_at: null,
+        created_at: '2026-07-24T00:00:00Z',
+        updated_at: '2026-07-24T00:00:00Z',
+      }),
+    });
+  });
+
+  await page.goto('/admin');
+  const create = page.getByRole('button', { name: 'Create user' });
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(page.getByRole('alert')).toContainText('Enter a username');
+  await expect(page.getByRole('alert')).toContainText('Use at least 12 characters');
+
+  await page.locator('input[name="username"]').fill('tier1.analyst');
+  await page.locator('input[name="display_name"]').fill('Tier 1 Analyst');
+  await page.locator('input[name="password"]').fill('valid-password-2026');
+  await create.click();
+
+  await expect.poll(() => submitted?.username).toBe('tier1.analyst');
+  expect(submitted?.display_name).toBe('Tier 1 Analyst');
+  expect(submitted?.role).toBe('viewer');
+  await expect(page.locator('input[name="username"]')).toHaveValue('');
+});
+
 test('threat-intelligence role can manage intel and feeds but not detections', async ({ page }) => {
   await authenticate(page, 'threat_intel', ['read', 'run_analysis', 'manage_intel', 'manage_feeds', 'upload_files', 'export_data']);
 

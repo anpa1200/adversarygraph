@@ -9,8 +9,20 @@ import { useHasPermission } from '@/hooks/useCurrentUser';
 const fallbackRoles = ['viewer', 'analyst', 'threat_intel', 'detection_engineer', 'incident_responder', 'auditor', 'security_admin', 'service_account', 'admin'];
 const fallbackPermissions = ['read', 'run_analysis', 'manage_intel', 'manage_detections', 'run_attack_simulation', 'manage_feeds', 'forward_siem', 'upload_files', 'export_data', 'manage_users', 'manage_auth', 'view_audit'];
 
+type PasswordPolicy = NonNullable<Awaited<ReturnType<typeof authApi.status>>['password_policy']>;
+
 function fmt(value: string | null) {
   return value ? new Date(value).toLocaleString() : '-';
+}
+
+function passwordProblems(password: string, policy: PasswordPolicy): string[] {
+  const problems: string[] = [];
+  if (password.length < policy.min_length) problems.push(`Use at least ${policy.min_length} characters.`);
+  if (policy.require_upper && !/[A-Z]/.test(password)) problems.push('Add an uppercase letter.');
+  if (policy.require_lower && !/[a-z]/.test(password)) problems.push('Add a lowercase letter.');
+  if (policy.require_number && !/[0-9]/.test(password)) problems.push('Add a number.');
+  if (policy.require_special && !/[^A-Za-z0-9]/.test(password)) problems.push('Add a special character.');
+  return problems;
 }
 
 function TogglePermission({ value, selected, onChange, disabled = false }: { value: string; selected: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
@@ -38,6 +50,15 @@ export function AdminUsers() {
   const permissions = status?.permissions?.length ? status.permissions : fallbackPermissions;
   const policy = status?.password_policy;
   const minPasswordLength = policy?.min_length ?? 12;
+  const effectivePasswordPolicy: PasswordPolicy = policy ?? {
+    min_length: minPasswordLength,
+    require_upper: false,
+    require_lower: false,
+    require_number: false,
+    require_special: false,
+    mfa_available: false,
+    mfa_required: false,
+  };
 
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -46,6 +67,8 @@ export function AdminUsers() {
   const [extraPermissions, setExtraPermissions] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(true);
+  const [createAttempted, setCreateAttempted] = useState(false);
+  const [createValidation, setCreateValidation] = useState<string[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupSlug, setNewGroupSlug] = useState('');
   const [groupSlugTouched, setGroupSlugTouched] = useState(false);
@@ -59,7 +82,7 @@ export function AdminUsers() {
     qc.invalidateQueries({ queryKey: ['admin-sessions'] });
     qc.invalidateQueries({ queryKey: ['auth-audit'] });
   };
-  const createUser = useMutation({ mutationFn: authApi.createUser, onSuccess: () => { setUsername(''); setDisplayName(''); setPassword(''); setRole('viewer'); setExtraPermissions([]); setGroupIds([]); setEnabled(true); refresh(); } });
+  const createUser = useMutation({ mutationFn: authApi.createUser, onSuccess: () => { setUsername(''); setDisplayName(''); setPassword(''); setRole('viewer'); setExtraPermissions([]); setGroupIds([]); setEnabled(true); setCreateAttempted(false); setCreateValidation([]); refresh(); } });
   const updateUser = useMutation({ mutationFn: ({ id, body }: { id: string; body: { display_name?: string; role?: string; permissions?: string[]; group_ids?: string[]; enabled?: boolean } }) => authApi.updateUser(id, body), onSuccess: refresh });
   const createGroup = useMutation({
     mutationFn: authApi.createGroup,
@@ -82,7 +105,24 @@ export function AdminUsers() {
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!canManageUsers) return;
-    createUser.mutate({ username, display_name: displayName, password, role, permissions: extraPermissions, group_ids: groupIds, enabled });
+    // Read the submitted controls as well as React state so browser/password-
+    // manager autofill cannot leave a valid-looking form permanently disabled.
+    const form = event.currentTarget as HTMLFormElement;
+    const values = new FormData(form);
+    const submittedUsername = String(values.get('username') ?? '').trim();
+    const submittedDisplayName = String(values.get('display_name') ?? '').trim();
+    const submittedPassword = String(values.get('password') ?? '');
+    const problems = [
+      ...(!submittedUsername ? ['Enter a username.'] : []),
+      ...passwordProblems(submittedPassword, effectivePasswordPolicy),
+    ];
+    setCreateAttempted(true);
+    setCreateValidation(problems);
+    setUsername(submittedUsername);
+    setDisplayName(submittedDisplayName);
+    setPassword(submittedPassword);
+    if (problems.length) return;
+    createUser.mutate({ username: submittedUsername, display_name: submittedDisplayName, password: submittedPassword, role, permissions: extraPermissions, group_ids: groupIds, enabled });
   }
 
   function updatePermissions(user: ManagedUser, permission: string, selected: boolean) {
@@ -119,10 +159,52 @@ export function AdminUsers() {
                 <h2 className="font-semibold text-white">Create user</h2>
                 <p className="mt-1 text-xs text-gray-500">Use named accounts and assign the smallest practical SOC group set.</p>
               </div>
-              {canManageUsers ? <form onSubmit={submit} className="space-y-4 p-4">
-                <label className="block"><span className="label">Username</span><input className="field" value={username} onChange={event => setUsername(event.target.value)} /></label>
-                <label className="block"><span className="label">Display name</span><input className="field" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
-                <label className="block"><span className="label">Initial password</span><input className="field" type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+              {canManageUsers ? <form onSubmit={submit} noValidate className="space-y-4 p-4">
+                <label className="block">
+                  <span className="label">Username</span>
+                  <input
+                    className="field"
+                    name="username"
+                    autoComplete="off"
+                    required
+                    aria-invalid={createAttempted && !username.trim()}
+                    value={username}
+                    onChange={event => {
+                      setUsername(event.target.value);
+                      if (createAttempted) setCreateValidation([]);
+                    }}
+                  />
+                  {createAttempted && !username.trim() && <span className="mt-1 block text-xs text-red-300">Username is required.</span>}
+                </label>
+                <label className="block">
+                  <span className="label">Display name</span>
+                  <input className="field" name="display_name" autoComplete="off" value={displayName} onChange={event => setDisplayName(event.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="label">Initial password</span>
+                  <input
+                    className="field"
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={minPasswordLength}
+                    aria-describedby="create-user-password-policy"
+                    aria-invalid={createAttempted && passwordProblems(password, effectivePasswordPolicy).length > 0}
+                    value={password}
+                    onChange={event => {
+                      setPassword(event.target.value);
+                      if (createAttempted) setCreateValidation([]);
+                    }}
+                  />
+                  <span id="create-user-password-policy" className="mt-1 block text-xs text-gray-500">
+                    Minimum {minPasswordLength} characters
+                    {effectivePasswordPolicy.require_upper ? ' · uppercase' : ''}
+                    {effectivePasswordPolicy.require_lower ? ' · lowercase' : ''}
+                    {effectivePasswordPolicy.require_number ? ' · number' : ''}
+                    {effectivePasswordPolicy.require_special ? ' · special character' : ''}.
+                  </span>
+                </label>
                 <div>
                   <span className="label">SOC groups</span>
                   <p className="mb-2 mt-1 text-xs text-gray-500">Groups control which modules appear and which actions are allowed.</p>
@@ -141,8 +223,18 @@ export function AdminUsers() {
                 </div>
                 </details>
                 <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} /> Enabled</label>
+                {createValidation.length > 0 && (
+                  <div role="alert" className="rounded border border-amber-500/40 bg-amber-950/30 p-3 text-xs text-amber-100">
+                    <div className="font-semibold">Complete these fields to create the user:</div>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {createValidation.map(problem => <li key={problem}>{problem}</li>)}
+                    </ul>
+                  </div>
+                )}
                 {createUser.error && <div className="rounded border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-200">{createUser.error.message}</div>}
-                <button className="primary w-full" disabled={createUser.isPending || !username || password.length < minPasswordLength}>Create user</button>
+                <button className="primary w-full" disabled={createUser.isPending}>
+                  {createUser.isPending ? 'Creating user…' : 'Create user'}
+                </button>
               </form> : <div className="p-4"><PermissionNotice permission="manage_users" action="create user accounts" /></div>}
             </div>
 
