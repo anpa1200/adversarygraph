@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.models.asset_surface import AssetRegistryItem
 from app.services.auth import TeamUser, audit, require_permission
-from app.services.emb3d import assess_assets_with_emb3d, catalog_summary, load_emb3d_knowledge_base
+from app.services.emb3d import (
+    Emb3dDataUnavailable,
+    assess_assets_with_emb3d,
+    catalog_summary,
+    load_emb3d_knowledge_base,
+)
 
 router = APIRouter(prefix="/emb3d", tags=["EMB3D"])
 run_emb3d_assessment = require_permission("run_analysis")
@@ -22,9 +27,16 @@ class Emb3dAssessIn(BaseModel):
     limit: int = Field(default=200, ge=1, le=500)
 
 
+def _knowledge_base():
+    try:
+        return load_emb3d_knowledge_base()
+    except Emb3dDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/catalog")
 async def emb3d_catalog(_: TeamUser = Depends(run_emb3d_assessment)):
-    kb = load_emb3d_knowledge_base()
+    kb = _knowledge_base()
     return {
         **catalog_summary(kb),
         "properties": sorted(kb.properties.values(), key=lambda item: item["id"]),
@@ -38,7 +50,7 @@ async def emb3d_asset_report(
     session: AsyncSession = Depends(get_session),
     user: TeamUser = Depends(run_emb3d_assessment),
 ):
-    kb = load_emb3d_knowledge_base()
+    kb = _knowledge_base()
     rows = (
         await session.execute(
             select(AssetRegistryItem)
@@ -65,7 +77,7 @@ async def emb3d_assess_assets(
     session: AsyncSession = Depends(get_session),
     user: TeamUser = Depends(run_emb3d_assessment),
 ):
-    kb = load_emb3d_knowledge_base()
+    kb = _knowledge_base()
     stmt = select(AssetRegistryItem).order_by(AssetRegistryItem.last_seen_at.desc()).limit(payload.limit)
     if payload.asset_ids:
         try:
@@ -88,7 +100,7 @@ async def emb3d_assess_assets(
 
 @router.post("/preview")
 async def emb3d_preview_asset(asset: dict[str, Any], _: TeamUser = Depends(run_emb3d_assessment)):
-    kb = load_emb3d_knowledge_base()
+    kb = _knowledge_base()
     registry_asset = AssetRegistryItem(
         inventory_asset_id=str(asset.get("inventory_asset_id") or asset.get("asset_id") or asset.get("name") or "preview"),
         fingerprint=f"preview:{asset.get('asset_id') or asset.get('name') or 'asset'}",

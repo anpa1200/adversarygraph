@@ -279,6 +279,12 @@ jobs:
           pip install -r requirements.txt
           PYTHONPATH=. python -m pytest -q
 
+      - name: Validate OpenAPI and frontend API contracts
+        env:
+          DB_PASS: ci_test_password
+          LOG_DIR: /tmp/adversarygraph-test-logs
+        run: ./scripts/check-api-contracts.py
+
       - name: Frontend build and lint
         working-directory: frontend
         run: |

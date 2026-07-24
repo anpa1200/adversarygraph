@@ -1,7 +1,17 @@
 from uuid import uuid4
 
 from app.models.asset_surface import AssetRegistryItem
-from app.services.emb3d import assess_asset_with_emb3d, infer_emb3d_properties, parse_emb3d_bundle
+import json
+
+import pytest
+
+from app.services import emb3d
+from app.services.emb3d import (
+    Emb3dDataUnavailable,
+    assess_asset_with_emb3d,
+    infer_emb3d_properties,
+    parse_emb3d_bundle,
+)
 
 
 def test_parse_emb3d_bundle_maps_properties_threats_and_mitigations():
@@ -143,3 +153,31 @@ def test_assess_asset_links_inferred_properties_to_threats():
 
     assert any(prop["id"] == "PID-41" for prop in report["properties"])
     assert [threat["id"] for threat in report["threats"]] == ["TID-210"]
+
+
+def test_emb3d_bundle_loader_uses_valid_cache_without_network(tmp_path, monkeypatch):
+    cache = tmp_path / "emb3d.json"
+    cache.write_text(json.dumps({"type": "bundle", "objects": []}), encoding="utf-8")
+
+    def unexpected_network(*args, **kwargs):
+        raise AssertionError("network should not be called when a valid cache exists")
+
+    monkeypatch.setattr(emb3d, "safe_get", unexpected_network)
+
+    assert emb3d._load_bundle(source_url="https://example.test/emb3d.json", cache_path=cache) == {
+        "type": "bundle",
+        "objects": [],
+    }
+
+
+def test_emb3d_bundle_loader_reports_controlled_error_when_upstream_is_unavailable(tmp_path, monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise ValueError("DNS unavailable")
+
+    monkeypatch.setattr(emb3d, "safe_get", unavailable)
+
+    with pytest.raises(Emb3dDataUnavailable, match="reference data is unavailable"):
+        emb3d._load_bundle(
+            source_url="https://example.test/emb3d.json",
+            cache_path=tmp_path / "missing.json",
+        )

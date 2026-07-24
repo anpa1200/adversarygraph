@@ -1,5 +1,6 @@
 from app.api.routes.system import (
     _cpu_percent_from_totals,
+    _data_integrity_check,
     _format_bytes,
     _memory_usage_details,
     _auth_readiness_check,
@@ -72,6 +73,59 @@ def test_overall_selftest_status_distinguishes_degraded_from_error():
             _check_status("ioc_sync", "degraded", "feed degraded"),
         ]
     ) == "error"
+
+
+def test_data_integrity_check_passes_with_cross_source_overlap_only():
+    check = _data_integrity_check(
+        {
+            "status": "ok",
+            "duplicate_groups": {
+                "normalized_ioc_value_type_source": 0,
+                "normalized_cve_id": 0,
+                "cross_source_ioc_overlap": 3,
+            },
+            "samples": {},
+            "policy": {},
+        }
+    )
+
+    assert check.name == "ioc_cve_dedup_integrity"
+    assert check.status == "ok"
+    assert "cross-source IOC overlap" in check.message
+
+
+def test_data_integrity_check_fails_on_ioc_or_cve_duplicates():
+    check = _data_integrity_check(
+        {
+            "status": "error",
+            "duplicate_groups": {
+                "normalized_ioc_value_type_source": 2,
+                "normalized_cve_id": 1,
+                "cross_source_ioc_overlap": 0,
+            },
+            "samples": {},
+            "policy": {},
+        }
+    )
+
+    assert check.status == "error"
+    assert "2 normalized IOC duplicate" in check.message
+    assert "1 CVE duplicate" in check.message
+
+
+def test_data_integrity_check_reports_background_scan_without_blocking():
+    check = _data_integrity_check(
+        {
+            "status": "running",
+            "checked_at": None,
+            "duplicate_groups": {},
+            "samples": {},
+            "policy": {},
+        }
+    )
+
+    assert check.status == "warning"
+    assert "running in the background" in check.message
 
 
 def test_auth_readiness_passes_with_local_auth_disabled_warning(monkeypatch):

@@ -1416,6 +1416,34 @@ export interface SelfTestResult {
   checks: SelfTestCheck[];
 }
 
+export interface ApiOperationCapability {
+  method: string;
+  path: string;
+  operation_id: string;
+  summary: string;
+  success_codes: string[];
+  deprecated: boolean;
+}
+
+export interface ApiModuleCapability {
+  name: string;
+  operation_count: number;
+  operations: ApiOperationCapability[];
+}
+
+export interface ApiCapabilities {
+  name: string;
+  version: string;
+  openapi_url: string;
+  docs_url: string;
+  redoc_url: string;
+  module_count: number;
+  path_count: number;
+  operation_count: number;
+  generated_at: string;
+  modules: ApiModuleCapability[];
+}
+
 export interface TroubleshootingAssistantRequest {
   provider: 'local' | 'claude' | 'openai' | 'gemini' | 'minimax';
   model?: string;
@@ -1442,6 +1470,8 @@ export interface TroubleshootingAssistantResponse {
 }
 
 export const systemApi = {
+  capabilities: (): Promise<ApiCapabilities> =>
+    http.get('/system/capabilities').then(r => r.data),
   selftest: (): Promise<SelfTestResult> =>
     http.get('/system/selftest').then(r => r.data),
   normalizeTaxonomy: (): Promise<{ rows_changed: number; tables: Record<string, unknown> }> =>

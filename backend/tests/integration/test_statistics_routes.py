@@ -1,6 +1,8 @@
 import pytest
+from unittest.mock import AsyncMock
 from httpx import AsyncClient
 
+from app.api.routes import statistics
 from app.core.config import settings
 from app.services.auth import TeamUser, current_user
 
@@ -57,3 +59,25 @@ async def test_statistics_invalid_include_falls_back(client: AsyncClient):
     assert response.status_code == 200
     body = response.json()
     assert sorted(body["included"]) == ["actors", "cves", "iocs", "reports", "sectors", "ttps"]
+
+
+@pytest.mark.asyncio
+async def test_cross_dataset_pressure_preaggregates_each_large_relationship_table(
+    client: AsyncClient,
+    monkeypatch,
+):
+    rows = AsyncMock(return_value=[])
+    monkeypatch.setattr(statistics, "_rows", rows)
+
+    response = await client.get(
+        "/api/statistics/overview",
+        params=[("include", "ttps"), ("limit", "5")],
+    )
+
+    assert response.status_code == 200
+    sql_statements = [str(call.args[1]) for call in rows.await_args_list]
+    cross_query = next(sql for sql in sql_statements if "actor_counts AS" in sql)
+    assert "campaign_counts AS" in cross_query
+    assert "cve_counts AS" in cross_query
+    assert "ioc_counts AS" in cross_query
+    assert "LEFT JOIN LATERAL" not in cross_query

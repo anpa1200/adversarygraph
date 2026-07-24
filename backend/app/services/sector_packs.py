@@ -2406,19 +2406,18 @@ NVIDIA_SECTOR_PACKS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 async def ensure_sector_packs(db: AsyncSession) -> int:
-    """Seed the sector_packs table with NVIDIA packs if not already present. Returns count inserted."""
-    inserted = 0
-    for pack_data in NVIDIA_SECTOR_PACKS:
-        result = await db.execute(
-            select(SectorPack).where(SectorPack.sector_id == pack_data["sector_id"])
-        )
-        existing = result.scalar_one_or_none()
-        if existing is None:
-            pack = SectorPack(**pack_data)
-            db.add(pack)
-            inserted += 1
-    if inserted:
-        await db.commit()
+    """Idempotently seed built-in packs, including under concurrent requests."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    statement = (
+        pg_insert(SectorPack)
+        .values(NVIDIA_SECTOR_PACKS)
+        .on_conflict_do_nothing(index_elements=[SectorPack.sector_id])
+        .returning(SectorPack.id)
+    )
+    result = await db.execute(statement)
+    inserted = len(result.scalars().all())
+    await db.commit()
     return inserted
 
 

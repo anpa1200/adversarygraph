@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from httpx import AsyncClient
 
 
@@ -44,3 +45,16 @@ async def test_actor_relevance_empty_db_returns_list(client: AsyncClient):
 async def test_actor_relevance_requires_sector(client: AsyncClient):
     resp = await client.get("/api/sector/relevance")
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sector_pack_seed_is_safe_for_concurrent_read_requests(client: AsyncClient):
+    first, second = await asyncio.gather(
+        client.get("/api/sector/packs"),
+        client.get("/api/sector/packs"),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert isinstance(first.json(), list)
+    assert isinstance(second.json(), list)

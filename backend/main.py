@@ -25,12 +25,14 @@ import app.models.threat_hunting as _threat_hunting_models  # noqa: F401 — reg
 import app.models.rag as _rag_models  # noqa: F401 — register Base metadata
 import app.models.query_library as _query_library_models  # noqa: F401 — register Base metadata
 from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, query_library, rag, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
+from app.api.openapi import OPENAPI_TAGS
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
 from app.core.observability import monotonic_ms_since, observability_state
 from app.core.version import APP_VERSION
 from app.services.auth import bootstrap_admin_if_configured, current_user
+from app.services.data_integrity import inspect_ioc_cve_integrity, mark_ioc_cve_integrity_unavailable
 from app.services.startup_status import startup_status
 
 configure_logging()
@@ -71,6 +73,20 @@ async def _startup_ioc_sync() -> None:
         logger.warning("Startup IOC full sync failed: %s", exc, exc_info=True)
 
 
+async def _startup_data_integrity_check() -> None:
+    try:
+        async with async_session_factory() as session:
+            result = await inspect_ioc_cve_integrity(session)
+        duplicate_groups = result.get("duplicate_groups", {})
+        if result.get("status") == "ok":
+            logger.info("Startup IOC/CVE dedup integrity passed: %s", duplicate_groups)
+        else:
+            logger.error("Startup IOC/CVE dedup integrity failed: %s", result)
+    except Exception as exc:
+        mark_ioc_cve_integrity_unavailable(exc)
+        logger.warning("Startup IOC/CVE dedup integrity check failed: %s", exc, exc_info=True)
+
+
 async def _startup_attck_ingestion() -> None:
     startup_status.mark_job_running(
         "reference_ingestion",
@@ -107,6 +123,7 @@ async def _startup_reference_jobs() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     reference_task: asyncio.Task[None] | None = None
+    integrity_task: asyncio.Task[None] | None = None
     startup_status.set_platform_message("Preparing API, database tables, and authentication bootstrap.")
     if not settings.auth_enabled:
         logger.warning(
@@ -121,32 +138,49 @@ async def lifespan(app: FastAPI):
             logger.info("Bootstrapped native admin user from AUTH_BOOTSTRAP_ADMIN_* settings")
 
     startup_status.set_platform_message("API is serving requests while reference ingestion completes in the background.")
+    integrity_task = asyncio.create_task(
+        _startup_data_integrity_check(),
+        name="adversarygraph-data-integrity",
+    )
     reference_task = asyncio.create_task(
         _startup_reference_jobs(),
         name="adversarygraph-reference-ingestion",
     )
     # Retain a strong reference for observability and deterministic shutdown.
     app.state.reference_jobs_task = reference_task
+    app.state.data_integrity_task = integrity_task
 
     try:
         yield
     finally:
-        if reference_task is not None:
-            if not reference_task.done():
-                reference_task.cancel()
+        for task, label in (
+            (reference_task, "reference ingestion"),
+            (integrity_task, "data integrity scan"),
+        ):
+            if task is None:
+                continue
+            if not task.done():
+                task.cancel()
             try:
-                await reference_task
+                await task
             except asyncio.CancelledError:
-                logger.info("Background reference ingestion stopped during API shutdown")
+                logger.info("Background %s stopped during API shutdown", label)
             except Exception:
-                logger.exception("Background reference ingestion ended unexpectedly")
+                logger.exception("Background %s ended unexpectedly", label)
         app.state.reference_jobs_task = None
+        app.state.data_integrity_task = None
 
 
 app = FastAPI(
     title="AdversaryGraph API",
-    description="ATT&CK-based threat intelligence mapping with AI analysis",
+    description=(
+        "Versioned API for the AdversaryGraph analyst workbench: ATT&CK/ATLAS, "
+        "IOC and CVE intelligence, report and malware analysis, evidence graphs, "
+        "threat hunting, query engineering, attack simulation, RAG, operations, "
+        "observability, and governed external-provider integrations."
+    ),
     version=APP_VERSION,
+    openapi_tags=OPENAPI_TAGS,
     lifespan=lifespan,
 )
 
@@ -250,12 +284,20 @@ app.include_router(query_library.router, prefix="/api", dependencies=_auth_requi
 app.include_router(rag.router, prefix="/api", dependencies=_auth_required)
 
 
-@app.get("/api/health")
-async def health():
+@app.get(
+    "/api/health",
+    tags=["System"],
+    summary="Check API liveness and startup progress",
+)
+async def health() -> dict[str, object]:
     return {"status": "ok", "version": app.version, "startup": startup_status.snapshot()}
 
 
-@app.get("/api/ready")
+@app.get(
+    "/api/ready",
+    tags=["System"],
+    summary="Check API and database readiness",
+)
 async def readiness():
     """Database-backed readiness check; liveness remains ``/api/health``."""
     try:

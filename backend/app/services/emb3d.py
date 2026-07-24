@@ -15,6 +15,10 @@ EMB3D_STIX_URL = f"https://emb3d.mitre.org/assets/emb3d-stix-{EMB3D_VERSION}.jso
 EMB3D_CACHE_PATH = Path("/app/data/emb3d") / f"emb3d-stix-{EMB3D_VERSION}.json"
 
 
+class Emb3dDataUnavailable(RuntimeError):
+    """Raised when neither cached nor upstream EMB3D reference data is usable."""
+
+
 @dataclass(frozen=True)
 class Emb3dPropertyMatch:
     property_id: str
@@ -328,13 +332,23 @@ def _load_bundle(*, source_url: str, cache_path: Path) -> dict[str, Any]:
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         if cache_path.exists():
-            return json.loads(cache_path.read_text(encoding="utf-8"))
-    except OSError:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(cached, dict) and isinstance(cached.get("objects"), list):
+                return cached
+    except (OSError, json.JSONDecodeError):
         pass
 
-    response = safe_get(source_url, timeout=30)
-    response.raise_for_status()
-    bundle = response.json()
+    try:
+        response = safe_get(source_url, timeout=30)
+        response.raise_for_status()
+        bundle = response.json()
+    except Exception as exc:
+        raise Emb3dDataUnavailable(
+            "EMB3D reference data is unavailable. Configure outbound access once "
+            f"to populate {cache_path}, or mount a valid cached STIX bundle."
+        ) from exc
+    if not isinstance(bundle, dict) or not isinstance(bundle.get("objects"), list):
+        raise Emb3dDataUnavailable("The EMB3D upstream response is not a valid STIX bundle.")
     try:
         cache_path.write_text(json.dumps(bundle), encoding="utf-8")
     except OSError:
