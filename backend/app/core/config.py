@@ -117,8 +117,10 @@ class Settings(BaseSettings):
     # UDP scan, OS fingerprinting, or evasion flags are permitted.
     asset_scanner_enabled: bool = True
     asset_scanner_nmap_enabled: bool = True
+    asset_scanner_web_probe_enabled: bool = True
     asset_scanner_nmap_binary: str = "/usr/bin/nmap"
     asset_scanner_timeout_seconds: int = Field(default=120, ge=15, le=600)
+    asset_scanner_web_probe_timeout_seconds: int = Field(default=15, ge=5, le=60)
     asset_scanner_top_ports: int = Field(default=100, ge=10, le=1000)
     asset_scanner_max_resolved_ips: int = Field(default=4, ge=1, le=16)
 

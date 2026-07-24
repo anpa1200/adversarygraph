@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+No changes yet.
+
+## v6.1.0 - 2026-07-24
+
+- Added persistent SOC access groups with module-level RBAC. Built-in
+  least-privilege profiles cover SOC Tier 1/2/3, SOC Manager, threat
+  intelligence, threat hunting, detection engineering, incident response,
+  vulnerability management, feed operations, audit/read-only access, and
+  platform administration. User membership, sidebar visibility, frontend route
+  boundaries, direct API access, grant ceilings, audit events, and
+  last-user-manager continuity are enforced consistently.
 - Added a searchable saved-asset registry and dedicated Threat Radar asset
   intelligence pages. Each asset exposes its normalized inventory, alerts,
   assessment history, CVEs, ATT&CK techniques, and IOCs through a server-side

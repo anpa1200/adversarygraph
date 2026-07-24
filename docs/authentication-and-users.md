@@ -11,6 +11,46 @@ The same operator guide is available in a running local instance at:
 The login page links directly to this guide, and the route remains accessible
 before sign-in when `AUTH_ENABLED=true`.
 
+## SOC groups and module access
+
+Named native users can belong to one or more persistent access groups. A group
+contains two independent allowlists:
+
+- **modules** decide which workspaces appear in the sidebar and which
+  module-backed API routers the account may call;
+- **permissions** decide which actions the account may perform inside those
+  modules.
+
+Both checks are enforced by the API. Hiding a sidebar item is not treated as a
+security boundary. When a user has one or more group assignments, the union of
+enabled groups is the user's module allowlist. A user with no group assignments
+retains the legacy module defaults for their primary role so an upgrade does not
+silently lock out existing accounts. Direct permission grants and the primary
+role remain additive action grants.
+
+The API seeds these profiles once. Administrators may then adapt their local
+copies without startup overwriting the policy:
+
+| Group | Intended access boundary |
+| --- | --- |
+| SOC Tier 1 — Triage | IOC Investigation, reports, knowledge, IOC lookup, VirusTotal, evidence intake, and escalation |
+| SOC Tier 2 — Investigation | Tier 1 plus Threat Radar, actor/sector/CVE context, RetroHunt, asset surface, malware analysis, correlation, and evidence graph |
+| SOC Tier 3 — Advanced Analysis | Advanced investigation, malware, threat hunting, query engineering, simulation, detection operations, and pipeline workflows |
+| SOC Manager | All operational SOC modules and audit visibility, but no user/authentication, feed, or platform configuration |
+| Threat Intelligence | Reports, actors, sectors, IOC/CVE intelligence, ATT&CK mappings, evidence, and intelligence enrichment |
+| Threat Hunting | Hypotheses, detection queries, IOC correlation, evidence, findings, and hunt outcomes |
+| Detection Engineering | Query engineering, coverage, controlled attack simulation, SIEM forwarding, detection operations, and pipeline validation |
+| Incident Response / DFIR | IOC and malware investigation, evidence preservation, response coordination, and incident reporting |
+| Vulnerability Management | Asset inventory, attack surface, CVE prioritization, exposure monitoring, and remediation evidence |
+| Intelligence Feed Operators | ATT&CK, IOC, CVE, and enrichment-feed maintenance without identity administration |
+| Audit / Read Only | Reports, statistics, operational health, exports, and audit evidence without mutation rights |
+| Platform Administrators | Every module and permission, including identity, authentication, feeds, and configuration |
+
+Use groups for normal workforce assignments. Keep the primary role at `viewer`
+unless a service integration, trusted-proxy mapping, or backwards-compatible
+deployment specifically needs a role baseline. The `admin` role is always
+unrestricted and only another administrator may assign it.
+
 ## Roles and exact base permissions
 
 The following table mirrors `ROLE_PERMISSIONS` in the API. These are the base
@@ -42,16 +82,16 @@ Current permissions are:
 `run_attack_simulation`, `manage_feeds`, `forward_siem`, `upload_files`,
 `export_data`, `manage_users`, `manage_auth`, and `view_audit`.
 
-### Read-only pages and action controls
+### Module and action controls
 
-`read` allows authenticated navigation and safe read APIs. Viewer-accessible
-pages include Discover, Navigator, ATT&CK Group Library, report/knowledge and
-IOC/CVE libraries, comparisons, sector context, lookups, help, and
-troubleshooting views. Seeing a page or previously stored record does not grant
-permission to upload, mutate, synchronize, execute, export, or forward data.
+Module membership allows navigation and direct API access to that functional
+area. The `read` permission supports safe reads inside the allowed area. Seeing
+a page or previously stored record does not grant permission to upload, mutate,
+synchronize, execute, export, or forward data.
 
-The sidebar and route boundary hide or block these workspaces when the matching
-permission is absent:
+The sidebar, frontend route, and backend router hide or block workspaces when
+the matching module is absent. State-changing controls additionally require the
+matching permission:
 
 - analysis workspaces such as EMB3D, Evidence Graph, Threat Radar, Threat
   Hunting, Investigation, IOC Investigation, Operations, Pipeline, and
@@ -139,6 +179,9 @@ Open **Admin Panel** from the sidebar as an admin user.
 Admins can:
 
 - create users;
+- assign one or more SOC groups to each user;
+- create local access groups and edit their module/permission matrices;
+- enable or disable groups without deleting their policy;
 - assign any built-in role;
 - add or remove explicit permission grants;
 - enable or disable users;
@@ -148,14 +191,19 @@ Admins can:
 - disable local MFA for a user;
 - review auth audit events.
 
+Built-in SOC groups cannot be deleted; they can be disabled. Custom groups must
+have no members before deletion. Disabling a group immediately removes its
+module and permission grants from assigned users. The service refuses user or
+group changes that would remove the final enabled user-management path.
+
 Delegated accounts with `manage_users` are subject to an authorization ceiling:
 they may create or manage only accounts whose complete effective permission set
-is contained in their own. They cannot assign the `admin` role, manage an admin
-account, or grant `manage_auth` unless they already hold it. Password reset,
-disable, role, and permission changes use the same target-account ceiling so a
-user manager cannot take over a more privileged identity. Session revocation and
-MFA reset remain `manage_auth` operations, and only an `admin` may apply them to
-another admin account.
+and module set is contained in their own. They cannot assign the `admin` role,
+manage an admin account, change built-in groups, or grant `manage_auth` unless
+they already hold it. Password reset, disable, role, membership, and permission
+changes use the same target-account ceiling so a user manager cannot take over a
+more privileged identity. Session revocation and MFA reset remain `manage_auth`
+operations, and only an `admin` may apply them to another admin account.
 
 Users cannot change their own role or explicit permission grants through the
 Admin Panel API. Use a second named administrator for administrator-role changes;
@@ -245,6 +293,7 @@ Admin Panel. Events include:
 - MFA failure, setup, enable, and admin disable;
 - logout;
 - user create/update/disable;
+- access-group create/update/delete and membership changes;
 - password reset;
 - session listing and session revocation.
 

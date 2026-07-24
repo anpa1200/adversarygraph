@@ -31,7 +31,13 @@ from app.core.database import async_session_factory, create_tables
 from app.core.logging_config import configure_logging
 from app.core.observability import monotonic_ms_since, observability_state
 from app.core.version import APP_VERSION
-from app.services.auth import bootstrap_admin_if_configured, current_user
+from app.services.auth import (
+    bootstrap_admin_if_configured,
+    current_user,
+    ensure_default_access_groups,
+    require_any_module,
+    require_module,
+)
 from app.services.data_integrity import inspect_ioc_cve_integrity, mark_ioc_cve_integrity_unavailable
 from app.services.startup_status import startup_status
 
@@ -134,6 +140,9 @@ async def lifespan(app: FastAPI):
     await create_tables()
     logger.info("Database tables ready")
     async with async_session_factory() as session:
+        created_groups = await ensure_default_access_groups(session)
+        if created_groups:
+            logger.info("Created %s built-in SOC access groups", created_groups)
         if await bootstrap_admin_if_configured(session):
             logger.info("Bootstrapped native admin user from AUTH_BOOTSTRAP_ADMIN_* settings")
 
@@ -254,34 +263,67 @@ app.add_middleware(RateLimitMiddleware)
 
 _auth_required = [Depends(current_user)]
 
+
+def _module_required(module: str):
+    return [Depends(require_module(module))]
+
+
+def _one_module_required(*modules: str):
+    return [Depends(require_any_module(*modules))]
+
 app.include_router(auth.router, prefix="/api")
-app.include_router(attack.router,  prefix="/api", dependencies=_auth_required)
-app.include_router(apt.router,     prefix="/api", dependencies=_auth_required)
-app.include_router(analyze.router, prefix="/api", dependencies=_auth_required)
-app.include_router(asset_surface.router, prefix="/api", dependencies=_auth_required)
+app.include_router(
+    attack.router,
+    prefix="/api",
+    dependencies=_one_module_required(
+        "discover", "navigator", "compare", "apt_library", "investigation",
+        "threat_hunting", "attack_simulation", "asset_surface",
+        "evidence_graph", "threat_radar",
+    ),
+)
+app.include_router(
+    apt.router,
+    prefix="/api",
+    dependencies=_one_module_required(
+        "apt_library", "compare", "investigation", "threat_radar",
+        "sector_intel", "evidence_graph", "threat_hunting",
+    ),
+)
+app.include_router(analyze.router, prefix="/api", dependencies=_one_module_required("ai_analysis", "reports_research", "investigation"))
+app.include_router(asset_surface.router, prefix="/api", dependencies=_module_required("asset_surface"))
 app.include_router(sync.router,    prefix="/api", dependencies=_auth_required)
 app.include_router(export.router,  prefix="/api", dependencies=_auth_required)
-app.include_router(ioc.router, prefix="/api", dependencies=_auth_required)
-app.include_router(cve.router, prefix="/api", dependencies=_auth_required)
-app.include_router(emb3d.router, prefix="/api", dependencies=_auth_required)
-app.include_router(evidence_graph.router, prefix="/api", dependencies=_auth_required)
-app.include_router(layers.router,  prefix="/api", dependencies=_auth_required)
-app.include_router(malwaregraph.router, prefix="/api", dependencies=_auth_required)
-app.include_router(operations.router, prefix="/api", dependencies=_auth_required)
-app.include_router(pipeline.router, prefix="/api", dependencies=_auth_required)
-app.include_router(retrohunt.router, prefix="/api", dependencies=_auth_required)
-app.include_router(knowledge.router, prefix="/api", dependencies=_auth_required)
-app.include_router(sector.router, prefix="/api", dependencies=_auth_required)
-app.include_router(simulation.router, prefix="/api", dependencies=_auth_required)
-app.include_router(statistics.router, prefix="/api", dependencies=_auth_required)
+app.include_router(ioc.router, prefix="/api", dependencies=_one_module_required("ioc_library", "ioc_investigation", "virustotal", "asset_surface", "threat_radar"))
+app.include_router(cve.router, prefix="/api", dependencies=_one_module_required("cve_library", "asset_surface", "threat_radar"))
+app.include_router(emb3d.router, prefix="/api", dependencies=_module_required("emb3d"))
+app.include_router(evidence_graph.router, prefix="/api", dependencies=_one_module_required("evidence_graph", "ai_analysis", "threat_hunting"))
+app.include_router(layers.router, prefix="/api", dependencies=_module_required("navigator"))
+app.include_router(malwaregraph.router, prefix="/api", dependencies=_module_required("malware_analysis"))
+app.include_router(operations.router, prefix="/api", dependencies=_one_module_required("operations", "investigation"))
+app.include_router(pipeline.router, prefix="/api", dependencies=_module_required("pipeline"))
+app.include_router(retrohunt.router, prefix="/api", dependencies=_one_module_required("retrohunt", "threat_radar", "asset_surface"))
+app.include_router(knowledge.router, prefix="/api", dependencies=_module_required("knowledge"))
+app.include_router(sector.router, prefix="/api", dependencies=_module_required("sector_intel"))
+app.include_router(simulation.router, prefix="/api", dependencies=_module_required("attack_simulation"))
+app.include_router(statistics.router, prefix="/api", dependencies=_module_required("statistics"))
 app.include_router(system.router, prefix="/api", dependencies=_auth_required)
-app.include_router(observability.router, prefix="/api", dependencies=_auth_required)
-app.include_router(troubleshooting.router, prefix="/api", dependencies=_auth_required)
-app.include_router(threat_radar.router, prefix="/api", dependencies=_auth_required)
-app.include_router(threat_hunting.router, prefix="/api", dependencies=_auth_required)
-app.include_router(threat_hunting_ai.router, prefix="/api", dependencies=_auth_required)
-app.include_router(query_library.router, prefix="/api", dependencies=_auth_required)
-app.include_router(rag.router, prefix="/api", dependencies=_auth_required)
+app.include_router(observability.router, prefix="/api", dependencies=_module_required("observability"))
+app.include_router(troubleshooting.router, prefix="/api", dependencies=_module_required("troubleshooting"))
+app.include_router(threat_radar.router, prefix="/api", dependencies=_module_required("threat_radar"))
+app.include_router(threat_hunting.router, prefix="/api", dependencies=_module_required("threat_hunting"))
+app.include_router(threat_hunting_ai.router, prefix="/api", dependencies=_module_required("threat_hunting"))
+app.include_router(query_library.router, prefix="/api", dependencies=_module_required("query_library"))
+app.include_router(
+    rag.router,
+    prefix="/api",
+    dependencies=_one_module_required(
+        "ai_analysis",
+        "navigator",
+        "knowledge",
+        "reports_research",
+        "threat_hunting",
+    ),
+)
 
 
 @app.get(

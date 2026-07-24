@@ -3,7 +3,7 @@ global:
 
 image:
   repository: ghcr.io/anpa1200/adversarygraph-backend
-  tag: "6.0.0"
+  tag: "6.1.0"
   # Set to a reviewed sha256:... value in production. When present, digest
   # takes precedence over tag without requiring a chart change.
   digest: ""
@@ -11,7 +11,7 @@ image:
 frontend:
   image:
     repository: ghcr.io/anpa1200/adversarygraph-frontend
-    tag: "6.0.0"
+    tag: "6.1.0"
     digest: ""
   replicas: 1
   service:
@@ -95,7 +95,7 @@ malwaregraph:
   enabled: true
   image:
     repository: ghcr.io/anpa1200/adversarygraph-malwaregraph
-    tag: "6.0.0"
+    tag: "6.1.0"
     digest: ""
   storageClassName: ""
   accessModes:

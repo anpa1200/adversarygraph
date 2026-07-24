@@ -17,7 +17,7 @@ const allPermissions = [
   'view_audit',
 ];
 
-async function authenticate(page: Page, role: string, permissions: string[]) {
+async function authenticate(page: Page, role: string, permissions: string[], modules?: string[]) {
   await page.route('**/api/auth/status', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -44,9 +44,29 @@ async function authenticate(page: Page, role: string, permissions: string[]) {
       role,
       roles: [role],
       permissions,
+      ...(modules ? { modules } : {}),
     }),
   }));
 }
+
+test('SOC Tier 1 module claim limits navigation and direct frontend routes', async ({ page }) => {
+  await authenticate(
+    page,
+    'viewer',
+    ['read', 'run_analysis', 'upload_files', 'export_data'],
+    ['discover', 'reports_research', 'knowledge', 'ioc_library', 'ioc_investigation', 'virustotal', 'investigation', 'examples', 'help', 'troubleshooting'],
+  );
+
+  await page.goto('/discover');
+  await expect(page.getByRole('link', { name: 'IOC Investigation' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Reports / Research' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Threat Radar' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Feeds Management' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Admin Panel' })).toHaveCount(0);
+
+  await page.goto('/navigator');
+  await expect(page.getByText('Access unavailable')).toBeVisible();
+});
 
 async function mockPermissionWorkspaces(page: Page) {
   const emptyPaths = [
@@ -60,6 +80,7 @@ async function mockPermissionWorkspaces(page: Page) {
     '/pipeline/sandbox/behaviors',
     '/pipeline/detections/versions',
     '/pipeline/audit',
+    '/auth/groups',
     '/auth/users',
     '/auth/sessions',
     '/auth/audit',

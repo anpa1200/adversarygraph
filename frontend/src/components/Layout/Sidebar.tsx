@@ -7,12 +7,13 @@ import { GlobalSearch } from '@/components/GlobalSearch';
 import { useAppStore } from '@/store';
 import { useState } from 'react';
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
-import { useCurrentUser, hasPermission } from '@/hooks/useCurrentUser';
+import { useCurrentUser, hasModule, hasPermission } from '@/hooks/useCurrentUser';
 import packageMetadata from '../../../package.json';
 
 type NavItem = {
   label: string;
   icon: string;
+  module?: string;
   permission?: string;
   anyPermission?: string[];
 } & (
@@ -31,74 +32,74 @@ const navSections: NavSection[] = [
     id: 'workspace',
     label: 'Workspace',
     items: [
-      { to: '/discover', label: 'Discover', icon: '⌕' },
+      { to: '/discover', label: 'Discover', icon: '⌕', module: 'discover' },
     ],
   },
   {
     id: 'intelligence',
     label: 'Intelligence',
     items: [
-      { to: '/threat-radar', label: 'Threat Radar', icon: '◉', permission: 'run_analysis' },
-      { to: '/reports-research', label: 'Reports / Research', icon: '▤' },
-      { to: '/apt', label: 'ATT&CK Group Library', icon: '◈' },
-      { to: '/sector-intel', label: 'Sector Intel', icon: '◎' },
-      { to: '/knowledge', label: 'Knowledge Library', icon: '◎' },
-      { to: '/ioc-library', label: 'IOC Library', icon: '▣' },
-      { to: '/cve', label: 'CVE Library', icon: '▨' },
-      { to: '/retrohunt', label: 'RetroHunt Signals', icon: '↺' },
+      { to: '/threat-radar', label: 'Threat Radar', icon: '◉', module: 'threat_radar', permission: 'run_analysis' },
+      { to: '/reports-research', label: 'Reports / Research', icon: '▤', module: 'reports_research' },
+      { to: '/apt', label: 'ATT&CK Group Library', icon: '◈', module: 'apt_library' },
+      { to: '/sector-intel', label: 'Sector Intel', icon: '◎', module: 'sector_intel' },
+      { to: '/knowledge', label: 'Knowledge Library', icon: '◎', module: 'knowledge' },
+      { to: '/ioc-library', label: 'IOC Library', icon: '▣', module: 'ioc_library' },
+      { to: '/cve', label: 'CVE Library', icon: '▨', module: 'cve_library' },
+      { to: '/retrohunt', label: 'RetroHunt Signals', icon: '↺', module: 'retrohunt' },
     ],
   },
   {
     id: 'analyze-investigate',
     label: 'Analyze & Investigate',
     items: [
-      { to: '/analyze', label: 'AI Analysis', icon: '⬢' },
-      { to: '/navigator', label: 'Navigator', icon: '⬡' },
-      { to: '/compare', label: 'Compare', icon: '⬡' },
-      { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬', permission: 'run_analysis' },
-      { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧', permission: 'run_analysis' },
-      { to: '/virustotal', label: 'VirusTotal Lookup', icon: '◇', permission: 'run_analysis' },
-      { to: '/asset-surface', label: 'Asset Surface', icon: '▥', permission: 'run_analysis' },
-      { to: '/emb3d', label: 'EMB3D', icon: '▧', permission: 'run_analysis' },
-      { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡', permission: 'run_analysis' },
+      { to: '/analyze', label: 'AI Analysis', icon: '⬢', module: 'ai_analysis' },
+      { to: '/navigator', label: 'Navigator', icon: '⬡', module: 'navigator' },
+      { to: '/compare', label: 'Compare', icon: '⬡', module: 'compare' },
+      { to: '/ioc-investigation', label: 'IOC Investigation', icon: '⌬', module: 'ioc_investigation', permission: 'run_analysis' },
+      { to: '/malware-analysis', label: 'Malware Analysis', icon: '▧', module: 'malware_analysis', permission: 'run_analysis' },
+      { to: '/virustotal', label: 'VirusTotal Lookup', icon: '◇', module: 'virustotal', permission: 'run_analysis' },
+      { to: '/asset-surface', label: 'Asset Surface', icon: '▥', module: 'asset_surface', permission: 'run_analysis' },
+      { to: '/emb3d', label: 'EMB3D', icon: '▧', module: 'emb3d', permission: 'run_analysis' },
+      { to: '/evidence-graph', label: 'Evidence Graph', icon: '⟡', module: 'evidence_graph', permission: 'run_analysis' },
     ],
   },
   {
     id: 'hunt-validate',
     label: 'Hunt & Validate',
     items: [
-      { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', permission: 'run_analysis' },
-      { to: '/query-library', label: 'Query Library', icon: '⌕', permission: 'run_analysis' },
-      { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', permission: 'run_attack_simulation' },
-      { to: '/report', label: 'Investigation', icon: '▤', permission: 'run_analysis' },
+      { to: '/threat-hunting', label: 'Threat Hunting', icon: '⌖', module: 'threat_hunting', permission: 'run_analysis' },
+      { to: '/query-library', label: 'Query Library', icon: '⌕', module: 'query_library', permission: 'run_analysis' },
+      { to: '/attack-simulation', label: 'Attack Simulation', icon: '◎', module: 'attack_simulation', permission: 'run_attack_simulation' },
+      { to: '/report', label: 'Investigation', icon: '▤', module: 'investigation', permission: 'run_analysis' },
     ],
   },
   {
     id: 'operations',
     label: 'Operations',
     items: [
-      { to: '/operations', label: 'Operations', icon: '◆', permission: 'run_analysis' },
-      { to: '/pipeline', label: 'Pipeline', icon: '⇄', permission: 'run_analysis' },
-      { to: '/statistics', label: 'Statistics', icon: '▥', permission: 'run_analysis' },
+      { to: '/operations', label: 'Operations', icon: '◆', module: 'operations', permission: 'run_analysis' },
+      { to: '/pipeline', label: 'Pipeline', icon: '⇄', module: 'pipeline', permission: 'run_analysis' },
+      { to: '/statistics', label: 'Statistics', icon: '▥', module: 'statistics', permission: 'run_analysis' },
     ],
   },
   {
     id: 'platform',
     label: 'Platform',
     items: [
-      { to: '/feeds', label: 'Feeds Management', icon: '≋', permission: 'manage_feeds' },
-      { to: '/observability', label: 'Observability', icon: '◌', permission: 'view_audit' },
-      { to: '/admin', label: 'Admin Panel', icon: '⚙', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
+      { to: '/feeds', label: 'Feeds Management', icon: '≋', module: 'feeds', permission: 'manage_feeds' },
+      { to: '/observability', label: 'Observability', icon: '◌', module: 'observability', permission: 'view_audit' },
+      { to: '/admin', label: 'Admin Panel', icon: '⚙', module: 'admin', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
     ],
   },
   {
     id: 'learn-support',
     label: 'Learn & Support',
     items: [
-      { to: '/examples', label: 'DFIR Examples', icon: '▦' },
+      { to: '/examples', label: 'DFIR Examples', icon: '▦', module: 'examples' },
       { href: `${REFERENCE_BASE_URL}/`, label: 'Reference Book', icon: '▤' },
-      { to: '/help', label: 'Help / Local Guide', icon: '?' },
-      { to: '/troubleshooting', label: 'Troubleshooting', icon: '!' },
+      { to: '/help', label: 'Help / Local Guide', icon: '?', module: 'help' },
+      { to: '/troubleshooting', label: 'Troubleshooting', icon: '!', module: 'troubleshooting' },
     ],
   },
 ];
@@ -107,6 +108,7 @@ function canViewNavItem(user: CurrentUser | undefined, item: NavItem): boolean {
   return (
     (!item.permission || hasPermission(user, item.permission))
     && (!item.anyPermission?.length || item.anyPermission.some(permission => hasPermission(user, permission)))
+    && (!item.module || hasModule(user, item.module))
   );
 }
 

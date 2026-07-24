@@ -51,6 +51,8 @@ export interface CurrentUser {
   name: string;
   roles: string[];
   permissions?: string[];
+  modules?: string[];
+  groups?: string[];
   auth_enabled: boolean;
   user_id?: string;
   auth_source?: string;
@@ -67,6 +69,7 @@ export interface AuthStatus {
   roles?: string[];
   permissions?: string[];
   role_permissions?: Record<string, string[]>;
+  module_catalog?: ModuleCatalogItem[];
   password_policy?: {
     min_length: number;
     require_upper: boolean;
@@ -85,11 +88,36 @@ export interface ManagedUser {
   role: string;
   permissions: string[];
   effective_permissions: string[];
+  effective_modules: string[];
+  group_ids: string[];
+  groups: Array<Pick<AccessGroup, 'id' | 'slug' | 'name' | 'enabled'>>;
   auth_provider: string;
   external_subject: string;
   mfa_enabled: boolean;
   enabled: boolean;
   last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModuleCatalogItem {
+  key: string;
+  label: string;
+  route: string;
+  category: string;
+}
+
+export interface AccessGroup {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  modules: string[];
+  system: boolean;
+  enabled: boolean;
+  member_count: number;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -124,9 +152,15 @@ export const authApi = {
     http.post('/auth/login', body, { skipGlobalError: true } as any).then(r => r.data),
   logout: (): Promise<{ status: string }> => http.post('/auth/logout').then(r => r.data),
   users: (): Promise<ManagedUser[]> => http.get('/auth/users').then(r => r.data),
-  createUser: (body: { username: string; password: string; display_name?: string; role: string; permissions?: string[]; enabled: boolean }): Promise<ManagedUser> =>
+  groups: (): Promise<AccessGroup[]> => http.get('/auth/groups').then(r => r.data),
+  createGroup: (body: { slug: string; name: string; description?: string; permissions?: string[]; modules?: string[]; enabled?: boolean }): Promise<AccessGroup> =>
+    http.post('/auth/groups', body).then(r => r.data),
+  updateGroup: (id: string, body: { name?: string; description?: string; permissions?: string[]; modules?: string[]; enabled?: boolean }): Promise<AccessGroup> =>
+    http.patch(`/auth/groups/${id}`, body).then(r => r.data),
+  deleteGroup: (id: string): Promise<void> => http.delete(`/auth/groups/${id}`).then(() => {}),
+  createUser: (body: { username: string; password: string; display_name?: string; role: string; permissions?: string[]; group_ids?: string[]; enabled: boolean }): Promise<ManagedUser> =>
     http.post('/auth/users', body).then(r => r.data),
-  updateUser: (id: string, body: { display_name?: string; role?: string; permissions?: string[]; enabled?: boolean }): Promise<ManagedUser> =>
+  updateUser: (id: string, body: { display_name?: string; role?: string; permissions?: string[]; group_ids?: string[]; enabled?: boolean }): Promise<ManagedUser> =>
     http.patch(`/auth/users/${id}`, body).then(r => r.data),
   setPassword: (id: string, password: string): Promise<{ status: string }> =>
     http.post(`/auth/users/${id}/password`, { password }).then(r => r.data),
@@ -3693,6 +3727,13 @@ export interface ThreatAssetScanProviderCatalog {
     permission: string;
     boundary: string;
   };
+  web: {
+    enabled: boolean;
+    profile: string;
+    timeout_seconds: number;
+    permission: string;
+    boundary: string;
+  };
   passive: Array<{
     id: string;
     label: string;
@@ -3716,6 +3757,27 @@ export interface ThreatAssetScan {
   passive_results: Array<Record<string, unknown>>;
   nmap_requested: boolean;
   nmap_result: Record<string, unknown>;
+  web_probe_requested: boolean;
+  web_probe_result: Record<string, unknown> & {
+    status?: string;
+    summary?: string;
+    profile?: string;
+    probes?: Array<Record<string, unknown>>;
+    findings?: Array<Record<string, unknown>>;
+  };
+  inventory_update: {
+    requested?: boolean;
+    changed?: boolean;
+    observed_count?: number;
+    added?: {
+      ip_addresses?: string[];
+      domains?: string[];
+      ports?: number[];
+      technologies?: string[];
+      cpes?: string[];
+    };
+    updated_at?: string;
+  };
   findings: Array<{
     category?: string;
     severity?: string;
@@ -3880,6 +3942,8 @@ export const threatRadarApi = {
   spaceDetail: (id: string): Promise<ThreatCompanySpaceDetail> => http.get(`/threat-radar/spaces/${id}`).then(r => r.data),
   createSpaceAsset: (spaceId: string, body: Partial<ThreatSpaceAsset> & { name: string }): Promise<ThreatSpaceAsset> =>
     http.post(`/threat-radar/spaces/${spaceId}/assets`, body).then(r => r.data),
+  updateSpaceAsset: (spaceId: string, assetId: string, body: Partial<ThreatSpaceAsset> & { name: string }): Promise<ThreatSpaceAsset> =>
+    http.put(`/threat-radar/spaces/${spaceId}/assets/${assetId}`, body).then(r => r.data),
   spaceAssets: (
     spaceId: string,
     params?: {
@@ -3908,6 +3972,8 @@ export const threatRadarApi = {
       target: string;
       providers?: string[];
       run_nmap?: boolean;
+      run_web_probe?: boolean;
+      update_inventory?: boolean;
       ai_analyze?: boolean;
       ai_provider?: ThreatHuntAIProviderId;
       ai_model?: string;

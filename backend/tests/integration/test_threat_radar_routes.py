@@ -210,18 +210,94 @@ async def test_company_space_assets_monitors_and_ai_steps(client: AsyncClient):
     assert asset.status_code == 201
     assert asset.json()["products"] == ["bluefield"]
     assert asset.json()["criticality"] == "critical"
+    asset_body = asset.json()
+
+    duplicate = await client.post(
+        f"/api/threat-radar/spaces/{space['id']}/assets",
+        json={
+            "asset_id": "PROD-BLUEFIELD-EDGE-001",
+            "name": "Duplicate inventory identity",
+        },
+    )
+    assert duplicate.status_code == 409
+
+    update = await client.put(
+        f"/api/threat-radar/spaces/{space['id']}/assets/{asset_body['id']}",
+        json={
+            "asset_id": asset_body["asset_id"],
+            "name": "BlueField production edge gateway",
+            "asset_type": "appliance",
+            "environment": "production",
+            "owner": "Product Security",
+            "criticality": "high",
+            "exposure": "internet",
+            "products": ["BlueField-3"],
+            "components": ["DPU management firmware"],
+            "technologies": ["DOCA", "Linux", "Redfish"],
+            "ip_addresses": ["192.0.2.44"],
+            "domains": ["EDGE.EXAMPLE.TEST"],
+            "tags": ["customer-facing", "edited-in-company-space"],
+            "metadata": {"ports": [443, 8443]},
+        },
+    )
+    assert update.status_code == 200
+    updated_asset = update.json()
+    assert updated_asset["id"] == asset_body["id"]
+    assert updated_asset["asset_id"] == asset_body["asset_id"]
+    assert updated_asset["name"] == "BlueField production edge gateway"
+    assert updated_asset["owner"] == "Product Security"
+    assert updated_asset["criticality"] == "high"
+    assert updated_asset["products"] == ["bluefield-3"]
+    assert updated_asset["domains"] == ["edge.example.test"]
+    assert updated_asset["metadata"]["ports"] == ["443", "8443"]
+
+    change_identity = await client.put(
+        f"/api/threat-radar/spaces/{space['id']}/assets/{asset_body['id']}",
+        json={
+            "asset_id": "replacement-asset-id",
+            "name": "BlueField production edge gateway",
+        },
+    )
+    assert change_identity.status_code == 422
+
+    asset_list = await client.get(
+        f"/api/threat-radar/spaces/{space['id']}/assets",
+        params={"q": "edited-in-company-space"},
+    )
+    assert asset_list.status_code == 200
+    assert asset_list.json()["total"] == 1
+    assert asset_list.json()["items"][0]["id"] == asset_body["id"]
+
+    unified_after_edit = await client.get("/api/threat-radar/unified/entities")
+    assert unified_after_edit.status_code == 200
+    unified_asset = next(
+        row for row in unified_after_edit.json()
+        if row["entity_type"] == "asset"
+        and row["metadata"].get("asset_uuid") == asset_body["id"]
+    )
+    assert unified_asset["label"] == "BlueField production edge gateway"
+    assert unified_asset["metadata"]["products"] == ["bluefield-3"]
+    inventory_relationships = unified_asset["metadata"].get("relationships", [])
+    assert any(
+        row["relationship"] == "runs-product" and row["target_value"] == "bluefield-3"
+        for row in inventory_relationships
+    )
+    assert not any(
+        row["relationship"] == "runs-product" and row["target_value"] == "bluefield"
+        for row in inventory_relationships
+    )
 
     create_signal = await client.post(
         "/api/threat-radar/signals",
         json={
             "title": "BlueField firmware dump claim",
             "signal_type": "firmware_dump_claim",
-            "description": "Sanitized provider note references BlueField DPU firmware exposure.",
+            "description": "Sanitized provider note references BlueField-3 DPU management firmware exposure.",
             "confidence": 75,
             "product_mappings": [
                 {
-                    "product": "BlueField",
-                    "component": "DPU firmware",
+                    "product": "BlueField-3",
+                    "component": "DPU management firmware",
                     "exposure": "internet",
                     "environment": "production",
                     "relevance": 5,
@@ -264,7 +340,7 @@ async def test_company_space_assets_monitors_and_ai_steps(client: AsyncClient):
     supply_chain_alerts = next(widget for widget in dashboard_body["widgets"] if widget["id"] == "alert-supply-chain-match")
     assert supply_chain_alerts["metrics"][0]["value"] >= 1
     assert supply_chain_alerts["rows"][0]["match_type"] == "supply-chain"
-    assert "dpu-firmware" in [item.lower() for item in supply_chain_alerts["rows"][0]["matched_terms"]]
+    assert "dpu-management-firmware" in [item.lower() for item in supply_chain_alerts["rows"][0]["matched_terms"]]
     persisted_alerts = await client.get(f"/api/threat-radar/spaces/{space['id']}/alerts")
     assert persisted_alerts.status_code == 200
     assert persisted_alerts.json()
@@ -274,7 +350,7 @@ async def test_company_space_assets_monitors_and_ai_steps(client: AsyncClient):
     assert unified_asset.status_code == 200
     entity_rows = unified_asset.json()
     assert any(item["entity_type"] == "asset" for item in entity_rows)
-    assert any(item["entity_type"] == "product" and item["value"] == "bluefield" for item in entity_rows)
+    assert any(item["entity_type"] == "product" and item["value"] == "bluefield-3" for item in entity_rows)
     assert any(item["entity_type"] == "alert" for item in entity_rows)
     search = await client.post(
         f"/api/threat-radar/spaces/{space['id']}/search",
@@ -502,6 +578,8 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
     assert provider_response.status_code == 200
     assert provider_response.json()["nmap"]["profile"] == "safe-service-discovery"
     assert "No NSE scripts" in provider_response.json()["nmap"]["boundary"]
+    assert provider_response.json()["web"]["profile"] == "safe-root-http-posture"
+    assert "No redirect following" in provider_response.json()["web"]["boundary"]
 
     missing_authorization = await client.post(
         f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans",
@@ -532,6 +610,13 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
                 "evidence_source": "shodan",
                 "tier": 1,
                 "evidence": "Open service port",
+            }, {
+                "source": target.value,
+                "target": "edge-observed.example.test",
+                "target_type": "domain",
+                "evidence_source": "shodan",
+                "tier": 1,
+                "evidence": "Shodan hostname",
             }],
             "raw": {},
         }], [])
@@ -574,9 +659,32 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
             "note": "Verify the affected range.",
         }]
 
+    async def fake_web_probe(target):
+        return {
+            "status": "ok",
+            "profile": "safe-root-http-posture",
+            "summary": "Safe web posture checked one endpoint.",
+            "probes": [{
+                "url": "https://192.0.2.10/",
+                "status": "observed",
+                "status_code": 200,
+                "headers": {"server": "nginx"},
+            }],
+            "findings": [{
+                "category": "web-posture",
+                "severity": "low",
+                "title": "Content-Security-Policy header not observed",
+                "evidence": "Header absent.",
+                "source": "safe-web-posture",
+                "status": "observed",
+                "verification_required": True,
+            }],
+        }
+
     monkeypatch.setattr(threat_radar_route.asset_scanner, "resolve_target", fake_resolve)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "run_passive_assessment", fake_passive)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "run_nmap_discovery", fake_nmap)
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "run_web_posture_probe", fake_web_probe)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "match_local_cves", fake_cves)
 
     response = await client.post(
@@ -585,6 +693,8 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
             "target": "192.0.2.10",
             "providers": ["shodan"],
             "run_nmap": True,
+            "run_web_probe": True,
+            "update_inventory": True,
             "authorization_confirmed": True,
         },
     )
@@ -592,6 +702,11 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
     scan = response.json()
     assert scan["status"] == "completed"
     assert scan["nmap_result"]["open_port_count"] == 1
+    assert scan["web_probe_result"]["status"] == "ok"
+    assert scan["inventory_update"]["changed"] is True
+    assert scan["inventory_update"]["added"]["domains"] == ["edge-observed.example.test"]
+    assert scan["inventory_update"]["added"]["ports"] == [443]
+    assert "nginx" in scan["inventory_update"]["added"]["technologies"]
     assert scan["ai_analysis"]["provider"] == "deterministic"
     assert scan["ai_analysis"]["cve_candidates"][0]["verification_required"] is True
     assert any(item["category"] == "open-service" for item in scan["findings"])
@@ -608,6 +723,14 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
     )
     assert detail.status_code == 200
     assert detail.json()["target_host"] == "192.0.2.10"
+
+    updated_asset = await client.get(
+        f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/intelligence"
+    )
+    assert updated_asset.status_code == 200
+    assert "edge-observed.example.test" in updated_asset.json()["asset"]["domains"]
+    assert 443 in updated_asset.json()["asset"]["metadata"]["ports"]
+    assert updated_asset.json()["asset"]["metadata"]["last_surface_scan_id"] == scan["id"]
 
 
 @pytest.mark.asyncio

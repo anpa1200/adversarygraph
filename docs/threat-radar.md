@@ -205,8 +205,8 @@ notes and redaction.
 
 ## Inventory-Bound Asset Exposure Assessment
 
-> **Current development:** this workflow is implemented on `main` after the
-> v6.0.0 release. It is not part of the immutable v6.0.0 release tag.
+> **Introduced in v6.1.0:** this workflow is part of the v6.1 source release.
+> It is not part of the historical immutable v6.0.0 release tag.
 
 ### Saved asset registry and detail pages
 
@@ -237,6 +237,29 @@ applies. Exact IOC identity matches still require ownership and freshness
 review. CVE candidates require deployed-version, affected-range,
 configuration, reachability, and compensating-control validation.
 
+### Manage company-space inventory
+
+Open **Threat Radar -> Asset Inventory** to manage the selected company space:
+
+- **Add asset manually** creates one normalized inventory record.
+- **Edit asset** updates its name, type, environment, owner, criticality,
+  exposure, IP addresses, domains, ports, products, components, technologies,
+  and tags.
+- **Upload & analyze inventory** opens Asset Surface with the company-space ID
+  already selected, allowing CSV, JSON, TXT, CMDB, cloud, and scanner exports
+  to add or refresh multiple records.
+
+The inventory ID is the stable identity used for deduplication, correlation,
+and repeat imports. It is set when the asset is created and is intentionally
+read-only during editing. To replace that identity, create a new asset and
+retire the old record through the organization's inventory-governance process.
+
+Saving an edit replaces the asset's derived inventory-graph children, refreshes
+its unified knowledge relationships, preserves the database UUID and assessment
+history, and records the changed field names in the audit log. Values removed
+from the form are removed from the current asset relationship set rather than
+silently retained as active inventory facts.
+
 The **Threat Radar -> Asset Inventory** page can assess an IP address or
 HTTP(S) URL host that is already recorded on the selected asset. It combines:
 
@@ -244,8 +267,11 @@ HTTP(S) URL host that is already recorded on the selected asset. It combines:
 2. configured VirusTotal, OTX, urlscan.io, GreyNoise Community, AbuseIPDB,
    Shodan, and Censys sources;
 3. optional, authorized Nmap service discovery;
-4. product-family CPE correlation against the local CVE Library; and
-5. deterministic or governed AI-assisted interpretation.
+4. optional, authorized root-only web posture checks;
+5. product-family CPE correlation against the local CVE Library;
+6. deterministic or governed AI-assisted interpretation; and
+7. a controlled inventory merge for newly observed IP addresses, hostnames,
+   ports, technologies, and CPEs.
 
 The target field is not an arbitrary internet scanner. The API normalizes the
 requested IP, domain, or URL and rejects it unless the exact host is present in
@@ -271,10 +297,39 @@ does **not** use NSE vulnerability or exploit scripts, UDP scanning, OS
 fingerprinting, evasion flags, credential testing, or exploitation. Nmap XML is
 parsed with a hardened XML parser and stored as structured evidence.
 
+The separate `safe-root-http-posture` stage is controlled by
+`ASSET_SCANNER_WEB_PROBE_ENABLED` and the same `run_attack_simulation`
+permission and per-request authorization confirmation. It sends at most two
+root HTTP(S) GET requests, does not follow redirects, and inspects only status
+and bounded response headers. It checks observable redirect, security-header,
+cookie, CORS, and server-technology posture. It does not crawl, submit forms,
+authenticate, fuzz, inject payloads, brute-force, or exploit the application.
+
 An open port is an observation, not a vulnerability. Shodan/Censys
 vulnerability references and local CPE-to-CVE matches are explicitly labelled
 as candidates requiring analyst confirmation of the detected product, deployed
 version, affected version range, reachability, and compensating controls.
+
+### Discovered attack surfaces and inventory updates
+
+When **Add observed attack surfaces to this asset** is selected, the API
+normalizes and deduplicates observations before merging them into the same
+company asset. DNS resolution and bounded Nmap can contribute addresses,
+hostnames, ports, service products, and CPEs. Successful Shodan, Censys, and
+AbuseIPDB relationships can contribute typed hostnames, globally routable IPs,
+ports, and software. VirusTotal and URLScan remain evidence sources, but their
+historical passive-DNS and third-party page relationships are not
+automatically treated as company-owned asset identity. Reputation, attribution,
+hashes, and CVE candidates are also not converted into asset identity.
+
+Every observation stored in `metadata.discovered_surfaces` records its source,
+evidence summary, first and last observation time, and latest assessment ID.
+The merge requires `manage_intel`, writes an audit event, refreshes the
+normalized inventory graph and unified knowledge model, and preserves existing
+values. A repeated observation updates provenance without creating duplicates.
+Analysts must still confirm ownership: shared hosting, reverse DNS, certificate
+names, and historical provider records can describe infrastructure not owned
+by the organization.
 
 ### AI evidence boundary
 
@@ -292,13 +347,17 @@ or assign a confirmed vulnerability.
 2. Open **Threat Radar -> Asset Inventory**, search or filter the registry,
    then open the asset's dedicated intelligence page.
 3. Select one inventory target and the configured passive providers.
-4. Optionally enable **Run safe Nmap discovery**.
-5. Optionally select an available AI provider. Remote providers require the
+4. Optionally enable **Run safe Nmap discovery** and/or **Run safe web posture
+   checks**.
+5. Keep **Add observed attack surfaces to this asset** selected to merge
+   normalized discoveries with provenance, or clear it for a read-only
+   assessment.
+6. Optionally select an available AI provider. Remote providers require the
    explicit TLP:AMBER processing acknowledgement shown in the UI.
-6. Confirm authorization for that exact inventory target.
-7. Run the assessment and review provider status, open services, CVE
-   candidates, caveats, and prioritized actions.
-8. Validate product/version evidence in the authoritative scanner, CMDB,
+7. Confirm authorization for that exact inventory target.
+8. Run the assessment and review provider status, inventory additions, web
+   posture, open services, CVE candidates, caveats, and prioritized actions.
+9. Validate ownership and product/version evidence in the authoritative CMDB,
    firewall, EDR, and vulnerability-management systems before triage.
 
 ## Scoring

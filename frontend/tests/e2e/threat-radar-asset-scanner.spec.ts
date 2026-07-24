@@ -6,6 +6,155 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
+test('company-space inventory supports manual add, field editing, and upload handoff', async ({ page }) => {
+  const spaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const assetId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  let asset = {
+    id: assetId,
+    space_id: spaceId,
+    asset_id: '1200KM-WEB-001',
+    name: '1200km.com research website',
+    asset_type: 'web-app',
+    environment: 'prod',
+    owner: 'Andrey Pautov',
+    criticality: 'medium',
+    exposure: 'internet',
+    products: ['1200km research'],
+    components: ['static site'],
+    technologies: ['github-pages', 'pagefind'],
+    ip_addresses: [],
+    domains: ['1200km.com'],
+    tags: ['public-research'],
+    metadata: { ports: [80, 443] },
+    created_at: '2026-07-24T10:00:00Z',
+    updated_at: '2026-07-24T10:00:00Z',
+  };
+  let updateBody: Record<string, unknown> | null = null;
+  let createBody: Record<string, unknown> | null = null;
+  const space = {
+    id: spaceId,
+    name: 'My Company Threat Monitor',
+    slug: 'my-company-threat-monitor',
+    description: 'Company inventory.',
+    owner: 'Security Team',
+    sector: 'technology',
+    region: 'global',
+    tags: [],
+    settings: {},
+    counts: { assets: 1 },
+    created_by: 'Local Analyst',
+  };
+
+  await page.route('**/api/threat-radar/spaces', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([space]),
+  }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}`, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ space, assets: [asset], dashboards: [], monitors: [], ai_steps: [] }),
+  }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/alerts?**`, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '[]',
+  }));
+  await page.route('**/api/threat-radar/asset-scanner/providers', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      enabled: true,
+      nmap: {
+        enabled: true,
+        profile: 'safe-service-discovery',
+        top_ports: 100,
+        timeout_seconds: 120,
+        permission: 'run_attack_simulation',
+        boundary: 'Unprivileged bounded service discovery.',
+      },
+      web: {
+        enabled: true,
+        profile: 'safe-root-http-posture',
+        timeout_seconds: 15,
+        permission: 'run_attack_simulation',
+        boundary: 'Root HTTP(S) response headers only.',
+      },
+      passive: [],
+      ai: [],
+    }),
+  }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/assets/${assetId}/scans?**`, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '[]',
+  }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/assets?**`, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      space: { id: spaceId, name: space.name, slug: space.slug },
+      items: [asset],
+      total: 1,
+      limit: 500,
+      offset: 0,
+      filters: {},
+    }),
+  }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/assets/${assetId}`, async route => {
+    updateBody = route.request().postDataJSON();
+    asset = { ...asset, ...(updateBody as Partial<typeof asset>), updated_at: '2026-07-24T11:00:00Z' };
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(asset),
+    });
+  });
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/assets`, async route => {
+    createBody = route.request().postDataJSON();
+    return route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...asset,
+        ...(createBody as Partial<typeof asset>),
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      }),
+    });
+  });
+
+  await page.goto(`/threat-radar/assets?space_id=${spaceId}&asset_id=${assetId}`);
+  const uploadLink = page.getByRole('link', { name: 'Upload & analyze inventory' });
+  await expect(uploadLink).toHaveAttribute('href', `/asset-surface?space_id=${spaceId}`);
+
+  await page.getByRole('button', { name: 'Edit asset' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Edit 1200km.com research website' })).toBeVisible();
+  await expect(page.getByLabel('Inventory ID')).toHaveAttribute('readonly', '');
+  await page.getByLabel('Owner').fill('Security Engineering');
+  await page.getByLabel('Technologies').fill('GitHub Pages\nPagefind\nStatic HTML');
+  await page.getByRole('button', { name: 'Save asset changes' }).click();
+  await expect.poll(() => updateBody).not.toBeNull();
+  expect(updateBody).toMatchObject({
+    asset_id: '1200KM-WEB-001',
+    owner: 'Security Engineering',
+    technologies: ['GitHub Pages', 'Pagefind', 'Static HTML'],
+    metadata: { ports: [80, 443] },
+  });
+
+  await page.getByRole('button', { name: 'Add asset manually' }).click();
+  await expect(page.getByRole('heading', { name: 'Add company asset' })).toBeVisible();
+  await page.getByLabel('Inventory ID').fill('1200KM-LAB-002');
+  await page.getByLabel('Name *').fill('Private validation host');
+  await page.getByLabel('IP addresses').fill('10.0.0.120');
+  await page.getByRole('button', { name: 'Add asset to company space' }).click();
+  await expect.poll(() => createBody).not.toBeNull();
+  expect(createBody).toMatchObject({
+    asset_id: '1200KM-LAB-002',
+    name: 'Private validation host',
+    ip_addresses: ['10.0.0.120'],
+  });
+});
+
 test('inventory asset assessment requires authorization and renders evidence', async ({ page }) => {
   const spaceId = '11111111-1111-4111-8111-111111111111';
   const assetId = '22222222-2222-4222-8222-222222222222';
@@ -56,6 +205,26 @@ test('inventory asset assessment requires authorization and renders evidence', a
           cpes: ['cpe:/a:nginx:nginx:1.24'],
         }],
       }],
+    },
+    web_probe_requested: true,
+    web_probe_result: {
+      status: 'ok',
+      profile: 'safe-root-http-posture',
+      summary: 'Safe web posture checks inspected one endpoint.',
+      probes: [{ url: 'https://192.0.2.10/', status: 'observed', status_code: 200 }],
+      findings: [],
+    },
+    inventory_update: {
+      requested: true,
+      changed: true,
+      observed_count: 5,
+      added: {
+        ip_addresses: ['198.51.100.42'],
+        domains: ['edge-observed.example.test'],
+        ports: [443],
+        technologies: ['nginx'],
+        cpes: ['cpe:/a:nginx:nginx:1.24'],
+      },
     },
     findings: [{
       category: 'open-service',
@@ -148,6 +317,13 @@ test('inventory asset assessment requires authorization and renders evidence', a
         permission: 'run_attack_simulation',
         boundary: 'Unprivileged TCP connect and light service detection only. No NSE scripts or exploitation.',
       },
+      web: {
+        enabled: true,
+        profile: 'safe-root-http-posture',
+        timeout_seconds: 15,
+        permission: 'run_attack_simulation',
+        boundary: 'Root HTTP(S) response headers only.',
+      },
       passive: [
         { id: 'local-db', label: 'AdversaryGraph IOC Library', configured: true, enabled: true, mode: 'passive' },
         { id: 'shodan', label: 'Shodan', configured: true, enabled: true, mode: 'passive' },
@@ -186,6 +362,7 @@ test('inventory asset assessment requires authorization and renders evidence', a
   const runButton = page.getByRole('button', { name: 'Run asset assessment' });
   await expect(runButton).toBeDisabled();
   await page.getByRole('checkbox', { name: /Run safe Nmap discovery/ }).check();
+  await page.getByRole('checkbox', { name: /Run safe web posture checks/ }).check();
   await page.getByRole('checkbox', { name: /I confirm I am authorized/ }).check();
   await expect(runButton).toBeEnabled();
   await runButton.click();
@@ -194,9 +371,14 @@ test('inventory asset assessment requires authorization and renders evidence', a
   await expect(page.getByText('CVE-2026-12345 may apply')).toBeVisible();
   await expect(page.getByText('Analyst verification required.')).toBeVisible();
   await expect(page.getByRole('cell', { name: 'tcp/443' })).toBeVisible();
+  await expect(page.getByText('Company inventory updated')).toBeVisible();
+  await expect(page.getByText('Safe web posture · ok')).toBeVisible();
+  await expect(page.getByText('edge-observed.example.test')).toBeVisible();
   expect(requestBody).toMatchObject({
     target: '192.0.2.10',
     run_nmap: true,
+    run_web_probe: true,
+    update_inventory: true,
     authorization_confirmed: true,
   });
 });
@@ -321,6 +503,13 @@ test('saved asset opens a dedicated evidence-labelled intelligence page', async 
         timeout_seconds: 120,
         permission: 'run_attack_simulation',
         boundary: 'Unprivileged bounded service discovery.',
+      },
+      web: {
+        enabled: true,
+        profile: 'safe-root-http-posture',
+        timeout_seconds: 15,
+        permission: 'run_attack_simulation',
+        boundary: 'Root HTTP(S) response headers only.',
       },
       passive: [{ id: 'local-db', label: 'AdversaryGraph IOC Library', configured: true, enabled: true, mode: 'passive' }],
       ai: [],

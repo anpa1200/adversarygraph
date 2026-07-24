@@ -59,6 +59,22 @@ TAXONOMY_ENTITY_KINDS = {
     "ttp": "ttp",
 }
 
+ASSET_INVENTORY_RELATIONSHIPS = {
+    "has-asset-type",
+    "runs-in",
+    "has-exposure",
+    "runs-product",
+    "contains-component",
+    "uses-technology",
+    "has-ip",
+    "has-domain",
+    "has-cpe",
+    "has-purl",
+    "depends-on",
+    "supplied-by",
+    "asset-relevant-ttp",
+}
+
 
 async def upsert_entity(
     session: AsyncSession,
@@ -144,6 +160,42 @@ async def forward_space_asset_to_unified_model(
             "raw_metadata": asset.metadata_json or {},
         },
     )
+    if not asset_entity:
+        return
+    asset_entity.label = asset.name
+    asset_entity.tags = normalize_freeform_tags([
+        "entity:asset",
+        f"space:{space.slug or space.id}",
+        f"criticality:{asset.criticality}",
+        f"environment:{asset.environment}",
+        f"exposure:{asset.exposure}",
+        *list(asset.tags or []),
+    ])
+    asset_metadata = dict(asset_entity.metadata_json or {})
+    asset_metadata.update({
+        "model": "threat_radar.asset",
+        "space_id": str(space.id),
+        "asset_uuid": str(asset.id),
+        "asset_id": asset.asset_id,
+        "asset_type": asset.asset_type,
+        "owner": asset.owner,
+        "criticality": asset.criticality,
+        "environment": asset.environment,
+        "exposure": asset.exposure,
+        "products": asset.products or [],
+        "components": asset.components or [],
+        "technologies": asset.technologies or [],
+        "ip_addresses": asset.ip_addresses or [],
+        "domains": asset.domains or [],
+        "raw_metadata": asset.metadata_json or {},
+    })
+    relationships = asset_metadata.get("relationships")
+    asset_metadata["relationships"] = [
+        row for row in (relationships if isinstance(relationships, list) else [])
+        if not isinstance(row, dict)
+        or row.get("relationship") not in ASSET_INVENTORY_RELATIONSHIPS
+    ]
+    asset_entity.metadata_json = asset_metadata
     await _link(space_entity, asset_entity, "contains-asset")
     await _link_asset_values(session, asset_entity, "asset_type", [asset.asset_type], "has-asset-type")
     await _link_asset_values(session, asset_entity, "environment", [asset.environment], "runs-in")

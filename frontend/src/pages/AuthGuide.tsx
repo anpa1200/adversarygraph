@@ -1,15 +1,18 @@
 import adversaryGraphIcon from '@/assets/adversarygraph-ai-icon-192.png';
 
-const roleRows = [
-  ['viewer', 'Read-only workspace access: matrix navigation, libraries, reports, IOC/CVE views, and lookups.'],
-  ['analyst', 'Viewer access plus operational workflows: AI analysis, feeds, pipeline, attack simulation, asset surface, and cases.'],
-  ['threat_intel', 'Focused CTI role for reports, APT/IOC/CVE workflows, feeds, and intelligence exports.'],
-  ['detection_engineer', 'Detection-content role for rules, coverage, attack simulation, SIEM forwarding, and validation.'],
-  ['incident_responder', 'Response role for investigations, IOC pivots, uploads, attack simulation, and SIEM forwarding.'],
-  ['auditor', 'Read-only access plus audit trail and export review.'],
-  ['security_admin', 'Access-control operator for users, sessions, MFA resets, and audit review without full system ownership.'],
-  ['service_account', 'Automation role for API integrations, sync workflows, and SIEM forwarding.'],
-  ['admin', 'Full platform administration.'],
+const groupRows = [
+  ['SOC Tier 1 — Triage', 'Minimum IOC investigation, reports, evidence intake, VirusTotal, and escalation workspace.'],
+  ['SOC Tier 2 — Investigation', 'Adds Threat Radar, asset and CVE context, actors, malware analysis, correlation, and evidence graphs.'],
+  ['SOC Tier 3 — Advanced Analysis', 'Adds advanced hunting, query engineering, simulations, operations, and detection validation.'],
+  ['SOC Manager', 'All operational SOC capabilities and audit visibility, without users, authentication, feed, or platform configuration.'],
+  ['Threat Intelligence', 'Reports, actors, sectors, IOC/CVE intelligence, ATT&CK mapping, evidence, and intelligence enrichment.'],
+  ['Threat Hunting', 'Hypotheses, detection queries, IOC correlation, evidence, hunt findings, and outcomes.'],
+  ['Detection Engineering', 'Queries, coverage, safe attack simulation, SIEM forwarding, detection operations, and pipeline validation.'],
+  ['Incident Response / DFIR', 'IOC and malware investigation, evidence preservation, response coordination, and incident reporting.'],
+  ['Vulnerability Management', 'Asset inventory, attack surface, CVE prioritization, remediation evidence, and exposure monitoring.'],
+  ['Feed Operators', 'ATT&CK, IOC, CVE, and enrichment-feed maintenance without identity administration.'],
+  ['Audit / Read Only', 'Reports, statistics, operational health, exports, and audit evidence without mutation rights.'],
+  ['Platform Administrators', 'Full module, identity, authentication, feed, security, and configuration administration.'],
 ];
 
 const envLines = [
@@ -32,7 +35,7 @@ export function AuthGuide() {
             <img src={adversaryGraphIcon} alt="" className="h-10 w-10 rounded-lg object-cover" />
             <div>
               <h1 className="text-2xl font-bold text-white">Authentication Guide</h1>
-              <p className="text-sm text-gray-500">Native login, SSO proxy mode, RBAC, audit, sessions, and MFA.</p>
+              <p className="text-sm text-gray-500">Native login, SOC groups, module RBAC, audit, sessions, SSO, and MFA.</p>
             </div>
           </div>
           <a className="secondary-action" href="/">Back to sign in</a>
@@ -45,10 +48,13 @@ export function AuthGuide() {
             When native auth is enabled, the browser receives an HttpOnly session cookie named <code className="rounded bg-black/30 px-1">ag_session</code>.
             API clients can use the bearer token returned by the login endpoint.
           </p>
+          <p className="mt-3 text-sm leading-6 text-gray-300">
+            Named users are assigned to one or more SOC groups. Groups control module visibility and action permissions; the API enforces the same module boundary even when a user calls an endpoint directly. Legacy roles remain an advanced baseline for compatibility, and an administrator remains unrestricted.
+          </p>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {roleRows.map(([role, description]) => (
-              <div key={role} className="rounded border border-gray-700 bg-gray-950 p-4">
-                <h3 className="font-semibold text-mitre-accent">{role}</h3>
+            {groupRows.map(([group, description]) => (
+              <div key={group} className="rounded border border-gray-700 bg-gray-950 p-4">
+                <h3 className="font-semibold text-mitre-accent">{group}</h3>
                 <p className="mt-2 text-sm leading-6 text-gray-400">{description}</p>
               </div>
             ))}
@@ -62,7 +68,7 @@ export function AuthGuide() {
               <li>Set the auth environment variables in <code className="rounded bg-black/30 px-1">.env</code>.</li>
               <li>Restart the API container. If no users exist, AdversaryGraph creates the bootstrap admin.</li>
               <li>Sign in with the bootstrap username and password.</li>
-              <li>Open <strong>Admin Panel</strong> and create named users with role defaults and extra permission grants.</li>
+              <li>Open <strong>Admin Panel</strong>, create named users, and assign least-privilege SOC groups.</li>
               <li>Clear <code className="rounded bg-black/30 px-1">AUTH_BOOTSTRAP_ADMIN_PASSWORD</code> and restart the API.</li>
             </ol>
             <div className="mt-4 rounded border border-amber-500/40 bg-amber-950/20 p-3 text-sm leading-6 text-amber-100">
@@ -104,7 +110,7 @@ export function AuthGuide() {
           <div className="rounded border border-gray-700 bg-gray-900 p-5">
             <h2 className="text-lg font-semibold text-white">Audit coverage</h2>
             <p className="mt-3 text-sm leading-6 text-gray-300">
-              Auth audit events are written for login success/failure, logout, user creation/update/disable, password reset, MFA setup/change, session revocation, and admin session review. Existing platform audit events cover report analysis, imports, feed sync, CVE sync, IOC enrichment, exports, SIEM forwarding, attack simulation, asset-surface cases, saved layers, and operational objects.
+              Auth audit events are written for login success/failure, logout, user and group creation/update/disable, membership changes, password reset, MFA setup/change, session revocation, and admin session review. Existing platform audit events cover report analysis, imports, feed sync, CVE sync, IOC enrichment, exports, SIEM forwarding, attack simulation, asset-surface cases, saved layers, and operational objects.
             </p>
           </div>
         </section>

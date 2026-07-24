@@ -100,7 +100,9 @@ async def test_manager_continuity_uses_locked_database_state_not_stale_target():
     result = MagicMock()
     result.scalars.return_value.all.return_value = [locked_target]
     db = _db()
-    db.execute.return_value = result
+    empty_result = MagicMock()
+    empty_result.scalars.return_value.all.return_value = []
+    db.execute.side_effect = [result, empty_result, empty_result]
 
     with pytest.raises(HTTPException, match="must remain") as exc_info:
         await ensure_user_management_continuity(
@@ -112,4 +114,4 @@ async def test_manager_continuity_uses_locked_database_state_not_stale_target():
         )
 
     assert exc_info.value.status_code == 409
-    db.execute.assert_awaited_once()
+    assert db.execute.await_count == 3

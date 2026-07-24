@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_session
-from app.models.auth import AuthSession, UserAccount
+from app.models.auth import AccessGroup, AuthSession, UserAccessGroup, UserAccount
 from app.models.pipeline import AuditEvent
 
 VALID_ROLES = {
@@ -45,6 +45,40 @@ ALL_PERMISSIONS = {
     "manage_auth",
     "view_audit",
 }
+MODULE_CATALOG = {
+    "discover": ("Discover", "/discover", "Workspace"),
+    "threat_radar": ("Threat Radar", "/threat-radar", "Intelligence"),
+    "reports_research": ("Reports / Research", "/reports-research", "Intelligence"),
+    "apt_library": ("ATT&CK Group Library", "/apt", "Intelligence"),
+    "sector_intel": ("Sector Intelligence", "/sector-intel", "Intelligence"),
+    "knowledge": ("Knowledge Library", "/knowledge", "Intelligence"),
+    "ioc_library": ("IOC Library", "/ioc-library", "Intelligence"),
+    "cve_library": ("CVE Library", "/cve", "Intelligence"),
+    "retrohunt": ("RetroHunt Signals", "/retrohunt", "Intelligence"),
+    "ai_analysis": ("AI Analysis", "/analyze", "Analyze & Investigate"),
+    "navigator": ("Navigator", "/navigator", "Analyze & Investigate"),
+    "compare": ("Compare", "/compare", "Analyze & Investigate"),
+    "ioc_investigation": ("IOC Investigation", "/ioc-investigation", "Analyze & Investigate"),
+    "malware_analysis": ("Malware Analysis", "/malware-analysis", "Analyze & Investigate"),
+    "virustotal": ("VirusTotal Lookup", "/virustotal", "Analyze & Investigate"),
+    "asset_surface": ("Asset Surface", "/asset-surface", "Analyze & Investigate"),
+    "emb3d": ("EMB3D", "/emb3d", "Analyze & Investigate"),
+    "evidence_graph": ("Evidence Graph", "/evidence-graph", "Analyze & Investigate"),
+    "threat_hunting": ("Threat Hunting", "/threat-hunting", "Hunt & Validate"),
+    "query_library": ("Query Library", "/query-library", "Hunt & Validate"),
+    "attack_simulation": ("Attack Simulation", "/attack-simulation", "Hunt & Validate"),
+    "investigation": ("Investigation", "/report", "Hunt & Validate"),
+    "operations": ("Operations", "/operations", "Operations"),
+    "pipeline": ("Pipeline", "/pipeline", "Operations"),
+    "statistics": ("Statistics", "/statistics", "Operations"),
+    "feeds": ("Feeds Management", "/feeds", "Platform"),
+    "observability": ("Observability", "/observability", "Platform"),
+    "admin": ("Administration", "/admin", "Platform"),
+    "examples": ("DFIR Examples", "/examples", "Learn & Support"),
+    "help": ("Help / Local Guide", "/help", "Learn & Support"),
+    "troubleshooting": ("Troubleshooting", "/troubleshooting", "Learn & Support"),
+}
+ALL_MODULES = set(MODULE_CATALOG)
 ROLE_PERMISSIONS = {
     "viewer": {"read"},
     "auditor": {"read", "view_audit", "export_data"},
@@ -57,6 +91,165 @@ ROLE_PERMISSIONS = {
     "admin": set(ALL_PERMISSIONS),
 }
 
+_READER_MODULES = {
+    "discover", "reports_research", "apt_library", "sector_intel", "knowledge",
+    "ioc_library", "cve_library", "navigator", "compare", "examples", "help",
+    "troubleshooting",
+}
+_ANALYST_MODULES = ALL_MODULES - {"feeds", "admin"}
+ROLE_MODULES = {
+    "viewer": set(_READER_MODULES),
+    "auditor": {
+        "discover", "reports_research", "knowledge", "ioc_library", "cve_library",
+        "statistics", "observability", "admin", "examples", "help", "troubleshooting",
+    },
+    "analyst": set(_ANALYST_MODULES),
+    "threat_intel": set(_ANALYST_MODULES) | {"feeds"},
+    "detection_engineer": {
+        "discover", "reports_research", "knowledge", "ioc_library", "cve_library",
+        "navigator", "compare", "evidence_graph", "threat_hunting", "query_library",
+        "attack_simulation", "investigation", "operations", "pipeline", "statistics",
+        "examples", "help", "troubleshooting",
+    },
+    "incident_responder": set(_ANALYST_MODULES),
+    "service_account": set(ALL_MODULES - {"admin"}),
+    "security_admin": set(ALL_MODULES),
+    "admin": set(ALL_MODULES),
+}
+
+DEFAULT_ACCESS_GROUPS = {
+    "soc-manager": {
+        "name": "SOC Manager",
+        "description": "Owns SOC workflows, investigations, hunting, validation, reporting, and operational oversight without platform-configuration authority.",
+        "permissions": {
+            "read", "run_analysis", "manage_intel", "manage_detections",
+            "run_attack_simulation", "forward_siem", "upload_files",
+            "export_data", "view_audit",
+        },
+        "modules": ALL_MODULES - {"feeds", "admin"},
+    },
+    "soc-tier-1": {
+        "name": "SOC Tier 1 — Triage",
+        "description": "Minimum triage workspace for IOC investigation, alert context, evidence intake, reporting, and escalation.",
+        "permissions": {"read", "run_analysis", "upload_files", "export_data"},
+        "modules": {
+            "discover", "reports_research", "knowledge", "ioc_library",
+            "ioc_investigation", "virustotal", "investigation", "examples",
+            "help", "troubleshooting",
+        },
+    },
+    "soc-tier-2": {
+        "name": "SOC Tier 2 — Investigation",
+        "description": "Expanded investigation and correlation access for escalated alerts, assets, vulnerabilities, actors, and evidence.",
+        "permissions": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
+        "modules": {
+            "discover", "threat_radar", "reports_research", "apt_library",
+            "sector_intel", "knowledge", "ioc_library", "cve_library", "retrohunt",
+            "ai_analysis", "navigator", "compare", "ioc_investigation",
+            "malware_analysis", "virustotal", "asset_surface", "emb3d",
+            "evidence_graph", "investigation", "statistics", "examples", "help",
+            "troubleshooting",
+        },
+    },
+    "soc-tier-3": {
+        "name": "SOC Tier 3 — Advanced Analysis",
+        "description": "Advanced incident, malware, threat-hunting, query, detection-validation, and response-engineering access.",
+        "permissions": {
+            "read", "run_analysis", "manage_intel", "manage_detections",
+            "run_attack_simulation", "forward_siem", "upload_files", "export_data",
+        },
+        "modules": ALL_MODULES - {"feeds", "admin", "observability"},
+    },
+    "threat-intelligence": {
+        "name": "Threat Intelligence",
+        "description": "Curates reports, actors, sectors, IOCs, vulnerabilities, ATT&CK mappings, and evidence.",
+        "permissions": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
+        "modules": {
+            "discover", "threat_radar", "reports_research", "apt_library",
+            "sector_intel", "knowledge", "ioc_library", "cve_library", "retrohunt",
+            "ai_analysis", "navigator", "compare", "ioc_investigation",
+            "virustotal", "asset_surface", "evidence_graph", "investigation",
+            "examples", "help", "troubleshooting",
+        },
+    },
+    "threat-hunting": {
+        "name": "Threat Hunting",
+        "description": "Builds hypotheses and detection queries, correlates evidence, and records hunt outcomes.",
+        "permissions": {"read", "run_analysis", "manage_detections", "upload_files", "export_data"},
+        "modules": {
+            "discover", "reports_research", "apt_library", "knowledge",
+            "ioc_library", "cve_library", "retrohunt", "ai_analysis", "navigator",
+            "compare", "ioc_investigation", "evidence_graph", "threat_hunting",
+            "query_library", "investigation", "statistics", "examples", "help",
+            "troubleshooting",
+        },
+    },
+    "detection-engineering": {
+        "name": "Detection Engineering",
+        "description": "Engineers queries, validates detections with controlled simulations, and manages detection pipelines.",
+        "permissions": {
+            "read", "run_analysis", "manage_detections", "run_attack_simulation",
+            "forward_siem", "export_data",
+        },
+        "modules": {
+            "discover", "reports_research", "knowledge", "ioc_library",
+            "cve_library", "navigator", "compare", "evidence_graph",
+            "threat_hunting", "query_library", "attack_simulation",
+            "investigation", "operations", "pipeline", "statistics", "examples",
+            "help", "troubleshooting",
+        },
+    },
+    "incident-response": {
+        "name": "Incident Response / DFIR",
+        "description": "Investigates IOCs and malware, preserves evidence, coordinates response, and produces incident reports.",
+        "permissions": {
+            "read", "run_analysis", "manage_intel", "run_attack_simulation",
+            "forward_siem", "upload_files", "export_data",
+        },
+        "modules": {
+            "discover", "threat_radar", "reports_research", "knowledge",
+            "ioc_library", "cve_library", "retrohunt", "ai_analysis", "navigator",
+            "compare", "ioc_investigation", "malware_analysis", "virustotal",
+            "asset_surface", "emb3d", "evidence_graph", "threat_hunting",
+            "query_library", "attack_simulation", "investigation", "operations",
+            "statistics", "examples", "help", "troubleshooting",
+        },
+    },
+    "vulnerability-management": {
+        "name": "Vulnerability Management",
+        "description": "Assesses inventory, attack surface, CVE exposure, prioritization, and remediation evidence.",
+        "permissions": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
+        "modules": {
+            "discover", "threat_radar", "reports_research", "knowledge",
+            "ioc_library", "cve_library", "retrohunt", "navigator",
+            "asset_surface", "emb3d", "evidence_graph", "investigation",
+            "statistics", "examples", "help", "troubleshooting",
+        },
+    },
+    "feed-operators": {
+        "name": "Intelligence Feed Operators",
+        "description": "Maintains ATT&CK, IOC, CVE, and enrichment feeds without user or authentication administration.",
+        "permissions": {"read", "manage_intel", "manage_feeds", "view_audit"},
+        "modules": {"discover", "ioc_library", "cve_library", "feeds", "observability", "help", "troubleshooting"},
+    },
+    "audit-read-only": {
+        "name": "Audit / Read Only",
+        "description": "Read-only assurance access to reports, statistics, operational health, and audit evidence.",
+        "permissions": {"read", "view_audit", "export_data"},
+        "modules": {
+            "discover", "reports_research", "knowledge", "ioc_library",
+            "cve_library", "statistics", "observability", "examples", "help",
+            "troubleshooting",
+        },
+    },
+    "platform-administrators": {
+        "name": "Platform Administrators",
+        "description": "Full platform, identity, feed, security, and configuration administration.",
+        "permissions": set(ALL_PERMISSIONS),
+        "modules": set(ALL_MODULES),
+    },
+}
+
 
 @dataclass
 class TeamUser:
@@ -65,6 +258,8 @@ class TeamUser:
     user_id: str = ""
     auth_source: str = "local"
     permissions: list[str] | None = None
+    modules: list[str] | None = None
+    groups: list[str] | None = None
 
 
 def normalize_role(role: str) -> str:
@@ -80,6 +275,41 @@ def normalize_permissions(permissions: list[str] | None) -> list[str]:
     if invalid:
         raise HTTPException(422, f"Unknown permissions: {', '.join(invalid)}")
     return cleaned
+
+
+def normalize_modules(modules: list[str] | None) -> list[str]:
+    cleaned = sorted({item.strip() for item in modules or [] if item and item.strip()})
+    invalid = [item for item in cleaned if item not in ALL_MODULES]
+    if invalid:
+        raise HTTPException(422, f"Unknown modules: {', '.join(invalid)}")
+    return cleaned
+
+
+def normalize_group_slug(value: str) -> str:
+    normalized = value.strip().lower()
+    if (
+        not normalized
+        or len(normalized) > 80
+        or not normalized[0].isalnum()
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in normalized)
+    ):
+        raise HTTPException(
+            422,
+            "Group slug must be 1-80 lowercase letters, numbers, or hyphens and start with a letter or number",
+        )
+    return normalized
+
+
+def module_catalog_out() -> list[dict[str, str]]:
+    return [
+        {
+            "key": key,
+            "label": value[0],
+            "route": value[1],
+            "category": value[2],
+        }
+        for key, value in MODULE_CATALOG.items()
+    ]
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -134,6 +364,121 @@ def permissions_for(role: str, extra_permissions: list[str] | None = None) -> li
     permissions = set(ROLE_PERMISSIONS.get(normalized, {"read"}))
     permissions.update(normalize_permissions(extra_permissions))
     return sorted(permissions)
+
+
+def modules_for(role: str, group_modules: list[str] | None = None) -> list[str]:
+    normalized = normalize_role(role)
+    if normalized == "admin":
+        return sorted(ALL_MODULES)
+    # Once an account is assigned to groups, those groups become the source of
+    # module visibility. Ungrouped legacy accounts retain their role defaults.
+    if group_modules is not None:
+        return normalize_modules(group_modules)
+    return sorted(ROLE_MODULES.get(normalized, _READER_MODULES))
+
+
+async def load_user_groups(
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    include_disabled: bool = False,
+) -> list[AccessGroup]:
+    membership_rows = await db.execute(
+        select(UserAccessGroup).where(UserAccessGroup.user_id == user_id)
+    )
+    group_ids = [row.group_id for row in membership_rows.scalars().all()]
+    if not group_ids:
+        return []
+    group_rows = await db.execute(
+        select(AccessGroup).where(AccessGroup.id.in_(group_ids)).order_by(AccessGroup.name.asc())
+    )
+    groups = group_rows.scalars().all()
+    if include_disabled:
+        return list(groups)
+    return [group for group in groups if group.enabled]
+
+
+def group_permissions(groups: list[AccessGroup]) -> list[str]:
+    return sorted({
+        permission
+        for group in groups
+        for permission in normalize_permissions(list(group.permissions or []))
+    })
+
+
+def group_modules(groups: list[AccessGroup]) -> list[str]:
+    return sorted({
+        module
+        for group in groups
+        for module in normalize_modules(list(group.modules or []))
+    })
+
+
+async def replace_user_groups(
+    db: AsyncSession,
+    user_id: UUID,
+    group_ids: list[UUID],
+    *,
+    assigned_by: str,
+) -> list[AccessGroup]:
+    requested_ids = list(dict.fromkeys(group_ids))
+    groups: list[AccessGroup] = []
+    if requested_ids:
+        rows = await db.execute(select(AccessGroup).where(AccessGroup.id.in_(requested_ids)))
+        groups = list(rows.scalars().all())
+        found = {group.id for group in groups}
+        missing = [str(group_id) for group_id in requested_ids if group_id not in found]
+        if missing:
+            raise HTTPException(422, f"Unknown access groups: {', '.join(missing)}")
+        disabled = [group.name for group in groups if not group.enabled]
+        if disabled:
+            raise HTTPException(422, f"Disabled access groups cannot be assigned: {', '.join(disabled)}")
+
+    existing_rows = await db.execute(
+        select(UserAccessGroup).where(UserAccessGroup.user_id == user_id)
+    )
+    for membership in existing_rows.scalars().all():
+        await db.delete(membership)
+    for group_id in requested_ids:
+        db.add(UserAccessGroup(
+            user_id=user_id,
+            group_id=group_id,
+            assigned_by=assigned_by,
+        ))
+    await db.flush()
+    return groups
+
+
+async def ensure_default_access_groups(db: AsyncSession) -> int:
+    """Create missing built-in SOC profiles without overwriting local policy."""
+    # Serialize first-start seeding across API replicas. The lock is released
+    # by the commit below and uses a stable application-specific integer key.
+    await db.execute(select(func.pg_advisory_xact_lock(0x41475242)))
+    rows = await db.execute(select(AccessGroup))
+    existing_groups = {group.slug: group for group in rows.scalars().all()}
+    created = 0
+    for slug, profile in DEFAULT_ACCESS_GROUPS.items():
+        existing = existing_groups.get(slug)
+        if existing is not None:
+            if not existing.system:
+                raise RuntimeError(
+                    f"Reserved built-in access-group slug is owned by a custom group: {slug}"
+                )
+            continue
+        db.add(AccessGroup(
+            slug=slug,
+            name=str(profile["name"]),
+            description=str(profile["description"]),
+            permissions=sorted(profile["permissions"]),
+            modules=sorted(profile["modules"]),
+            system=True,
+            enabled=True,
+            created_by="system",
+        ))
+        created += 1
+    if created:
+        await db.commit()
+    return created
 
 
 def account_has_permission(user: UserAccount, permission: str) -> bool:
@@ -238,11 +583,25 @@ async def ensure_user_management_continuity(
     proposed_role: str,
     proposed_permissions: list[str],
     proposed_enabled: bool,
+    proposed_group_permissions: list[str] | None = None,
+    proposed_group_modules: list[str] | None = None,
 ) -> None:
     """Prevent concurrent mutations from removing the final user manager."""
-    if proposed_enabled and (
-        "manage_users" in ROLE_PERMISSIONS.get(proposed_role, set())
-        or "manage_users" in proposed_permissions
+    proposed_effective_permissions = (
+        set(ROLE_PERMISSIONS.get(proposed_role, set()))
+        | set(proposed_permissions)
+        | set(proposed_group_permissions or [])
+    )
+    if proposed_group_modules is None:
+        proposed_effective_modules = set(ROLE_MODULES.get(proposed_role, set()))
+        if {"manage_users", "manage_auth"}.intersection(proposed_effective_permissions):
+            proposed_effective_modules.add("admin")
+    else:
+        proposed_effective_modules = set(proposed_group_modules)
+    if (
+        proposed_enabled
+        and "manage_users" in proposed_effective_permissions
+        and ("admin" in proposed_effective_modules or proposed_role == "admin")
     ):
         return
 
@@ -255,11 +614,24 @@ async def ensure_user_management_continuity(
     )
     enabled_users = rows.scalars().all()
     locked_target = next((user for user in enabled_users if user.id == target.id), None)
-    if locked_target is None or not account_has_permission(locked_target, "manage_users"):
+    if locked_target is None:
         return
-    enabled_managers = [
-        user for user in enabled_users if account_has_permission(user, "manage_users")
-    ]
+    locked_groups = await load_user_groups(db, locked_target.id, include_disabled=True)
+    locked_principal = user_to_team_user(
+        locked_target,
+        groups=locked_groups or None,
+    )
+    if not (
+        has_permission(locked_principal, "manage_users")
+        and has_module(locked_principal, "admin")
+    ):
+        return
+    enabled_managers = []
+    for enabled_user in enabled_users:
+        groups = await load_user_groups(db, enabled_user.id, include_disabled=True)
+        principal = user_to_team_user(enabled_user, groups=groups or None)
+        if has_permission(principal, "manage_users") and has_module(principal, "admin"):
+            enabled_managers.append(enabled_user)
     if len(enabled_managers) <= 1:
         raise HTTPException(
             409,
@@ -267,13 +639,118 @@ async def ensure_user_management_continuity(
         )
 
 
-def user_to_team_user(user: UserAccount, auth_source: str = "native") -> TeamUser:
+async def ensure_group_management_continuity(
+    db: AsyncSession,
+    target_group: AccessGroup,
+    *,
+    proposed_permissions: list[str],
+    proposed_modules: list[str],
+    proposed_enabled: bool,
+) -> None:
+    """Prevent a group-policy edit from removing the last user manager."""
+    current_permissions = set(normalize_permissions(target_group.permissions))
+    current_modules = set(normalize_modules(target_group.modules))
+    if (
+        not target_group.enabled
+        or "manage_users" not in current_permissions
+        or "admin" not in current_modules
+        or (
+            proposed_enabled
+            and "manage_users" in proposed_permissions
+            and "admin" in proposed_modules
+        )
+    ):
+        return
+    membership_rows = await db.execute(
+        select(UserAccessGroup).where(UserAccessGroup.group_id == target_group.id)
+    )
+    target_member_ids = {
+        membership.user_id for membership in membership_rows.scalars().all()
+    }
+    if not target_member_ids:
+        return
+
+    user_rows = await db.execute(
+        select(UserAccount)
+        .where(UserAccount.enabled.is_(True))
+        .order_by(UserAccount.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    for user in user_rows.scalars().all():
+        groups = await load_user_groups(db, user.id, include_disabled=True)
+        if user.id in target_member_ids:
+            remaining_groups = [
+                group
+                for group in groups
+                if group.id != target_group.id and group.enabled
+            ]
+            effective_permissions = set(permissions_for(user.role, user.permissions))
+            effective_permissions.update(group_permissions(remaining_groups))
+            effective_modules = set(group_modules(remaining_groups))
+            if proposed_enabled:
+                effective_permissions.update(proposed_permissions)
+                effective_modules.update(proposed_modules)
+            effective_roles = roles_for(user.role)
+            if (
+                any(
+                    group.system and group.slug == "platform-administrators"
+                    for group in remaining_groups
+                )
+                or (
+                    target_group.system
+                    and target_group.slug == "platform-administrators"
+                    and proposed_enabled
+                )
+            ):
+                effective_roles = roles_for("admin")
+            principal = TeamUser(
+                name=user.username,
+                roles=effective_roles,
+                permissions=sorted(effective_permissions),
+                modules=sorted(effective_modules),
+            )
+        else:
+            principal = user_to_team_user(user, groups=groups or None)
+        if has_permission(principal, "manage_users") and has_module(principal, "admin"):
+            return
+    raise HTTPException(
+        409,
+        "At least one enabled account with user-management permission must remain",
+    )
+
+
+def user_to_team_user(
+    user: UserAccount,
+    auth_source: str = "native",
+    groups: list[AccessGroup] | None = None,
+) -> TeamUser:
+    active_groups = [group for group in (groups or []) if group.enabled]
+    expanded_permissions = set(permissions_for(user.role, user.permissions))
+    expanded_permissions.update(group_permissions(active_groups))
+    assigned_modules = group_modules(active_groups) if groups is not None else None
+    expanded_modules = set(modules_for(user.role, assigned_modules))
+    if groups is None:
+        if {"manage_users", "manage_auth"}.intersection(expanded_permissions):
+            expanded_modules.add("admin")
+        if "manage_feeds" in expanded_permissions:
+            expanded_modules.add("feeds")
+        if "view_audit" in expanded_permissions:
+            expanded_modules.add("observability")
+    effective_roles = roles_for(user.role)
+    if any(
+        group.system and group.slug == "platform-administrators"
+        for group in active_groups
+    ):
+        effective_roles = roles_for("admin")
     return TeamUser(
         name=user.username,
-        roles=roles_for(user.role),
+        roles=effective_roles,
         user_id=str(user.id),
         auth_source=auth_source,
-        permissions=permissions_for(user.role, user.permissions),
+        permissions=sorted(expanded_permissions),
+        modules=sorted(expanded_modules),
+        groups=sorted(group.slug for group in active_groups),
     )
 
 
@@ -519,6 +996,12 @@ async def current_user(
             roles=effective_roles,
             auth_source=settings.auth_sso_mode,
             permissions=effective_permissions,
+            modules=sorted({
+                module
+                for role in requested_roles
+                for module in modules_for(role)
+            }),
+            groups=[],
         )
 
     token = ""
@@ -527,7 +1010,8 @@ async def current_user(
     token = token or ag_session or ""
     user = await authenticate_token(db, token)
     if user:
-        return user_to_team_user(user)
+        groups = await load_user_groups(db, user.id, include_disabled=True)
+        return user_to_team_user(user, groups=groups or None)
 
     if settings.auth_enabled:
         raise HTTPException(401, "Authentication required")
@@ -536,12 +1020,38 @@ async def current_user(
         roles=roles_for(settings.auth_default_role),
         auth_source="local",
         permissions=permissions_for(settings.auth_default_role),
+        modules=modules_for(settings.auth_default_role),
+        groups=[],
     )
 
 
 def has_permission(user: TeamUser, permission: str) -> bool:
     permissions = set(user.permissions or [])
     return "admin" in user.roles or permission in permissions
+
+
+def has_module(user: TeamUser, module: str) -> bool:
+    if module not in ALL_MODULES:
+        return False
+    if "admin" in user.roles:
+        return True
+    if user.modules is not None:
+        return module in set(user.modules)
+    # Defensive compatibility for trusted integrations/tests that construct a
+    # principal without the newer module claim.
+    inferred = {
+        candidate
+        for role in user.roles
+        for candidate in ROLE_MODULES.get(role, set())
+    }
+    permissions = effective_team_permissions(user)
+    if {"manage_users", "manage_auth"}.intersection(permissions):
+        inferred.add("admin")
+    if "manage_feeds" in permissions:
+        inferred.add("feeds")
+    if "view_audit" in permissions:
+        inferred.add("observability")
+    return module in inferred
 
 
 def require_permission(permission: str):
@@ -562,6 +1072,72 @@ def require_any_permission(*permissions: str):
             has_permission(user, permission) for permission in required
         ):
             raise HTTPException(403, f"One permission required: {', '.join(required)}")
+        return user
+
+    return dependency
+
+
+def require_module(module: str):
+    if module not in ALL_MODULES:
+        raise ValueError(f"Unknown module: {module}")
+
+    async def dependency(user: TeamUser = Depends(current_user)) -> TeamUser:
+        if settings.auth_enabled and not has_module(user, module):
+            raise HTTPException(403, f"Module access required: {module}")
+        return user
+
+    return dependency
+
+
+def require_any_module(*modules: str):
+    required = tuple(dict.fromkeys(modules))
+    if not required or any(module not in ALL_MODULES for module in required):
+        raise ValueError("At least one valid module is required")
+
+    async def dependency(user: TeamUser = Depends(current_user)) -> TeamUser:
+        if settings.auth_enabled and not any(has_module(user, module) for module in required):
+            raise HTTPException(403, f"One module required: {', '.join(required)}")
+        return user
+
+    return dependency
+
+
+def require_module_permission(module: str, permission: str):
+    if module not in ALL_MODULES:
+        raise ValueError(f"Unknown module: {module}")
+    if permission not in ALL_PERMISSIONS:
+        raise ValueError(f"Unknown permission: {permission}")
+
+    async def dependency(user: TeamUser = Depends(current_user)) -> TeamUser:
+        if settings.auth_enabled and (
+            not has_module(user, module)
+            or not has_permission(user, permission)
+        ):
+            raise HTTPException(
+                403,
+                f"Module and permission required: {module}, {permission}",
+            )
+        return user
+
+    return dependency
+
+
+def require_module_any_permission(module: str, *permissions: str):
+    if module not in ALL_MODULES:
+        raise ValueError(f"Unknown module: {module}")
+    required = tuple(dict.fromkeys(permissions))
+    if not required or any(permission not in ALL_PERMISSIONS for permission in required):
+        raise ValueError("At least one valid permission is required")
+
+    async def dependency(user: TeamUser = Depends(current_user)) -> TeamUser:
+        if settings.auth_enabled and (
+            not has_module(user, module)
+            or not any(has_permission(user, permission) for permission in required)
+        ):
+            raise HTTPException(
+                403,
+                f"Module and one permission required: {module}; {', '.join(required)}",
+            )
         return user
 
     return dependency

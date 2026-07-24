@@ -106,6 +106,18 @@ async def create_tables() -> None:
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS external_subject VARCHAR(255) DEFAULT ''"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT false"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS mfa_secret TEXT DEFAULT ''"))
+        await conn.execute(text(
+            "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
+            "web_probe_requested BOOLEAN DEFAULT false"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
+            "web_probe_result JSONB DEFAULT '{}'::jsonb"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
+            "inventory_update JSONB DEFAULT '{}'::jsonb"
+        ))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_auth_sessions_revoked_at ON auth_sessions (revoked_at)"))
         await conn.execute(text("ALTER TABLE threat_hunt_requests ALTER COLUMN case_id DROP NOT NULL"))
         await conn.execute(text("ALTER TABLE threat_hunt_requests ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''"))

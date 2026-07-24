@@ -108,54 +108,54 @@ function AppShell() {
               <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading workspace...</div>}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/discover" replace />} />
-                  <Route path="/discover" element={<Discover />} />
-                  <Route path="/navigator" element={<Navigator />} />
-                  <Route path="/apt" element={<APTLibrary />} />
-                  <Route path="/analyze" element={<Analyze />} />
-                  <Route path="/analyze/:sessionId/report" element={<LinkedReport />} />
-                  <Route path="/reports-research" element={<ReportsResearch />} />
-                  <Route path="/compare" element={<Compare />} />
+                  <Route path="/discover" element={<RoleGate module="discover"><Discover /></RoleGate>} />
+                  <Route path="/navigator" element={<RoleGate module="navigator"><Navigator /></RoleGate>} />
+                  <Route path="/apt" element={<RoleGate module="apt_library"><APTLibrary /></RoleGate>} />
+                  <Route path="/analyze" element={<RoleGate module="ai_analysis"><Analyze /></RoleGate>} />
+                  <Route path="/analyze/:sessionId/report" element={<RoleGate anyModule={['ai_analysis', 'reports_research', 'investigation']}><LinkedReport /></RoleGate>} />
+                  <Route path="/reports-research" element={<RoleGate module="reports_research"><ReportsResearch /></RoleGate>} />
+                  <Route path="/compare" element={<RoleGate module="compare"><Compare /></RoleGate>} />
                   <Route path="/group-compare" element={<Navigate to="/compare?mode=group-vs-group" replace />} />
-                  <Route path="/report" element={<RoleGate permission="run_analysis"><InvestigationReport /></RoleGate>} />
-                  <Route path="/operations" element={<RoleGate permission="run_analysis"><Operations /></RoleGate>} />
-                  <Route path="/pipeline" element={<RoleGate permission="run_analysis"><Pipeline /></RoleGate>} />
-                  <Route path="/observability" element={<RoleGate permission="view_audit"><Observability /></RoleGate>} />
-                  <Route path="/statistics" element={<RoleGate permission="run_analysis"><Statistics /></RoleGate>} />
-                  <Route path="/threat-radar" element={<RoleGate permission="run_analysis"><ThreatRadar /></RoleGate>} />
-                  <Route path="/threat-radar/assets" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
-                  <Route path="/threat-radar/assets/:spaceId/:assetId" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
-                  <Route path="/threat-hunting" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
-                  <Route path="/threat-hunting/new" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
-                  <Route path="/threat-hunting/:huntId" element={<RoleGate permission="run_analysis"><ThreatHunting /></RoleGate>} />
-                  <Route path="/query-library" element={<RoleGate permission="run_analysis"><QueryLibrary /></RoleGate>} />
-                  <Route path="/evidence-graph" element={<RoleGate permission="run_analysis"><EvidenceGraph /></RoleGate>} />
-                  <Route path="/admin" element={<RoleGate anyPermission={['manage_users', 'manage_auth', 'view_audit']}><AdminUsers /></RoleGate>} />
+                  <Route path="/report" element={<RoleGate module="investigation" permission="run_analysis"><InvestigationReport /></RoleGate>} />
+                  <Route path="/operations" element={<RoleGate module="operations" permission="run_analysis"><Operations /></RoleGate>} />
+                  <Route path="/pipeline" element={<RoleGate module="pipeline" permission="run_analysis"><Pipeline /></RoleGate>} />
+                  <Route path="/observability" element={<RoleGate module="observability" permission="view_audit"><Observability /></RoleGate>} />
+                  <Route path="/statistics" element={<RoleGate module="statistics" permission="run_analysis"><Statistics /></RoleGate>} />
+                  <Route path="/threat-radar" element={<RoleGate module="threat_radar" permission="run_analysis"><ThreatRadar /></RoleGate>} />
+                  <Route path="/threat-radar/assets" element={<RoleGate module="threat_radar" permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
+                  <Route path="/threat-radar/assets/:spaceId/:assetId" element={<RoleGate module="threat_radar" permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />
+                  <Route path="/threat-hunting" element={<RoleGate module="threat_hunting" permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/new" element={<RoleGate module="threat_hunting" permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/threat-hunting/:huntId" element={<RoleGate module="threat_hunting" permission="run_analysis"><ThreatHunting /></RoleGate>} />
+                  <Route path="/query-library" element={<RoleGate module="query_library" permission="run_analysis"><QueryLibrary /></RoleGate>} />
+                  <Route path="/evidence-graph" element={<RoleGate module="evidence_graph" permission="run_analysis"><EvidenceGraph /></RoleGate>} />
+                  <Route path="/admin" element={<RoleGate module="admin" anyPermission={['manage_users', 'manage_auth', 'view_audit']}><AdminUsers /></RoleGate>} />
                   <Route path="/auth-guide" element={<AuthGuide />} />
-                  <Route path="/help" element={<HelpGuide />} />
-                  <Route path="/examples" element={<Examples />} />
-                  <Route path="/sector-intel" element={<SectorIntel />} />
-                  <Route path="/asset-surface" element={<RoleGate permission="run_analysis"><AssetSurface /></RoleGate>} />
-                  <Route path="/emb3d" element={<RoleGate permission="run_analysis"><Emb3d /></RoleGate>} />
-                  <Route path="/attack-simulation" element={<RoleGate permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
-                  <Route path="/attack-simulation/:simulationId" element={<RoleGate permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
+                  <Route path="/help" element={<RoleGate module="help"><HelpGuide /></RoleGate>} />
+                  <Route path="/examples" element={<RoleGate module="examples"><Examples /></RoleGate>} />
+                  <Route path="/sector-intel" element={<RoleGate module="sector_intel"><SectorIntel /></RoleGate>} />
+                  <Route path="/asset-surface" element={<RoleGate module="asset_surface" permission="run_analysis"><AssetSurface /></RoleGate>} />
+                  <Route path="/emb3d" element={<RoleGate module="emb3d" permission="run_analysis"><Emb3d /></RoleGate>} />
+                  <Route path="/attack-simulation" element={<RoleGate module="attack_simulation" permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
+                  <Route path="/attack-simulation/:simulationId" element={<RoleGate module="attack_simulation" permission="run_attack_simulation"><AttackSimulation /></RoleGate>} />
                   <Route path="/external-simulation" element={<Navigate to="/attack-simulation" replace />} />
-                  <Route path="/sector-packs" element={<SectorPacks />} />
-                  <Route path="/knowledge" element={<KnowledgeLibrary />} />
-                  <Route path="/retrohunt" element={<RetroHunt />} />
-                  <Route path="/ioc-library" element={<IOCLibrary />} />
-                  <Route path="/ioc-library/:id" element={<IOCDetail />} />
-                  <Route path="/ioc-node" element={<IOCNodeDetail />} />
-                  <Route path="/cve" element={<CVEIntelligence />} />
-                  <Route path="/feeds" element={<RoleGate permission="manage_feeds"><FeedsManagement /></RoleGate>} />
-                  <Route path="/malware-analysis" element={<RoleGate permission="run_analysis"><MalwareAnalysis /></RoleGate>} />
-                  <Route path="/malware-unpacker" element={<RoleGate permission="run_analysis"><MalwareUnpacker /></RoleGate>} />
-                  <Route path="/string-analyzer" element={<RoleGate permission="run_analysis"><StringAnalyzer /></RoleGate>} />
-                  <Route path="/malware-debug" element={<RoleGate permission="run_analysis"><Debugger /></RoleGate>} />
-                  <Route path="/debugger" element={<RoleGate permission="run_analysis"><Debugger /></RoleGate>} />
-                  <Route path="/dynamic-analysis" element={<RoleGate permission="run_analysis"><DynamicAnalysis /></RoleGate>} />
-                  <Route path="/troubleshooting" element={<Troubleshooting />} />
-                  <Route path="/virustotal" element={<RoleGate permission="run_analysis"><VirusTotalLookup /></RoleGate>} />
-                  <Route path="/ioc-investigation" element={<RoleGate permission="run_analysis"><IOCInvestigation /></RoleGate>} />
+                  <Route path="/sector-packs" element={<RoleGate module="sector_intel"><SectorPacks /></RoleGate>} />
+                  <Route path="/knowledge" element={<RoleGate module="knowledge"><KnowledgeLibrary /></RoleGate>} />
+                  <Route path="/retrohunt" element={<RoleGate module="retrohunt"><RetroHunt /></RoleGate>} />
+                  <Route path="/ioc-library" element={<RoleGate module="ioc_library"><IOCLibrary /></RoleGate>} />
+                  <Route path="/ioc-library/:id" element={<RoleGate module="ioc_library"><IOCDetail /></RoleGate>} />
+                  <Route path="/ioc-node" element={<RoleGate module="ioc_library"><IOCNodeDetail /></RoleGate>} />
+                  <Route path="/cve" element={<RoleGate module="cve_library"><CVEIntelligence /></RoleGate>} />
+                  <Route path="/feeds" element={<RoleGate module="feeds" permission="manage_feeds"><FeedsManagement /></RoleGate>} />
+                  <Route path="/malware-analysis" element={<RoleGate module="malware_analysis" permission="run_analysis"><MalwareAnalysis /></RoleGate>} />
+                  <Route path="/malware-unpacker" element={<RoleGate module="malware_analysis" permission="run_analysis"><MalwareUnpacker /></RoleGate>} />
+                  <Route path="/string-analyzer" element={<RoleGate module="malware_analysis" permission="run_analysis"><StringAnalyzer /></RoleGate>} />
+                  <Route path="/malware-debug" element={<RoleGate module="malware_analysis" permission="run_analysis"><Debugger /></RoleGate>} />
+                  <Route path="/debugger" element={<RoleGate module="malware_analysis" permission="run_analysis"><Debugger /></RoleGate>} />
+                  <Route path="/dynamic-analysis" element={<RoleGate module="malware_analysis" permission="run_analysis"><DynamicAnalysis /></RoleGate>} />
+                  <Route path="/troubleshooting" element={<RoleGate module="troubleshooting"><Troubleshooting /></RoleGate>} />
+                  <Route path="/virustotal" element={<RoleGate module="virustotal" permission="run_analysis"><VirusTotalLookup /></RoleGate>} />
+                  <Route path="/ioc-investigation" element={<RoleGate module="ioc_investigation" permission="run_analysis"><IOCInvestigation /></RoleGate>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

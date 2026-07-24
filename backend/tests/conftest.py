@@ -100,7 +100,16 @@ class _MockSession:
             if column_name and (bind_key in params or literal_value is not None):
                 expected = params[bind_key] if bind_key in params else literal_value
                 op = getattr(criterion, "operator", None)
-                if op is operator.gt:
+                if column_name == "lower":
+                    clauses = list(getattr(left, "clauses", ()))
+                    source_name = getattr(clauses[0], "name", None) if clauses else None
+                    rows = [
+                        row
+                        for row in rows
+                        if source_name
+                        and str(getattr(row, source_name, "")).lower() == str(expected).lower()
+                    ]
+                elif op is operator.gt:
                     rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) > expected]
                 elif op is operator.lt:
                     rows = [row for row in rows if getattr(row, column_name, None) and getattr(row, column_name) < expected]

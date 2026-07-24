@@ -1,10 +1,14 @@
 # Roadmap
 
-Current release: **v6.0.0** — Operational evidence and controlled self-hosted production readiness (2026-07-17)
+Current release: **v6.1.0** — Governed threat operations, asset exposure assessment, and SOC access control (2026-07-24)
 
-For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v6.1.0 see [CHANGELOG.md](CHANGELOG.md).
 
-## Unreleased — Governed Hunting and Platform Hardening
+## Unreleased
+
+- [ ] Record future work here after the v6.1.0 release boundary.
+
+## v6.1 — Governed Hunting, Asset Assessment, and Platform Hardening
 
 - [x] Add a hypothesis-driven Threat Hunting workspace with query revisions,
   evidence-preserving findings, reviewed dispositions, exports, and Threat
@@ -39,8 +43,10 @@ For the full history from v0.2.0 through v6.0.0 see [CHANGELOG.md](CHANGELOG.md)
 - [x] Harden Compose, Helm, container users and filesystems, production preflight,
   CI action pinning, tag-only publication, backup/restore, seven-image release
   publication, and ten-image stack scanning
-- [ ] Assign the next semantic version, update release artifacts, and cut a new
-  immutable tag after the complete release gate passes
+- [x] Assign v6.1.0 and update source, package, Helm, release, and reviewer
+  metadata
+- [ ] Cut the immutable v6.1.0 tag only after merge CI and the complete release
+  gate pass
 
 ## v6.0 — Operational Evidence and Production Readiness
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { assetSurfaceApi, layersApi, threatRadarApi } from '@/api/client';
@@ -21,6 +21,11 @@ const PROVIDERS: { id: Provider; label: string }[] = [
   { id: 'gemini', label: 'Gemini' },
   { id: 'minimax', label: 'MiniMax' },
 ];
+
+const RETROHUNT_VISIBLE_ROWS = 5;
+const RETROHUNT_MAX_RENDERED_ROWS = 100;
+const RETROHUNT_ROW_HEIGHT_PX = 112;
+const RETROHUNT_HEADER_HEIGHT_PX = 40;
 
 const SAMPLE = `asset_id,name,asset_type,environment,owner,ip_addresses,domains,ports,technologies,exposure,criticality,tags
 asset-0001,customer-portal,web-app,prod,Digital,203.0.113.10,portal.example.com,"80;443;8443","nginx;nodejs;postgres",internet,critical,"customer-data;pci"
@@ -79,7 +84,10 @@ export function AssetSurface() {
       queryClient.invalidateQueries({ queryKey: ['asset-intel-matches'] });
       queryClient.invalidateQueries({ queryKey: ['threat-radar-spaces'] });
       queryClient.invalidateQueries({ queryKey: ['threat-radar-space-metrics'] });
-      if (companySpaceId) queryClient.invalidateQueries({ queryKey: ['threat-radar-space', companySpaceId] });
+      if (companySpaceId) {
+        queryClient.invalidateQueries({ queryKey: ['threat-radar-space', companySpaceId] });
+        queryClient.invalidateQueries({ queryKey: ['threat-radar-space-assets', companySpaceId] });
+      }
     },
   });
   const loadCase = useMutation({
@@ -160,6 +168,18 @@ export function AssetSurface() {
     const fromResult = result?.intel_matches ?? [];
     return fromResult.length ? fromResult : (matchesQuery.data ?? []);
   }, [matchesQuery.data, result?.intel_matches]);
+  const resultCompanySpaceId = result?.company_space_id?.trim() || '';
+  const companyAssetsQuery = useQuery({
+    queryKey: ['threat-radar-space-assets', resultCompanySpaceId, 'asset-surface-links'],
+    queryFn: () => threatRadarApi.spaceAssets(resultCompanySpaceId, { limit: 500 }),
+    enabled: Boolean(resultCompanySpaceId),
+  });
+  const companyAssetByInventoryId = useMemo(
+    () => new Map(
+      (companyAssetsQuery.data?.items ?? []).map(asset => [asset.asset_id.toLowerCase(), asset]),
+    ),
+    [companyAssetsQuery.data?.items],
+  );
 
   const run = () => {
     if (!canManage || (files.length > 0 && !canUploadFiles)) return;
@@ -242,12 +262,13 @@ export function AssetSurface() {
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Inventory Input</div>
             <textarea
               disabled={!canManage}
+              rows={5}
               value={text}
               onChange={event => {
                 setText(event.target.value);
                 setFiles([]);
               }}
-              className="min-h-[220px] flex-1 resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-xs text-gray-200 outline-none focus:border-mitre-accent"
+              className="min-h-0 flex-none resize-none overflow-y-auto rounded border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-xs leading-5 text-gray-200 outline-none focus:border-mitre-accent"
               placeholder="Paste CSV, JSON, hostname/IP list, CMDB export, cloud inventory, or scanner output"
             />
             <div
@@ -459,7 +480,18 @@ export function AssetSurface() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
-                        {filteredAssets.map(asset => <AssetRow key={asset.asset_id} asset={asset} />)}
+                        {filteredAssets.map(asset => {
+                          const companyAsset = companyAssetByInventoryId.get(asset.asset_id.toLowerCase());
+                          return (
+                            <AssetRow
+                              key={asset.asset_id}
+                              asset={asset}
+                              companySpaceId={resultCompanySpaceId}
+                              companyAssetId={companyAsset?.id}
+                              companyAssetLoading={companyAssetsQuery.isLoading}
+                            />
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -593,12 +625,31 @@ function EmptyState() {
   );
 }
 
-function AssetRow({ asset }: { asset: AssetSurfaceAsset }) {
+function AssetRow({
+  asset,
+  companySpaceId,
+  companyAssetId,
+  companyAssetLoading,
+}: {
+  asset: AssetSurfaceAsset;
+  companySpaceId: string;
+  companyAssetId?: string;
+  companyAssetLoading: boolean;
+}) {
+  const assetHref = companySpaceId && companyAssetId
+    ? `/threat-radar/assets/${encodeURIComponent(companySpaceId)}/${encodeURIComponent(companyAssetId)}`
+    : '';
   return (
     <>
       <tr className="align-top">
         <td className="py-3 pr-3">
-          <div className="font-semibold text-white">{asset.asset}</div>
+          {assetHref ? (
+            <Link className="font-semibold text-white hover:text-mitre-accent hover:underline" to={assetHref}>
+              {asset.asset}
+            </Link>
+          ) : (
+            <div className="font-semibold text-white">{asset.asset}</div>
+          )}
           <div className="mt-1 text-[11px] text-gray-500">{asset.asset_type} · {asset.environment} · {asset.owner || 'no owner'}</div>
           <div className="mt-1 max-w-[240px] truncate font-mono text-[11px] text-gray-600">
             {[...asset.domains, ...asset.ip_addresses].length ? (
@@ -607,6 +658,19 @@ function AssetRow({ asset }: { asset: AssetSurfaceAsset }) {
               ))
             ) : asset.asset_id}
           </div>
+          {assetHref && (
+            <Link
+              className="secondary-action mt-2 inline-flex min-h-8 items-center px-2.5 text-[11px]"
+              to={`${assetHref}#active-assessment`}
+            >
+              Open asset &amp; scan
+            </Link>
+          )}
+          {companySpaceId && !assetHref && (
+            <div className="mt-2 text-[10px] text-gray-600">
+              {companyAssetLoading ? 'Linking saved company asset…' : 'Company asset link unavailable; rerun this inventory analysis.'}
+            </div>
+          )}
         </td>
         <td className="py-3 pr-3"><RiskBadge level={asset.risk_level} score={asset.risk_score} /></td>
         <td className="py-3 pr-3"><Chip>{asset.exposure}</Chip></td>
@@ -651,50 +715,73 @@ function AssetIntelMatches({ matches, loading }: { matches: AssetIntelMatch[]; l
       </div>
     );
   }
+  const renderedMatches = matches.slice(0, RETROHUNT_MAX_RENDERED_ROWS);
+  const rowsInViewport = Math.min(RETROHUNT_VISIBLE_ROWS, renderedMatches.length);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] text-left text-xs">
-        <thead className="border-b border-gray-800 text-gray-500">
-          <tr>
-            <th className="py-2 pr-3">Source</th>
-            <th className="py-2 pr-3">Match</th>
-            <th className="py-2 pr-3">Score</th>
-            <th className="py-2 pr-3">Reason</th>
-            <th className="py-2 pr-3">Evidence</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-800">
-          {matches.slice(0, 30).map(match => (
-            <tr key={match.id} className="align-top">
-              <td className="py-3 pr-3">
-                <div className="font-semibold uppercase text-mitre-accent">{match.source_type}</div>
-                <div className="mt-1 font-mono text-[11px] text-gray-500">{match.source_id}</div>
-              </td>
-              <td className="py-3 pr-3">
-                {safeInternalHref(match.route) ? (
-                  <a href={safeInternalHref(match.route)} className="font-semibold text-white hover:text-mitre-accent hover:underline">{match.title || match.source_id}</a>
-                ) : (
-                  <span className="font-semibold text-white">{match.title || match.source_id}</span>
-                )}
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {match.tags.slice(0, 5).map(tag => <Chip key={`${match.id}-${tag}`}>{tag}</Chip>)}
-                </div>
-              </td>
-              <td className="py-3 pr-3">
-                <div className="font-bold text-white">{match.relevance_score}</div>
-                <div className="mt-1 text-[11px] text-gray-500">conf {match.confidence}</div>
-              </td>
-              <td className="max-w-[260px] py-3 pr-3 leading-5 text-gray-400">{match.reason}</td>
-              <td className="max-w-[320px] py-3 pr-3">
-                <ul className="space-y-1 text-gray-500">
-                  {match.evidence.slice(0, 3).map((item, index) => <li key={`${match.id}-e-${index}`}>{item}</li>)}
-                </ul>
-              </td>
+    <>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+        <span>
+          Showing {rowsInViewport} row{rowsInViewport === 1 ? '' : 's'} at a time. Scroll for more matches.
+        </span>
+        <span>
+          {renderedMatches.length}{matches.length > renderedMatches.length ? ` of ${matches.length}` : ''} loaded
+        </span>
+      </div>
+      <div
+        aria-label={`Asset Retrohunt Matches, ${renderedMatches.length} loaded`}
+        className="overflow-auto overscroll-contain rounded border border-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mitre-accent"
+        data-testid="asset-retrohunt-scroll"
+        role="region"
+        style={{ maxHeight: RETROHUNT_HEADER_HEIGHT_PX + (RETROHUNT_VISIBLE_ROWS * RETROHUNT_ROW_HEIGHT_PX) }}
+        tabIndex={renderedMatches.length > RETROHUNT_VISIBLE_ROWS ? 0 : undefined}
+      >
+        <table className="w-full min-w-[900px] text-left text-xs">
+          <thead className="sticky top-0 z-10 h-10 border-b border-gray-800 bg-gray-900 text-gray-500">
+            <tr>
+              <th className="py-2 pr-3">Source</th>
+              <th className="py-2 pr-3">Match</th>
+              <th className="py-2 pr-3">Score</th>
+              <th className="py-2 pr-3">Reason</th>
+              <th className="py-2 pr-3">Evidence</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {renderedMatches.map(match => (
+              <tr key={match.id} className="h-28 align-top">
+                <td className="py-3 pr-3">
+                  <div className="font-semibold uppercase text-mitre-accent">{match.source_type}</div>
+                  <div className="mt-1 font-mono text-[11px] text-gray-500">{match.source_id}</div>
+                </td>
+                <td className="py-3 pr-3">
+                  {safeInternalHref(match.route) ? (
+                    <a href={safeInternalHref(match.route)} className="font-semibold text-white hover:text-mitre-accent hover:underline">{match.title || match.source_id}</a>
+                  ) : (
+                    <span className="font-semibold text-white">{match.title || match.source_id}</span>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {match.tags.slice(0, 5).map(tag => <Chip key={`${match.id}-${tag}`}>{tag}</Chip>)}
+                  </div>
+                </td>
+                <td className="py-3 pr-3">
+                  <div className="font-bold text-white">{match.relevance_score}</div>
+                  <div className="mt-1 text-[11px] text-gray-500">conf {match.confidence}</div>
+                </td>
+                <td className="max-w-[260px] py-3 pr-3 leading-5 text-gray-400">
+                  <p className="line-clamp-3" title={match.reason}>{match.reason}</p>
+                </td>
+                <td className="max-w-[320px] py-3 pr-3">
+                  <ul className="space-y-1 text-gray-500">
+                    {match.evidence.slice(0, 3).map((item, index) => (
+                      <li key={`${match.id}-e-${index}`} className="line-clamp-1" title={item}>{item}</li>
+                    ))}
+                  </ul>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

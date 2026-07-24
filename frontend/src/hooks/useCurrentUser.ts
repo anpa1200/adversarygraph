@@ -29,8 +29,24 @@ export function hasPermission(user: CurrentUser | undefined, permission: string)
   return user.roles.includes('admin') || Boolean(user.permissions?.includes(permission));
 }
 
+export function hasModule(user: CurrentUser | undefined, module: string): boolean {
+  if (!user) return false;
+  if (!user.auth_enabled) return true;
+  if (user.roles.includes('admin')) return true;
+  // Preserve the previous UI during a rolling frontend/backend deployment.
+  // The backend remains authoritative until the newer /auth/me module claim
+  // is available.
+  if (user.modules === undefined) return true;
+  return user.modules.includes(module);
+}
+
 /** Effective permission check backed by the shared current-user query. */
 export function useHasPermission(permission: string): boolean {
   const { data: user } = useCurrentUser();
   return hasPermission(user, permission);
+}
+
+export function useHasModule(module: string): boolean {
+  const { data: user } = useCurrentUser();
+  return hasModule(user, module);
 }

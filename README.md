@@ -5,26 +5,24 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v6.0.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v6.1.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v6.0.0**. This release packages AdversaryGraph for controlled
-self-hosted production with a reproducible readiness gate, corrected release
-history, current screenshot evidence, local case studies, clearer deployment
-go/no-go criteria, and a complete v5-to-v6 reviewer handoff. See the
-[v6 release notes](docs/release-notes/v6.0.0.md),
+Current release: **v6.1.0**. This release adds inventory-bound asset exposure
+assessment, persistent SOC users and access groups, module-level API and UI
+authorization, the governed Threat Hunting Query Library, unified RAG/MCP
+workflows, and the post-v6 deployment and validation hardening. See the
+[v6.1 release notes](docs/release-notes/v6.1.0.md),
+[release summary](docs/release-summary-v6.1.0.md),
 [release readiness guide](docs/release-readiness-v6.md),
 [case studies](docs/case-studies-v6.md), and
 [screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
-The current development checkout also contains the post-v6.0.0 work listed under
-[Unreleased](CHANGELOG.md): the governed Threat Hunting workspace and AI
-assistant, unified intelligence RAG, the local MCP integration, finer-grained
-authorization, safer file and network boundaries, frontend resilience work,
-and deployment/validation hardening. These changes are not part of the existing
-`v6.0.0` tag until a new immutable release is cut.
+The immutable `v6.0.0` tag remains the historical operational-evidence release.
+Its screenshots and artifact limitations apply only to that tag and are not
+presented as evidence for v6.1.0.
 
 ## What It Does
 
@@ -278,7 +276,7 @@ The main platform stores structured CTI and workflow data. Malware samples are h
 - Do not upload confidential data to public demos.
 - Do not expose the default Compose stack directly to the internet.
 - Use TLS, authentication, restricted networks, backups, monitoring, and secret rotation for controlled production deployments.
-- Native username/password login, role-based access, user management, and trusted reverse-proxy auth are documented in [Authentication and User Management](docs/authentication-and-users.md).
+- Native username/password login, persistent SOC groups, module-level API access, user management, and trusted reverse-proxy auth are documented in [Authentication and User Management](docs/authentication-and-users.md).
 - Treat LLM output and generated detections as untrusted until reviewed.
 - Threat Hunting AI defaults to the operator-configured local provider. Cloud use
   is disabled by default and requires operator enablement plus explicit analyst

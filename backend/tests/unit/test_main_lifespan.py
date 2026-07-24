@@ -22,6 +22,9 @@ async def test_lifespan_retains_and_cancels_reference_job(monkeypatch):
     async def bootstrap_admin(_session) -> bool:
         return False
 
+    async def ensure_groups(_session) -> int:
+        return 0
+
     async def reference_jobs() -> None:
         started.set()
         try:
@@ -41,6 +44,7 @@ async def test_lifespan_retains_and_cancels_reference_job(monkeypatch):
         yield object()
 
     monkeypatch.setattr(main_module, "create_tables", create_tables)
+    monkeypatch.setattr(main_module, "ensure_default_access_groups", ensure_groups)
     monkeypatch.setattr(main_module, "bootstrap_admin_if_configured", bootstrap_admin)
     monkeypatch.setattr(main_module, "async_session_factory", session_factory)
     monkeypatch.setattr(main_module, "_startup_reference_jobs", reference_jobs)

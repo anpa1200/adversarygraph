@@ -9,9 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.pipeline import AuditEvent
-from app.models.auth import AuthSession, UserAccount
+from app.models.auth import AccessGroup, AuthSession, UserAccessGroup, UserAccount
 from app.services.auth import (
+    ALL_MODULES,
     ALL_PERMISSIONS,
+    DEFAULT_ACCESS_GROUPS,
+    MODULE_CATALOG,
     SESSION_COOKIE,
     TeamUser,
     audit_event,
@@ -19,19 +22,30 @@ from app.services.auth import (
     bootstrap_admin_if_configured,
     create_session,
     current_user,
+    effective_team_permissions,
+    ensure_group_management_continuity,
+    group_modules,
+    group_permissions,
     hash_password,
     hash_token,
+    load_user_groups,
+    module_catalog_out,
     new_totp_secret,
+    normalize_group_slug,
     normalize_identity_name,
+    normalize_modules,
     normalize_role,
     normalize_permissions,
     password_policy,
+    replace_user_groups,
     revoke_session,
     revoke_user_sessions,
     ensure_user_management_continuity,
+    require_module_any_permission,
+    require_module_permission,
     require_permission,
-    require_any_permission,
     user_count,
+    user_to_team_user,
     validate_password_policy,
     validate_user_grant_scope,
     validate_user_target_scope,
@@ -40,9 +54,9 @@ from app.services.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-manage_users = require_permission("manage_users")
-manage_auth = require_permission("manage_auth")
-manage_user_directory = require_any_permission("manage_users", "manage_auth")
+manage_users = require_module_permission("admin", "manage_users")
+manage_auth = require_module_permission("admin", "manage_auth")
+manage_user_directory = require_module_any_permission("admin", "manage_users", "manage_auth")
 
 
 class LoginBody(BaseModel):
@@ -57,6 +71,7 @@ class UserCreateBody(BaseModel):
     display_name: str = Field(default="", max_length=255)
     role: str = Field(default="viewer", max_length=30)
     permissions: list[str] = Field(default_factory=list, max_length=50)
+    group_ids: list[UUID] = Field(default_factory=list, max_length=50)
     enabled: bool = True
 
 
@@ -64,6 +79,24 @@ class UserUpdateBody(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
     role: str | None = Field(default=None, max_length=30)
     permissions: list[str] | None = Field(default=None, max_length=50)
+    group_ids: list[UUID] | None = Field(default=None, max_length=50)
+    enabled: bool | None = None
+
+
+class GroupCreateBody(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=80)
+    name: str = Field(..., min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    permissions: list[str] = Field(default_factory=list, max_length=50)
+    modules: list[str] = Field(default_factory=list, max_length=100)
+    enabled: bool = True
+
+
+class GroupUpdateBody(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    permissions: list[str] | None = Field(default=None, max_length=50)
+    modules: list[str] | None = Field(default=None, max_length=100)
     enabled: bool | None = None
 
 
@@ -75,14 +108,27 @@ class MfaVerifyBody(BaseModel):
     code: str = Field(..., min_length=6, max_length=12)
 
 
-def user_out(user: UserAccount) -> dict:
+async def user_out(db: AsyncSession, user: UserAccount) -> dict:
+    assigned_groups = await load_user_groups(db, user.id, include_disabled=True)
+    principal = user_to_team_user(user, groups=assigned_groups or None)
     return {
         "id": str(user.id),
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
         "permissions": user.permissions or [],
-        "effective_permissions": sorted(ROLE_PERMISSIONS.get(user.role, set()) | set(user.permissions or [])),
+        "effective_permissions": principal.permissions or [],
+        "effective_modules": principal.modules or [],
+        "group_ids": [str(group.id) for group in assigned_groups],
+        "groups": [
+            {
+                "id": str(group.id),
+                "slug": group.slug,
+                "name": group.name,
+                "enabled": group.enabled,
+            }
+            for group in assigned_groups
+        ],
         "auth_provider": user.auth_provider,
         "external_subject": user.external_subject,
         "mfa_enabled": user.mfa_enabled,
@@ -91,6 +137,40 @@ def user_out(user: UserAccount) -> dict:
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
+
+
+async def group_out(db: AsyncSession, group: AccessGroup) -> dict:
+    memberships = await db.execute(
+        select(UserAccessGroup).where(UserAccessGroup.group_id == group.id)
+    )
+    return {
+        "id": str(group.id),
+        "slug": group.slug,
+        "name": group.name,
+        "description": group.description,
+        "permissions": normalize_permissions(list(group.permissions or [])),
+        "modules": normalize_modules(list(group.modules or [])),
+        "system": group.system,
+        "enabled": group.enabled,
+        "member_count": len(memberships.scalars().all()),
+        "created_by": group.created_by,
+        "created_at": group.created_at,
+        "updated_at": group.updated_at,
+    }
+
+
+def validate_group_grant_scope(
+    actor: TeamUser,
+    *,
+    permissions: list[str],
+    modules: list[str],
+) -> None:
+    if "admin" in actor.roles:
+        return
+    if not set(permissions).issubset(effective_team_permissions(actor)):
+        raise HTTPException(403, "Cannot grant group permissions outside your own authority")
+    if not set(modules).issubset(set(actor.modules or [])):
+        raise HTTPException(403, "Cannot grant group modules outside your own module access")
 
 
 async def _lock_user(db: AsyncSession, user_id: UUID) -> UserAccount | None:
@@ -141,6 +221,7 @@ async def status(db: AsyncSession = Depends(get_session)):
         "roles": sorted(ROLE_PERMISSIONS.keys()),
         "permissions": sorted(ALL_PERMISSIONS),
         "role_permissions": {role: sorted(perms) for role, perms in ROLE_PERMISSIONS.items()},
+        "module_catalog": module_catalog_out(),
         "password_policy": password_policy(),
     }
 
@@ -174,7 +255,7 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
     await db.commit()
     await db.refresh(user)
     set_session_cookie(response, token)
-    return {"token": token, "expires_at": session.expires_at, "user": user_out(user)}
+    return {"token": token, "expires_at": session.expires_at, "user": await user_out(db, user)}
 
 
 @router.post("/logout")
@@ -198,10 +279,186 @@ async def me(user: TeamUser = Depends(current_user)):
         "name": user.name,
         "roles": user.roles,
         "permissions": user.permissions or [],
+        "modules": user.modules or [],
+        "groups": user.groups or [],
         "auth_enabled": settings.auth_enabled,
         "user_id": user.user_id,
         "auth_source": user.auth_source,
     }
+
+
+async def _load_requested_groups(
+    db: AsyncSession,
+    group_ids: list[UUID],
+    actor: TeamUser,
+) -> list[AccessGroup]:
+    requested_ids = list(dict.fromkeys(group_ids))
+    if not requested_ids:
+        return []
+    rows = await db.execute(select(AccessGroup).where(AccessGroup.id.in_(requested_ids)))
+    groups = list(rows.scalars().all())
+    found = {group.id for group in groups}
+    missing = [str(group_id) for group_id in requested_ids if group_id not in found]
+    if missing:
+        raise HTTPException(422, f"Unknown access groups: {', '.join(missing)}")
+    disabled = [group.name for group in groups if not group.enabled]
+    if disabled:
+        raise HTTPException(422, f"Disabled access groups cannot be assigned: {', '.join(disabled)}")
+    validate_group_grant_scope(
+        actor,
+        permissions=group_permissions(groups),
+        modules=group_modules(groups),
+    )
+    return groups
+
+
+async def _validate_target_group_scope(
+    db: AsyncSession,
+    actor: TeamUser,
+    target: UserAccount,
+) -> list[AccessGroup]:
+    groups = await load_user_groups(db, target.id, include_disabled=True)
+    validate_group_grant_scope(
+        actor,
+        permissions=group_permissions([group for group in groups if group.enabled]),
+        modules=group_modules([group for group in groups if group.enabled]),
+    )
+    return groups
+
+
+@router.get("/groups")
+async def list_groups(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(manage_user_directory),
+):
+    rows = await db.execute(select(AccessGroup).order_by(AccessGroup.system.desc(), AccessGroup.name.asc()))
+    return [await group_out(db, group) for group in rows.scalars().all()]
+
+
+@router.post("/groups", status_code=201)
+async def create_group(
+    body: GroupCreateBody,
+    db: AsyncSession = Depends(get_session),
+    current: TeamUser = Depends(manage_users),
+):
+    slug = normalize_group_slug(body.slug)
+    if slug in DEFAULT_ACCESS_GROUPS:
+        raise HTTPException(
+            409,
+            "Built-in SOC group slugs are reserved and created by the platform",
+        )
+    name = body.name.strip()
+    permissions = normalize_permissions(body.permissions)
+    modules = normalize_modules(body.modules)
+    validate_group_grant_scope(current, permissions=permissions, modules=modules)
+    existing = await db.scalar(select(AccessGroup).where(AccessGroup.slug == slug))
+    if existing:
+        raise HTTPException(409, "Access-group slug already exists")
+    group = AccessGroup(
+        slug=slug,
+        name=name,
+        description=body.description.strip(),
+        permissions=permissions,
+        modules=modules,
+        system=False,
+        enabled=body.enabled,
+        created_by=current.name,
+    )
+    db.add(group)
+    await db.flush()
+    await audit_event(
+        db,
+        current.name,
+        "auth.group_create",
+        "access_group",
+        str(group.id),
+        {"slug": group.slug, "permissions": permissions, "modules": modules},
+    )
+    await db.commit()
+    await db.refresh(group)
+    return await group_out(db, group)
+
+
+@router.patch("/groups/{group_id}")
+async def update_group(
+    group_id: UUID,
+    body: GroupUpdateBody,
+    db: AsyncSession = Depends(get_session),
+    current: TeamUser = Depends(manage_users),
+):
+    group = await db.get(AccessGroup, group_id)
+    if not group:
+        raise HTTPException(404, "Access group not found")
+    if group.system and "admin" not in current.roles:
+        raise HTTPException(403, "Only an administrator can change built-in SOC groups")
+    permissions = normalize_permissions(body.permissions) if body.permissions is not None else normalize_permissions(group.permissions)
+    modules = normalize_modules(body.modules) if body.modules is not None else normalize_modules(group.modules)
+    proposed_enabled = body.enabled if body.enabled is not None else group.enabled
+    if group.slug == "platform-administrators" and (
+        set(permissions) != ALL_PERMISSIONS
+        or set(modules) != ALL_MODULES
+        or not proposed_enabled
+    ):
+        raise HTTPException(
+            422,
+            "The Platform Administrators group must remain enabled with every module and permission",
+        )
+    validate_group_grant_scope(current, permissions=permissions, modules=modules)
+    await ensure_group_management_continuity(
+        db,
+        group,
+        proposed_permissions=permissions,
+        proposed_modules=modules,
+        proposed_enabled=proposed_enabled,
+    )
+    if body.name is not None:
+        group.name = body.name.strip()
+    if body.description is not None:
+        group.description = body.description.strip()
+    group.permissions = permissions
+    group.modules = modules
+    if body.enabled is not None:
+        group.enabled = body.enabled
+    await audit_event(
+        db,
+        current.name,
+        "auth.group_update",
+        "access_group",
+        str(group.id),
+        {"slug": group.slug, "enabled": group.enabled, "permissions": permissions, "modules": modules},
+    )
+    await db.commit()
+    await db.refresh(group)
+    return await group_out(db, group)
+
+
+@router.delete("/groups/{group_id}", status_code=204)
+async def delete_group(
+    group_id: UUID,
+    db: AsyncSession = Depends(get_session),
+    current: TeamUser = Depends(manage_users),
+):
+    group = await db.get(AccessGroup, group_id)
+    if not group:
+        raise HTTPException(404, "Access group not found")
+    if group.system:
+        raise HTTPException(409, "Built-in SOC groups cannot be deleted; disable them instead")
+    memberships = await db.execute(
+        select(UserAccessGroup).where(UserAccessGroup.group_id == group.id)
+    )
+    if memberships.scalars().all():
+        raise HTTPException(409, "Remove all users from this group before deleting it")
+    await audit_event(
+        db,
+        current.name,
+        "auth.group_delete",
+        "access_group",
+        str(group.id),
+        {"slug": group.slug},
+    )
+    await db.delete(group)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/users")
@@ -210,7 +467,7 @@ async def list_users(
     _: TeamUser = Depends(manage_user_directory),
 ):
     rows = await db.execute(select(UserAccount).order_by(UserAccount.created_at.asc()))
-    return [user_out(row) for row in rows.scalars().all()]
+    return [await user_out(db, row) for row in rows.scalars().all()]
 
 
 @router.post("/users", status_code=201)
@@ -219,6 +476,7 @@ async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_sessi
     role = normalize_role(body.role)
     permissions = normalize_permissions(body.permissions)
     validate_user_grant_scope(current, role=role, permissions=permissions)
+    requested_groups = await _load_requested_groups(db, body.group_ids, current)
     validate_password_policy(body.password)
     existing = await db.scalar(select(UserAccount).where(UserAccount.username == username))
     if existing:
@@ -233,10 +491,21 @@ async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_sessi
     )
     db.add(user)
     await db.flush()
-    await audit_event(db, current.name, "auth.user_create", "user_account", str(user.id), {"username": user.username, "role": user.role, "enabled": user.enabled})
+    await replace_user_groups(
+        db,
+        user.id,
+        [group.id for group in requested_groups],
+        assigned_by=current.name,
+    )
+    await audit_event(db, current.name, "auth.user_create", "user_account", str(user.id), {
+        "username": user.username,
+        "role": user.role,
+        "enabled": user.enabled,
+        "groups": [group.slug for group in requested_groups],
+    })
     await db.commit()
     await db.refresh(user)
-    return user_out(user)
+    return await user_out(db, user)
 
 
 @router.patch("/users/{user_id}")
@@ -245,8 +514,9 @@ async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = De
     if not user:
         raise HTTPException(404, "User not found")
     validate_user_target_scope(current, user)
+    existing_groups = await _validate_target_group_scope(db, current, user)
     if str(user.id) == current.user_id and (
-        body.role is not None or body.permissions is not None
+        body.role is not None or body.permissions is not None or body.group_ids is not None
     ):
         raise HTTPException(
             403,
@@ -259,6 +529,11 @@ async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = De
         else list(user.permissions or [])
     )
     proposed_enabled = body.enabled if body.enabled is not None else user.enabled
+    requested_groups = (
+        await _load_requested_groups(db, body.group_ids, current)
+        if body.group_ids is not None
+        else await load_user_groups(db, user.id, include_disabled=True)
+    )
     validate_user_grant_scope(
         current,
         role=proposed_role,
@@ -270,19 +545,51 @@ async def update_user(user_id: UUID, body: UserUpdateBody, db: AsyncSession = De
         proposed_role=proposed_role,
         proposed_permissions=proposed_permissions,
         proposed_enabled=proposed_enabled,
+        proposed_group_permissions=group_permissions([
+            group for group in requested_groups if group.enabled
+        ]),
+        proposed_group_modules=(
+            group_modules([group for group in requested_groups if group.enabled])
+            if requested_groups
+            else None
+        ),
     )
     user.role = proposed_role
     user.permissions = proposed_permissions
+    if body.group_ids is not None:
+        await replace_user_groups(
+            db,
+            user.id,
+            [group.id for group in requested_groups],
+            assigned_by=current.name,
+        )
+        await audit_event(
+            db,
+            current.name,
+            "auth.user_groups_update",
+            "user_account",
+            str(user.id),
+            {
+                "username": user.username,
+                "before": sorted(group.slug for group in existing_groups),
+                "after": sorted(group.slug for group in requested_groups),
+            },
+        )
     if body.display_name is not None:
         user.display_name = body.display_name.strip()
     if body.enabled is not None:
         if not body.enabled and str(user.id) == current.user_id:
             raise HTTPException(400, "You cannot disable your own account")
         user.enabled = body.enabled
-    await audit_event(db, current.name, "auth.user_update", "user_account", str(user.id), {"username": user.username, "role": user.role, "enabled": user.enabled})
+    await audit_event(db, current.name, "auth.user_update", "user_account", str(user.id), {
+        "username": user.username,
+        "role": user.role,
+        "enabled": user.enabled,
+        "groups": [group.slug for group in requested_groups],
+    })
     await db.commit()
     await db.refresh(user)
-    return user_out(user)
+    return await user_out(db, user)
 
 
 @router.post("/users/{user_id}/password")
@@ -291,6 +598,7 @@ async def set_password(user_id: UUID, body: PasswordBody, db: AsyncSession = Dep
     if not user:
         raise HTTPException(404, "User not found")
     validate_user_target_scope(_, user)
+    await _validate_target_group_scope(db, _, user)
     validate_password_policy(body.password)
     user.password_hash = hash_password(body.password)
     rows = await db.execute(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)))
@@ -308,6 +616,7 @@ async def disable_user(user_id: UUID, db: AsyncSession = Depends(get_session), c
     if not user:
         raise HTTPException(404, "User not found")
     validate_user_target_scope(current, user)
+    current_groups = await _validate_target_group_scope(db, current, user)
     if str(user.id) == current.user_id:
         raise HTTPException(400, "You cannot disable your own account")
     await ensure_user_management_continuity(
@@ -316,6 +625,14 @@ async def disable_user(user_id: UUID, db: AsyncSession = Depends(get_session), c
         proposed_role=user.role,
         proposed_permissions=list(user.permissions or []),
         proposed_enabled=False,
+        proposed_group_permissions=group_permissions([
+            group for group in current_groups if group.enabled
+        ]),
+        proposed_group_modules=(
+            group_modules([group for group in current_groups if group.enabled])
+            if current_groups
+            else None
+        ),
     )
     user.enabled = False
     rows = await db.execute(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)))
@@ -376,6 +693,7 @@ async def revoke_user_session_set(user_id: UUID, db: AsyncSession = Depends(get_
     if not user:
         raise HTTPException(404, "User not found")
     validate_user_target_scope(current, user)
+    await _validate_target_group_scope(db, current, user)
     revoked = await revoke_user_sessions(db, user_id)
     await audit_event(db, current.name, "auth.sessions_revoke_user", "user_account", str(user_id), {"username": user.username, "revoked": revoked})
     await db.commit()
@@ -429,6 +747,7 @@ async def disable_user_mfa(user_id: UUID, db: AsyncSession = Depends(get_session
     if not user:
         raise HTTPException(404, "User not found")
     validate_user_target_scope(current, user)
+    await _validate_target_group_scope(db, current, user)
     user.mfa_enabled = False
     user.mfa_secret = ""
     await audit_event(db, current.name, "auth.mfa_disable", "user_account", str(user.id), {"username": user.username})

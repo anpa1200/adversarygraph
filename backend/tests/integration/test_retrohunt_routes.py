@@ -38,6 +38,7 @@ async def test_retrohunt_collection_status_requires_manage_feeds(
             name="feed-viewer",
             roles=["viewer"],
             permissions=["read"],
+            modules=["retrohunt"],
         )
 
     previous = app.dependency_overrides.get(current_user)

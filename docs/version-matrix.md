@@ -6,31 +6,30 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v6.0.0 |
-| Release date | 2026-07-17 |
-| Theme | Operational evidence and controlled self-hosted production readiness |
-| Status | Stable for controlled self-hosted deployments |
+| Version | v6.1.0 |
+| Release date | 2026-07-24 |
+| Theme | Governed threat operations, asset exposure assessment, and SOC access control |
+| Status | Source release prepared; immutable tag and artifacts require the successful tag workflow |
 
-The development line may contain the post-v6 changes recorded under
-[Unreleased](../CHANGELOG.md). In this file, “current release” and the feature
-gate labels refer to the immutable `v6.0.0` tag unless a row explicitly says
-otherwise.
+The source release is v6.1.0. The latest previously published immutable tag is
+v6.0.0 until the v6.1.0 tag workflow completes. Historical v6.0 screenshots and
+artifact limitations remain scoped to that tag.
 
-### Post-v6 Unreleased Capability
+### v6.1 Capability Promotion
 
-The checked-out development revision adds unified hybrid RAG, a governed
-Navigator intelligence assistant, private business profiles, pgvector-backed
-semantic retrieval, bounded relationship expansion, background reconciliation
-and retention, and a local stdio MCP server. These capabilities are documented
-in [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) and the
-[Unreleased changelog](../CHANGELOG.md). They are **not** part of the immutable
-`v6.0.0` tag and require a new successfully gated semantic release before they
-can be represented as a published release feature.
+v6.1.0 promotes the governed Threat Hunting and Query Library workflows,
+unified hybrid RAG, Navigator intelligence assistant, local stdio MCP server,
+inventory-bound asset exposure assessment, persistent SOC access groups, and
+module-level authorization into the source release. They are documented in
+[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md), the
+[v6.1.0 release notes](release-notes/v6.1.0.md), and the changelog. They are not
+retroactively attributed to the immutable v6.0.0 tag.
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v6.1.0 | Governed Threat Operations and SOC Access Control | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization, and post-v6 platform hardening |
 | v6.0.0 | Operational Evidence and Production Readiness | Reproducible release gate, corrected v5 history, tagged screenshot evidence, local case studies, deployment go/no-go criteria, version-derived UI metadata, and reviewer handoff material |
 | v5.9.1 | JA3/JA4+ Network Fingerprint IOC Workflows | JA3/JA3S/JA4/JA4S/JA4H/JA4L/JA4LS/JA4X/JA4SSH/JA4T IOC types, report-text extraction, normalized import tagging, IOC Library filtering, IOC Detail context, IOC node detail support, and IOC Investigation pivots |
 | v5.9.0 | EMB3D and Threat Radar Asset Workflows | EMB3D API/service/UI/documentation, unified product/component/dependency/asset modeling, full asset-inventory import templates, product-security sample datasets, and Threat Radar asset review pages |
@@ -53,7 +52,7 @@ can be represented as a published release feature.
 
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
 For a consolidated account of every v5 release, see the [v5 overview](v5-overview.md).
-For the current release narrative, see [v6.0.0 release notes](release-notes/v6.0.0.md).
+For the current release narrative, see [v6.1.0 release notes](release-notes/v6.1.0.md).
 
 ## Feature Gate Legend
 

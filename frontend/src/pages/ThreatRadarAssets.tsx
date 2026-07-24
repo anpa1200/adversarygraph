@@ -10,6 +10,7 @@ import {
   type ThreatHuntAIProviderId,
   type ThreatSpaceAsset,
 } from '@/api/client';
+import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type AlertRow = Record<string, unknown> & {
   id?: string;
@@ -29,6 +30,29 @@ type AlertRow = Record<string, unknown> & {
   last_seen?: string;
 };
 
+type AssetDraft = {
+  asset_id: string;
+  name: string;
+  asset_type: string;
+  environment: string;
+  owner: string;
+  criticality: string;
+  exposure: string;
+  products: string;
+  components: string;
+  technologies: string;
+  ip_addresses: string;
+  domains: string;
+  ports: string;
+  tags: string;
+};
+
+type AssetEditorState = {
+  mode: 'create' | 'edit';
+  asset: ThreatSpaceAsset | null;
+  draft: AssetDraft;
+};
+
 export function ThreatRadarAssets() {
   const route = useParams<{ spaceId?: string; assetId?: string }>();
   if (route.spaceId && route.assetId) {
@@ -38,12 +62,15 @@ export function ThreatRadarAssets() {
 }
 
 function ThreatRadarAssetRegistry() {
+  const canManage = useHasPermission('manage_intel');
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const selectedSpaceId = params.get('space_id') || '';
   const selectedAssetId = params.get('asset_id') || '';
   const [search, setSearch] = useState('');
   const [criticalityFilter, setCriticalityFilter] = useState('');
   const [exposureFilter, setExposureFilter] = useState('');
+  const [editor, setEditor] = useState<AssetEditorState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const spaces = useQuery({ queryKey: ['threat-radar-spaces'], queryFn: threatRadarApi.spaces });
   const firstSpaceId = selectedSpaceId || spaces.data?.[0]?.id || '';
@@ -77,10 +104,63 @@ function ThreatRadarAssetRegistry() {
     [alerts.data, selectedAsset],
   );
 
+  const refreshInventory = (spaceId: string, assetId?: string) => {
+    queryClient.invalidateQueries({ queryKey: ['threat-radar-spaces'] });
+    queryClient.invalidateQueries({ queryKey: ['threat-radar-space', spaceId] });
+    queryClient.invalidateQueries({ queryKey: ['threat-radar-space-assets', spaceId] });
+    queryClient.invalidateQueries({ queryKey: ['threat-radar-space-metrics'] });
+    queryClient.invalidateQueries({ queryKey: ['asset-registry-assets'] });
+    queryClient.invalidateQueries({ queryKey: ['asset-intel-matches'] });
+    if (assetId) {
+      queryClient.invalidateQueries({ queryKey: ['threat-radar-asset-intelligence', spaceId, assetId] });
+    }
+  };
+  const saveAsset = useMutation({
+    mutationFn: async () => {
+      if (!editor || !firstSpaceId) throw new Error('Select a company space before saving an asset.');
+      const payload = assetDraftPayload(editor.draft, editor.asset);
+      return editor.mode === 'edit' && editor.asset
+        ? threatRadarApi.updateSpaceAsset(firstSpaceId, editor.asset.id, payload)
+        : threatRadarApi.createSpaceAsset(firstSpaceId, payload);
+    },
+    onSuccess: asset => {
+      refreshInventory(asset.space_id, asset.id);
+      const next = new URLSearchParams(params);
+      next.set('space_id', asset.space_id);
+      next.set('asset_id', asset.id);
+      next.delete('edit');
+      setParams(next, { replace: true });
+      setEditor(null);
+    },
+  });
+
+  const openCreate = () => {
+    if (!firstSpaceId) return;
+    saveAsset.reset();
+    setEditor({ mode: 'create', asset: null, draft: emptyAssetDraft() });
+  };
+  const openEdit = (asset: ThreatSpaceAsset) => {
+    saveAsset.reset();
+    setEditor({ mode: 'edit', asset, draft: assetToDraft(asset) });
+  };
+
+  useEffect(() => {
+    if (params.get('edit') !== '1' || !selectedAsset) return;
+    openEdit(selectedAsset);
+    const next = new URLSearchParams(params);
+    next.delete('edit');
+    setParams(next, { replace: true });
+  // Opening the editor is intentionally driven only by the URL request and selected record.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, selectedAsset?.id, setParams]);
+
   const setSpace = (spaceId: string) => {
     const next = new URLSearchParams(params);
-    next.set('space_id', spaceId);
+    if (spaceId) next.set('space_id', spaceId);
+    else next.delete('space_id');
     next.delete('asset_id');
+    next.delete('edit');
+    setEditor(null);
     setParams(next);
   };
 
@@ -102,6 +182,21 @@ function ThreatRadarAssetRegistry() {
             </div>
           </section>
 
+          {editor && (
+            <AssetEditor
+              state={editor}
+              setState={setEditor}
+              spaceName={detail.data?.space.name || 'company space'}
+              pending={saveAsset.isPending}
+              error={saveAsset.error}
+              onCancel={() => {
+                saveAsset.reset();
+                setEditor(null);
+              }}
+              onSave={() => saveAsset.mutate()}
+            />
+          )}
+
           <section className="grid gap-4 lg:grid-cols-[minmax(360px,520px)_minmax(0,1fr)]">
             <div className="space-y-4">
               <Panel title="Company Space">
@@ -120,9 +215,26 @@ function ThreatRadarAssetRegistry() {
                       <p className="mt-2">{detail.data.space.owner || 'No owner'} · {detail.data.space.sector || 'no sector'} · {detail.data.space.region || 'no region'}</p>
                     </div>
                   )}
-                  <a className="secondary-action flex min-h-9 items-center justify-center text-xs" href={`/asset-surface?space_id=${encodeURIComponent(firstSpaceId)}`}>
-                    Upload more inventory files
-                  </a>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className="secondary-action min-h-9 text-xs disabled:opacity-40"
+                      disabled={!canManage || !firstSpaceId}
+                      onClick={openCreate}
+                    >
+                      Add asset manually
+                    </button>
+                    <a
+                      aria-disabled={!firstSpaceId}
+                      className={`secondary-action flex min-h-9 items-center justify-center text-xs ${!firstSpaceId ? 'pointer-events-none opacity-40' : ''}`}
+                      href={firstSpaceId ? `/asset-surface?space_id=${encodeURIComponent(firstSpaceId)}` : '#'}
+                    >
+                      Upload &amp; analyze inventory
+                    </a>
+                  </div>
+                  <p className="text-[11px] leading-5 text-gray-500">
+                    Manual edits update one normalized record. Upload and analysis can add or refresh many assets while preserving stable inventory IDs.
+                  </p>
                 </div>
               </Panel>
 
@@ -172,14 +284,18 @@ function ThreatRadarAssetRegistry() {
                     {assets.map(asset => {
                       const context = buildAssetContext(asset, (alerts.data ?? []) as AlertRow[]);
                       return (
-                        <Link
+                        <article
                           key={asset.id}
-                          to={`/threat-radar/assets/${encodeURIComponent(asset.space_id)}/${encodeURIComponent(asset.id)}`}
-                          className={`block p-4 transition hover:bg-gray-900/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-mitre-accent ${selectedAsset?.id === asset.id ? 'bg-mitre-accent/10' : ''}`}
+                          className={`p-4 transition hover:bg-gray-900/70 ${selectedAsset?.id === asset.id ? 'bg-mitre-accent/10' : ''}`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <h3 className="break-words font-semibold text-mitre-accent">{asset.name}</h3>
+                              <Link
+                                to={`/threat-radar/assets/${encodeURIComponent(asset.space_id)}/${encodeURIComponent(asset.id)}`}
+                                className="break-words font-semibold text-mitre-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-mitre-accent"
+                              >
+                                {asset.name}
+                              </Link>
                               <p className="mt-1 break-all text-xs text-gray-500">{asset.asset_id}</p>
                             </div>
                             <span className={`shrink-0 rounded border px-2 py-1 text-[11px] ${context.alerts.length ? 'border-red-500/40 bg-red-950/30 text-red-100' : 'border-gray-700 text-gray-400'}`}>
@@ -195,7 +311,17 @@ function ThreatRadarAssetRegistry() {
                           <p className="mt-3 line-clamp-2 text-xs leading-5 text-gray-500">
                             {[...asset.products, ...asset.technologies, ...asset.domains, ...asset.ip_addresses].slice(0, 8).join(' · ') || 'No product or network identity recorded.'}
                           </p>
-                        </Link>
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                            <Link className="text-mitre-accent hover:underline" to={`/threat-radar/assets/${encodeURIComponent(asset.space_id)}/${encodeURIComponent(asset.id)}`}>
+                              Open intelligence
+                            </Link>
+                            {canManage && (
+                              <button type="button" className="text-gray-400 hover:text-white hover:underline" onClick={() => openEdit(asset)}>
+                                Edit asset
+                              </button>
+                            )}
+                          </div>
+                        </article>
                       );
                     })}
                   </div>
@@ -214,13 +340,243 @@ function ThreatRadarAssetRegistry() {
               </section>
 
               {detail.isLoading && <Panel title="Loading"><p className="p-4 text-sm text-gray-500">Loading parsed inventory...</p></Panel>}
-              {!detail.isLoading && selectedAsset && <AssetDetail asset={selectedAsset} context={selectedAssetContext} alertsLoading={alerts.isLoading} />}
+              {!detail.isLoading && selectedAsset && (
+                <AssetDetail
+                  asset={selectedAsset}
+                  context={selectedAssetContext}
+                  alertsLoading={alerts.isLoading}
+                  onEdit={canManage ? () => openEdit(selectedAsset) : undefined}
+                />
+              )}
             </div>
           </section>
         </div>
       </div>
     </div>
   );
+}
+
+function AssetEditor({
+  state,
+  setState,
+  spaceName,
+  pending,
+  error,
+  onCancel,
+  onSave,
+}: {
+  state: AssetEditorState;
+  setState: React.Dispatch<React.SetStateAction<AssetEditorState | null>>;
+  spaceName: string;
+  pending: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const update = (field: keyof AssetDraft, value: string) => {
+    setState(current => current ? {
+      ...current,
+      draft: { ...current.draft, [field]: value },
+    } : current);
+  };
+  const title = state.mode === 'edit' ? `Edit ${state.asset?.name || 'asset'}` : 'Add company asset';
+  return (
+    <section id="company-asset-editor" aria-labelledby="company-asset-editor-title" className="rounded-lg border border-mitre-accent/50 bg-gray-900/80">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-800 px-4 py-3">
+        <div>
+          <h2 id="company-asset-editor-title" className="font-semibold text-white">{title}</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Save one normalized inventory record in {spaceName}. Lists accept commas, semicolons, or one value per line.
+          </p>
+        </div>
+        <button type="button" className="secondary-action min-h-9 px-3 text-xs" onClick={onCancel}>Close</button>
+      </div>
+      <form
+        className="space-y-4 p-4"
+        onSubmit={event => {
+          event.preventDefault();
+          onSave();
+        }}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <AssetField label="Inventory ID" hint={state.mode === 'edit' ? 'Stable identity; create a new asset to change it.' : 'Leave blank to generate one.'}>
+            <input
+              className="field mt-1 w-full font-mono"
+              value={state.draft.asset_id}
+              readOnly={state.mode === 'edit'}
+              maxLength={255}
+              onChange={event => update('asset_id', event.target.value)}
+            />
+          </AssetField>
+          <AssetField label="Name" required>
+            <input className="field mt-1 w-full" required maxLength={255} value={state.draft.name} onChange={event => update('name', event.target.value)} />
+          </AssetField>
+          <AssetField label="Asset type">
+            <input className="field mt-1 w-full" maxLength={80} value={state.draft.asset_type} onChange={event => update('asset_type', event.target.value)} placeholder="web-app, server, identity…" />
+          </AssetField>
+          <AssetField label="Environment">
+            <input className="field mt-1 w-full" maxLength={80} value={state.draft.environment} onChange={event => update('environment', event.target.value)} placeholder="prod, stage, dev, lab…" />
+          </AssetField>
+          <AssetField label="Owner">
+            <input className="field mt-1 w-full" maxLength={255} value={state.draft.owner} onChange={event => update('owner', event.target.value)} />
+          </AssetField>
+          <AssetField label="Criticality">
+            <select className="field mt-1 w-full" value={state.draft.criticality} onChange={event => update('criticality', event.target.value)}>
+              {['critical', 'high', 'medium', 'low', 'unknown'].map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </AssetField>
+          <AssetField label="Exposure">
+            <select className="field mt-1 w-full" value={state.draft.exposure} onChange={event => update('exposure', event.target.value)}>
+              {['internet', 'external', 'third-party', 'customer', 'internal', 'unknown'].map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </AssetField>
+          <AssetField label="Ports" hint="Stored as normalized inventory metadata.">
+            <input className="field mt-1 w-full font-mono" value={state.draft.ports} onChange={event => update('ports', event.target.value)} placeholder="80;443;8443" />
+          </AssetField>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <AssetListField label="IP addresses" value={state.draft.ip_addresses} onChange={value => update('ip_addresses', value)} placeholder="203.0.113.10" />
+          <AssetListField label="Domains / URLs" value={state.draft.domains} onChange={value => update('domains', value)} placeholder="portal.example.com" />
+          <AssetListField label="Products" value={state.draft.products} onChange={value => update('products', value)} placeholder="customer portal; nginx" />
+          <AssetListField label="Components" value={state.draft.components} onChange={value => update('components', value)} placeholder="admin UI; authentication service" />
+          <AssetListField label="Technologies" value={state.draft.technologies} onChange={value => update('technologies', value)} placeholder="nginx; nodejs; postgresql" />
+          <AssetListField label="Tags" value={state.draft.tags} onChange={value => update('tags', value)} placeholder="customer-data; tier-1; telemetry:waf" />
+        </div>
+
+        {Boolean(error) && <div role="alert" className="rounded border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-100">{apiErrorMessage(error)}</div>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className="secondary-action min-h-10 px-4" disabled={pending} onClick={onCancel}>Cancel</button>
+          <button type="submit" className="primary-action min-h-10 px-4 disabled:opacity-40" disabled={pending || !state.draft.name.trim()}>
+            {pending ? 'Saving asset…' : state.mode === 'edit' ? 'Save asset changes' : 'Add asset to company space'}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function AssetField({
+  label,
+  hint = '',
+  required = false,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block text-xs text-gray-400">
+      <span>{label}{required ? ' *' : ''}</span>
+      {children}
+      {hint && <span className="mt-1 block text-[10px] leading-4 text-gray-600">{hint}</span>}
+    </label>
+  );
+}
+
+function AssetListField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="block text-xs text-gray-400">
+      {label}
+      <textarea
+        className="field mt-1 min-h-24 w-full resize-y font-mono leading-5"
+        rows={3}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function emptyAssetDraft(): AssetDraft {
+  return {
+    asset_id: '',
+    name: '',
+    asset_type: 'asset',
+    environment: 'unknown',
+    owner: '',
+    criticality: 'medium',
+    exposure: 'unknown',
+    products: '',
+    components: '',
+    technologies: '',
+    ip_addresses: '',
+    domains: '',
+    ports: '',
+    tags: '',
+  };
+}
+
+function assetToDraft(asset: ThreatSpaceAsset): AssetDraft {
+  return {
+    asset_id: asset.asset_id,
+    name: asset.name,
+    asset_type: asset.asset_type,
+    environment: asset.environment,
+    owner: asset.owner,
+    criticality: asset.criticality,
+    exposure: asset.exposure,
+    products: asset.products.join('\n'),
+    components: asset.components.join('\n'),
+    technologies: asset.technologies.join('\n'),
+    ip_addresses: asset.ip_addresses.join('\n'),
+    domains: asset.domains.join('\n'),
+    ports: metadataList(asset.metadata.ports).join('\n'),
+    tags: asset.tags.join('\n'),
+  };
+}
+
+function assetDraftPayload(draft: AssetDraft, existing: ThreatSpaceAsset | null): Partial<ThreatSpaceAsset> & { name: string } {
+  const metadata = { ...(existing?.metadata ?? {}) };
+  const ports = parseList(draft.ports)
+    .map(value => Number.parseInt(value, 10))
+    .filter(value => Number.isInteger(value) && value >= 1 && value <= 65535);
+  if (ports.length) metadata.ports = Array.from(new Set(ports));
+  else delete metadata.ports;
+  return {
+    asset_id: draft.asset_id.trim(),
+    name: draft.name.trim(),
+    asset_type: draft.asset_type.trim() || 'asset',
+    environment: draft.environment.trim() || 'unknown',
+    owner: draft.owner.trim(),
+    criticality: draft.criticality,
+    exposure: draft.exposure,
+    products: parseList(draft.products),
+    components: parseList(draft.components),
+    technologies: parseList(draft.technologies),
+    ip_addresses: parseList(draft.ip_addresses),
+    domains: parseList(draft.domains),
+    tags: parseList(draft.tags),
+    metadata,
+  };
+}
+
+function parseList(value: string): string[] {
+  return Array.from(new Set(
+    value
+      .split(/[\n,;]+/)
+      .map(item => item.trim())
+      .filter(Boolean),
+  ));
+}
+
+function metadataList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(item => String(item)).filter(Boolean);
+  if (value === null || value === undefined || value === '') return [];
+  return [String(value)];
 }
 
 function ThreatRadarAssetPage({ spaceId, assetId }: { spaceId: string; assetId: string }) {
@@ -286,8 +642,14 @@ function ServerAssetDetail({ intelligence }: { intelligence: ThreatAssetIntellig
             <p className="mt-4 max-w-4xl text-sm leading-6 text-gray-300">{describeAsset(asset)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <a
+              className="secondary-action inline-flex min-h-10 items-center px-4"
+              href={`/threat-radar/assets?space_id=${encodeURIComponent(asset.space_id)}&asset_id=${encodeURIComponent(asset.id)}&edit=1`}
+            >
+              Edit asset
+            </a>
             <a className="secondary-action inline-flex min-h-10 items-center px-4" href={`/asset-surface?space_id=${encodeURIComponent(asset.space_id)}`}>
-              Update inventory
+              Upload &amp; analyze inventory
             </a>
             <a className="secondary-action inline-flex min-h-10 items-center px-4" href="#active-assessment">
               Run assessment
@@ -479,11 +841,24 @@ function EmptyEvidence({ children }: { children: React.ReactNode }) {
   return <p className="p-4 text-sm text-gray-500">{children}</p>;
 }
 
-function AssetDetail({ asset, context, alertsLoading }: { asset: ThreatSpaceAsset; context: ReturnType<typeof buildAssetContext>; alertsLoading: boolean }) {
+function AssetDetail({
+  asset,
+  context,
+  alertsLoading,
+  onEdit,
+}: {
+  asset: ThreatSpaceAsset;
+  context: ReturnType<typeof buildAssetContext>;
+  alertsLoading: boolean;
+  onEdit?: () => void;
+}) {
   return (
     <Panel title={`Asset Intelligence: ${asset.name}`}>
       <div className="space-y-4 p-4 text-sm">
-        <p className="leading-6 text-gray-300">{describeAsset(asset)}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-4xl leading-6 text-gray-300">{describeAsset(asset)}</p>
+          {onEdit && <button type="button" className="secondary-action min-h-9 px-3 text-xs" onClick={onEdit}>Edit asset</button>}
+        </div>
         <section className="grid gap-3 md:grid-cols-3">
           <Fact label="Inventory ID" value={asset.asset_id} />
           <Fact label="Owner" value={asset.owner || '-'} />
@@ -554,6 +929,7 @@ function AssetDetail({ asset, context, alertsLoading }: { asset: ThreatSpaceAsse
 }
 
 function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
+  const canManageInventory = useHasPermission('manage_intel');
   const queryClient = useQueryClient();
   const targets = useMemo(
     () => [
@@ -568,6 +944,8 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
   const [target, setTarget] = useState(targets[0]?.value ?? '');
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   const [runNmap, setRunNmap] = useState(false);
+  const [runWebProbe, setRunWebProbe] = useState(false);
+  const [updateInventory, setUpdateInventory] = useState(true);
   const [aiAnalyze, setAiAnalyze] = useState(false);
   const [aiProvider, setAiProvider] = useState<ThreatHuntAIProviderId>('local');
   const [authorized, setAuthorized] = useState(false);
@@ -581,22 +959,29 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
     queryKey: ['threat-radar-asset-scans', asset.space_id, asset.id],
     queryFn: () => threatRadarApi.assetScans(asset.space_id, asset.id),
   });
+  const passiveProviders = providers.data?.passive ?? [];
+  const aiProviders = providers.data?.ai ?? [];
+  const nmapPolicy = providers.data?.nmap;
+  const webPolicy = providers.data?.web;
 
   useEffect(() => {
     if (!providers.data || providersInitialized.current) return;
     providersInitialized.current = true;
-    setSelectedProviders(providers.data.passive.filter(row => row.enabled).map(row => row.id));
-    const preferred = providers.data.ai.find(row => row.default && row.available)
-      ?? providers.data.ai.find(row => row.available);
+    setSelectedProviders((providers.data.passive ?? []).filter(row => row.enabled).map(row => row.id));
+    const providerOptions = providers.data.ai ?? [];
+    const preferred = providerOptions.find(row => row.default && row.available)
+      ?? providerOptions.find(row => row.available);
     if (preferred) setAiProvider(preferred.id);
   }, [providers.data]);
 
-  const selectedAi = providers.data?.ai.find(row => row.id === aiProvider);
+  const selectedAi = aiProviders.find(row => row.id === aiProvider);
   const scan = useMutation({
     mutationFn: () => threatRadarApi.createAssetScan(asset.space_id, asset.id, {
       target,
       providers: selectedProviders,
       run_nmap: runNmap,
+      run_web_probe: runWebProbe,
+      update_inventory: canManageInventory && updateInventory,
       ai_analyze: aiAnalyze,
       ai_provider: aiProvider,
       cloud_processing_acknowledged: Boolean(aiAnalyze && selectedAi?.remote && cloudAcknowledged),
@@ -611,6 +996,9 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
       queryClient.invalidateQueries({
         queryKey: ['threat-radar-asset-intelligence', asset.space_id, asset.id],
       });
+      queryClient.invalidateQueries({ queryKey: ['threat-radar-space', asset.space_id] });
+      queryClient.invalidateQueries({ queryKey: ['threat-radar-space-assets', asset.space_id] });
+      queryClient.invalidateQueries({ queryKey: ['asset-registry-assets'] });
       setAuthorized(false);
     },
   });
@@ -634,8 +1022,9 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
     <Panel title="Authorized Asset Exposure Assessment">
       <div className="space-y-4 p-4">
         <div className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100/80">
-          Targets are restricted to this inventory record. Passive OSINT runs first. The optional active stage uses an
-          unprivileged, bounded top-port Nmap service-discovery profile—no NSE vulnerability scripts or exploitation.
+          Targets are restricted to this inventory record. Passive Shodan, Censys, VirusTotal, URLScan, OTX,
+          GreyNoise, AbuseIPDB, and local intelligence run first when configured. Optional active checks use bounded
+          Nmap service discovery and root-only HTTP posture inspection—no NSE vulnerability scripts, crawling, or exploitation.
         </div>
 
         {!targets.length ? (
@@ -651,14 +1040,14 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
               </label>
               <div className="rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-400">
                 <b className="text-white">Assessment boundary</b>
-                <p className="mt-1">{providers.data?.nmap.boundary ?? 'Loading scanner policy…'}</p>
+                <p className="mt-1">{nmapPolicy?.boundary ?? 'Loading scanner policy…'}</p>
               </div>
             </div>
 
             <fieldset>
               <legend className="text-xs font-semibold uppercase tracking-wide text-gray-500">Passive evidence sources</legend>
               <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {(providers.data?.passive ?? []).map(provider => (
+                {passiveProviders.map(provider => (
                   <label key={provider.id} className={`flex min-h-10 items-center gap-2 rounded border px-3 py-2 text-xs ${provider.enabled ? 'border-gray-700 text-gray-300' : 'border-gray-800 text-gray-600'}`}>
                     <input
                       type="checkbox"
@@ -672,19 +1061,34 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
               </div>
             </fieldset>
 
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3 lg:grid-cols-3">
               <label className="flex items-start gap-3 rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-300">
                 <input
                   className="mt-0.5"
                   type="checkbox"
                   checked={runNmap}
-                  disabled={!providers.data?.nmap.enabled}
+                  disabled={!nmapPolicy?.enabled}
                   onChange={event => setRunNmap(event.target.checked)}
                 />
                 <span>
                   <b className="text-white">Run safe Nmap discovery</b>
                   <span className="mt-1 block text-gray-500">
-                    Top {providers.data?.nmap.top_ports ?? 100} TCP ports, light version detection, bounded timeout.
+                    Top {nmapPolicy?.top_ports ?? 100} TCP ports, light version detection, bounded timeout.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-300">
+                <input
+                  className="mt-0.5"
+                  type="checkbox"
+                  checked={runWebProbe}
+                  disabled={!webPolicy?.enabled}
+                  onChange={event => setRunWebProbe(event.target.checked)}
+                />
+                <span>
+                  <b className="text-white">Run safe web posture checks</b>
+                  <span className="mt-1 block text-gray-500">
+                    Root HTTP(S) response, security headers, redirects, cookies, and technology headers; no crawl or payloads.
                   </span>
                 </span>
               </label>
@@ -697,6 +1101,24 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
               </label>
             </div>
 
+            <label className={`flex items-start gap-3 rounded border p-3 text-xs ${canManageInventory ? 'border-sky-500/30 bg-sky-950/20 text-sky-100/80' : 'border-gray-800 bg-gray-950 text-gray-600'}`}>
+              <input
+                className="mt-0.5"
+                type="checkbox"
+                checked={canManageInventory && updateInventory}
+                disabled={!canManageInventory}
+                onChange={event => setUpdateInventory(event.target.checked)}
+              />
+              <span>
+                <b className={canManageInventory ? 'text-white' : 'text-gray-500'}>Add observed attack surfaces to this asset</b>
+                <span className="mt-1 block">
+                  Merge validated IPs, hostnames, open ports, software fingerprints, and CPEs into company inventory with source provenance,
+                  deduplication, scan ID, and audit history.
+                  {!canManageInventory && ' The manage_intel permission is required.'}
+                </span>
+              </span>
+            </label>
+
             {aiAnalyze && (
               <div className="grid gap-3 lg:grid-cols-2">
                 <label className="block text-xs text-gray-400">
@@ -705,7 +1127,7 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
                     setAiProvider(event.target.value as ThreatHuntAIProviderId);
                     setCloudAcknowledged(false);
                   }}>
-                    {(providers.data?.ai ?? []).map(provider => (
+                    {aiProviders.map(provider => (
                       <option key={provider.id} value={provider.id} disabled={!provider.available}>
                         {provider.label} · {provider.model}{provider.available ? '' : ` · ${provider.status}`}
                       </option>
@@ -748,6 +1170,17 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
   const ports = nmapHosts.flatMap(host => (
     Array.isArray(host.ports) ? host.ports as Array<Record<string, unknown>> : []
   ));
+  const webProbes = Array.isArray(scan.web_probe_result.probes)
+    ? scan.web_probe_result.probes
+    : [];
+  const additions = scan.inventory_update.added ?? {};
+  const addedCount = [
+    ...(additions.ip_addresses ?? []),
+    ...(additions.domains ?? []),
+    ...(additions.ports ?? []),
+    ...(additions.technologies ?? []),
+    ...(additions.cpes ?? []),
+  ].length;
   return (
     <section className="space-y-3 rounded border border-gray-800 bg-gray-950 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -761,12 +1194,39 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
       </div>
       {scan.error && <p className="rounded border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-100">{scan.error}</p>}
       {scan.warnings.map(warning => <p key={warning} className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100/80">{warning}</p>)}
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Passive lookups" value={scan.passive_results.length} />
         <Metric label="Open services" value={ports.length} />
+        <Metric label="Web endpoints" value={webProbes.length} />
         <Metric label="Findings / leads" value={scan.findings.length} />
         <Metric label="CVE candidates" value={Array.isArray(analysis.cve_candidates) ? analysis.cve_candidates.length : 0} />
+        <Metric label="Inventory additions" value={addedCount} />
       </section>
+      {scan.inventory_update.requested && (
+        <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-100/80">
+          <b className="text-white">
+            {scan.inventory_update.changed ? 'Company inventory updated' : 'Company inventory already current'}
+          </b>
+          <p className="mt-1">
+            {scan.inventory_update.observed_count ?? 0} source-attributed surface observations were evaluated.
+            {addedCount ? ` ${addedCount} new value(s) were merged.` : ' No duplicate values were added.'}
+          </p>
+          {addedCount > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(additions.ip_addresses ?? []).map(value => <EntityTag key={`ip:${value}`} value={value} type="ioc" />)}
+              {(additions.domains ?? []).map(value => <EntityTag key={`domain:${value}`} value={value} type="ioc" />)}
+              {(additions.ports ?? []).map(value => <EntityTag key={`port:${value}`} value={`port:${value}`} type="tag" />)}
+              {(additions.technologies ?? []).map(value => <EntityTag key={`technology:${value}`} value={value} type="tag" />)}
+            </div>
+          )}
+        </div>
+      )}
+      {scan.web_probe_requested && (
+        <div className="rounded border border-gray-800 p-3 text-xs text-gray-300">
+          <b className="text-white">Safe web posture · {String(scan.web_probe_result.status || 'unknown')}</b>
+          <p className="mt-1 text-gray-500">{String(scan.web_probe_result.summary || 'No web posture summary.')}</p>
+        </div>
+      )}
       <div className="rounded border border-sky-500/30 bg-sky-950/20 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <b className="text-sm text-white">Assessment interpretation</b>

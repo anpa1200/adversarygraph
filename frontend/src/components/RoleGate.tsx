@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCurrentUser, hasPermission, hasRole } from '@/hooks/useCurrentUser';
+import { useCurrentUser, hasModule, hasPermission, hasRole } from '@/hooks/useCurrentUser';
 
 interface RoleGateProps {
   /** Minimum role required. 'analyst' covers analyst + admin. */
@@ -8,6 +8,10 @@ interface RoleGateProps {
   permission?: string;
   /** Grants access when any listed effective permission is present. */
   anyPermission?: string[];
+  /** Module visibility grant enforced by the corresponding backend router. */
+  module?: string;
+  /** Grants access when any listed module is assigned. */
+  anyModule?: string[];
   children: ReactNode;
   /** Shown in place of children when the user lacks the role. */
   fallback?: ReactNode;
@@ -37,7 +41,7 @@ const LoadingFallback = () => (
  * Falls back to a "read-only access" screen for under-privileged users.
  * When AUTH_ENABLED=false (local dev), role checks are skipped.
  */
-export function RoleGate({ require, permission, anyPermission, children, fallback }: RoleGateProps) {
+export function RoleGate({ require, permission, anyPermission, module, anyModule, children, fallback }: RoleGateProps) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return <LoadingFallback />;
@@ -46,13 +50,15 @@ export function RoleGate({ require, permission, anyPermission, children, fallbac
     return <>{children}</>;
   }
 
-  const allowed = anyPermission?.length
-    ? anyPermission.some(item => hasPermission(user, item))
-    : permission
-      ? hasPermission(user, permission)
-      : require
-        ? hasRole(user, require)
-        : false;
+  const checks = [
+    require ? hasRole(user, require) : true,
+    permission ? hasPermission(user, permission) : true,
+    anyPermission?.length ? anyPermission.some(item => hasPermission(user, item)) : true,
+    module ? hasModule(user, module) : true,
+    anyModule?.length ? anyModule.some(item => hasModule(user, item)) : true,
+  ];
+  const hasRequirement = Boolean(require || permission || anyPermission?.length || module || anyModule?.length);
+  const allowed = hasRequirement && checks.every(Boolean);
   if (!allowed) {
     return <>{fallback ?? <DefaultFallback />}</>;
   }

@@ -1,11 +1,10 @@
 # AdversaryGraph Helm Chart
 
-This chart is a deployment scaffold for a controlled, single-workspace
-Kubernetes installation. The checked-out development chart contains post-v6 controls
-and must not be represented as the chart from the immutable `v6.0.0` tag. It
-requires a new successfully gated semantic release and its image manifest
-before production use. It is not a managed-SaaS or multi-tenant isolation
-boundary.
+This v6.1 chart is a deployment scaffold for a controlled, single-workspace
+Kubernetes installation. Production use requires the image digests and manifest
+produced by the successful v6.1.0 tag workflow; source metadata or human-readable
+tags alone are not release evidence. It is not a managed-SaaS or multi-tenant
+isolation boundary.
 
 ## Prerequisites
 
@@ -109,14 +108,13 @@ review both separately.
 
 ### Image integrity
 
-The backend, frontend, and MalwareGraph images default to the immutable
-`6.0.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
+The backend, frontend, and MalwareGraph images default to the versioned
+`6.1.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
 uses the pgvector project's `0.8.2-pg16` compatibility image so the development
 chart has the extension required by the RAG schema; both PostgreSQL and Redis
-compatibility images are digest-pinned. The v6.0.0 AdversaryGraph images
-predate the Unreleased RAG/MCP implementation. To evaluate the current
-development chart, override **all** custom image references with
-revision-matched artifacts. For production, also replace the PostgreSQL
+compatibility images are digest-pinned. Do not deploy the application tags
+until the matching tag workflow publishes and verifies them. For production,
+use the release manifest, replace the PostgreSQL
 compatibility image with the release's custom image and use the digest manifest
 created by that revision's successful tag workflow. A configured digest takes
 precedence over its human-readable tag:
@@ -209,11 +207,10 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 
 ## Unified RAG Configuration
 
-The current development chart templates enable RAG configuration and scheduled
-reconciliation by default, while semantic embeddings remain disabled. The
-default `6.0.0` application images do **not** implement those post-v6 routes or
-jobs. Supply revision-matched backend and frontend application images before
-using this section; worker and Beat use the backend image. The digest-pinned
+The v6.1 chart templates enable RAG configuration and scheduled reconciliation
+by default, while semantic embeddings remain disabled. Use revision-matched
+backend and frontend application images; worker and Beat use the backend image.
+The digest-pinned
 PostgreSQL evaluation default already includes pgvector 0.8.2. Production also
 replaces that compatibility image with the release's reviewed PostgreSQL image
 and digest. With revision-matched application images, exact identifier and
