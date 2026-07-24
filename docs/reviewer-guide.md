@@ -115,8 +115,9 @@ More than 60 backend test files plus browser-spec coverage for:
   Radar, Threat Hunting, RAG profile/search/assistant/proposal/reindex APIs, and
   endpoint orchestration.
 - Playwright tests: authentication startup, main navigation and deep links,
-  permissions, safe link handling, Threat Hunting, RAG source deep links, and
-  deterministic release screenshot flows.
+  permissions, administrator user creation and password-policy validation,
+  safe link handling, Threat Hunting, RAG source deep links, and deterministic
+  release screenshot flows.
 
 ## Demo dataset
 

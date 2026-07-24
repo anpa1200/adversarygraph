@@ -210,6 +210,11 @@ migration tooling is introduced:
 5. Confirm feature-level smoke tests:
 
    - authenticated login and logout;
+   - create one least-privilege test user in Admin Panel, confirm its SOC group
+     and effective modules, test sign-in, then disable or retain it according
+     to the acceptance plan;
+   - verify the Create user form displays the live password policy and returns
+     explicit validation feedback rather than an unexplained disabled action;
    - Discover and ATT&CK Group Library;
    - CVE Library and IOC Library;
    - Observability summary and metrics;

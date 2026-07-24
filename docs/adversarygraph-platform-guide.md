@@ -97,6 +97,7 @@ AI assistant should remain traceable back to evidence.
 | Investigation Report | Build analyst handoff reports from selected TTPs, evidence, investigation notes, actor context, and exports. |
 | Operations | Manage investigation workspaces, tracked actors, detection lifecycle records, and team operational tasks. |
 | Pipeline | Register and import external intelligence sources, STIX/TAXII collections, MISP exports, sandbox behavior, and detection-content feeds. |
+| Administration | Create named native users, assign persistent SOC groups, review effective module/action access, manage custom groups, reset passwords/MFA, revoke sessions, and inspect authentication audit events. |
 | DFIR Examples | Use public DFIR examples and sample workflows to demonstrate report-to-ATT&CK analysis without private data. |
 | Troubleshooting | Run and review deployment self-tests, API health checks, database/Redis checks, provider status, and recovery guidance. |
 | Sector Packs | Package sector-specific threat context, actors, techniques, and reusable intelligence bundles. |
@@ -318,6 +319,22 @@ items, report intake, evidence records, and operational task context.
 Pipeline connects external intelligence sources and detection-content sources to
 the local platform. It supports source registration, import review, and mapping
 imported behavior to matrix techniques.
+
+### Administration
+
+Administration provides persistent native users and SOC access groups. A
+Platform Administrator can create a named user, select the smallest suitable
+group, keep the compatibility role at `viewer`, and verify the account's
+effective module count before testing sign-in. The creation form shows the
+server password policy, reports incomplete input in an accessible checklist,
+supports browser/password-manager autofill, and prevents duplicate requests
+while creation is pending.
+
+Module visibility is not the security boundary: backend routers enforce the
+same group-derived module and action grants. Delegated user managers cannot
+grant authority beyond their own, and the platform prevents removal of the
+final enabled user-management path. See
+[Authentication and User Management](authentication-and-users.md#create-a-named-user).
 
 ### DFIR Examples
 

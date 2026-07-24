@@ -85,6 +85,25 @@ export function AuthGuide() {
         </section>
 
         <section className="mt-6 rounded border border-gray-700 bg-gray-900 p-5">
+          <h2 className="text-lg font-semibold text-white">Create and verify a named user</h2>
+          <ol className="mt-3 list-decimal space-y-3 pl-5 text-sm leading-6 text-gray-300">
+            <li>Open <strong>Admin Panel</strong> as a Platform Administrator or delegated user manager.</li>
+            <li>Enter a unique username, optional display name, and an initial password that satisfies the policy displayed below the password field.</li>
+            <li>Select the smallest suitable SOC group. Keep the advanced legacy role at <code className="rounded bg-black/30 px-1">viewer</code> and avoid direct grants for ordinary group-managed accounts.</li>
+            <li>Select <strong>Create user</strong>. Incomplete fields and policy failures appear in a checklist above the action; the button remains usable so it can explain what is missing.</li>
+            <li>Confirm the account in <strong>Users and permissions</strong>, review its effective module count, and test sign-in plus expected module access in a separate private browser session.</li>
+          </ol>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded border border-cyan-500/30 bg-cyan-950/20 p-3 text-sm leading-6 text-cyan-100">
+              Browser/password-manager autofill is read from the submitted form. While the API request is active, the action reads <strong>Creating user…</strong> and blocks duplicate submission.
+            </div>
+            <div className="rounded border border-amber-500/40 bg-amber-950/20 p-3 text-sm leading-6 text-amber-100">
+              If an upgraded installation still shows the old disabled action, rebuild and recreate the frontend container, then hard-refresh the browser so it loads the current hashed assets.
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 rounded border border-gray-700 bg-gray-900 p-5">
           <h2 className="text-lg font-semibold text-white">OIDC/SAML SSO through a trusted proxy</h2>
           <p className="mt-3 text-sm leading-6 text-gray-300">
             For enterprise deployments, terminate OIDC or SAML at an identity-aware proxy such as oauth2-proxy, Pomerium, Authelia, Keycloak Gatekeeper-style middleware, or an ingress controller with external auth. Configure the proxy to set <code className="rounded bg-black/30 px-1">X-Auth-User</code>,

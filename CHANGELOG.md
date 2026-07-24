@@ -6,6 +6,10 @@
   read from the submitted form, the action is no longer silently disabled, and
   username/password policy failures are shown as an accessible validation
   checklist before the API request.
+- Expanded the README, quickstart, platform/user/admin/authentication guides,
+  in-product Auth Guide, security/upgrade guidance, release notes, and OpenAPI
+  description with the named-user workflow, least-privilege group guidance,
+  verification steps, and user-creation troubleshooting.
 
 ## v6.1.0 - 2026-07-24
 

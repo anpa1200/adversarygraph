@@ -147,6 +147,16 @@ authentication setup guide. Sign in with the bootstrap admin, create permanent
 named admin users from **Admin Panel**, then clear
 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
 
+In **Admin Panel → Create user**, supply a unique username and an initial
+password that meets the displayed policy (12 characters by default), select
+the least-privilege SOC group, and keep the advanced legacy role at `viewer`
+for normal group-managed accounts. The action reports incomplete fields and
+policy failures above the button. Confirm the new row and test sign-in before
+removing the bootstrap credential. If an upgraded browser still shows a
+silently disabled Create action, rebuild/recreate `frontend` and hard-refresh
+the page. See
+[Authentication and User Management](authentication-and-users.md#create-a-named-user).
+
 For a production-overlay deployment, authentication is mandatory. Set an
 HTTPS `CORS_ALLOWED_ORIGINS`, keep `SECURE_COOKIES=true`, and configure either
 a strong one-time bootstrap administrator or a trusted OIDC/SAML proxy with a

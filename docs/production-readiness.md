@@ -52,10 +52,10 @@ handling policy.
 | Required database secret | Implemented | `DB_PASS` is required at startup |
 | Redis authentication | Implemented | `REDIS_PASSWORD` / authenticated `REDIS_URL` |
 | Configurable CORS | Implemented | `CORS_ALLOWED_ORIGINS`, wildcard rejection |
-| Native user authentication | Implemented | Username/password login, session cookie, roles, Admin Panel, and `/auth-guide` |
+| Native user authentication | Implemented | Named username/password accounts, policy-aware user creation, session cookie, Admin Panel, and `/auth-guide` |
 | Trusted-header auth guard | Implemented | `PROXY_SECRET` and `X-Internal-Proxy-Secret` |
 | Enterprise SSO integration pattern | Implemented | OIDC/SAML via trusted reverse proxy, `AUTH_SSO_MODE`, `X-Auth-User`, `X-Auth-Roles` |
-| Expanded RBAC | Implemented | viewer, analyst, threat_intel, detection_engineer, incident_responder, auditor, security_admin, service_account, admin plus explicit permissions |
+| Expanded RBAC | Implemented in current source | Twelve persistent SOC access groups, 31 module allowlists, API/UI enforcement, legacy role baselines, direct-grant ceilings, and final-user-manager continuity |
 | Auth audit trail | Implemented | login, logout, user changes, password reset, MFA, session review/revocation |
 | Session administration | Implemented | expiry, admin session list, user session revoke, own-session revoke |
 | Local MFA support | Implemented | TOTP setup/confirm/admin disable for native accounts |

@@ -15,6 +15,9 @@ Threat Hunting query engineering, and unified RAG/MCP assistance.
   advanced analysis, hunting, validation, and response engineering.
 - Specialist CTI, hunting, detection, IR, vulnerability, feed, and audit groups
   receive role-appropriate modules and actions.
+- Administrators can create named accounts with visible password-policy
+  guidance, autofill-safe submission, least-privilege group assignment, and
+  explicit validation feedback instead of an unexplained disabled action.
 - Analysts can open a saved company asset, review evidence-labelled
   CVE/TTP/IOC context, and run an explicitly authorized assessment against an
   inventory-approved target.
@@ -35,9 +38,10 @@ prove compromise or vulnerability applicability.
 ## Release Evidence
 
 The source change set passed 720 backend tests, the 60% coverage gate at 67.5%,
-frontend lint and production build, nine RBAC Playwright tests, Ruff, patch
-hygiene, and local Compose health checks. Immutable container and digest
-evidence is produced only by the successful v6.1.0 tag workflow.
+frontend lint and production build, ten RBAC and administration Playwright
+tests, Ruff, patch hygiene, and local Compose health checks. Immutable
+container and digest evidence is produced only by the successful v6.1.0 tag
+workflow.
 
 See the [complete release notes](release-notes/v6.1.0.md),
 [authentication guide](authentication-and-users.md),

@@ -63,6 +63,10 @@ Before exposing AdversaryGraph beyond a trusted local network:
   the bundled route-specific upload allowances instead of applying an
   unlimited global body size, and do not expose the API container directly.
 - Enable native authentication with `AUTH_ENABLED=true`; use trusted-header authentication with a strong `PROXY_SECRET` only behind an identity-aware reverse proxy.
+- Create named accounts through the policy-aware Admin Panel workflow, retain
+  two tested administrator recovery paths, and assign least-privilege SOC
+  groups. Verify backend denial for modules outside each group; hidden
+  navigation alone is not an authorization control.
 - Set `CORS_ALLOWED_ORIGINS` to the exact production origin.
 - Rotate `DB_PASS`, `REDIS_PASSWORD`, LLM keys, and CTI provider tokens.
 - Restrict PostgreSQL, Redis, MalwareGraph, and lab fixtures to internal networks.

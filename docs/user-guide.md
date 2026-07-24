@@ -9,6 +9,7 @@ client context/report -> hybrid intelligence retrieval -> cited answer or ATT&CK
 Published walkthrough and visual reference:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
+- Authentication, named users, and SOC groups: [`authentication-and-users.md`](authentication-and-users.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
 - Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
 - Unified intelligence RAG and MCP guide: [`unified-rag-and-mcp.md`](unified-rag-and-mcp.md)
@@ -74,6 +75,8 @@ For a platform walkthrough with clearly versioned screenshot packs, see the
 - IOC Library, IOC Investigation, IOC Node Detail, and VirusTotal Lookup
 - Feeds Management and Pipeline imports
 - Operations and Investigation Report
+- Administration for named users, SOC access groups, module/action grants,
+  sessions, MFA resets, and authentication audit review
 - DFIR Examples and Troubleshooting
 - Malware Analysis, String Analyzer, Unpacker, Decompilation/Debug, and Dynamic Analysis
 

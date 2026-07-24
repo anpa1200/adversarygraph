@@ -601,6 +601,15 @@ The default Compose deployment is not a hardened public SaaS. If exposing Advers
   review sessions, revoke sessions, reset local MFA, and inspect auth audit
   events. SOC Manager intentionally has operational and audit access without
   user, authentication, feed, or platform-configuration authority.
+- To create a native user, enter a unique username, an initial password that
+  satisfies the policy displayed by Admin Panel, and at least one reviewed SOC
+  group. Keep the legacy role at `viewer` for ordinary group-managed accounts.
+  The current form keeps **Create user** actionable and reports missing fields
+  or password-policy failures immediately above it; **Creating user…** prevents
+  duplicate submissions. Confirm the resulting group/module assignment and
+  test sign-in in a separate private session. See the
+  [complete user-creation workflow](authentication-and-users.md#create-a-named-user)
+  and [troubleshooting table](authentication-and-users.md#user-creation-troubleshooting).
 - Do not expose PostgreSQL or Redis publicly.
 - Rotate default secrets.
 - Run `./scripts/validate-production-env.sh`; it rejects known placeholders,

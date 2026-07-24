@@ -124,7 +124,7 @@ suite rather than by the live smoke command.
 | `POST` | `/api/auth/sessions/revoke-all` | Revoke All My Sessions | 200 |
 | `GET` | `/api/auth/status` | Status | 200 |
 | `GET` | `/api/auth/users` | List Users | 200 |
-| `POST` | `/api/auth/users` | Create User | 201 |
+| `POST` | `/api/auth/users` | Create Native User | 201 |
 | `DELETE` | `/api/auth/users/{user_id}` | Disable User | 204 |
 | `PATCH` | `/api/auth/users/{user_id}` | Update User | 200 |
 | `POST` | `/api/auth/users/{user_id}/mfa/disable` | Disable User Mfa | 200 |

@@ -117,6 +117,28 @@ Open:
 The default Compose deployment binds the public UI and reference docs to localhost and keeps the API, Redis, malware-analysis service, and lab fixtures on the internal Compose network.
 Local configuration is stored in `.env`; the default persistent database is `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}`. See [local storage and permissions](docs/local-storage-and-permissions.md) before deleting data directories or Docker volumes.
 
+### Create named users and assign SOC access
+
+For a private multi-user deployment, sign in as a Platform Administrator, open
+**Admin Panel**, and create a named account:
+
+1. Enter a unique username and optional display name.
+2. Enter an initial password that satisfies the policy shown below the field
+   (the default minimum is 12 characters).
+3. Assign the smallest suitable SOC group; keep the advanced legacy role at
+   `viewer` unless a compatibility requirement is documented.
+4. Select **Create user**. The form reports missing fields and policy failures
+   beside the action instead of silently disabling it.
+5. Confirm the account appears in **Users and permissions**, then test sign-in
+   and expected module access before enabling authentication for a deployment.
+
+Browser/password-manager autofill is supported. If an upgraded browser still
+shows the former disabled action, rebuild the frontend and perform a hard
+refresh so it loads the current hashed assets. See
+[Authentication and User Management](docs/authentication-and-users.md#create-a-named-user)
+for API examples, error meanings, group policy, bootstrap sequencing, and
+lockout prevention.
+
 ### Run a private local AI model
 
 AdversaryGraph includes an optional Compose overlay for a private Ollama service.

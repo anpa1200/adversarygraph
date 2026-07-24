@@ -217,6 +217,81 @@ PBKDF2-HMAC-SHA256 and per-user random salts.
 Password resets and disabled accounts revoke active native sessions for the
 affected user.
 
+### Create a named user
+
+Use this sequence for every native account:
+
+1. Sign in as a Platform Administrator or a delegated user manager with the
+   Administration module and `manage_users`.
+2. Open **Admin Panel** and locate **Create user**.
+3. Enter a unique username. Leading and trailing whitespace is removed.
+4. Enter an optional display name and an initial password. The form reads the
+   live policy from `GET /api/auth/status` and shows the required length and
+   any uppercase, lowercase, number, or special-character requirements.
+5. Select one or more least-privilege SOC groups. For normal workforce
+   accounts, keep **Advanced role and direct grants** at `viewer` with no
+   direct grants.
+6. Leave **Enabled** selected and choose **Create user**.
+7. Confirm the user appears in **Users and permissions**, verify the effective
+   module count and group assignments, then test the account in a separate
+   private browser session.
+
+**Create user** remains actionable so it can explain incomplete input. Missing
+fields and password-policy failures appear in an accessible validation
+checklist immediately above the action. While the request is running, the
+label changes to **Creating user…** and repeat submissions are blocked.
+Browser and password-manager autofill are read from the submitted form rather
+than relying only on input-change events.
+
+Do not grant `admin`, `manage_users`, or `manage_auth` merely to expose more
+analyst modules. Use the supplied SOC profiles or a reviewed custom group.
+Maintain at least two tested named Platform Administrator accounts before
+removing a bootstrap credential or changing the final user-management path.
+
+The equivalent API workflow is:
+
+```bash
+# Inspect the active password policy and available groups.
+curl -fsS http://localhost:3000/api/auth/status | jq '.password_policy'
+curl -fsS http://localhost:3000/api/auth/groups | jq '.[] | {id, slug, name}'
+
+# Run from an authenticated administrator session. Replace the group UUID and
+# use a secret entered through your approved credential workflow.
+curl -fsS -X POST http://localhost:3000/api/auth/users \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${ADVERSARYGRAPH_ADMIN_TOKEN}" \
+  --data '{
+    "username": "tier1.analyst",
+    "display_name": "Tier 1 Analyst",
+    "password": "replace-with-approved-initial-secret",
+    "role": "viewer",
+    "permissions": [],
+    "group_ids": ["00000000-0000-0000-0000-000000000000"],
+    "enabled": true
+  }'
+```
+
+Do not place a real password or bearer token in shell history. The inline JSON
+is an interface example only; use a protected file descriptor, secret manager,
+or approved provisioning client in production.
+
+### User-creation troubleshooting
+
+| Symptom | Meaning and action |
+| --- | --- |
+| Validation checklist appears | Complete every listed field or password-policy requirement, then submit again. |
+| `403` / insufficient authority | The current account lacks `manage_users`, the Administration module, or authority over the requested role/groups/grants. Use a Platform Administrator or reduce the requested scope. |
+| `409 Username already exists` | Choose another normalized username or update the existing account. |
+| `422 Password must contain …` | The API policy changed or the password does not satisfy it. Reload Admin Panel and follow the displayed policy. |
+| `422 Disabled access groups cannot be assigned` | Re-enable the intended group after review or choose an enabled group. |
+| Groups are empty or fail to load | Check `GET /api/auth/groups`, API health, database startup, and browser network errors. Do not compensate with broad direct grants. |
+| The old Create button is still disabled | The browser or container is serving a pre-hotfix frontend. Rebuild/recreate `frontend`, then hard-refresh the page to load the new hashed assets. |
+| User was created but cannot sign in | Confirm `enabled=true`, test the exact username, verify `AUTH_ENABLED=true` for enforced login, and reset the initial password if necessary. |
+
+Successful creation returns HTTP `201` and writes `auth.user_create` to the
+authentication audit trail. Verify the authoritative count and account record
+through `GET /api/auth/users`; do not infer success only from a toast.
+
 ## Session Management
 
 Native sessions expire after `AUTH_SESSION_MINUTES`. The Admin Panel lists recent

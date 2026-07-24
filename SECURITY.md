@@ -69,6 +69,8 @@ The default Docker Compose profile is for local or controlled self-hosted use. I
 
 - TLS termination.
 - Native authentication enabled or identity-aware reverse-proxy authentication.
+- Named administrator recovery accounts and least-privilege SOC group
+  assignments verified through both the UI and direct API authorization.
 - Network restrictions for PostgreSQL, Redis, API, and worker services.
 - Secret rotation and non-default database credentials.
 - Backups, retention policy, and restore testing.

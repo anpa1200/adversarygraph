@@ -470,8 +470,15 @@ async def list_users(
     return [await user_out(db, row) for row in rows.scalars().all()]
 
 
-@router.post("/users", status_code=201)
+@router.post("/users", status_code=201, summary="Create Native User")
 async def create_user(body: UserCreateBody, db: AsyncSession = Depends(get_session), current: TeamUser = Depends(manage_users)):
+    """Create a local account after password, grant-scope, and group validation.
+
+    The caller needs the Administration module and ``manage_users``. Delegated
+    user managers cannot create an account whose effective authority exceeds
+    their own. Successful creation returns the persisted user and writes an
+    ``auth.user_create`` audit event.
+    """
     username = normalize_identity_name(body.username, max_length=120)
     role = normalize_role(body.role)
     permissions = normalize_permissions(body.permissions)
