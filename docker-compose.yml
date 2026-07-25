@@ -147,6 +147,57 @@ services:
           memory: 256m
           cpus: '0.5'
 
+  scanner-mcp:
+    image: ${ADVERSARYGRAPH_SCANNER_MCP_IMAGE:-adversarygraph-scanner-mcp:local-scan}
+    pull_policy: never
+    build:
+      context: ./scanner_mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SCANNER_MCP_HOST: 0.0.0.0
+      SCANNER_MCP_PORT: 8200
+      SCANNER_MCP_PUBLIC_URL: http://scanner-mcp:8200
+      SCANNER_MCP_TOKEN: ${ASSET_SCANNER_MCP_TOKEN:-development-only-scanner-mcp-token}
+      NMAP_ENABLED: ${ASSET_SCANNER_NMAP_ENABLED:-true}
+      WEB_PROBE_ENABLED: ${ASSET_SCANNER_WEB_PROBE_ENABLED:-true}
+      TLS_ENABLED: ${ASSET_SCANNER_TLS_ENABLED:-true}
+      DNS_ENABLED: ${ASSET_SCANNER_DNS_ENABLED:-true}
+      NUCLEI_ENABLED: ${ASSET_SCANNER_NUCLEI_ENABLED:-true}
+      NMAP_TIMEOUT_SECONDS: ${ASSET_SCANNER_TIMEOUT_SECONDS:-120}
+      WEB_PROBE_TIMEOUT_SECONDS: ${ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS:-15}
+      TLS_TIMEOUT_SECONDS: ${ASSET_SCANNER_TLS_TIMEOUT_SECONDS:-15}
+      DNS_TIMEOUT_SECONDS: ${ASSET_SCANNER_DNS_TIMEOUT_SECONDS:-10}
+      NUCLEI_TIMEOUT_SECONDS: ${ASSET_SCANNER_NUCLEI_TIMEOUT_SECONDS:-180}
+      NUCLEI_RATE_LIMIT: ${ASSET_SCANNER_NUCLEI_RATE_LIMIT:-25}
+      NUCLEI_CONCURRENCY: ${ASSET_SCANNER_NUCLEI_CONCURRENCY:-5}
+      NMAP_TOP_PORTS: ${ASSET_SCANNER_TOP_PORTS:-100}
+      MAX_RESOLVED_IPS: ${ASSET_SCANNER_MAX_RESOLVED_IPS:-4}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=512m,noexec,nosuid,nodev,uid=10002,gid=10002,mode=0700
+    networks:
+      - scanner_control
+      - scanner_egress
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/health', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   # Reconcile persistent MalwareGraph storage before either non-root consumer
   # starts. MalwareGraph owns the volume (UID 10001); the backend API (GID 999)
   # also needs bounded access for reviewed unpack exports.
@@ -437,23 +488,9 @@ services:
       CENSYS_API_KEY: ${CENSYS_API_KEY:-}
       CENSYS_ORG_ID: ${CENSYS_ORG_ID:-}
       ASSET_SCANNER_ENABLED: ${ASSET_SCANNER_ENABLED:-true}
-      ASSET_SCANNER_NMAP_ENABLED: ${ASSET_SCANNER_NMAP_ENABLED:-true}
-      ASSET_SCANNER_WEB_PROBE_ENABLED: ${ASSET_SCANNER_WEB_PROBE_ENABLED:-true}
-      ASSET_SCANNER_TLS_ENABLED: ${ASSET_SCANNER_TLS_ENABLED:-true}
-      ASSET_SCANNER_DNS_ENABLED: ${ASSET_SCANNER_DNS_ENABLED:-true}
-      ASSET_SCANNER_NUCLEI_ENABLED: ${ASSET_SCANNER_NUCLEI_ENABLED:-true}
-      ASSET_SCANNER_NMAP_BINARY: ${ASSET_SCANNER_NMAP_BINARY:-/usr/bin/nmap}
-      ASSET_SCANNER_NUCLEI_BINARY: ${ASSET_SCANNER_NUCLEI_BINARY:-/usr/local/bin/nuclei}
-      ASSET_SCANNER_NUCLEI_TEMPLATES: ${ASSET_SCANNER_NUCLEI_TEMPLATES:-/app/nuclei-templates}
-      ASSET_SCANNER_TIMEOUT_SECONDS: ${ASSET_SCANNER_TIMEOUT_SECONDS:-120}
-      ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS: ${ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS:-15}
-      ASSET_SCANNER_TLS_TIMEOUT_SECONDS: ${ASSET_SCANNER_TLS_TIMEOUT_SECONDS:-15}
-      ASSET_SCANNER_DNS_TIMEOUT_SECONDS: ${ASSET_SCANNER_DNS_TIMEOUT_SECONDS:-10}
-      ASSET_SCANNER_NUCLEI_TIMEOUT_SECONDS: ${ASSET_SCANNER_NUCLEI_TIMEOUT_SECONDS:-180}
-      ASSET_SCANNER_NUCLEI_RATE_LIMIT: ${ASSET_SCANNER_NUCLEI_RATE_LIMIT:-25}
-      ASSET_SCANNER_NUCLEI_CONCURRENCY: ${ASSET_SCANNER_NUCLEI_CONCURRENCY:-5}
-      ASSET_SCANNER_TOP_PORTS: ${ASSET_SCANNER_TOP_PORTS:-100}
-      ASSET_SCANNER_MAX_RESOLVED_IPS: ${ASSET_SCANNER_MAX_RESOLVED_IPS:-4}
+      ASSET_SCANNER_MCP_URL: http://scanner-mcp:8200/mcp
+      ASSET_SCANNER_MCP_TOKEN: ${ASSET_SCANNER_MCP_TOKEN:-development-only-scanner-mcp-token}
+      ASSET_SCANNER_MCP_TIMEOUT_SECONDS: ${ASSET_SCANNER_MCP_TIMEOUT_SECONDS:-240}
       NVD_API_KEY: ${NVD_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITLAB_TOKEN: ${GITLAB_TOKEN:-}
@@ -517,6 +554,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      scanner-mcp:
+        condition: service_healthy
       malwaregraph:
         condition: service_healthy
       attack-lab-web:
@@ -530,6 +569,7 @@ services:
     networks:
       - default
       - malwaregraph_internal
+      - scanner_control
     deploy:
       resources:
         limits:
@@ -647,6 +687,7 @@ services:
         limits:
           memory: 2g
           cpus: '2.0'
+          pids: 512
 
   beat:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
@@ -834,3 +875,6 @@ volumes:
 networks:
   malwaregraph_internal:
     internal: true
+  scanner_control:
+    internal: true
+  scanner_egress:

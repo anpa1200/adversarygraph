@@ -18,6 +18,7 @@ from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETe
 from app.models.ioc import IOCIndicator, IOCSource
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.services.auth import TeamUser, audit, require_permission
+from app.services import asset_scanner_mcp
 from app.services.cve_intel import ensure_cve_sources
 from app.services.data_integrity import ioc_cve_integrity_snapshot
 from app.services.startup_status import startup_status
@@ -504,76 +505,57 @@ def _storage_writable_check(path: str | Path, name: str = "storage_writable") ->
         )
 
 
-def _asset_scanner_readiness_check() -> SelfTestCheck:
+async def _asset_scanner_readiness_check() -> SelfTestCheck:
     if not settings.asset_scanner_enabled:
         return _check_status(
             "asset_scanner",
             "ok",
             "Threat Radar asset assessment is disabled by the operator.",
-            {"enabled": False, "nmap_enabled": False},
+            {"enabled": False, "execution_boundary": "isolated-container"},
         )
-    binary = Path(settings.asset_scanner_nmap_binary)
-    nmap_ready = binary.is_file() and os.access(binary, os.X_OK)
-    nuclei_binary = Path(settings.asset_scanner_nuclei_binary)
-    nuclei_templates = Path(settings.asset_scanner_nuclei_templates)
+    started = perf_counter()
     try:
-        nuclei_templates_ready = (
-            nuclei_templates.is_dir() and any(nuclei_templates.iterdir())
-        )
-    except OSError:
-        nuclei_templates_ready = False
-    nuclei_ready = (
-        nuclei_binary.is_file()
-        and os.access(nuclei_binary, os.X_OK)
-        and nuclei_templates_ready
-    )
-    if settings.asset_scanner_nmap_enabled and not nmap_ready:
+        catalog = await asset_scanner_mcp.list_tools()
+    except asset_scanner_mcp.ScannerMCPError:
         return _check_status(
             "asset_scanner",
             "error",
-            "Asset assessment is enabled, but the configured Nmap executable is unavailable.",
+            "Authenticated scanner MCP connection failed.",
             {
                 "enabled": True,
-                "nmap_enabled": True,
-                "nmap_binary": str(binary),
-                "profile": "safe-service-discovery",
+                "transport": "mcp-streamable-http",
+                "execution_boundary": "isolated-container",
+                "api_contains_scanner_binaries": False,
             },
         )
-    if settings.asset_scanner_nuclei_enabled and not nuclei_ready:
-        return _check_status(
-            "asset_scanner",
-            "error",
-            "Asset assessment is enabled, but Nuclei or its pinned templates are unavailable.",
-            {
-                "enabled": True,
-                "nuclei_enabled": True,
-                "nuclei_binary": str(nuclei_binary),
-                "nuclei_templates": str(nuclei_templates),
-                "profile": "signed-bounded-network-templates",
-            },
-        )
+    tools = [
+        row
+        for row in catalog.get("tools") or []
+        if isinstance(row, dict)
+    ]
+    unavailable = [
+        str(row.get("id"))
+        for row in tools
+        if row.get("configured", True) and not row.get("enabled", False)
+    ]
     return _check_status(
         "asset_scanner",
-        "ok",
+        "ok" if not unavailable else "degraded",
         (
-            "Inventory-bound passive, Nmap, TLS, DNS, and Nuclei assessment are ready."
-            if settings.asset_scanner_nmap_enabled
-            else "Inventory-bound passive, TLS, DNS, and Nuclei assessment are ready; Nmap is disabled."
+            "Authenticated scanner MCP connection and tool catalog passed."
+            if not unavailable
+            else "Scanner MCP connected, but configured tools are unavailable."
         ),
         {
             "enabled": True,
-            "nmap_enabled": settings.asset_scanner_nmap_enabled,
-            "nmap_binary": str(binary),
-            "nmap_ready": nmap_ready,
-            "tls_enabled": settings.asset_scanner_tls_enabled,
-            "dns_enabled": settings.asset_scanner_dns_enabled,
-            "nuclei_enabled": settings.asset_scanner_nuclei_enabled,
-            "nuclei_binary": str(nuclei_binary),
-            "nuclei_templates": str(nuclei_templates),
-            "nuclei_ready": nuclei_ready,
-            "top_ports": settings.asset_scanner_top_ports,
-            "timeout_seconds": settings.asset_scanner_timeout_seconds,
-            "profile": "safe-service-discovery",
+            "service": catalog.get("service"),
+            "service_version": catalog.get("version"),
+            "tool_count": len(tools),
+            "unavailable_tools": unavailable,
+            "duration_ms": int((perf_counter() - started) * 1000),
+            "transport": "mcp-streamable-http",
+            "execution_boundary": "isolated-container",
+            "api_contains_scanner_binaries": False,
         },
     )
 
@@ -1116,7 +1098,7 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
         checks.append(_check("memory_usage", False, f"Memory usage self-test failed: {type(exc).__name__}: {exc}"))
 
     checks.append(_api_key_check())
-    checks.append(_asset_scanner_readiness_check())
+    checks.append(await _asset_scanner_readiness_check())
     checks.append(_storage_writable_check(settings.log_dir, "log_storage_writable"))
     checks.append(_storage_writable_check(settings.attck_data_dir, "attck_storage_writable"))
     checks.append(

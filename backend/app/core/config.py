@@ -112,10 +112,12 @@ class Settings(BaseSettings):
     censys_org_id: str = ""
 
     # Threat Radar asset scanners. Every active profile is inventory-bound and
-    # requires the explicit authorization gate. Nuclei is rate-limited to
-    # signed network templates and excludes fuzzing, code, file, headless,
-    # JavaScript, and out-of-band callbacks.
+    # requires the explicit authorization gate. All network-executing tools run
+    # in the isolated scanner MCP container; the API holds no scanner binaries.
     asset_scanner_enabled: bool = True
+    asset_scanner_mcp_url: str = "http://scanner-mcp:8200/mcp"
+    asset_scanner_mcp_token: str = "development-only-scanner-mcp-token"
+    asset_scanner_mcp_timeout_seconds: int = Field(default=240, ge=30, le=1_000)
     asset_scanner_nmap_enabled: bool = True
     asset_scanner_web_probe_enabled: bool = True
     asset_scanner_tls_enabled: bool = True

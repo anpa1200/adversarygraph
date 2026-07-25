@@ -3719,6 +3719,13 @@ export interface ThreatSpaceAIStep {
 
 export interface ThreatAssetScanProviderCatalog {
   enabled: boolean;
+  scanner_mcp: {
+    status: 'ready' | 'unavailable';
+    service: string;
+    version: string;
+    transport: string;
+    execution_boundary: string;
+  };
   nmap: {
     enabled: boolean;
     profile: string;
@@ -3726,6 +3733,7 @@ export interface ThreatAssetScanProviderCatalog {
     timeout_seconds: number;
     permission: string;
     boundary: string;
+    execution_boundary?: string;
   };
   web: {
     enabled: boolean;
@@ -3733,6 +3741,7 @@ export interface ThreatAssetScanProviderCatalog {
     timeout_seconds: number;
     permission: string;
     boundary: string;
+    execution_boundary?: string;
   };
   additional_scanners: Array<{
     id: 'tls' | 'dns' | 'nuclei';
@@ -3747,6 +3756,8 @@ export interface ThreatAssetScanProviderCatalog {
     templates?: string;
     rate_limit_per_second?: number;
     template_concurrency?: number;
+    execution_boundary?: string;
+    remote_status?: string;
   }>;
   passive: Array<{
     id: string;

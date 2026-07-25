@@ -48,6 +48,18 @@ jobs:
           pip-audit -r requirements.txt
           bandit -q -r app -x "tests,app/data" --severity-level medium --confidence-level medium
 
+      - name: Scanner MCP tests, dependency audit, and SAST
+        working-directory: scanner_mcp
+        env:
+          SCANNER_MCP_TOKEN: scanner_mcp_release_validation_token
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-asyncio ruff pip-audit bandit
+          PYTHONPATH=. python -m pytest -q
+          ruff check scanner_mcp tests
+          pip-audit -r requirements.txt
+          bandit -q -r scanner_mcp -x tests --severity-level medium --confidence-level medium
+
       - name: Frontend dependency audit
         working-directory: frontend
         run: |
@@ -66,6 +78,7 @@ jobs:
           DB_PASS: release_validation_db_password
           REDIS_PASSWORD: release_validation_redis_password
           RATE_LIMIT_PROXY_SECRET: release_validation_rate_limit_proxy_secret
+          ASSET_SCANNER_MCP_TOKEN: release_validation_scanner_mcp_token
           CORS_ALLOWED_ORIGINS: https://adversarygraph.example.com
           AUTH_ENABLED: "true"
           AUTH_EXISTING_ADMIN_CONFIRMED: "true"
@@ -73,6 +86,7 @@ jobs:
           ATTCK_DOMAINS: enterprise-attack
           ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_SCANNER_MCP_IMAGE: example.invalid/adversarygraph-scanner-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_FRONTEND_IMAGE: example.invalid/adversarygraph-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_MALWAREGRAPH_IMAGE: example.invalid/adversarygraph-malwaregraph@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE: example.invalid/adversarygraph-attack-lab-web@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -108,12 +122,14 @@ jobs:
             --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             >/tmp/adversarygraph-production.yaml
           helm template adversarygraph helm/adversarygraph \
             --set secrets.existingSecret= \
             --set secrets.dbPassword=helm_validation_db_password \
             --set secrets.redisPassword=helm_validation_redis_password \
             --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
+            --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
           if helm template adversarygraph helm/adversarygraph --set secrets.existingSecret= >/dev/null 2>&1; then
@@ -330,6 +346,22 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
+      - name: Build scanner MCP release image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: scanner_mcp
+          push: false
+          load: true
+          pull: true
+          platforms: linux/amd64
+          no-cache: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/adversarygraph-scanner-mcp:${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
       - name: Build frontend release image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -434,6 +466,7 @@ jobs:
           images=(
             "postgres:adversarygraph-postgres"
             "backend:adversarygraph-backend"
+            "scanner_mcp:adversarygraph-scanner-mcp"
             "frontend:adversarygraph-frontend"
             "malwaregraph:adversarygraph-malwaregraph"
             "attack_lab_web:adversarygraph-attack-lab-web"
@@ -500,6 +533,15 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
+      - name: Scan scanner MCP publication candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.publish_ids.outputs.scanner_mcp }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
       - name: Scan frontend publication candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -552,6 +594,7 @@ jobs:
           REGISTRY_OWNER: ${{ github.repository_owner }}
           POSTGRES_IMAGE_ID: ${{ steps.publish_ids.outputs.postgres }}
           BACKEND_IMAGE_ID: ${{ steps.publish_ids.outputs.backend }}
+          SCANNER_MCP_IMAGE_ID: ${{ steps.publish_ids.outputs.scanner_mcp }}
           FRONTEND_IMAGE_ID: ${{ steps.publish_ids.outputs.frontend }}
           MALWAREGRAPH_IMAGE_ID: ${{ steps.publish_ids.outputs.malwaregraph }}
           ATTACK_LAB_WEB_IMAGE_ID: ${{ steps.publish_ids.outputs.attack_lab_web }}
@@ -562,6 +605,7 @@ jobs:
           declare -A expected_ids=(
             [adversarygraph-postgres]="$POSTGRES_IMAGE_ID"
             [adversarygraph-backend]="$BACKEND_IMAGE_ID"
+            [adversarygraph-scanner-mcp]="$SCANNER_MCP_IMAGE_ID"
             [adversarygraph-frontend]="$FRONTEND_IMAGE_ID"
             [adversarygraph-malwaregraph]="$MALWAREGRAPH_IMAGE_ID"
             [adversarygraph-attack-lab-web]="$ATTACK_LAB_WEB_IMAGE_ID"
@@ -571,6 +615,7 @@ jobs:
           declare -A manifest_keys=(
             [adversarygraph-postgres]="ADVERSARYGRAPH_POSTGRES_IMAGE"
             [adversarygraph-backend]="ADVERSARYGRAPH_BACKEND_IMAGE"
+            [adversarygraph-scanner-mcp]="ADVERSARYGRAPH_SCANNER_MCP_IMAGE"
             [adversarygraph-frontend]="ADVERSARYGRAPH_FRONTEND_IMAGE"
             [adversarygraph-malwaregraph]="ADVERSARYGRAPH_MALWAREGRAPH_IMAGE"
             [adversarygraph-attack-lab-web]="ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE"
@@ -580,6 +625,7 @@ jobs:
           images=(
             adversarygraph-postgres
             adversarygraph-backend
+            adversarygraph-scanner-mcp
             adversarygraph-frontend
             adversarygraph-malwaregraph
             adversarygraph-attack-lab-web
@@ -628,7 +674,7 @@ jobs:
           # digest and bind it to the scanned local image ID. The release asset
           # is written from these verified digests, never from a later mutable
           # tag lookup. Shared `latest` tags are intentionally not published:
-          # a seven-image family cannot be advanced atomically.
+          # an eight-image family cannot be advanced atomically.
           : > adversarygraph-images.env
           declare -A published_digests=()
           for image in "${images[@]}"; do

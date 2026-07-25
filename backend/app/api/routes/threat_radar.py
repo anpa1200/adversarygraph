@@ -52,6 +52,7 @@ from app.models.threat_radar import (
 )
 from app.services.auth import TeamUser, analyst, has_permission, require_permission
 from app.services import asset_vulnerability_scanner as asset_scanner
+from app.services import asset_scanner_mcp
 from app.services import asset_detail_intelligence
 from app.services import threat_hunting_ai as governed_ai
 from app.services.exposure_monitoring import (
@@ -660,30 +661,98 @@ async def get_space_asset_intelligence(
 async def asset_scanner_providers(
     _: TeamUser = Depends(run_asset_assessment),
 ):
-    return {
-        "enabled": settings.asset_scanner_enabled,
-        "nmap": {
-            "enabled": settings.asset_scanner_nmap_enabled,
+    try:
+        mcp_catalog = await asset_scanner_mcp.list_tools()
+        remote_tools = {
+            str(row.get("id")): row
+            for row in mcp_catalog.get("tools") or []
+            if isinstance(row, dict)
+        }
+        mcp_status = "ready"
+    except asset_scanner_mcp.ScannerMCPError:
+        remote_tools = {}
+        mcp_catalog = {}
+        mcp_status = "unavailable"
+    def remote_policy(tool_id: str, fallback: dict[str, Any]) -> dict[str, Any]:
+        remote = remote_tools.get(tool_id)
+        if not remote:
+            return {
+                **fallback,
+                "id": tool_id,
+                "enabled": False,
+                "configured": False,
+                "remote_status": "unavailable",
+                "execution_boundary": "scanner-mcp",
+            }
+        return {
+            **fallback,
+            **remote,
+            "id": tool_id,
+            "enabled": bool(remote.get("enabled")),
+            "remote_status": (
+                "ready" if remote.get("enabled") else "disabled"
+            ),
+            "execution_boundary": "scanner-mcp",
+        }
+
+    nmap_policy = remote_policy(
+        "nmap",
+        {
+            "label": "Nmap safe service discovery",
             "profile": "safe-service-discovery",
-            "top_ports": settings.asset_scanner_top_ports,
-            "timeout_seconds": settings.asset_scanner_timeout_seconds,
-            "permission": "run_attack_simulation",
+            "top_ports": 100,
+            "timeout_seconds": 120,
             "boundary": (
                 "Unprivileged TCP connect and light service detection only. "
                 "No NSE scripts, UDP scan, OS fingerprinting, evasion, or exploitation."
             ),
         },
-        "web": {
-            "enabled": settings.asset_scanner_web_probe_enabled,
+    )
+    web_policy = remote_policy(
+        "web",
+        {
+            "label": "Root HTTP security posture",
             "profile": "safe-root-http-posture",
-            "timeout_seconds": settings.asset_scanner_web_probe_timeout_seconds,
-            "permission": "run_attack_simulation",
+            "timeout_seconds": 15,
             "boundary": (
                 "At most two root HTTP(S) GET requests. No redirect following, "
                 "crawling, form submission, injection payload, brute force, or exploitation."
             ),
         },
-        "additional_scanners": asset_scanner.additional_scanner_catalog(),
+    )
+    additional_scanners = [
+        remote_policy(
+            tool_id,
+            {
+                "label": tool_id.upper(),
+                "profile": f"bounded-{tool_id}",
+                "timeout_seconds": 30,
+                "mode": "active-bounded",
+                "boundary": (
+                    f"The isolated scanner MCP did not return a {tool_id.upper()} policy."
+                ),
+            },
+        )
+        for tool_id in ("tls", "dns", "nuclei")
+    ]
+    return {
+        "enabled": settings.asset_scanner_enabled,
+        "scanner_mcp": {
+            "status": mcp_status,
+            "service": mcp_catalog.get("service", "adversarygraph-scanner-mcp"),
+            "version": mcp_catalog.get("version", ""),
+            "transport": "mcp-streamable-http",
+            "execution_boundary": "isolated-container",
+        },
+        "nmap": {
+            **nmap_policy,
+            "permission": "run_attack_simulation",
+        },
+        "web": {
+            **web_policy,
+            "permission": "run_attack_simulation",
+        },
+        "additional_scanners": additional_scanners,
         "passive": asset_scanner.provider_catalog(),
         "ai": await governed_ai.provider_catalog_with_readiness(),
     }
@@ -829,7 +898,25 @@ async def create_asset_scan(
     scan_id = scan.id
 
     try:
-        resolved_ips = await asset_scanner.resolve_target(target)
+        mcp_assessment = await asset_scanner_mcp.run_assessment(
+            target=target.value,
+            run_nmap=payload.run_nmap,
+            run_web_probe=payload.run_web_probe,
+            additional_scanners=payload.scanners,
+        )
+        mcp_target = mcp_assessment.get("target") or {}
+        if (
+            str(mcp_target.get("host") or "") != target.host
+            or str(mcp_target.get("target_type") or "") != target.target_type
+        ):
+            raise asset_scanner_mcp.ScannerMCPError(
+                "Scanner MCP target identity did not match the authorized inventory target"
+            )
+        resolved_ips = [
+            str(value)
+            for value in mcp_assessment.get("resolved_ips") or []
+            if str(value)
+        ][:16]
         warnings: list[str] = []
         if target.target_type != "ip" and not resolved_ips:
             warnings.append(
@@ -843,30 +930,20 @@ async def create_asset_scan(
             resolved_ips,
         )
         warnings.extend(passive_warnings)
-        nmap_result = (
-            await asset_scanner.run_nmap_discovery(target, resolved_ips)
-            if payload.run_nmap
-            else {
-                "status": "not_requested",
-                "summary": "Active service discovery was not requested.",
-                "hosts": [],
-                "open_port_count": 0,
-            }
-        )
-        web_probe_result = (
-            await asset_scanner.run_web_posture_probe(target)
-            if payload.run_web_probe
-            else {
-                "status": "not_requested",
-                "summary": "Safe web posture checks were not requested.",
-                "probes": [],
-                "findings": [],
-            }
-        )
-        scanner_results = await asset_scanner.run_additional_scanners(
-            target,
-            payload.scanners,
-        )
+        nmap_result = dict(mcp_assessment.get("nmap_result") or {})
+        web_probe_result = dict(mcp_assessment.get("web_probe_result") or {})
+        scanner_results = {
+            str(name): dict(result)
+            for name, result in (mcp_assessment.get("scanner_results") or {}).items()
+            if isinstance(result, dict)
+        }
+        mcp_context = {
+            "service": mcp_assessment.get("service"),
+            "service_version": mcp_assessment.get("service_version"),
+            "transport": mcp_assessment.get("transport"),
+            "tool_trace": mcp_assessment.get("tool_trace") or [],
+            "authorization_enforced_by": mcp_assessment.get("authorization_enforced_by"),
+        }
         cve_candidates = await asset_scanner.match_local_cves(session, nmap_result)
         findings = asset_scanner.build_findings(
             passive_results,
@@ -874,6 +951,7 @@ async def create_asset_scan(
             cve_candidates,
             web_probe_result,
             scanner_results,
+            mcp_context=mcp_context,
         )
         analysis = asset_scanner.deterministic_analysis(
             passive_results,
@@ -881,6 +959,7 @@ async def create_asset_scan(
             cve_candidates,
             web_probe_result,
             scanner_results,
+            mcp_context=mcp_context,
         )
         if payload.ai_analyze:
             try:
@@ -896,6 +975,7 @@ async def create_asset_scan(
                     model=payload.ai_model,
                     cloud_processing_acknowledged=payload.cloud_processing_acknowledged,
                     effective_tlp=payload.tlp,
+                    mcp_context=mcp_context,
                 )
             except (
                 governed_ai.AIOutputError,
@@ -1005,6 +1085,7 @@ async def create_asset_scan(
             **analysis,
             "cve_candidates": cve_candidates,
             "resolved_ips": resolved_ips,
+            "scanner_mcp": mcp_context,
         })
         scan.ai_model = str(analysis.get("model") or scan.ai_model)
         scan.warnings = warnings
@@ -1022,6 +1103,7 @@ async def create_asset_scan(
                 "open_port_count": int(nmap_result.get("open_port_count") or 0),
                 "web_probe_count": len(web_probe_result.get("probes") or []),
                 "additional_scanners": payload.scanners,
+                "scanner_mcp_tool_trace": mcp_context["tool_trace"],
                 "additional_scanner_finding_count": sum(
                     len(result.get("findings") or [])
                     for result in scanner_results.values()

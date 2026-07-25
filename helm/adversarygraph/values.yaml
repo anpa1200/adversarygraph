@@ -109,6 +109,36 @@ malwaregraph:
       cpu: "2"
       memory: 2Gi
 
+scannerMcp:
+  enabled: true
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-scanner-mcp
+    tag: "6.5.0"
+    digest: ""
+  service:
+    port: 8200
+  nmapEnabled: "true"
+  webProbeEnabled: "true"
+  tlsEnabled: "true"
+  dnsEnabled: "true"
+  nucleiEnabled: "true"
+  nmapTimeoutSeconds: "120"
+  webProbeTimeoutSeconds: "15"
+  tlsTimeoutSeconds: "15"
+  dnsTimeoutSeconds: "10"
+  nucleiTimeoutSeconds: "180"
+  nucleiRateLimit: "25"
+  nucleiConcurrency: "5"
+  nmapTopPorts: "100"
+  maxResolvedIps: "4"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
 persistence:
   attckDataSize: 10Gi
   logsSize: 20Gi
@@ -138,6 +168,7 @@ networkPolicy:
     api: []
     frontend: []
     malwaregraph: []
+    scannerMcp: []
     postgres: []
     redis: []
     worker: []
@@ -171,6 +202,9 @@ secrets:
   openctiUrl: ""
   openctiToken: ""
   malwaregraphApiKey: ""
+  # Independent capability token used only between the API and scanner MCP.
+  # Use at least 24 random URL-safe characters and never reuse another secret.
+  assetScannerMcpToken: ""
 
 config:
   # Set true in reviewed production values. This enables fail-closed Helm
@@ -233,3 +267,4 @@ config:
   ragRetentionHour: "4"
   ragRetentionMinute: "45"
   malwaregraphMaxUploadBytes: "268435456"
+  assetScannerMcpTimeoutSeconds: "240"

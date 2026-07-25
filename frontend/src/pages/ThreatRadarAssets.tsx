@@ -1008,6 +1008,7 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
   const latest = scan.data ?? scans.data?.[0];
   const canRun = Boolean(
     providers.data?.enabled
+    && (providers.data?.scanner_mcp?.status ?? 'ready') === 'ready'
     && target
     && authorized
     && !scan.isPending
@@ -1034,6 +1035,19 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
           GreyNoise, AbuseIPDB, and local intelligence run first when configured. Optional active checks use bounded
           Nmap service discovery, root-only HTTP posture, TLS, DNS, and optional bounded Nuclei checks. Every active
           scanner remains restricted to the exact inventory target and requires explicit authorization.
+        </div>
+        <div className={`rounded border p-3 text-xs ${
+          providers.data?.scanner_mcp?.status === 'ready'
+            ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-100/80'
+            : 'border-red-500/30 bg-red-950/20 text-red-100/80'
+        }`}>
+          <b>
+            Scanner MCP · {providers.data?.scanner_mcp?.status ?? 'checking'}
+          </b>
+          <span className="ml-2">
+            Network tools execute in an isolated container. The deterministic AI assistant always reviews the MCP
+            tool trace; the provider option below adds governed LLM interpretation.
+          </span>
         </div>
 
         {!targets.length ? (
@@ -1104,8 +1118,11 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
               <label className="flex items-start gap-3 rounded border border-gray-800 bg-gray-950 p-3 text-xs text-gray-300">
                 <input className="mt-0.5" type="checkbox" checked={aiAnalyze} onChange={event => setAiAnalyze(event.target.checked)} />
                 <span>
-                  <b className="text-white">Analyze evidence with AI</b>
-                  <span className="mt-1 block text-gray-500">Advisory interpretation only; all inferred CVEs require analyst verification.</span>
+                  <b className="text-white">Add provider AI interpretation</b>
+                  <span className="mt-1 block text-gray-500">
+                    Optional LLM review over the MCP evidence package. Deterministic assistant review always runs;
+                    all inferred CVEs require analyst verification.
+                  </span>
                 </span>
               </label>
             </div>

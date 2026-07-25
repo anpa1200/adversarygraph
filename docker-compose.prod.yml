@@ -51,6 +51,21 @@ services:
           memory: ${REDIS_MEMORY_LIMIT:-512m}
           cpus: '${REDIS_CPU_LIMIT:-1.0}'
 
+  scanner-mcp:
+    pull_policy: missing
+    restart: always
+    environment:
+      SCANNER_MCP_TOKEN: ${ASSET_SCANNER_MCP_TOKEN:?ASSET_SCANNER_MCP_TOKEN is required for the production overlay}
+    deploy:
+      resources:
+        limits:
+          memory: ${SCANNER_MCP_MEMORY_LIMIT:-2g}
+          cpus: '${SCANNER_MCP_CPU_LIMIT:-2.0}'
+          pids: 512
+        reservations:
+          memory: ${SCANNER_MCP_MEMORY_RESERVATION:-512m}
+          cpus: '${SCANNER_MCP_CPU_RESERVATION:-0.5}'
+
   api:
     pull_policy: missing
     restart: always
@@ -73,6 +88,7 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required for the production overlay}
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
       AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-false}
+      ASSET_SCANNER_MCP_TOKEN: ${ASSET_SCANNER_MCP_TOKEN:?ASSET_SCANNER_MCP_TOKEN is required for the production overlay}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     deploy:
       resources:
