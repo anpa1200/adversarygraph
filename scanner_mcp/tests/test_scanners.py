@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from scanner_mcp.models import normalize_target
 
 from scanner_mcp import scanners
+from scanner_mcp.models import normalize_target
 
 
 def test_target_normalization_removes_query_credentials_and_rejects_unsafe_schemes():
