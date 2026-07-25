@@ -62,7 +62,7 @@ AdversaryGraph is self-hosted. In Docker mode, report content is sent only to th
 ## Architecture in Brief
 
 > **Historical architecture note:** the diagram below describes the original
-> v2.5-era four-service core. Current post-v6 deployments also package
+> v2.5-era four-service core. Current v6.5 deployments also package
 > MalwareGraph, the isolated attack-lab targets, and the Anomaly Detection
 > Atlas documentation service; use the current deployment guides for an
 > authoritative production topology.

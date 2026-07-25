@@ -107,8 +107,8 @@ The request may raise but cannot lower that marking. Cloud processing is
 disabled by default; when an operator enables it, a remote request still
 requires explicit analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED`
 requests are rejected for remote providers.
-Enterprise ATT&CK is the only supported report-to-hunt framework in the current
-post-v6 development implementation.
+Enterprise ATT&CK is the only supported report-to-hunt framework in the v6.5
+implementation.
 
 The assistant request treats report text as untrusted model input. Fixed task
 prompts, structured validation, source-span checks, provider/TLP gates, and

@@ -6,11 +6,11 @@ CTI-to-detection and governed retrieval, not automated attribution or response.
 
 ## Release Accuracy
 
-The unified RAG, Navigator intelligence assistant, and MCP integration are
-post-v6.0.0 work under `Unreleased`. Do not advertise them as part of the
-immutable `v6.0.0` tag. Use the RAG/MCP copy below only for a build or deployment
-that contains those changes, and attach a version only after the next release
-tag and its validation evidence exist.
+Unified RAG, the Navigator intelligence assistant, MCP, governed Threat Hunting,
+the Query Library, saved-asset assessment, and SOC access groups are part of the
+v6.5.0 source release. They are not part of the immutable `v6.0.0` tag. Attach
+v6.5 to public artifact claims only after the v6.5 tag workflow publishes and
+verifies the corresponding images, manifest, and release evidence.
 
 ## Canonical Links
 

@@ -175,7 +175,7 @@ immutable `repository@sha256:...` reference; `make prod` deliberately uses
 `--no-build` so the deployed artifacts remain the ones covered by the release
 scan evidence.
 
-The manifest is produced by the post-v6 tag workflow and is not attached to the
+The manifest is produced by the v6.5 tag workflow and is not attached to the
 historical `v6.0.0` GitHub release. Do not invent digest values or transfer scan
 evidence from another build. Use the next successfully gated semantic release,
 or retain an independently built, scanned, and pinned artifact set under an
@@ -313,7 +313,7 @@ curl http://localhost:3000/api/rag/status
 Expected health response:
 
 ```json
-{"status":"ok","version":"6.0.0"}
+{"status":"ok","version":"6.5.0"}
 ```
 
 The readiness response is `200` with `status: "ready"` when the database can

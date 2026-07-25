@@ -9,6 +9,7 @@ client context/report -> hybrid intelligence retrieval -> cited answer or ATT&CK
 Published walkthrough and visual reference:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
+- Detailed module reference and casebook: [`module-reference.md`](module-reference.md)
 - Authentication, named users, and SOC groups: [`authentication-and-users.md`](authentication-and-users.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
 - Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
@@ -57,7 +58,10 @@ Do not upload private reports to public demos.
 ## Current Platform Modules
 
 For a platform walkthrough with clearly versioned screenshot packs, see the
-[AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). It covers:
+[AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). For
+step-by-step inputs, outputs, permissions, limits, worked examples, and
+module-specific case studies covering all 31 governed workspaces, use the
+[Module Reference and Casebook](module-reference.md). The platform guide covers:
 
 - Discover and workflow entry points
 - Navigator and ATT&CK/ATLAS matrix review
@@ -150,7 +154,7 @@ query.
 1. Open the stored report and confirm that analysis is completed, source text
    is available, and it uses the Enterprise ATT&CK domain. Mobile, ICS, and
    ATLAS reports are not supported by the governed hunting assistant in the
-   current post-v6.0.0 development implementation.
+   v6.5.0 implementation.
 2. Confirm the report's authoritative handling marking. New and repaired legacy
    reports default conservatively to `TLP:AMBER+STRICT`. Only a user with
    `manage_intel` may deliberately change the stored marking after reviewing

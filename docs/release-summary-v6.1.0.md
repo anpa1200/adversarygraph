@@ -1,6 +1,10 @@
-# AdversaryGraph v6.1.0 Release Summary
+# AdversaryGraph v6.1.0 Unpublished Source-Milestone Summary
 
-AdversaryGraph v6.1.0 turns the post-v6 development line into a governed
+> **Superseded:** v6.1.0 was not published as an immutable stable tag or GitHub
+> release. The supported release narrative is
+> [v6.5.0](release-notes/v6.5.0.md).
+
+This historical milestone turned the post-v6 development line into a governed
 self-hosted threat-operations release. Its central additions are inventory-bound
 asset assessment, persistent SOC access groups, module-level authorization,
 Threat Hunting query engineering, and unified RAG/MCP assistance.
@@ -23,6 +27,9 @@ Threat Hunting query engineering, and unified RAG/MCP assistance.
   inventory-approved target.
 - Detection teams can move from a hypothesis or IOC to a reviewed query, ATT&CK
   mapping, validation scenario, and recorded outcome.
+- Evaluators and operators have a module-by-module casebook covering every
+  governed workspace, including access context, prerequisites, repeatable
+  workflows, outputs, examples, case studies, acceptance evidence, and limits.
 
 ## Trust Boundary
 

@@ -205,8 +205,9 @@ notes and redaction.
 
 ## Inventory-Bound Asset Exposure Assessment
 
-> **Introduced in v6.1.0:** this workflow is part of the v6.1 source release.
-> It is not part of the historical immutable v6.0.0 release tag.
+> **Released in v6.5.0 source:** this workflow is part of the v6.5 release
+> candidate. It is not part of the historical immutable v6.0.0 release tag;
+> immutable v6.5 artifacts exist only after the tag workflow succeeds.
 
 ### Saved asset registry and detail pages
 

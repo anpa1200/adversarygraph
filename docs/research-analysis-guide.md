@@ -457,7 +457,7 @@ Use consistent tags so Statistics and Reports / Research filters work.
 
 ## Unified Intelligence Search
 
-On the post-v6 development branch, stored analysis reports can enter the
+In v6.5, stored analysis reports can enter the
 Unified RAG corpus after reconciliation. The derived document retains the
 report's stored TLP, source reference, version, timestamps, legal-sensitivity,
 and verification context. Use grounded search to reconnect a new question to

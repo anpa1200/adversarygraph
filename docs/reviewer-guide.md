@@ -8,7 +8,10 @@ This guide is for security researchers, package curators, and tool evaluators wh
 |---|---|
 | Project overview | [README.md](../README.md) |
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
+| Module-by-module examples and case studies | [docs/module-reference.md](module-reference.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
+| v6.5 release notes | [docs/release-notes/v6.5.0.md](release-notes/v6.5.0.md) |
+| v6.5 release summary | [docs/release-summary-v6.5.0.md](release-summary-v6.5.0.md) |
 | v6 release readiness | [docs/release-readiness-v6.md](release-readiness-v6.md) |
 | Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
 | Tagged v6.0.0 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
@@ -31,6 +34,14 @@ This guide is for security researchers, package curators, and tool evaluators wh
 AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 
 - Uploading threat reports and extracting ATT&CK-mapped techniques with AI assistance
+- Building governed threat-hunt hypotheses, query revisions, findings, and
+  outcomes with optional multi-provider AI suggestions and mandatory review
+- Searching reviewed/community Sigma and YARA-L material and generating typed,
+  escaped query drafts from IOCs
+- Reviewing saved assets and running explicitly authorized, inventory-bound
+  passive, Nmap, and web posture assessment
+- Managing named users and persistent least-privilege SOC groups whose module
+  and action grants are enforced by both the UI and API
 - Reviewing, accepting, and rejecting extracted mappings as an analyst
 - Building detection coverage plans tied to specific TTPs
 - Preserving evidence-to-detection reasoning chains from raw evidence through claims, behavior, ATT&CK mapping, required telemetry, detection logic, validation, SIEM result, and analyst decision
@@ -95,6 +106,8 @@ See [SECURITY.md](../SECURITY.md) for the full policy and known limitations.
 | Backend SAST (bandit, medium/high) | ✅ GitHub Actions |
 | Backend dependency audit (pip-audit) | ✅ GitHub Actions |
 | Frontend build | ✅ GitHub Actions |
+| OpenAPI/frontend contract consistency | ✅ GitHub Actions |
+| 31-module documentation coverage | ✅ GitHub Actions |
 | Frontend dependency audit (npm audit) | ✅ GitHub Actions |
 | Anomaly documentation build and dependency audit | ✅ GitHub Actions |
 | Docker Compose validation | ✅ GitHub Actions |

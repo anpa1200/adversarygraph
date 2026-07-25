@@ -87,6 +87,7 @@ required_files=(
   "docs/release-notes/v${expected}.md"
   "docs/release-summary-v${expected}.md"
   docs/version-matrix.md
+  docs/module-reference.md
   docs/reviewer-guide.md
   docs/security-threat-model.md
   docs/validation-and-limitations.md

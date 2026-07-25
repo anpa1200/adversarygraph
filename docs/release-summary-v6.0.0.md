@@ -2,7 +2,7 @@
 
 > Historical evidence note: the public `v6.0.0` GitHub release has no attached
 > `adversarygraph-images.env` and predates the strengthened post-v6 immutable
-> seven-image publication path. Do not attribute the current `main` artifact
+> seven-image publication path. Do not attribute the v6.5 artifact
 > gate or later Threat Hunting AI controls to this tag.
 
 AdversaryGraph v6.0.0 turns the accumulated v5 feature set into a more
@@ -30,7 +30,7 @@ v6.0.0 can be evaluated for a controlled self-hosted deployment when the
 operator supplies TLS, authentication, network isolation, secrets management,
 backups, monitoring, retention policy, an approved data-handling process, and
 retained build/scan evidence for the exact deployed artifacts. It does not
-carry the immutable digest manifest required by the newer post-v6 gate.
+carry the immutable digest manifest required by the newer v6.5 gate.
 
 It is not a managed SaaS, a multi-tenant isolation boundary, or safe for direct
 internet exposure with default settings.
