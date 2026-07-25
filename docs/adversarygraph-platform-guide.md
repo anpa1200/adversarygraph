@@ -1,8 +1,9 @@
 # AdversaryGraph Platform Guide
 
-> The latest tagged release is v6.0.0. This guide also documents post-v6 work on
-> `main` where identified; verify the checked-out tag or commit before using it
-> as release evidence. AdversaryGraph is an analyst-assistance system: AI
+> The checked-out source is the v6.5.0 release candidate. The latest published
+> immutable tag remains v6.0.0 until the v6.5 tag workflow succeeds; verify the
+> checked-out tag or commit before using it as release evidence. AdversaryGraph
+> is an analyst-assistance system: AI
 > mappings, similarity scores, IOC enrichment, malware-analysis output, and
 > generated detections require human validation before operational use.
 
@@ -11,11 +12,11 @@
 1. [Visual Evidence](#visual-evidence)
 2. [Core Workflow](#core-workflow)
 3. [Modules and Abilities](#modules-and-abilities)
-4. [Module Walkthrough](#module-walkthrough)
-5. [Asset Attack Surface Mapping](#asset-attack-surface-mapping)
-6. [Attack Simulation](#attack-simulation)
-7. [Evidence-to-Detection Graph](#evidence-to-detection-graph)
-8. [Threat Hunting](#threat-hunting)
+4. [Detailed Module Casebook](#detailed-module-casebook)
+5. [Evidence-to-Detection Graph](#evidence-to-detection-graph)
+6. [Module Walkthrough](#module-walkthrough)
+7. [Asset Attack Surface Mapping](#asset-attack-surface-mapping)
+8. [Attack Simulation](#attack-simulation)
 9. [Malware Analysis Extension](#malware-analysis-extension)
 10. [Operating Notes](#operating-notes)
 
@@ -97,11 +98,22 @@ AI assistant should remain traceable back to evidence.
 | Investigation Report | Build analyst handoff reports from selected TTPs, evidence, investigation notes, actor context, and exports. |
 | Operations | Manage investigation workspaces, tracked actors, detection lifecycle records, and team operational tasks. |
 | Pipeline | Register and import external intelligence sources, STIX/TAXII collections, MISP exports, sandbox behavior, and detection-content feeds. |
+| Administration | Create named native users, assign persistent SOC groups, review effective module/action access, manage custom groups, reset passwords/MFA, revoke sessions, and inspect authentication audit events. |
 | DFIR Examples | Use public DFIR examples and sample workflows to demonstrate report-to-ATT&CK analysis without private data. |
 | Troubleshooting | Run and review deployment self-tests, API health checks, database/Redis checks, provider status, and recovery guidance. |
 | Sector Packs | Package sector-specific threat context, actors, techniques, and reusable intelligence bundles. |
 | IOC Node Detail | Inspect one observable as a graph node with enrichment, linked TTPs, relationship context, and actions. |
 | Malware Analysis | Analyze Windows samples in the isolated MalwareGraph workflow: static triage, hashes, strings, unpacking, decompilation, debug workspaces, AI summaries, and gated dynamic analysis. |
+
+## Detailed Module Casebook
+
+The [Module Reference and Casebook](module-reference.md) is the canonical
+module-by-module operating reference for the current source tree. It covers all
+31 governed workspaces with route and access context, prerequisites, repeatable
+steps, outputs, worked examples, realistic case studies, acceptance evidence,
+and explicit limits. Its module coverage is checked against the backend
+`MODULE_CATALOG` in CI so a newly governed module cannot be added without
+documentation.
 
 ## Evidence-to-Detection Graph
 
@@ -318,6 +330,22 @@ items, report intake, evidence records, and operational task context.
 Pipeline connects external intelligence sources and detection-content sources to
 the local platform. It supports source registration, import review, and mapping
 imported behavior to matrix techniques.
+
+### Administration
+
+Administration provides persistent native users and SOC access groups. A
+Platform Administrator can create a named user, select the smallest suitable
+group, keep the compatibility role at `viewer`, and verify the account's
+effective module count before testing sign-in. The creation form shows the
+server password policy, reports incomplete input in an accessible checklist,
+supports browser/password-manager autofill, and prevents duplicate requests
+while creation is pending.
+
+Module visibility is not the security boundary: backend routers enforce the
+same group-derived module and action grants. Delegated user managers cannot
+grant authority beyond their own, and the platform prevents removal of the
+final enabled user-management path. See
+[Authentication and User Management](authentication-and-users.md#create-a-named-user).
 
 ### DFIR Examples
 

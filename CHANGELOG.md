@@ -2,12 +2,32 @@
 
 ## Unreleased
 
+No changes are recorded after the v6.5.0 release boundary.
+
+## v6.5.0 - 2026-07-25
+
 - Fixed administrator user creation so browser/password-manager autofill is
   read from the submitted form, the action is no longer silently disabled, and
   username/password policy failures are shown as an accessible validation
   checklist before the API request.
-
-## v6.1.0 - 2026-07-24
+- Expanded the README, quickstart, platform/user/admin/authentication guides,
+  in-product Auth Guide, security/upgrade guidance, release notes, and OpenAPI
+  description with the named-user workflow, least-privilege group guidance,
+  verification steps, and user-creation troubleshooting.
+- Added a detailed Module Reference and Casebook for all 31 governed
+  workspaces, including prerequisites, repeatable workflows, outputs, worked
+  examples, illustrative case studies, limitations, and six cross-module
+  investigations. CI now fails if the backend module catalog and documented
+  module coverage diverge.
+- Updated the frontend lint toolchain to remove its high-severity transitive
+  audit finding and pinned the Anomaly documentation site's `brace-expansion`
+  resolution to a patched release. The Anomaly documentation image also uses a
+  reviewed npm toolchain that does not bundle the vulnerable 5.0.7 copy. The
+  pinned MalwareGraph UI build now applies an integrity-pinned PostCSS 8.5.18
+  patch and fails on high dependency-audit findings before compilation. The
+  remaining React Router v6 audit items are moderate, deployment-contextual
+  limitations documented in the security and validation guides rather than
+  hidden release exceptions.
 
 - Added persistent SOC access groups with module-level RBAC. Built-in
   least-privilege profiles cover SOC Tier 1/2/3, SOC Manager, threat

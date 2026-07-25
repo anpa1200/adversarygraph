@@ -5,24 +5,28 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v6.1.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v6.5.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v6.1.0**. This release adds inventory-bound asset exposure
-assessment, persistent SOC users and access groups, module-level API and UI
-authorization, the governed Threat Hunting Query Library, unified RAG/MCP
-workflows, and the post-v6 deployment and validation hardening. See the
-[v6.1 release notes](docs/release-notes/v6.1.0.md),
-[release summary](docs/release-summary-v6.1.0.md),
+Current release: **v6.5.0**. This release consolidates the complete post-v6
+development line: hypothesis-driven Threat Hunting, multi-provider governed AI,
+the Sigma/YARA-L Query Library, unified RAG and MCP, searchable saved-asset
+intelligence and authorized exposure assessment, persistent SOC access groups,
+module-level API/UI authorization across 31 workspaces, complete API contracts,
+and hardened release/deployment controls. See the
+[v6.5 release notes](docs/release-notes/v6.5.0.md),
+[release summary](docs/release-summary-v6.5.0.md),
 [release readiness guide](docs/release-readiness-v6.md),
 [case studies](docs/case-studies-v6.md), and
 [screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
-The immutable `v6.0.0` tag remains the historical operational-evidence release.
-Its screenshots and artifact limitations apply only to that tag and are not
-presented as evidence for v6.1.0.
+The `v6.5.0` source metadata is the release candidate until the immutable tag
+workflow builds, scans, publishes, and verifies its artifacts. The existing
+`v6.0.0` tag remains the latest published historical release until that
+workflow succeeds; its screenshots and artifact limitations apply only to that
+tag and are not presented as v6.5 evidence.
 
 ## What It Does
 
@@ -31,8 +35,8 @@ AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerabili
 Core capabilities:
 
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
-- Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, PSIRT/Hunt/IR/Detection workflows, a searchable saved-asset registry with evidence-labelled CVE/TTP/IOC detail pages, and a current-development inventory-bound asset assessment that combines passive OSINT, optional safe Nmap service discovery, local CVE candidates, and governed AI review.
-- Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, auditable Threat Radar handoff, and governed AI suggestions from stored reports or hunt context. Report-to-hunt AI on current `main` supports Enterprise ATT&CK. The assistant can draft hypotheses, plans, queries, finding summaries, and outcome summaries, but it does not create evidence, execute a query, or make lifecycle and disposition decisions.
+- Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, PSIRT/Hunt/IR/Detection workflows, a searchable saved-asset registry with evidence-labelled CVE/TTP/IOC detail pages, and inventory-bound asset assessment that combines passive OSINT, optional safe Nmap service discovery, bounded web posture checks, local CVE candidates, controlled discovery merging, and governed AI review.
+- Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, auditable Threat Radar handoff, and governed multi-provider AI suggestions from stored reports or hunt context. Report-to-hunt AI supports Enterprise ATT&CK. The assistant can draft hypotheses, plans, queries, finding summaries, and outcome summaries, but it does not create evidence, execute a query, or make lifecycle and disposition decisions.
 - Threat Hunting Query Library with reviewed Sigma/YARA-L examples, indexed
   community rules from bounded Git-backed feeds, fielded search and
   autocomplete, provenance and ATT&CK links, deterministic IOC-to-query
@@ -103,6 +107,7 @@ build targets. Do not replace the custom image variables with mutable `latest`
 tags. A prebuilt production deployment requires all seven immutable image
 digests from the exact release's `adversarygraph-images.env` attachment; the
 historical `v6.0.0` release does not contain that complete artifact set.
+Use the v6.5 manifest only after the v6.5 tag workflow publishes it.
 The self-test waits up to fifteen minutes for first-boot ATT&CK/ATLAS reference
 ingestion; override this with `SELFTEST_TIMEOUT` when operating across a slower
 network.
@@ -116,6 +121,28 @@ Open:
 
 The default Compose deployment binds the public UI and reference docs to localhost and keeps the API, Redis, malware-analysis service, and lab fixtures on the internal Compose network.
 Local configuration is stored in `.env`; the default persistent database is `${ADVERSARYGRAPH_DB_DIR:-./data/postgres}`. See [local storage and permissions](docs/local-storage-and-permissions.md) before deleting data directories or Docker volumes.
+
+### Create named users and assign SOC access
+
+For a private multi-user deployment, sign in as a Platform Administrator, open
+**Admin Panel**, and create a named account:
+
+1. Enter a unique username and optional display name.
+2. Enter an initial password that satisfies the policy shown below the field
+   (the default minimum is 12 characters).
+3. Assign the smallest suitable SOC group; keep the advanced legacy role at
+   `viewer` unless a compatibility requirement is documented.
+4. Select **Create user**. The form reports missing fields and policy failures
+   beside the action instead of silently disabling it.
+5. Confirm the account appears in **Users and permissions**, then test sign-in
+   and expected module access before enabling authentication for a deployment.
+
+Browser/password-manager autofill is supported. If an upgraded browser still
+shows the former disabled action, rebuild the frontend and perform a hard
+refresh so it loads the current hashed assets. See
+[Authentication and User Management](docs/authentication-and-users.md#create-a-named-user)
+for API examples, error meanings, group policy, bootstrap sequencing, and
+lockout prevention.
 
 ### Run a private local AI model
 
@@ -203,6 +230,9 @@ for dedicated-account and client configuration.
 | Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
 | Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
+| v6.5 release notes | [docs/release-notes/v6.5.0.md](docs/release-notes/v6.5.0.md) |
+| v6.5 release summary | [docs/release-summary-v6.5.0.md](docs/release-summary-v6.5.0.md) |
+| Detailed module reference, examples, and case studies | [docs/module-reference.md](docs/module-reference.md) |
 | Complete generated API reference | [docs/api-reference.md](docs/api-reference.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | Complete v5 overview | [docs/v5-overview.md](docs/v5-overview.md) |

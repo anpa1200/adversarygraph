@@ -5,6 +5,7 @@ This guide covers local and controlled self-hosted operation.
 Current public documentation bundle:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
+- Detailed module workflows and case studies: [`module-reference.md`](module-reference.md)
 - v5 Attack Simulation screenshots: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 production acceptance gate: [`release-readiness-v6.md`](release-readiness-v6.md)
@@ -57,7 +58,7 @@ Important settings:
 | `THREAT_HUNTING_AI_MAX_CANDIDATES` | Maximum returned report-to-hypothesis candidates; default `3`, enforced range `1`–`3` |
 | `RAG_ENABLED` | Enable unified hybrid retrieval and grounded assistant endpoints; default `true` |
 | `RAG_EMBEDDING_ENABLED` | Enable vector embedding/index/query calls after a private model is verified; default `false`, and lexical retrieval remains available |
-| `RAG_EMBEDDING_PROVIDER` | Private embedding boundary; the post-v6 implementation accepts `local` only |
+| `RAG_EMBEDDING_PROVIDER` | Private embedding boundary; the v6.5 implementation accepts `local` only |
 | `RAG_EMBEDDING_MODEL` | Server-controlled embedding model; default `nomic-embed-text` |
 | `RAG_EMBEDDING_DIMENSIONS` | Fixed pgvector dimension for this corpus; default `768`, change only with migration and full reindex |
 | `RAG_EMBEDDING_BATCH_SIZE` | Maximum texts per embedding request; default `32`, range `1`–`128` |
@@ -416,12 +417,12 @@ readiness because it cannot inherit a browser session. Complete the gate from
 the authenticated troubleshooting UI or an authenticated API client with
 `run_analysis`, and require the full result to return `status=ok`.
 
-This manifest is a post-v6 release artifact. The historical public `v6.0.0`
+This manifest is a v6.5 release artifact. The historical public `v6.0.0`
 release does not contain it; use a later successfully gated tag or document an
 equivalent independent build, scan, and digest-recording process.
 
 For the current feature scope, review
-[`docs/release-summary-v6.0.0.md`](release-summary-v6.0.0.md).
+[`docs/release-summary-v6.5.0.md`](release-summary-v6.5.0.md).
 
 ## Feeds Management
 
@@ -601,6 +602,15 @@ The default Compose deployment is not a hardened public SaaS. If exposing Advers
   review sessions, revoke sessions, reset local MFA, and inspect auth audit
   events. SOC Manager intentionally has operational and audit access without
   user, authentication, feed, or platform-configuration authority.
+- To create a native user, enter a unique username, an initial password that
+  satisfies the policy displayed by Admin Panel, and at least one reviewed SOC
+  group. Keep the legacy role at `viewer` for ordinary group-managed accounts.
+  The current form keeps **Create user** actionable and reports missing fields
+  or password-policy failures immediately above it; **Creating user…** prevents
+  duplicate submissions. Confirm the resulting group/module assignment and
+  test sign-in in a separate private session. See the
+  [complete user-creation workflow](authentication-and-users.md#create-a-named-user)
+  and [troubleshooting table](authentication-and-users.md#user-creation-troubleshooting).
 - Do not expose PostgreSQL or Redis publicly.
 - Rotate default secrets.
 - Run `./scripts/validate-production-env.sh`; it rejects known placeholders,

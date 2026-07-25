@@ -147,6 +147,16 @@ authentication setup guide. Sign in with the bootstrap admin, create permanent
 named admin users from **Admin Panel**, then clear
 `AUTH_BOOTSTRAP_ADMIN_PASSWORD` and restart the API container.
 
+In **Admin Panel → Create user**, supply a unique username and an initial
+password that meets the displayed policy (12 characters by default), select
+the least-privilege SOC group, and keep the advanced legacy role at `viewer`
+for normal group-managed accounts. The action reports incomplete fields and
+policy failures above the button. Confirm the new row and test sign-in before
+removing the bootstrap credential. If an upgraded browser still shows a
+silently disabled Create action, rebuild/recreate `frontend` and hard-refresh
+the page. See
+[Authentication and User Management](authentication-and-users.md#create-a-named-user).
+
 For a production-overlay deployment, authentication is mandatory. Set an
 HTTPS `CORS_ALLOWED_ORIGINS`, keep `SECURE_COOKIES=true`, and configure either
 a strong one-time bootstrap administrator or a trusted OIDC/SAML proxy with a
@@ -165,7 +175,7 @@ immutable `repository@sha256:...` reference; `make prod` deliberately uses
 `--no-build` so the deployed artifacts remain the ones covered by the release
 scan evidence.
 
-The manifest is produced by the post-v6 tag workflow and is not attached to the
+The manifest is produced by the v6.5 tag workflow and is not attached to the
 historical `v6.0.0` GitHub release. Do not invent digest values or transfer scan
 evidence from another build. Use the next successfully gated semantic release,
 or retain an independently built, scanned, and pinned artifact set under an
@@ -303,7 +313,7 @@ curl http://localhost:3000/api/rag/status
 Expected health response:
 
 ```json
-{"status":"ok","version":"6.0.0"}
+{"status":"ok","version":"6.5.0"}
 ```
 
 The readiness response is `200` with `status: "ready"` when the database can

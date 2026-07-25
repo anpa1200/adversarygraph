@@ -1,13 +1,13 @@
 # AdversaryGraph v6 Release Readiness
 
-This is the current acceptance baseline for a controlled self-hosted release
-after `v6.0.0`. “Production ready” means every applicable item below has an
+This is the current acceptance baseline for the controlled self-hosted
+`v6.5.0` release candidate. “Production ready” means every applicable item below has an
 owner and evidence for the exact deployed tag and images; it does not mean the
 default stack is a managed or multi-tenant SaaS. The public `v6.0.0` release
 predates the immutable seven-image manifest and has no attached
 `adversarygraph-images.env`, so it cannot be credited with the strengthened
-post-v6 automated artifact gate. Historical v6 evidence also does not validate
-changes on `main`.
+v6.5 automated artifact gate. Historical v6 evidence also does not validate
+changes in the v6.5 source.
 
 ## Automated Release Gate
 
@@ -49,6 +49,8 @@ For a faster edit-time check:
 The full gate validates:
 
 - release metadata consistency and clean patch formatting;
+- OpenAPI/frontend contract consistency and complete documentation coverage for
+  every governed module;
 - default, development, and hardened production Compose rendering;
 - frontend lint, production build, and Chromium smoke tests;
 - Anomaly Detection Atlas documentation production build with broken-link and
@@ -66,18 +68,18 @@ The full gate is fail-closed: `bandit`, `pip-audit`, `gitleaks`, `trivy`, and
 It also requires a working Docker daemon and already-installed project
 dependencies; it does not mutate the operator's Python or Node environments.
 Use `make security-scan` only for a best-effort developer check; it is not
-release evidence. The release workflow on current `main` independently repeats
+release evidence. The release workflow independently repeats
 the critical tests, deployment renders, secret scan, seven custom-image scans,
-and three pinned stack-image scans before a future tag can publish packages or
+and three pinned stack-image scans before the v6.5 tag can publish packages or
 release notes. Publication is
 tag-only: the workflow requires a `vX.Y.Z` tag whose value exactly
 matches the checked-out `VERSION`; it accepts no manual version input. This is
-post-v6.0.0 hardening: historical evidence for the existing `v6.0.0` tag must
+v6.5 hardening: historical evidence for the existing `v6.0.0` tag must
 be evaluated against the workflow and commit stored at that tag.
 
-### Fresh-container and publication policy on post-v6 `main`
+### Fresh-container and v6.5 publication policy
 
-The checked-out post-v6 implementation configures strict local container scans
+The checked-out v6.5 source configures strict local container scans
 with `docker build --pull --no-cache`. The CI scan matrix and tag workflow use
 the equivalent Buildx `pull: true`, `no-cache: true`, and `load: true` settings.
 This avoids accepting a result solely because an older local base image or
@@ -94,14 +96,14 @@ fix. A passing gated scan therefore means no gate-blocking fixable finding was
 reported under that scanner database and policy, not that the image contains no
 known vulnerabilities.
 
-For a future version tag, the current workflow builds each of the seven release
+For the v6.5.0 version tag, the current workflow builds each of the seven release
 image families once, loads it into the runner, scans that exact local candidate,
 and only then pushes its semantic-version tag. It anonymously resolves each
 public manifest, verifies that its config digest matches the scanned local image
 ID, and writes the immutable manifest digest to `adversarygraph-images.env`.
 Shared `latest` tags are not advanced because the family cannot be updated
 atomically. Treat this as release evidence only when the workflow at the exact
-tag completes successfully; it is post-v6 behavior and does not retroactively
+tag completes successfully; it is v6.5 behavior and does not retroactively
 describe the existing `v6.0.0` tag.
 
 Publication retry is fail-closed. If a prior attempt published only part of the
@@ -137,10 +139,10 @@ production Compose preflight requires those custom digest references and
 deploys them with `--no-build`. The Helm chart can render digest references for
 PostgreSQL, backend, frontend, and MalwareGraph. Its PostgreSQL and Redis
 evaluation defaults are digest-pinned, while backend, frontend, and
-MalwareGraph remain `6.0.0` tag-only. Post-v6 evaluation overrides those three
-application images; production also replaces PostgreSQL and supplies
-revision-matched images with reviewed manifest digests for all four release
-components.
+MalwareGraph use the human-readable `6.5.0` candidate tag with empty digest
+fields. Those tags support evaluation only; production also replaces
+PostgreSQL and supplies revision-matched images with reviewed manifest digests
+for all four release components.
 A reviewed `sha256:...` value takes precedence over
 the human-readable tag; an empty digest remains tag-based and is not acceptable
 for the production evidence row below. Preserve the registry, architecture,
@@ -312,7 +314,8 @@ restore the pre-upgrade dump when database state requires it. See
 
 ## Known Boundaries
 
-The following remain outside the v6.0.0 production claim:
+The following remain outside the v6.5.0 controlled self-hosted production
+claim:
 
 - managed public SaaS and tenant isolation;
 - zero-downtime or downgrade-safe schema guarantees;

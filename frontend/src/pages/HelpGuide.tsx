@@ -28,6 +28,14 @@ export function HelpGuide() {
                 </div>
               ))}
             </div>
+            <a
+              href="https://github.com/anpa1200/adversarygraph/blob/main/docs/module-reference.md"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-5 inline-flex rounded border border-mitre-accent/50 px-4 py-2 text-sm font-semibold text-mitre-accent hover:border-mitre-accent hover:bg-mitre-accent/10"
+            >
+              Open detailed module examples and case studies
+            </a>
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">

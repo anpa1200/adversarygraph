@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Check release metadata
         run: ./scripts/check-version-consistency.sh
+      - name: Check module documentation coverage
+        run: python3 scripts/check-module-docs.py
       - name: Test release tag ruleset verifier
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -q
 
@@ -405,7 +407,10 @@ jobs:
       - name: Start core stack
         run: docker compose up -d --build postgres redis malwaregraph attack-lab-web attack-lab-endpoint api frontend
       - name: Run self-test service
-        run: docker compose run --rm selftest
+        # The dependencies are already running. Avoid recreating the API after
+        # nginx has resolved its container address, which would leave the
+        # frontend proxy pinned to a stale upstream IP for the live API check.
+        run: docker compose run --rm --no-deps selftest
       - name: Exercise every live read-only API operation
         run: |
           ./scripts/test-api-live.py \

@@ -2,8 +2,8 @@ apiVersion: v2
 name: adversarygraph
 description: Self-hosted CTI-to-detection workbench for ATT&CK mapping, IOC/CVE intelligence, malware analysis, and attack simulation.
 type: application
-version: 0.3.0
-appVersion: "6.1.0"
+version: 0.4.0
+appVersion: "6.5.0"
 home: https://1200km.com/adversarygraph/
 sources:
   - https://github.com/anpa1200/adversarygraph

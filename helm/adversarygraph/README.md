@@ -1,8 +1,8 @@
 # AdversaryGraph Helm Chart
 
-This v6.1 chart is a deployment scaffold for a controlled, single-workspace
+This v6.5 chart is a deployment scaffold for a controlled, single-workspace
 Kubernetes installation. Production use requires the image digests and manifest
-produced by the successful v6.1.0 tag workflow; source metadata or human-readable
+produced by the successful v6.5.0 tag workflow; source metadata or human-readable
 tags alone are not release evidence. It is not a managed-SaaS or multi-tenant
 isolation boundary.
 
@@ -109,7 +109,7 @@ review both separately.
 ### Image integrity
 
 The backend, frontend, and MalwareGraph images default to the versioned
-`6.1.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
+`6.5.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
 uses the pgvector project's `0.8.2-pg16` compatibility image so the development
 chart has the extension required by the RAG schema; both PostgreSQL and Redis
 compatibility images are digest-pinned. Do not deploy the application tags
@@ -207,7 +207,7 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 
 ## Unified RAG Configuration
 
-The v6.1 chart templates enable RAG configuration and scheduled reconciliation
+The v6.5 chart templates enable RAG configuration and scheduled reconciliation
 by default, while semantic embeddings remain disabled. Use revision-matched
 backend and frontend application images; worker and Beat use the backend image.
 The digest-pinned

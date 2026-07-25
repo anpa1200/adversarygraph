@@ -7,8 +7,15 @@ Use this checklist for reviewer-friendly AdversaryGraph releases.
 - Update `VERSION`.
 - Update `frontend/package.json` and `frontend/package-lock.json`.
 - Update backend API version in `backend/app/core/version.py`.
+- Update Helm chart/app versions and default application image tags.
 - Move `CHANGELOG.md` entries from unreleased work into a dated version.
 - Add `docs/release-notes/vX.Y.Z.md`.
+- Add `docs/release-summary-vX.Y.Z.md` and update
+  `docs/version-matrix.md`, `ROADMAP.md`, `SECURITY.md`, and current guides.
+- Regenerate `docs/api-reference.md` with
+  `./scripts/check-api-contracts.py --write-docs`.
+- Run `python3 scripts/check-module-docs.py` so every governed backend module
+  has exactly one detailed reference entry.
 - Confirm sample outputs and demo dataset still match the documented workflow.
 - Confirm no secrets, private reports, credentials, or customer data are added.
 - Confirm an active GitHub tag ruleset blocks updates and deletion of existing

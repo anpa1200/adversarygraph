@@ -1,14 +1,14 @@
 # Roadmap
 
-Current release: **v6.1.0** — Governed threat operations, asset exposure assessment, and SOC access control (2026-07-24)
+Current release: **v6.5.0** — Governed intelligence, hunting, exposure assessment, and SOC operations (2026-07-25)
 
-For the full history from v0.2.0 through v6.1.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v6.5.0 see [CHANGELOG.md](CHANGELOG.md).
 
 ## Unreleased
 
-- [ ] Record future work here after the v6.1.0 release boundary.
+- [ ] Record future work here after the v6.5.0 release boundary.
 
-## v6.1 — Governed Hunting, Asset Assessment, and Platform Hardening
+## v6.5 — Governed Intelligence, Hunting, Asset Assessment, and SOC Operations
 
 - [x] Add a hypothesis-driven Threat Hunting workspace with query revisions,
   evidence-preserving findings, reviewed dispositions, exports, and Threat
@@ -43,9 +43,20 @@ For the full history from v0.2.0 through v6.1.0 see [CHANGELOG.md](CHANGELOG.md)
 - [x] Harden Compose, Helm, container users and filesystems, production preflight,
   CI action pinning, tag-only publication, backup/restore, seven-image release
   publication, and ten-image stack scanning
-- [x] Assign v6.1.0 and update source, package, Helm, release, and reviewer
+- [x] Add persistent SOC groups, named-user administration, grant ceilings, and
+  consistent module-level API/UI authorization across 31 workspaces
+- [x] Add a searchable saved-asset registry, evidence-labelled asset detail,
+  authorized exposure assessment, bounded passive/Nmap/web checks, and
+  controlled merging of discovered inventory facts
+- [x] Add the reviewed/community Query Library, Sigma and YARA-L workflows,
+  deterministic IOC-to-query generation, and ATT&CK-linked search
+- [x] Add complete API contract validation for all documented platform
+  operations and include it in CI
+- [x] Add a detailed module reference and casebook for every governed workspace,
+  validated against the backend catalog in CI
+- [x] Assign v6.5.0 and update source, package, Helm, release, and reviewer
   metadata
-- [ ] Cut the immutable v6.1.0 tag only after merge CI and the complete release
+- [ ] Cut the immutable v6.5.0 tag only after merge CI and the complete release
   gate pass
 
 ## v6.0 — Operational Evidence and Production Readiness

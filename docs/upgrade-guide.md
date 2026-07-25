@@ -12,7 +12,7 @@ post-upgrade validation.
 
 Formal Alembic migrations are a planned production-readiness improvement.
 
-The post-v6 unified RAG schema adds the PostgreSQL `vector` extension, derived
+The v6.5 unified RAG schema adds the PostgreSQL `vector` extension, derived
 document/chunk tables, a generated full-text column, GIN/HNSW indexes, index-run
 state, assistance provenance, and Navigator proposals. The bundled
 `adversarygraph-postgres` image installs checksum-pinned pgvector 0.8.2. An external
@@ -26,7 +26,7 @@ Keep the existing value unless the release supplies and tests an explicit
 schema migration and complete reindex procedure for the new model dimension.
 
 All current startup compatibility DDL runs inside one database transaction.
-The current post-v6 development referential-integrity preflight aborts that
+The v6.5 referential-integrity preflight aborts that
 transaction if it finds a
 Threat Hunting AI record whose source report no longer exists or an Evidence
 Graph edge whose endpoint node no longer exists. It does not silently delete
@@ -210,6 +210,11 @@ migration tooling is introduced:
 5. Confirm feature-level smoke tests:
 
    - authenticated login and logout;
+   - create one least-privilege test user in Admin Panel, confirm its SOC group
+     and effective modules, test sign-in, then disable or retain it according
+     to the acceptance plan;
+   - verify the Create user form displays the live password policy and returns
+     explicit validation feedback rather than an unexplained disabled action;
    - Discover and ATT&CK Group Library;
    - CVE Library and IOC Library;
    - Observability summary and metrics;

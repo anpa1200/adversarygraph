@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-AdversaryGraph **v6.1.0** is the current source release for controlled
+AdversaryGraph **v6.5.0** is the current source release for controlled
 self-hosted deployments.
 The project is a self-hosted/internal analyst workbench, not a hardened multi-tenant SaaS.
 Security fixes are applied to the latest `main` branch and the latest tagged release.
 
 | Version | Supported |
 |---|---|
-| latest `main` (`v6.1.0`) | Yes |
+| latest `main` (`v6.5.0`) | Yes |
 | latest tagged release (`v6.0.0`) | Yes |
 | older tags (`v4.x` and below) | Best effort |
 
@@ -69,6 +69,8 @@ The default Docker Compose profile is for local or controlled self-hosted use. I
 
 - TLS termination.
 - Native authentication enabled or identity-aware reverse-proxy authentication.
+- Named administrator recovery accounts and least-privilege SOC group
+  assignments verified through both the UI and direct API authorization.
 - Network restrictions for PostgreSQL, Redis, API, and worker services.
 - Secret rotation and non-default database credentials.
 - Backups, retention policy, and restore testing.
@@ -100,3 +102,13 @@ The default Docker Compose profile is for local or controlled self-hosted use. I
 - File parsing is bounded but should still be run in a controlled environment for untrusted documents.
 - Generated detection logic is a draft and must not be deployed without local review and testing.
 - Starlette/FastAPI transitive dependencies are audited in CI with `pip-audit`. Operators who route public traffic through AdversaryGraph should still ensure a trusted reverse proxy normalizes the `Host` header before it reaches the backend.
+- The client-only frontend remains on React Router `6.30.3`. The current npm
+  advisory database reports two moderate findings: an SSR-hydration
+  deserialization issue (AdversaryGraph does not use React Router SSR) and a
+  backslash-based navigation redirect issue. API-controlled external links
+  pass through the centralized safe-URL policy, and browser tests reject unsafe
+  schemes; developers must still never pass untrusted values directly to
+  `Link` or `useNavigate`. React Router `7.18.1` is not adopted for this release
+  because its current dependency range introduces a high-severity React Server
+  Components action advisory and a breaking router migration. Re-evaluate both
+  advisory sets before every release tag.

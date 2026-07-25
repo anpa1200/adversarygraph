@@ -6,9 +6,9 @@ they are not customer testimonials, external benchmark results, or proof of
 real-world detection efficacy.
 
 > **Release boundary:** Case Studies 1–3 apply to the tagged `v6.0.0`
-> platform. Case Studies 4–6 document Unified RAG/MCP capabilities on the
-> current post-v6 development branch; they were not shipped in the immutable
-> `v6.0.0` tag.
+> platform. Case Studies 4–6 document Unified RAG/MCP capabilities included in
+> the v6.5.0 source release; they were not shipped in the immutable `v6.0.0`
+> tag, and become immutable v6.5 evidence only after its tag workflow succeeds.
 
 ## Case Study 1: Report Evidence to Detection Review
 

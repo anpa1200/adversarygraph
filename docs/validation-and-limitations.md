@@ -60,6 +60,14 @@ This document records what AdversaryGraph can validate today and where analyst r
 - The MCP surface is local stdio advisory access, not a remote automation or
   response interface. It cannot confirm/apply Navigator proposals or mutate
   operational state.
+- The client-only frontend uses React Router `6.30.3`. Two moderate npm
+  advisories remain: one is limited to SSR hydration, which this frontend does
+  not use, and one concerns untrusted backslash navigation values. External
+  API-controlled URLs use the centralized safe-URL guard and browser tests
+  cover unsafe schemes, but route values must still be treated as untrusted
+  input. A Router 7 upgrade is deferred because the currently available
+  release introduces a high-severity React Server Components advisory and
+  requires a deliberate breaking migration.
 
 ## Reviewer Checklist
 
@@ -77,5 +85,7 @@ Before accepting a result as validated:
 - Confirm a Navigator proposal did not silently persist, execute, or imply
   coverage; save and validate a named layer through the normal workflow only
   after review.
+- Confirm the current frontend dependency audit and Router advisory review
+  remain valid for the exact lockfile shipped with the release.
 - Confirm Evidence Graph AI drafts, ATT&CK mappings, and readiness score inputs were analyst-reviewed.
 - Document unresolved assumptions and validation gaps in the investigation.

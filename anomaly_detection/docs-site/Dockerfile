@@ -5,7 +5,13 @@ RUN npm install -g npm@11.18.0
 
 WORKDIR /seed
 COPY anomaly_detection/docs-site/package.json anomaly_detection/docs-site/package-lock.json ./
-RUN npm ci
+# npm 11.18.0 bundles brace-expansion 5.0.7. Replace that copy with the
+# lockfile-verified 5.0.8 patch used by the docs tree, then fail closed if the
+# expected package was not installed.
+RUN npm ci && \
+    rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
+    cp -R node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
+    node -e "const p=require('/usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json'); if (p.version !== '5.0.8') process.exit(1)"
 
 COPY anomaly_detection/docs-site/ /seed/
 COPY scripts/sync-anomaly-atlas.sh /usr/local/bin/sync-anomaly-atlas

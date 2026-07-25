@@ -2,7 +2,7 @@
 
 > This is the historical v2.x walkthrough and its screenshots represent that
 > interface. For current behavior, use the
-> [AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). The post-v6
+> [AdversaryGraph Platform Guide](adversarygraph-platform-guide.md). The v6.5
 > unified intelligence RAG, Navigator assistant, and local MCP integration are
 > documented in [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md) and
 > are not retroactively part of a v2 release.
@@ -146,7 +146,7 @@ Open:
 Health should return:
 
 ```json
-{"status":"ok","version":"6.0.0"}
+{"status":"ok","version":"<deployed-version>"}
 ```
 
 Use `/api/ready` for deployment admission. It verifies database connectivity
@@ -935,7 +935,7 @@ POST /api/rag/reindex
 GET  /api/rag/index-runs
 ```
 
-The RAG endpoints shown above exist only in the documented post-v6 checkout,
+The RAG endpoints shown above exist in the documented v6.5 source,
 not in the historical v2.x release. Search/assistance requires `run_analysis`,
 business-profile mutation requires `manage_intel`, and reconciliation/history
 requires `manage_feeds`. Proposal confirmation records a reviewed receipt but

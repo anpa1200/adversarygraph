@@ -2,10 +2,10 @@
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
 controlled deployments. The latest reviewed release tag is `v6.0.0`; the
-current development checkout also contains the post-v6 work listed under
-[Unreleased](../CHANGELOG.md). This document tracks the checked-out repository,
-so every production review must record the exact tag or commit and must not
-transfer evidence from a different revision.
+checked-out source is the `v6.5.0` release candidate described in
+[the changelog](../CHANGELOG.md). This document tracks the checked-out
+repository, so every production review must record the exact tag or commit and
+must not transfer evidence from a different revision.
 
 ## Current Status
 
@@ -21,11 +21,10 @@ The reviewed AdversaryGraph v6.0.0 tag is suitable for:
 
 The public `v6.0.0` GitHub release predates the current immutable seven-image
 manifest and has no attached `adversarygraph-images.env`. It therefore cannot
-be claimed to have passed the strengthened post-v6 artifact gate documented in
-this checkout. Current `main` is an unreleased candidate with additional
-controls and features. It requires a new semantic release tag and a successful
-tag workflow before production rollout, and must not be represented as the
-existing `v6.0.0` artifact.
+be claimed to have passed the strengthened v6.5 artifact gate documented in
+this checkout. The v6.5 source is a release candidate until the protected
+`v6.5.0` tag workflow succeeds; it must not be represented as the existing
+`v6.0.0` artifact or as an immutable v6.5 artifact before that point.
 
 AdversaryGraph is not a managed public SaaS. The default deployment is suitable
 for controlled self-hosted use; public internet exposure still requires a
@@ -52,10 +51,10 @@ handling policy.
 | Required database secret | Implemented | `DB_PASS` is required at startup |
 | Redis authentication | Implemented | `REDIS_PASSWORD` / authenticated `REDIS_URL` |
 | Configurable CORS | Implemented | `CORS_ALLOWED_ORIGINS`, wildcard rejection |
-| Native user authentication | Implemented | Username/password login, session cookie, roles, Admin Panel, and `/auth-guide` |
+| Native user authentication | Implemented | Named username/password accounts, policy-aware user creation, session cookie, Admin Panel, and `/auth-guide` |
 | Trusted-header auth guard | Implemented | `PROXY_SECRET` and `X-Internal-Proxy-Secret` |
 | Enterprise SSO integration pattern | Implemented | OIDC/SAML via trusted reverse proxy, `AUTH_SSO_MODE`, `X-Auth-User`, `X-Auth-Roles` |
-| Expanded RBAC | Implemented | viewer, analyst, threat_intel, detection_engineer, incident_responder, auditor, security_admin, service_account, admin plus explicit permissions |
+| Expanded RBAC | Implemented in v6.5 source | Twelve persistent SOC access groups, 31 module allowlists, API/UI enforcement, legacy role baselines, direct-grant ceilings, and final-user-manager continuity |
 | Auth audit trail | Implemented | login, logout, user changes, password reset, MFA, session review/revocation |
 | Session administration | Implemented | expiry, admin session list, user session revoke, own-session revoke |
 | Local MFA support | Implemented | TOTP setup/confirm/admin disable for native accounts |
@@ -68,14 +67,15 @@ handling policy.
 | Sizing guide | Implemented | `docs/deployment-sizing.md` |
 | Backup/restore scripts | Implemented | checksummed, archive-validated backup and writer-stopped restore in `scripts/backup.sh`, `scripts/restore.sh` |
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
-| Fresh image scan/publish path | Implemented on post-v6 `main`; future-tag evidence required | strict local builds scan seven custom images plus the three pinned third-party stack images; the tag workflow loads and scans seven versioned images before pushing those same local images |
+| Fresh image scan/publish path | Implemented in v6.5 source; tag-workflow evidence required | strict local builds scan seven custom images plus the three pinned third-party stack images; the tag workflow loads and scans seven versioned images before pushing those same local images |
 | Immutable Compose deployment | Implemented | production preflight requires all seven custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Implemented with operator input | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph remain v6.0.0 tag-only. Post-v6 evaluation overrides those three application images; production also replaces PostgreSQL and supplies reviewed digests for all four release components. |
+| Helm image digests | Implemented with operator input | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph default to v6.5.0 candidate tags with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for all four release components from the successful v6.5 tag workflow. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
-| PostgreSQL full-text and pgvector | Implemented on the post-v6 development branch | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
-| Unified RAG corpus | Implemented on the post-v6 development branch | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
-| Governed Navigator assistant | Implemented on the post-v6 development branch | business profiles, exact/FTS/optional vector retrieval, source-bound structured output, TLP/legal gates, verified citations, temporary preview, and explicit non-mutating Add/Replace confirmation; advisory/audit records are persisted but no layer is saved |
-| Local MCP integration | Implemented on the post-v6 development branch | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
+| PostgreSQL full-text and pgvector | Implemented in v6.5 source | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
+| Unified RAG corpus | Implemented in v6.5 source | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
+| Governed Navigator assistant | Implemented in v6.5 source | business profiles, exact/FTS/optional vector retrieval, source-bound structured output, TLP/legal gates, verified citations, temporary preview, and explicit non-mutating Add/Replace confirmation; advisory/audit records are persisted but no layer is saved |
+| Local MCP integration | Implemented in v6.5 source | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
+| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v6.5 candidate lockfiles; the client frontend has two documented moderate React Router v6 advisories, while the available Router 7 path currently introduces a high RSC advisory and a breaking migration |
 
 ## Remaining Production Blockers
 
@@ -113,6 +113,11 @@ deployment with documented compensating controls:
   endpoint/model pair. Unit/integration protocol tests do not prove that a
   deployment-specific model returns the configured dimensions, obeys latency
   limits, or meets local data-handling policy.
+- Reassess the two moderate React Router v6 advisories against the exact
+  frontend deployment and the current Router 7 advisory set before the release
+  tag. AdversaryGraph does not use Router SSR, and API-controlled external URLs
+  pass through the safe-URL guard, but this is a documented residual risk rather
+  than a claim of a finding-free frontend dependency tree.
 
 ## Deployment Position
 
@@ -163,7 +168,7 @@ the absence of an externally managed Secret.
 
 ## Container Release Integrity
 
-On the post-v6 development branch, strict local and CI container scans are configured to pull
+In the v6.5 source, strict local and CI container scans are configured to pull
 base images and bypass cached layers. Runtime Dockerfiles apply distribution
 updates available during the build, and fixable high/critical Trivy findings
 fail the strict gate. The current `ignore-unfixed` policy filters findings that
@@ -188,8 +193,8 @@ build, and it rescans that artifact before pushing; labels alone are not
 trusted. Mismatches and ambiguous registry or GitHub release lookups stop
 publication and require explicit partial-version cleanup after review.
 The workflow rechecks release state immediately before publishing the draft.
-A successful run for the exact tag is required evidence; the workflow currently
-on a development branch is not evidence for the historical `v6.0.0` artifact.
+A successful run for the exact tag is required evidence; the workflow in the
+v6.5 source is not evidence for the historical `v6.0.0` artifact.
 
 For Helm deployments, operators supply reviewed registry digests for the
 PostgreSQL, backend, frontend, and MalwareGraph release images. Redis and an

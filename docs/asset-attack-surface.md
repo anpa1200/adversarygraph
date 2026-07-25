@@ -27,8 +27,7 @@ external scanner output, service inventories, and plain hostname/IP lists.
 Representative v4.1 screenshots captured from the local Docker-served UI are
 listed in
 [`assets/adversarygraph-v4.1-platform/manifest.md`](assets/adversarygraph-v4.1-platform/manifest.md).
-They illustrate the workflow but are not evidence for the post-v6 `main`
-branch.
+They illustrate the workflow but are not release evidence for v6.5.
 
 | Workflow | Screenshot |
 |---|---|

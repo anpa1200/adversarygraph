@@ -66,6 +66,10 @@ For private analysis:
   from an oversized chunked JSON or form body.
 - Configure `AUTH_ENABLED=true` for native username/password access control.
   The local setup guide is available at <http://localhost:3000/auth-guide>.
+- Create at least two tested named Platform Administrator accounts before
+  clearing the bootstrap password. Assign workforce accounts through reviewed
+  least-privilege SOC groups; module hiding is not the security boundary, so
+  verify direct API denial as well as sidebar visibility.
 - For trusted-header authentication, configure `PROXY_SECRET`. The proxy must
   strip client-supplied `X-Auth-User`, `X-Auth-Roles`, and
   `X-Internal-Proxy-Secret` headers before setting trusted identity headers.
@@ -103,8 +107,8 @@ The request may raise but cannot lower that marking. Cloud processing is
 disabled by default; when an operator enables it, a remote request still
 requires explicit analyst acknowledgment. `TLP:AMBER+STRICT` and `TLP:RED`
 requests are rejected for remote providers.
-Enterprise ATT&CK is the only supported report-to-hunt framework in the current
-post-v6 development implementation.
+Enterprise ATT&CK is the only supported report-to-hunt framework in the v6.5
+implementation.
 
 The assistant request treats report text as untrusted model input. Fixed task
 prompts, structured validation, source-span checks, provider/TLP gates, and
