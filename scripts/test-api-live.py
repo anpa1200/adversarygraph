@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 import sys
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,6 +16,7 @@ from urllib.request import Request, urlopen
 
 UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 ALLOWED_DEPENDENCY_STATUSES = {400, 401, 403, 404, 409, 422, 429, 502, 503, 504}
+TRANSIENT_STARTUP_STATUSES = {502, 503, 504}
 
 
 def request(
@@ -34,6 +36,51 @@ def request(
     except HTTPError as exc:
         body = exc.read() if max_bytes is None else exc.read(max_bytes)
         return exc.code, body, exc.headers.get("Content-Type", "")
+
+
+def load_openapi_schema(
+    base_url: str,
+    *,
+    token: str,
+    timeout: float,
+    attempts: int,
+    retry_delay: float,
+) -> dict[str, Any]:
+    """Load OpenAPI after bounded retries for transient startup failures."""
+    last_error = "no request attempted"
+    for attempt in range(1, attempts + 1):
+        try:
+            status, body, _ = request(
+                f"{base_url}/openapi.json",
+                token=token,
+                timeout=timeout,
+                max_bytes=None,
+            )
+        except (URLError, TimeoutError, OSError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        else:
+            if status == 200:
+                try:
+                    return json.loads(body)
+                except json.JSONDecodeError as exc:
+                    last_error = f"response is not JSON: {exc}"
+            else:
+                last_error = f"HTTP {status}"
+                if status not in TRANSIENT_STARTUP_STATUSES:
+                    break
+
+        if attempt < attempts:
+            print(
+                f"OpenAPI not ready ({last_error}); retrying "
+                f"{attempt}/{attempts} in {retry_delay:g}s...",
+                file=sys.stderr,
+            )
+            time.sleep(retry_delay)
+
+    raise RuntimeError(
+        f"Could not load {base_url}/openapi.json after {attempts} attempt(s): "
+        f"{last_error}"
+    )
 
 
 def placeholder(name: str) -> str:
@@ -105,27 +152,32 @@ def main() -> int:
     parser.add_argument("--token", default="")
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument(
+        "--schema-attempts",
+        type=int,
+        default=12,
+        help="OpenAPI startup attempts before failing (default: 12)",
+    )
+    parser.add_argument(
+        "--schema-retry-delay",
+        type=float,
+        default=5.0,
+        help="Seconds between OpenAPI startup attempts (default: 5)",
+    )
     parser.add_argument("--json-output", default="")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
 
     try:
-        status, body, _ = request(
-            f"{base_url}/openapi.json",
+        schema = load_openapi_schema(
+            base_url,
             token=args.token,
             timeout=args.timeout,
-            max_bytes=None,
+            attempts=max(1, args.schema_attempts),
+            retry_delay=max(0.0, args.schema_retry_delay),
         )
-    except (URLError, TimeoutError, OSError) as exc:
-        print(f"Could not load {base_url}/openapi.json: {exc}", file=sys.stderr)
-        return 2
-    if status != 200:
-        print(f"OpenAPI request returned HTTP {status}", file=sys.stderr)
-        return 2
-    try:
-        schema = json.loads(body)
-    except json.JSONDecodeError as exc:
-        print(f"OpenAPI response is not JSON: {exc}", file=sys.stderr)
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
         return 2
 
     targets = [
