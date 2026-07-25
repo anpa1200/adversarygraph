@@ -111,16 +111,28 @@ class Settings(BaseSettings):
     censys_api_key: str = ""
     censys_org_id: str = ""
 
-    # Threat Radar asset scanner. The only active profile is intentionally
-    # conservative: unprivileged TCP connect plus light service detection
-    # against an inventory-bound target. No NSE vulnerability/exploit scripts,
-    # UDP scan, OS fingerprinting, or evasion flags are permitted.
+    # Threat Radar asset scanners. Every active profile is inventory-bound and
+    # requires the explicit authorization gate. All network-executing tools run
+    # in the isolated scanner MCP container; the API holds no scanner binaries.
     asset_scanner_enabled: bool = True
+    asset_scanner_mcp_url: str = "http://scanner-mcp:8200/mcp"
+    asset_scanner_mcp_token: str = "development-only-scanner-mcp-token"
+    asset_scanner_mcp_timeout_seconds: int = Field(default=240, ge=30, le=1_000)
     asset_scanner_nmap_enabled: bool = True
     asset_scanner_web_probe_enabled: bool = True
+    asset_scanner_tls_enabled: bool = True
+    asset_scanner_dns_enabled: bool = True
+    asset_scanner_nuclei_enabled: bool = True
     asset_scanner_nmap_binary: str = "/usr/bin/nmap"
+    asset_scanner_nuclei_binary: str = "/usr/local/bin/nuclei"
+    asset_scanner_nuclei_templates: str = "/app/nuclei-templates"
     asset_scanner_timeout_seconds: int = Field(default=120, ge=15, le=600)
     asset_scanner_web_probe_timeout_seconds: int = Field(default=15, ge=5, le=60)
+    asset_scanner_tls_timeout_seconds: int = Field(default=15, ge=5, le=60)
+    asset_scanner_dns_timeout_seconds: int = Field(default=10, ge=3, le=60)
+    asset_scanner_nuclei_timeout_seconds: int = Field(default=180, ge=30, le=900)
+    asset_scanner_nuclei_rate_limit: int = Field(default=25, ge=1, le=50)
+    asset_scanner_nuclei_concurrency: int = Field(default=5, ge=1, le=10)
     asset_scanner_top_ports: int = Field(default=100, ge=10, le=1000)
     asset_scanner_max_resolved_ips: int = Field(default=4, ge=1, le=16)
 

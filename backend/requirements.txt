@@ -42,6 +42,7 @@ fpdf2==2.8.1
 # Utilities
 httpx==0.28.1
 httpcore==1.0.9
+dnspython==2.8.0
 structlog==24.4.0
 python-slugify==8.0.4
 defusedxml==0.7.1

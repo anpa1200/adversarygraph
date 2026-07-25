@@ -68,6 +68,34 @@ jobs:
       - name: Lint
         run: ruff check .
 
+  scanner-mcp-tests:
+    name: Scanner MCP tests and security checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scanner_mcp
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scanner_mcp/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-asyncio ruff bandit pip-audit
+      - name: Lint
+        run: ruff check scanner_mcp tests
+      - name: Test
+        env:
+          SCANNER_MCP_TOKEN: scanner_mcp_ci_token_0123456789abcdef
+        run: PYTHONPATH=. python -m pytest -q
+      - name: SAST
+        run: bandit -q -r scanner_mcp -x tests --severity-level medium --confidence-level medium
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt
+
   backend-sast:
     name: Backend SAST (bandit)
     runs-on: ubuntu-latest
@@ -206,6 +234,7 @@ jobs:
           DB_PASS: ci_validation_database_password
           REDIS_PASSWORD: ci_validation_redis_password
           RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
+          ASSET_SCANNER_MCP_TOKEN: ci_scanner_mcp_token_0123456789abcdef
           CORS_ALLOWED_ORIGINS: https://adversarygraph.example.com
           AUTH_ENABLED: "true"
           AUTH_EXISTING_ADMIN_CONFIRMED: "true"
@@ -214,6 +243,7 @@ jobs:
           ATTCK_DOMAINS: enterprise-attack
           ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_SCANNER_MCP_IMAGE: example.invalid/adversarygraph-scanner-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_FRONTEND_IMAGE: example.invalid/adversarygraph-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_MALWAREGRAPH_IMAGE: example.invalid/adversarygraph-malwaregraph@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE: example.invalid/adversarygraph-attack-lab-web@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -247,12 +277,14 @@ jobs:
             --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             >/tmp/adversarygraph-production.yaml
           helm template adversarygraph helm/adversarygraph \
             --set secrets.existingSecret= \
             --set secrets.dbPassword=helm_validation_db_password \
             --set secrets.redisPassword=helm_validation_redis_password \
             --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
+            --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
           if helm template adversarygraph helm/adversarygraph --set secrets.existingSecret= >/dev/null 2>&1; then
@@ -354,8 +386,29 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: backend
+          load: true
           push: false
           tags: adversarygraph-backend:ci
+      - name: Build scanner MCP image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: scanner_mcp
+          load: true
+          push: false
+          tags: adversarygraph-scanner-mcp:ci
+      - name: Verify scanner-container boundary
+        run: |
+          docker run --rm --entrypoint sh adversarygraph-backend:ci -ec '
+            ! command -v nmap
+            ! command -v nuclei
+            test ! -e /app/nuclei-templates
+          '
+          docker run --rm --entrypoint sh adversarygraph-scanner-mcp:ci -ec '
+            test "$(id -u)" = 10002
+            command -v nmap
+            command -v nuclei
+            test -d /app/nuclei-templates
+          '
       - name: Build frontend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -399,13 +452,14 @@ jobs:
       DB_PASS: ci_test_password
       REDIS_PASSWORD: ci_redis_password
       RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
+      ASSET_SCANNER_MCP_TOKEN: ci_scanner_mcp_token_0123456789abcdef
       AUTH_ENABLED: "false"
       AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
       ATTCK_DOMAINS: enterprise-attack
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
-        run: docker compose up -d --build postgres redis malwaregraph attack-lab-web attack-lab-endpoint api frontend
+        run: docker compose up -d --build postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api frontend
       - name: Run self-test service
         # The dependencies are already running. Avoid recreating the API after
         # nginx has resolved its container address, which would leave the
@@ -427,7 +481,7 @@ jobs:
           if-no-files-found: warn
       - name: Show logs on failure
         if: failure()
-        run: docker compose logs --tail=200 api frontend postgres redis malwaregraph attack-lab-web attack-lab-endpoint
+        run: docker compose logs --tail=200 api frontend postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint
       - name: Stop stack
         if: always()
         run: docker compose down -v
@@ -447,6 +501,10 @@ jobs:
             context: backend
             file: backend/Dockerfile
             tag: adversarygraph-backend:scan
+          - name: scanner-mcp
+            context: scanner_mcp
+            file: scanner_mcp/Dockerfile
+            tag: adversarygraph-scanner-mcp:scan
           - name: frontend
             context: frontend
             file: frontend/Dockerfile

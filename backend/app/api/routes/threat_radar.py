@@ -52,6 +52,7 @@ from app.models.threat_radar import (
 )
 from app.services.auth import TeamUser, analyst, has_permission, require_permission
 from app.services import asset_vulnerability_scanner as asset_scanner
+from app.services import asset_scanner_mcp
 from app.services import asset_detail_intelligence
 from app.services import threat_hunting_ai as governed_ai
 from app.services.exposure_monitoring import (
@@ -406,6 +407,10 @@ class AssetScanIn(BaseModel):
     providers: list[str] = Field(default_factory=list, max_length=20)
     run_nmap: bool = False
     run_web_probe: bool = False
+    scanners: list[Literal["tls", "dns", "nuclei"]] = Field(
+        default_factory=list,
+        max_length=3,
+    )
     update_inventory: bool = True
     ai_analyze: bool = False
     ai_provider: Literal["local", "claude", "openai", "gemini", "minimax"] = "local"
@@ -656,29 +661,98 @@ async def get_space_asset_intelligence(
 async def asset_scanner_providers(
     _: TeamUser = Depends(run_asset_assessment),
 ):
-    return {
-        "enabled": settings.asset_scanner_enabled,
-        "nmap": {
-            "enabled": settings.asset_scanner_nmap_enabled,
+    try:
+        mcp_catalog = await asset_scanner_mcp.list_tools()
+        remote_tools = {
+            str(row.get("id")): row
+            for row in mcp_catalog.get("tools") or []
+            if isinstance(row, dict)
+        }
+        mcp_status = "ready"
+    except asset_scanner_mcp.ScannerMCPError:
+        remote_tools = {}
+        mcp_catalog = {}
+        mcp_status = "unavailable"
+    def remote_policy(tool_id: str, fallback: dict[str, Any]) -> dict[str, Any]:
+        remote = remote_tools.get(tool_id)
+        if not remote:
+            return {
+                **fallback,
+                "id": tool_id,
+                "enabled": False,
+                "configured": False,
+                "remote_status": "unavailable",
+                "execution_boundary": "scanner-mcp",
+            }
+        return {
+            **fallback,
+            **remote,
+            "id": tool_id,
+            "enabled": bool(remote.get("enabled")),
+            "remote_status": (
+                "ready" if remote.get("enabled") else "disabled"
+            ),
+            "execution_boundary": "scanner-mcp",
+        }
+
+    nmap_policy = remote_policy(
+        "nmap",
+        {
+            "label": "Nmap safe service discovery",
             "profile": "safe-service-discovery",
-            "top_ports": settings.asset_scanner_top_ports,
-            "timeout_seconds": settings.asset_scanner_timeout_seconds,
-            "permission": "run_attack_simulation",
+            "top_ports": 100,
+            "timeout_seconds": 120,
             "boundary": (
                 "Unprivileged TCP connect and light service detection only. "
                 "No NSE scripts, UDP scan, OS fingerprinting, evasion, or exploitation."
             ),
         },
-        "web": {
-            "enabled": settings.asset_scanner_web_probe_enabled,
+    )
+    web_policy = remote_policy(
+        "web",
+        {
+            "label": "Root HTTP security posture",
             "profile": "safe-root-http-posture",
-            "timeout_seconds": settings.asset_scanner_web_probe_timeout_seconds,
-            "permission": "run_attack_simulation",
+            "timeout_seconds": 15,
             "boundary": (
                 "At most two root HTTP(S) GET requests. No redirect following, "
                 "crawling, form submission, injection payload, brute force, or exploitation."
             ),
         },
+    )
+    additional_scanners = [
+        remote_policy(
+            tool_id,
+            {
+                "label": tool_id.upper(),
+                "profile": f"bounded-{tool_id}",
+                "timeout_seconds": 30,
+                "mode": "active-bounded",
+                "boundary": (
+                    f"The isolated scanner MCP did not return a {tool_id.upper()} policy."
+                ),
+            },
+        )
+        for tool_id in ("tls", "dns", "nuclei")
+    ]
+    return {
+        "enabled": settings.asset_scanner_enabled,
+        "scanner_mcp": {
+            "status": mcp_status,
+            "service": mcp_catalog.get("service", "adversarygraph-scanner-mcp"),
+            "version": mcp_catalog.get("version", ""),
+            "transport": "mcp-streamable-http",
+            "execution_boundary": "isolated-container",
+        },
+        "nmap": {
+            **nmap_policy,
+            "permission": "run_attack_simulation",
+        },
+        "web": {
+            **web_policy,
+            "permission": "run_attack_simulation",
+        },
+        "additional_scanners": additional_scanners,
         "passive": asset_scanner.provider_catalog(),
         "ai": await governed_ai.provider_catalog_with_readiness(),
     }
@@ -750,12 +824,12 @@ async def create_asset_scan(
             "Confirm that you are authorized to assess this inventory asset",
         )
     if (
-        (payload.run_nmap or payload.run_web_probe)
+        (payload.run_nmap or payload.run_web_probe or payload.scanners)
         and not has_permission(user, "run_attack_simulation")
     ):
         raise HTTPException(
             403,
-            "Active Nmap or web posture checks require the run_attack_simulation permission",
+            "Active asset scanners require the run_attack_simulation permission",
         )
     if payload.update_inventory and not has_permission(user, "manage_intel"):
         raise HTTPException(
@@ -792,6 +866,7 @@ async def create_asset_scan(
         requested_providers=requested_providers,
         nmap_requested=payload.run_nmap,
         web_probe_requested=payload.run_web_probe,
+        additional_scanners=payload.scanners,
         ai_requested=payload.ai_analyze,
         ai_provider=payload.ai_provider if payload.ai_analyze else "",
         ai_model=payload.ai_model or "",
@@ -814,6 +889,7 @@ async def create_asset_scan(
             "providers": requested_providers,
             "nmap_requested": payload.run_nmap,
             "web_probe_requested": payload.run_web_probe,
+            "additional_scanners": payload.scanners,
             "update_inventory": payload.update_inventory,
             "ai_requested": payload.ai_analyze,
         },
@@ -822,7 +898,25 @@ async def create_asset_scan(
     scan_id = scan.id
 
     try:
-        resolved_ips = await asset_scanner.resolve_target(target)
+        mcp_assessment = await asset_scanner_mcp.run_assessment(
+            target=target.value,
+            run_nmap=payload.run_nmap,
+            run_web_probe=payload.run_web_probe,
+            additional_scanners=payload.scanners,
+        )
+        mcp_target = mcp_assessment.get("target") or {}
+        if (
+            str(mcp_target.get("host") or "") != target.host
+            or str(mcp_target.get("target_type") or "") != target.target_type
+        ):
+            raise asset_scanner_mcp.ScannerMCPError(
+                "Scanner MCP target identity did not match the authorized inventory target"
+            )
+        resolved_ips = [
+            str(value)
+            for value in mcp_assessment.get("resolved_ips") or []
+            if str(value)
+        ][:16]
         warnings: list[str] = []
         if target.target_type != "ip" and not resolved_ips:
             warnings.append(
@@ -836,38 +930,36 @@ async def create_asset_scan(
             resolved_ips,
         )
         warnings.extend(passive_warnings)
-        nmap_result = (
-            await asset_scanner.run_nmap_discovery(target, resolved_ips)
-            if payload.run_nmap
-            else {
-                "status": "not_requested",
-                "summary": "Active service discovery was not requested.",
-                "hosts": [],
-                "open_port_count": 0,
-            }
-        )
-        web_probe_result = (
-            await asset_scanner.run_web_posture_probe(target)
-            if payload.run_web_probe
-            else {
-                "status": "not_requested",
-                "summary": "Safe web posture checks were not requested.",
-                "probes": [],
-                "findings": [],
-            }
-        )
+        nmap_result = dict(mcp_assessment.get("nmap_result") or {})
+        web_probe_result = dict(mcp_assessment.get("web_probe_result") or {})
+        scanner_results = {
+            str(name): dict(result)
+            for name, result in (mcp_assessment.get("scanner_results") or {}).items()
+            if isinstance(result, dict)
+        }
+        mcp_context = {
+            "service": mcp_assessment.get("service"),
+            "service_version": mcp_assessment.get("service_version"),
+            "transport": mcp_assessment.get("transport"),
+            "tool_trace": mcp_assessment.get("tool_trace") or [],
+            "authorization_enforced_by": mcp_assessment.get("authorization_enforced_by"),
+        }
         cve_candidates = await asset_scanner.match_local_cves(session, nmap_result)
         findings = asset_scanner.build_findings(
             passive_results,
             nmap_result,
             cve_candidates,
             web_probe_result,
+            scanner_results,
+            mcp_context=mcp_context,
         )
         analysis = asset_scanner.deterministic_analysis(
             passive_results,
             nmap_result,
             cve_candidates,
             web_probe_result,
+            scanner_results,
+            mcp_context=mcp_context,
         )
         if payload.ai_analyze:
             try:
@@ -877,11 +969,13 @@ async def create_asset_scan(
                     passive_results=passive_results,
                     nmap_result=nmap_result,
                     web_probe_result=web_probe_result,
+                    scanner_results=scanner_results,
                     cve_candidates=cve_candidates,
                     provider=payload.ai_provider,
                     model=payload.ai_model,
                     cloud_processing_acknowledged=payload.cloud_processing_acknowledged,
                     effective_tlp=payload.tlp,
+                    mcp_context=mcp_context,
                 )
             except (
                 governed_ai.AIOutputError,
@@ -898,12 +992,20 @@ async def create_asset_scan(
                 )
 
         discovery = asset_scanner.extract_discovered_surfaces(
+            asset,
             target,
             resolved_ips,
             passive_results,
             nmap_result,
             web_probe_result,
         )
+        review_candidates = discovery.get("review_candidates") or []
+        if review_candidates:
+            warnings.append(
+                f"{len(review_candidates)} OSINT relationship(s) were withheld from "
+                "inventory because shared-hosting or provider association does not "
+                "prove ownership."
+            )
         inventory_update: dict[str, Any] = {
             "requested": payload.update_inventory,
             "changed": False,
@@ -915,6 +1017,27 @@ async def create_asset_scan(
                 "cpes": [],
             },
             "observed_count": len(discovery.get("observations") or []),
+            "evaluated_count": int(
+                discovery.get("evaluated_count")
+                or len(discovery.get("observations") or [])
+            ),
+            "withheld": {
+                "count": len(review_candidates),
+                "domains": [
+                    row.get("value")
+                    for row in review_candidates
+                    if row.get("kind") == "domain"
+                ][:100],
+                "ip_addresses": [
+                    row.get("value")
+                    for row in review_candidates
+                    if row.get("kind") == "ip"
+                ][:100],
+                "reason": (
+                    "Provider associations require ownership verification before "
+                    "inventory merge."
+                ),
+            },
         }
         if payload.update_inventory:
             inventory_update = asset_scanner.merge_discovered_surfaces(
@@ -947,16 +1070,22 @@ async def create_asset_scan(
             "timeout",
             "unavailable",
             "unresolved",
-        } or web_probe_result.get("status") in {"partial", "unavailable"}
+        } or web_probe_result.get("status") in {"partial", "unavailable"} or any(
+            result.get("status") in {"partial", "error", "timeout", "unavailable"}
+            for result in scanner_results.values()
+        )
         scan.passive_results = jsonable_encoder(passive_results)
         scan.nmap_result = jsonable_encoder(nmap_result)
         scan.web_probe_result = jsonable_encoder(web_probe_result)
+        scan.additional_scanners = payload.scanners
+        scan.scanner_results = jsonable_encoder(scanner_results)
         scan.inventory_update = jsonable_encoder(inventory_update)
         scan.findings = jsonable_encoder(findings)
         scan.ai_analysis = jsonable_encoder({
             **analysis,
             "cve_candidates": cve_candidates,
             "resolved_ips": resolved_ips,
+            "scanner_mcp": mcp_context,
         })
         scan.ai_model = str(analysis.get("model") or scan.ai_model)
         scan.warnings = warnings
@@ -973,6 +1102,12 @@ async def create_asset_scan(
                 "finding_count": len(findings),
                 "open_port_count": int(nmap_result.get("open_port_count") or 0),
                 "web_probe_count": len(web_probe_result.get("probes") or []),
+                "additional_scanners": payload.scanners,
+                "scanner_mcp_tool_trace": mcp_context["tool_trace"],
+                "additional_scanner_finding_count": sum(
+                    len(result.get("findings") or [])
+                    for result in scanner_results.values()
+                ),
                 "inventory_changed": inventory_update["changed"],
                 "passive_source_count": len(passive_results),
             },
@@ -2788,6 +2923,8 @@ def _asset_scan_obj(scan: ThreatAssetScan) -> dict[str, Any]:
         "nmap_result": scan.nmap_result or {},
         "web_probe_requested": scan.web_probe_requested,
         "web_probe_result": scan.web_probe_result or {},
+        "additional_scanners": scan.additional_scanners or [],
+        "scanner_results": scan.scanner_results or {},
         "inventory_update": scan.inventory_update or {},
         "findings": scan.findings or [],
         "ai_requested": scan.ai_requested,

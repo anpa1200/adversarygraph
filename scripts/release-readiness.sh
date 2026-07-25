@@ -82,6 +82,10 @@ run_step() {
 run_step "Release metadata" ./scripts/check-version-consistency.sh
 select_backend_python
 run_step "Backend/OpenAPI/frontend API contract" ./scripts/check-api-contracts.py
+run_step "Scanner MCP unit tests" bash -lc \
+  'cd scanner_mcp && PYTHONPATH=. python -m pytest -q'
+run_step "Scanner MCP lint" bash -lc \
+  'cd scanner_mcp && ruff check scanner_mcp tests'
 run_step "Governed module documentation coverage" \
   "$BACKEND_PYTHON" scripts/check-module-docs.py
 run_step "Patch hygiene (tracked, staged, and untracked)" check_patch_hygiene

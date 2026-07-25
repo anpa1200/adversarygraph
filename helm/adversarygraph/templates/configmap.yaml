@@ -26,6 +26,9 @@
   {{- if and .Values.malwaregraph.enabled (empty .Values.malwaregraph.image.digest) -}}
     {{- fail "productionMode requires a reviewed MalwareGraph image digest when MalwareGraph is enabled" -}}
   {{- end -}}
+  {{- if and .Values.scannerMcp.enabled (empty .Values.scannerMcp.image.digest) -}}
+    {{- fail "productionMode requires a reviewed scanner MCP image digest when scanner MCP is enabled" -}}
+  {{- end -}}
   {{- if or (empty .Values.postgresql.image.digest) (not (contains "adversarygraph-postgres" .Values.postgresql.image.repository)) -}}
     {{- fail "productionMode requires the remediated adversarygraph-postgres repository and reviewed digest" -}}
   {{- end -}}
@@ -88,6 +91,9 @@ data:
   RAG_RETENTION_HOUR: {{ .Values.config.ragRetentionHour | quote }}
   RAG_RETENTION_MINUTE: {{ .Values.config.ragRetentionMinute | quote }}
   MALWAREGRAPH_MAX_UPLOAD_BYTES: {{ .Values.config.malwaregraphMaxUploadBytes | quote }}
+  ASSET_SCANNER_ENABLED: {{ .Values.scannerMcp.enabled | quote }}
+  ASSET_SCANNER_MCP_URL: http://{{ include "adversarygraph.fullname" . }}-scanner-mcp:{{ .Values.scannerMcp.service.port }}/mcp
+  ASSET_SCANNER_MCP_TIMEOUT_SECONDS: {{ .Values.config.assetScannerMcpTimeoutSeconds | quote }}
   ATTCK_DATA_DIR: /app/data/attck
   LOG_DIR: /app/logs
   MALWAREGRAPH_URL: http://{{ include "adversarygraph.fullname" . }}-malwaregraph:8100

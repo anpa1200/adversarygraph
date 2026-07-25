@@ -35,6 +35,8 @@ keys:
 - `PROXY_SECRET` when trusted reverse-proxy SSO is enabled;
 - only the provider keys the deployment uses, such as `OPENAI_API_KEY`,
   `GEMINI_API_KEY`, or `LOCAL_LLM_API_KEY`.
+- `ASSET_SCANNER_MCP_TOKEN`, a distinct random API-to-scanner capability token
+  of at least 24 URL-safe characters, when `scannerMcp.enabled=true`.
 
 Other optional key names are listed in `templates/secret.yaml`. Missing optional
 keys are acceptable for the API, worker, and beat, which load the runtime Secret
@@ -65,6 +67,7 @@ kubectl -n adversarygraph create secret generic adversarygraph-runtime \
   --from-literal=DB_PASS="$(openssl rand -hex 32)" \
   --from-literal=REDIS_PASSWORD="$(openssl rand -hex 32)" \
   --from-literal=RATE_LIMIT_PROXY_SECRET="$(openssl rand -hex 32)" \
+  --from-literal=ASSET_SCANNER_MCP_TOKEN="$(openssl rand -hex 32)" \
   --from-literal=AUTH_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 ```
 
@@ -100,16 +103,17 @@ pod security contexts, and the rendered NetworkPolicies.
 
 `config.productionMode: "true"` is fail-closed. Rendering then requires native
 authentication, secure cookies, explicit HTTPS CORS origins, the baseline
-NetworkPolicies, an externally managed Secret, reviewed backend/frontend and
-enabled-MalwareGraph digests, the custom remediated PostgreSQL repository and
+NetworkPolicies, an externally managed Secret, reviewed backend/frontend,
+enabled-MalwareGraph, and enabled-scanner-MCP digests, the custom remediated PostgreSQL repository and
 digest, and a Redis digest. This validates chart values, not the contents of an
 existing Secret or the registry provenance of a syntactically valid digest;
 review both separately.
 
 ### Image integrity
 
-The backend, frontend, and MalwareGraph images default to the versioned
-`6.5.0` tags with empty digest fields and `imagePullPolicy: Always`. PostgreSQL
+The backend, frontend, MalwareGraph, and scanner MCP images default to
+human-readable tags with empty digest fields and `imagePullPolicy: Always`.
+PostgreSQL
 uses the pgvector project's `0.8.2-pg16` compatibility image so the development
 chart has the extension required by the RAG schema; both PostgreSQL and Redis
 compatibility images are digest-pinned. Do not deploy the application tags
@@ -132,6 +136,9 @@ frontend:
 malwaregraph:
   image:
     digest: sha256:<64-lowercase-hex-characters>
+scannerMcp:
+  image:
+    digest: sha256:<64-lowercase-hex-characters>
 ```
 
 Do not copy example or cross-architecture digests. Resolve custom-image digests
@@ -146,7 +153,8 @@ PostgreSQL pin for the remediated release image in a gated rollout.
 `networkPolicy.enabled: true` creates a baseline ingress policy for every chart
 pod. The API accepts port 8000 only from this release's frontend; PostgreSQL,
 Redis, and MalwareGraph accept their service ports only from the components
-that use them; worker and beat admit no pod ingress. The frontend admits port
+that use them; scanner MCP accepts port 8200 only from API pods; worker and beat
+admit no pod ingress. The frontend admits port
 8080 from any source because ingress-controller namespace and pod labels are
 cluster-specific.
 
@@ -159,6 +167,20 @@ additional raw ingress rules required by monitoring or backup workloads. For
 example, a PostgreSQL backup job must be explicitly allowed by its pod labels.
 Disable the baseline only when an equivalent namespace or CNI policy is already
 enforced and documented.
+
+### Scanner MCP boundary
+
+`scannerMcp.enabled=true` deploys a non-root, read-only scanner pod containing
+Nmap, pinned Nuclei, root-only HTTP posture, TLS, and DNS tools. Its Service is
+ClusterIP-only and has no frontend, Ingress, or LoadBalancer route. The API
+authenticates with `ASSET_SCANNER_MCP_TOKEN` and calls one allowlisted composite
+assessment tool only after permission, exact-inventory, and explicit
+authorization gates pass.
+
+The scanner needs outbound DNS and target access. Add a deployment-specific
+egress policy that allows only approved resolvers and assessment ranges while
+preserving the API-to-scanner control path. Never expose the scanner Service to
+users or the public internet.
 
 The chart defaults every PVC to `ReadWriteOnce` for compatibility with common
 single-node storage classes. The ATT&CK data and log PVCs are shared by API,
@@ -261,7 +283,9 @@ latest indexed time before accepting the feature. Then run exact IOC/CVE/ATT&CK
 queries, an approved non-sensitive semantic query, and a citation/temporary
 Navigator proposal review.
 
-The Helm chart does not deploy the optional MCP process. Run MCP as a local
+The Helm chart does not deploy the optional analyst-facing intelligence MCP
+process. This is separate from the private scanner MCP Deployment above. Run
+the analyst-facing MCP as a local
 stdio subprocess of the approved client and connect it to the authenticated
 HTTPS ingress with a dedicated least-privilege analyst session. Do not add an
 MCP HTTP/SSE listener to the chart. See
@@ -313,12 +337,12 @@ the deployment review:
   rendered default values. Converting to secret files requires application and
   upstream entrypoint support; protect Secret RBAC, admission, audit, and
   rotation instead of applying an incompatible manifest-only rewrite.
-- `CKV_K8S_40`: API/worker/beat, frontend, PostgreSQL, and Redis use the
+- `CKV_K8S_40`: API/worker/beat, scanner MCP, frontend, PostgreSQL, and Redis use the
   non-root UIDs defined and tested by their images. Raising those UIDs solely
   for a scanner can break image files and persistent-volume ownership. The
   chart enforces `runAsNonRoot`, drops all capabilities, disables privilege
   escalation and service-account token mounting, and uses the compatible UID.
-- `CKV_K8S_43`: the three tag-based custom images remain findings in a default
+- `CKV_K8S_43`: the four tag-based custom images remain findings in a default
   render until the operator supplies the release's reviewed digests.
   Redis and the development pgvector compatibility image are digest-pinned.
   Production must replace the compatibility image and set reviewed

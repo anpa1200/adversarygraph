@@ -1,0 +1,116 @@
+{{- if .Values.scannerMcp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-scanner-mcp
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scanner-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scanner-mcp
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scanner-mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10002
+        runAsGroup: 10002
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: scanner-mcp
+          image: {{ include "adversarygraph.componentImage" .Values.scannerMcp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: SCANNER_MCP_HOST
+              value: 0.0.0.0
+            - name: SCANNER_MCP_PORT
+              value: {{ .Values.scannerMcp.service.port | quote }}
+            - name: SCANNER_MCP_PUBLIC_URL
+              value: http://{{ include "adversarygraph.fullname" . }}-scanner-mcp:{{ .Values.scannerMcp.service.port }}
+            - name: SCANNER_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adversarygraph.secretName" . }}
+                  key: ASSET_SCANNER_MCP_TOKEN
+            - name: NMAP_ENABLED
+              value: {{ .Values.scannerMcp.nmapEnabled | quote }}
+            - name: WEB_PROBE_ENABLED
+              value: {{ .Values.scannerMcp.webProbeEnabled | quote }}
+            - name: TLS_ENABLED
+              value: {{ .Values.scannerMcp.tlsEnabled | quote }}
+            - name: DNS_ENABLED
+              value: {{ .Values.scannerMcp.dnsEnabled | quote }}
+            - name: NUCLEI_ENABLED
+              value: {{ .Values.scannerMcp.nucleiEnabled | quote }}
+            - name: NMAP_TIMEOUT_SECONDS
+              value: {{ .Values.scannerMcp.nmapTimeoutSeconds | quote }}
+            - name: WEB_PROBE_TIMEOUT_SECONDS
+              value: {{ .Values.scannerMcp.webProbeTimeoutSeconds | quote }}
+            - name: TLS_TIMEOUT_SECONDS
+              value: {{ .Values.scannerMcp.tlsTimeoutSeconds | quote }}
+            - name: DNS_TIMEOUT_SECONDS
+              value: {{ .Values.scannerMcp.dnsTimeoutSeconds | quote }}
+            - name: NUCLEI_TIMEOUT_SECONDS
+              value: {{ .Values.scannerMcp.nucleiTimeoutSeconds | quote }}
+            - name: NUCLEI_RATE_LIMIT
+              value: {{ .Values.scannerMcp.nucleiRateLimit | quote }}
+            - name: NUCLEI_CONCURRENCY
+              value: {{ .Values.scannerMcp.nucleiConcurrency | quote }}
+            - name: NMAP_TOP_PORTS
+              value: {{ .Values.scannerMcp.nmapTopPorts | quote }}
+            - name: MAX_RESOLVED_IPS
+              value: {{ .Values.scannerMcp.maxResolvedIps | quote }}
+          ports:
+            - name: mcp
+              containerPort: {{ .Values.scannerMcp.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: mcp
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: mcp
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.scannerMcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-scanner-mcp
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "adversarygraph.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scanner-mcp
+  ports:
+    - name: mcp
+      port: {{ .Values.scannerMcp.service.port }}
+      targetPort: mcp
+{{- end }}

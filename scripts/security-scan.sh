@@ -77,6 +77,9 @@ scan_pinned_image() {
 run_step "Backend lint / SAST baseline (ruff)" bash -lc 'cd backend && ruff check .'
 scanner_step bandit "Backend SAST (bandit)" bash -lc 'cd backend && bandit -q -r app -x "tests,app/data" --severity-level medium --confidence-level medium'
 scanner_step pip-audit "Backend dependency audit (pip-audit)" bash -lc 'cd backend && pip-audit -r requirements.txt'
+run_step "Scanner MCP lint (ruff)" bash -lc 'cd scanner_mcp && ruff check scanner_mcp tests'
+scanner_step bandit "Scanner MCP SAST (bandit)" bash -lc 'cd scanner_mcp && bandit -q -r scanner_mcp -x tests --severity-level medium --confidence-level medium'
+scanner_step pip-audit "Scanner MCP dependency audit (pip-audit)" bash -lc 'cd scanner_mcp && pip-audit -r requirements.txt'
 run_step "Frontend dependency audit (npm audit)" bash -lc 'cd frontend && npm audit --audit-level=high'
 run_step "Anomaly docs dependency audit (npm audit)" bash -lc 'cd anomaly_detection/docs-site && npm audit --audit-level=high'
 run_step "Anomaly docs production build" bash -lc 'cd anomaly_detection/docs-site && npm run build'
@@ -94,11 +97,12 @@ scanner_step helm "Helm render" bash -lc \
 scanner_step helm "Helm shared-storage render" bash -lc \
   'helm template adversarygraph helm/adversarygraph --set "malwaregraph.accessModes={ReadWriteMany}" --set malwaregraph.storageClassName=shared-rwx --set "persistence.attckData.accessModes={ReadWriteMany}" --set persistence.attckData.storageClassName=shared-rwx --set "persistence.logs.accessModes={ReadWriteMany}" --set persistence.logs.storageClassName=shared-rwx >/tmp/adversarygraph-security-shared-storage.yaml'
 scanner_step helm "Helm production render" bash -lc \
-  'helm template adversarygraph helm/adversarygraph --set-string config.productionMode=true --set postgresql.image.repository=example.invalid/adversarygraph-postgres --set-string postgresql.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 >/tmp/adversarygraph-security-production.yaml'
+  'helm template adversarygraph helm/adversarygraph --set-string config.productionMode=true --set postgresql.image.repository=example.invalid/adversarygraph-postgres --set-string postgresql.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 >/tmp/adversarygraph-security-production.yaml'
 
 if command -v trivy >/dev/null 2>&1; then
   scan_image postgres . docker/postgres/Dockerfile
   scan_image backend backend backend/Dockerfile
+  scan_image scanner-mcp scanner_mcp scanner_mcp/Dockerfile
   scan_image frontend frontend frontend/Dockerfile
   scan_image malwaregraph . docker/malwaregraph/Dockerfile
   scan_image attack-lab-web . docker/attack-lab-web/Dockerfile

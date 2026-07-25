@@ -269,10 +269,21 @@ HTTP(S) URL host that is already recorded on the selected asset. It combines:
    Shodan, and Censys sources;
 3. optional, authorized Nmap service discovery;
 4. optional, authorized root-only web posture checks;
-5. product-family CPE correlation against the local CVE Library;
-6. deterministic or governed AI-assisted interpretation; and
-7. a controlled inventory merge for newly observed IP addresses, hostnames,
+5. optional verified TLS-handshake and read-only DNS posture checks;
+6. optional, authorized Nuclei vulnerability and misconfiguration detection
+   with pinned signed templates and a bounded execution policy;
+7. product-family CPE correlation against the local CVE Library;
+8. deterministic or governed AI-assisted interpretation; and
+9. a controlled inventory merge for newly observed IP addresses, hostnames,
    ports, technologies, and CPEs.
+
+> **Current-development architecture after v6.5.0:** every network-executing
+> scanner now lives in the dedicated `scanner-mcp` container. The API contains
+> the inventory, permission, authorization, audit, passive-intelligence, CVE,
+> and AI orchestration layers, but contains no Nmap or Nuclei binary. This
+> boundary is implemented in current source and must not be attributed to a
+> previously published image unless its release manifest includes
+> `ADVERSARYGRAPH_SCANNER_MCP_IMAGE`.
 
 The target field is not an arbitrary internet scanner. The API normalizes the
 requested IP, domain, or URL and rejects it unless the exact host is present in
@@ -285,7 +296,8 @@ deployment.
 ### Safe active-discovery profile
 
 Active discovery is disabled independently with
-`ASSET_SCANNER_NMAP_ENABLED`. When enabled, it requires:
+`ASSET_SCANNER_NMAP_ENABLED` on the scanner container. When enabled, it
+requires:
 
 - the `run_attack_simulation` permission;
 - a per-request authorization confirmation;
@@ -306,6 +318,62 @@ and bounded response headers. It checks observable redirect, security-header,
 cookie, CORS, and server-technology posture. It does not crawl, submit forms,
 authenticate, fuzz, inject payloads, brute-force, or exploit the application.
 
+### Additional scanners
+
+Three additional scanner MCP tools share the same exact-inventory target,
+`run_attack_simulation` permission, authorization confirmation, timeout,
+structured result, audit, history, deduplication, and AI-review controls:
+
+| Scanner | Profile | What it does | Enforced boundary |
+|---|---|---|---|
+| TLS | `verified-tls-handshake` | Verifies the certificate chain and hostname, then records negotiated TLS, cipher, ALPN, issuer, subject, SANs, and expiry. | One verified handshake. No downgrade, cipher exhaustion, renegotiation flood, or certificate-name inventory expansion. |
+| DNS | `read-only-dns-posture` | Reads A, AAAA, CAA, TXT, DNSKEY, and host-scoped DMARC answers. | No AXFR, brute-force subdomain enumeration, wildcard enumeration, recursion abuse, or mutation. Missing policy records are informational because policy can live at a parent zone. |
+| Nuclei | `signed-bounded-network-templates` | Runs a checksum-pinned official Nuclei v3.11.0 source snapshot (`6ecdb947`) with a fixed OpenAPI dependency, pinned Nuclei Templates v10.4.6, and automatic technology-aware selection against the exact target. | Signature-valid HTTP, TLS, and DNS templates; operator-capped rate/concurrency (defaults: 25 requests/second and 5 templates); no fuzzing/DAST, headless, code, file, JavaScript, workflow, WebSocket, brute-force, intrusive, denial-of-service, or out-of-band templates. |
+
+Nuclei matches are **validation leads**, not automatically confirmed
+vulnerabilities. Each match retains its template ID, protocol, matched target,
+references, and review requirement. An analyst must reproduce it through an
+approved validation workflow and verify product/version and environmental
+applicability.
+
+The scanner MCP image is built from an immutable official post-v3.8.0 source snapshot
+instead of the v3.8.0 release binary, whose embedded dependency versions have
+fixed HIGH/CRITICAL vulnerabilities. The runtime bundle also removes upstream
+private-key fixtures used only by a disabled JavaScript CVE template, the
+global secret-pattern matcher containing credential-shaped regular-expression
+examples, and one Symfony template containing documented default-key literals.
+These are explicit image-hygiene exclusions; the release gate continues to scan
+the entire scanner image for HIGH/CRITICAL vulnerabilities and secrets instead
+of suppressing Trivy findings globally.
+
+### MCP orchestration and AI review
+
+An asset assessment is one fixed MCP tool plan:
+
+1. the API verifies `run_attack_simulation`, the selected company space, and
+   exact membership of the requested target in that asset;
+2. the analyst explicitly confirms authorization and the API persists the
+   running assessment plus an audit event;
+3. the API calls only `run_authorized_asset_assessment` over authenticated
+   Streamable HTTP MCP on the private `scanner_control` network;
+4. the MCP server independently requires the authorization flag, normalizes
+   the target again, and runs only the selected fixed profiles;
+5. the MCP response returns structured evidence and a `tool_trace`; it cannot
+   return a shell command or select a new target;
+6. the API verifies that the returned target identity matches the inventory
+   target, adds passive provider and local CVE context, then runs deterministic
+   analysis; and
+7. if the analyst selected a configured LLM provider, the same bounded evidence
+   and MCP trace are sent through the governed AI policy. The LLM cannot call
+   scanner tools directly, expand scope, or execute a second assessment.
+
+The scanner service is not published to the host. Its bearer token is separate
+from every user session and platform secret. Compose gives the API access only
+to the internal control network while the scanner alone receives outbound
+network access. Kubernetes exposes it through a ClusterIP service with ingress
+limited to API pods. Self-test uses an authenticated MCP catalog call, so a
+healthy HTTP process with a wrong token does not pass readiness.
+
 An open port is an observation, not a vulnerability. Shodan/Censys
 vulnerability references and local CPE-to-CVE matches are explicitly labelled
 as candidates requiring analyst confirmation of the detected product, deployed
@@ -317,11 +385,17 @@ When **Add observed attack surfaces to this asset** is selected, the API
 normalizes and deduplicates observations before merging them into the same
 company asset. DNS resolution and bounded Nmap can contribute addresses,
 hostnames, ports, service products, and CPEs. Successful Shodan, Censys, and
-AbuseIPDB relationships can contribute typed hostnames, globally routable IPs,
-ports, and software. VirusTotal and URLScan remain evidence sources, but their
-historical passive-DNS and third-party page relationships are not
-automatically treated as company-owned asset identity. Reputation, attribution,
-hashes, and CVE candidates are also not converted into asset identity.
+AbuseIPDB relationships can contribute ports and software. Provider IPs are
+merged only when they are the exact inventory target or an address resolved
+from an inventoried hostname. Provider hostnames are merged only when they
+equal an existing inventory DNS namespace or are a descendant of it.
+Unrelated virtual hosts, PTR names, certificate names, and other tenants on
+shared GitHub Pages, cloud, CDN, or hosting addresses are withheld as
+`unverified-ownership` review context. VirusTotal and URLScan remain evidence
+sources, but their historical passive-DNS and third-party page relationships
+are not automatically treated as company-owned asset identity. Reputation,
+attribution, hashes, and CVE candidates are also not converted into asset
+identity.
 
 Every observation stored in `metadata.discovered_surfaces` records its source,
 evidence summary, first and last observation time, and latest assessment ID.
@@ -348,16 +422,17 @@ or assign a confirmed vulnerability.
 2. Open **Threat Radar -> Asset Inventory**, search or filter the registry,
    then open the asset's dedicated intelligence page.
 3. Select one inventory target and the configured passive providers.
-4. Optionally enable **Run safe Nmap discovery** and/or **Run safe web posture
-   checks**.
+4. Optionally enable **Run safe Nmap discovery**, **Run safe web posture
+   checks**, TLS, DNS, and/or the explicitly authorized bounded Nuclei scan.
 5. Keep **Add observed attack surfaces to this asset** selected to merge
    normalized discoveries with provenance, or clear it for a read-only
    assessment.
 6. Optionally select an available AI provider. Remote providers require the
    explicit TLP:AMBER processing acknowledgement shown in the UI.
 7. Confirm authorization for that exact inventory target.
-8. Run the assessment and review provider status, inventory additions, web
-   posture, open services, CVE candidates, caveats, and prioritized actions.
+8. Run the assessment and review provider status, withheld ownership
+   candidates, inventory additions, TLS/DNS/Nuclei summaries, web posture,
+   open services, CVE candidates, caveats, and prioritized actions.
 9. Validate ownership and product/version evidence in the authoritative CMDB,
    firewall, EDR, and vulnerability-management systems before triage.
 

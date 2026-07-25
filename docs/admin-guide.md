@@ -25,6 +25,7 @@ Current public documentation bundle:
 | Redis | Celery broker/result backend |
 | Worker | Background report analysis, collection, and RAG reconciliation jobs |
 | Beat | Scheduled ATT&CK sync and collection jobs |
+| Scanner MCP | Private authenticated MCP service containing every network-executing asset-assessment tool |
 | Atlas docs | Embedded Anomaly Detection Atlas reference |
 
 ## Configuration
@@ -88,18 +89,36 @@ The bundled development image builds checksum-pinned pgvector **0.8.2**.
 | `CENSYS_API_KEY` | Optional Censys Platform personal access token for host, DNS, service, ASN, and certificate pivots |
 | `CENSYS_ORG_ID` | Optional Censys organization ID for organization-scoped Platform API calls |
 | `ASSET_SCANNER_ENABLED` | Enable inventory-bound Threat Radar asset assessments; default `true` |
-| `ASSET_SCANNER_NMAP_ENABLED` | Permit the fixed safe Nmap service-discovery stage; default `true` |
-| `ASSET_SCANNER_WEB_PROBE_ENABLED` | Permit root-only HTTP(S) security-header and configuration posture checks; default `true` |
-| `ASSET_SCANNER_NMAP_BINARY` | Operator-controlled Nmap executable path; default `/usr/bin/nmap` in the backend image |
-| `ASSET_SCANNER_TIMEOUT_SECONDS` | Per-assessment Nmap host timeout; default `120`, allowed range `15`–`600` seconds |
-| `ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS` | Timeout for each root-only web posture request; default `15`, allowed range `5`–`60` seconds |
-| `ASSET_SCANNER_TOP_PORTS` | Bounded Nmap top-port count; default `100`, allowed range `10`–`1000` |
-| `ASSET_SCANNER_MAX_RESOLVED_IPS` | Maximum authorized addresses scanned after an inventory hostname resolves; default `4`, range `1`–`16` |
+| `ASSET_SCANNER_MCP_TOKEN` | Dedicated API-to-scanner bearer capability; required in production, at least 24 URL-safe random characters, and never reused as a database, Redis, or proxy secret |
+| `ASSET_SCANNER_MCP_TIMEOUT_SECONDS` | API timeout for one complete MCP assessment plan; default `240`, range `30`–`1000` seconds |
+| `ASSET_SCANNER_NMAP_ENABLED` | Scanner-container setting that permits the fixed safe Nmap service-discovery stage; default `true` |
+| `ASSET_SCANNER_WEB_PROBE_ENABLED` | Scanner-container setting that permits root-only HTTP(S) posture checks; default `true` |
+| `ASSET_SCANNER_TLS_ENABLED` | Scanner-container setting that permits one verified TLS handshake; default `true` |
+| `ASSET_SCANNER_DNS_ENABLED` | Scanner-container setting that permits bounded read-only DNS queries; default `true` |
+| `ASSET_SCANNER_NUCLEI_ENABLED` | Scanner-container setting that permits pinned, signed, rate-limited Nuclei network templates; default `true` |
+| `ASSET_SCANNER_TIMEOUT_SECONDS` | Scanner-container Nmap host timeout; default `120`, range `15`–`600` seconds |
+| `ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS` | Scanner-container root-web request timeout; default `15`, range `5`–`60` seconds |
+| `ASSET_SCANNER_TLS_TIMEOUT_SECONDS` | Scanner-container TLS handshake timeout; default `15`, range `5`–`60` seconds |
+| `ASSET_SCANNER_DNS_TIMEOUT_SECONDS` | Scanner-container DNS query lifetime; default `10`, range `3`–`60` seconds |
+| `ASSET_SCANNER_NUCLEI_TIMEOUT_SECONDS` | Scanner-container whole Nuclei-run timeout; default `180`, range `30`–`900` seconds |
+| `ASSET_SCANNER_NUCLEI_RATE_LIMIT` | Scanner-container Nuclei request ceiling; default `25` per second, range `1`–`50` |
+| `ASSET_SCANNER_NUCLEI_CONCURRENCY` | Scanner-container Nuclei template concurrency; default `5`, range `1`–`10` |
+| `ASSET_SCANNER_TOP_PORTS` | Scanner-container Nmap top-port count; default `100`, range `10`–`1000` |
+| `ASSET_SCANNER_MAX_RESOLVED_IPS` | Scanner-container maximum addresses assessed after an inventory hostname resolves; default `4`, range `1`–`16` |
 | `OPENCTI_URL` | Optional OpenCTI base URL for symmetric CTI sync |
 | `OPENCTI_TOKEN` | Optional OpenCTI API token for indicator, observable, label, and report sync |
 | `OPENCTI_SYNC_LIMIT` | Default OpenCTI object limit per sync action |
 | `OPENCTI_VERIFY_TLS` | Verify OpenCTI TLS certificates, default `true` |
 | `DYNAMIC_DB_SYNC_HOUR`, `DYNAMIC_DB_SYNC_MINUTE` | Daily dynamic DB refresh time in UTC |
+
+The API/worker image contains neither Nmap nor Nuclei. The separate scanner MCP
+image keeps Trivy vulnerability and secret detection enabled for the complete
+runtime. Nuclei is compiled there from a checksum-pinned official source
+snapshot with fixed dependencies because the v3.8.0 release binary contains
+dependencies with remediated HIGH/CRITICAL findings. Its pinned template bundle
+deliberately omits upstream private test-key fixtures and two templates
+containing credential-shaped example literals; see
+[Threat Radar](threat-radar.md#additional-scanners) for the coverage boundary.
 | `DYNAMIC_DB_IOC_SYNC_DAYS` | Daily IOC sync window, clamped to 1-7 days |
 | `LOG_LEVEL` | API/worker log verbosity |
 | `ATLAS_SYNC_INTERVAL` | Reference-book sync interval |
@@ -399,7 +418,8 @@ plugin; this procedure is validated on Compose 2.40.3.
 
 Review `CHANGELOG.md` before upgrading tagged releases.
 
-For production-like upgrades, check out the reviewed tag and load all seven
+For production-like upgrades using the current architecture, check out the
+reviewed tag and load all eight
 `ADVERSARYGRAPH_*_IMAGE` digest references from that release's
 `adversarygraph-images.env` attachment into `.env`, then deploy the prebuilt
 artifacts without rebuilding:

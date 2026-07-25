@@ -1,3 +1,6 @@
+import pytest
+
+from app.api.routes import system as system_route
 from app.api.routes.system import (
     _asset_scanner_readiness_check,
     _cpu_percent_from_totals,
@@ -168,21 +171,27 @@ def test_storage_writable_check_creates_and_removes_probe(tmp_path):
     assert not (tmp_path / ".adversarygraph-selftest").exists()
 
 
-def test_asset_scanner_readiness_requires_configured_nmap_binary(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_asset_scanner_readiness_uses_isolated_service_health(monkeypatch):
     monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_enabled", True)
-    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nmap_enabled", True)
-    monkeypatch.setattr(
-        "app.api.routes.system.settings.asset_scanner_nmap_binary",
-        str(tmp_path / "missing-nmap"),
-    )
-    missing = _asset_scanner_readiness_check()
-    assert missing.status == "error"
-    assert missing.details["profile"] == "safe-service-discovery"
 
-    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nmap_enabled", False)
-    passive_only = _asset_scanner_readiness_check()
-    assert passive_only.status == "ok"
-    assert passive_only.details["nmap_enabled"] is False
+    async def healthy():
+        return {
+            "service": "adversarygraph-scanner-mcp",
+            "version": "1.0.0",
+            "tools": [
+                {"id": "nmap", "enabled": True, "configured": True},
+                {"id": "nuclei", "enabled": True, "configured": True},
+            ],
+        }
+
+    monkeypatch.setattr(system_route.asset_scanner_mcp, "list_tools", healthy)
+    check = await _asset_scanner_readiness_check()
+
+    assert check.status == "ok"
+    assert check.details["execution_boundary"] == "isolated-container"
+    assert check.details["api_contains_scanner_binaries"] is False
+    assert check.details["tool_count"] == 2
 
 
 def test_taxonomy_normalization_check_warns_on_raw_tags():

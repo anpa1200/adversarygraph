@@ -22,6 +22,14 @@ and hardened release/deployment controls. See the
 [case studies](docs/case-studies-v6.md), and
 [screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
+Current development after v6.5.0 moves all active asset-assessment tooling into
+an authenticated, non-root `scanner-mcp` container. The API authorizes an exact
+inventory target, invokes one allowlisted MCP assessment plan, verifies the
+returned target and tool trace, and passes that bounded evidence to the
+deterministic or governed LLM assistant. This current-development boundary is
+not part of an older published image unless its attached image manifest
+includes `ADVERSARYGRAPH_SCANNER_MCP_IMAGE`.
+
 The `v6.5.0` source metadata is the release candidate until the immutable tag
 workflow builds, scans, publishes, and verifies its artifacts. The existing
 `v6.0.0` tag remains the latest published historical release until that
@@ -35,7 +43,7 @@ AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerabili
 Core capabilities:
 
 - AI-assisted report ingestion from text, PDF, DOCX, and TXT.
-- Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, PSIRT/Hunt/IR/Detection workflows, a searchable saved-asset registry with evidence-labelled CVE/TTP/IOC detail pages, and inventory-bound asset assessment that combines passive OSINT, optional safe Nmap service discovery, bounded web posture checks, local CVE candidates, controlled discovery merging, and governed AI review.
+- Threat Radar for product-security CTI early warning: CVE/KEV/PoC/zero-day/supplier/package/hardware signals, product exposure scoring, case graphs, PSIRT/Hunt/IR/Detection workflows, a searchable saved-asset registry with evidence-labelled CVE/TTP/IOC detail pages, and inventory-bound asset assessment that combines passive OSINT, isolated MCP-based safe Nmap service discovery, bounded web posture checks, verified TLS and read-only DNS posture, signed/rate-limited Nuclei network templates, local CVE candidates, ownership-aware discovery merging, an auditable MCP tool trace, and governed AI review.
 - Threat Hunting for falsifiable hypotheses, bounded scope, ATT&CK mapping, telemetry requirements, versioned query plans, preserved findings, reviewed dispositions, auditable Threat Radar handoff, and governed multi-provider AI suggestions from stored reports or hunt context. Report-to-hunt AI supports Enterprise ATT&CK. The assistant can draft hypotheses, plans, queries, finding summaries, and outcome summaries, but it does not create evidence, execute a query, or make lifecycle and disposition decisions.
 - Threat Hunting Query Library with reviewed Sigma/YARA-L examples, indexed
   community rules from bounded Git-backed feeds, fielded search and
@@ -43,7 +51,7 @@ Core capabilities:
   generation across ten formats, and one-click creation of a canonical hunt
   draft.
 - Unified hybrid RAG over normalized IOC, CVE, ATT&CK/TTP, actor, actor sector/region/technology observations, campaign, report, knowledge, Threat Radar signal, Threat Hunting, Evidence Graph, and sanitized asset records, with bounded one-hop expansion across allowlisted stored relationships, saved business profiles used as private request context, PostgreSQL full-text plus pgvector search, citation-bound AI answers, and expiring analyst-confirmed Navigator proposals. Relationship relevance remains an evidence-review lead, not proof of targeting or compromise.
-- A bounded MCP server for authenticated read-only/advisory intelligence search, entity retrieval, grounded answers, and Navigator proposals without automatic platform mutation.
+- A bounded analyst-facing MCP server for authenticated read-only/advisory intelligence search, entity retrieval, grounded answers, and Navigator proposals without automatic platform mutation, plus a separate private scanner MCP service used only by the API for authorized asset assessments.
 - ATT&CK/ATLAS Navigator with actor, campaign, sector, and comparison overlays.
 - IOC Library, IOC Investigation pivots, VirusTotal lookup, and feed management.
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
@@ -104,10 +112,12 @@ This checkout is a source-build installation. Its custom
 `adversarygraph-*:local-scan` images are built locally; `docker compose pull`
 only refreshes pinned third-party runtime images and intentionally skips those
 build targets. Do not replace the custom image variables with mutable `latest`
-tags. A prebuilt production deployment requires all seven immutable image
+tags. A prebuilt production deployment from current-development source requires
+all eight immutable image
 digests from the exact release's `adversarygraph-images.env` attachment; the
 historical `v6.0.0` release does not contain that complete artifact set.
-Use the v6.5 manifest only after the v6.5 tag workflow publishes it.
+The eighth family is the isolated scanner MCP image. Use a manifest only after
+the matching tag workflow publishes and verifies that complete artifact set.
 The self-test waits up to fifteen minutes for first-boot ATT&CK/ATLAS reference
 ingestion; override this with `SELFTEST_TIMEOUT` when operating across a slower
 network.

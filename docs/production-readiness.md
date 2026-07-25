@@ -67,9 +67,9 @@ handling policy.
 | Sizing guide | Implemented | `docs/deployment-sizing.md` |
 | Backup/restore scripts | Implemented | checksummed, archive-validated backup and writer-stopped restore in `scripts/backup.sh`, `scripts/restore.sh` |
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
-| Fresh image scan/publish path | Implemented in v6.5 source; tag-workflow evidence required | strict local builds scan seven custom images plus the three pinned third-party stack images; the tag workflow loads and scans seven versioned images before pushing those same local images |
-| Immutable Compose deployment | Implemented | production preflight requires all seven custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Implemented with operator input | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph default to v6.5.0 candidate tags with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for all four release components from the successful v6.5 tag workflow. |
+| Fresh image scan/publish path | Current development after v6.5.0; tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow loads and scans eight versioned images before pushing those same local images |
+| Immutable Compose deployment | Current development after v6.5.0 | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
+| Helm image digests | Current development after v6.5.0; operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 | PostgreSQL full-text and pgvector | Implemented in v6.5 source | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
 | Unified RAG corpus | Implemented in v6.5 source | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
@@ -151,7 +151,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ```
 
-Before this command, load the seven `ADVERSARYGRAPH_*_IMAGE` values from the
+Before this command, load the eight `ADVERSARYGRAPH_*_IMAGE` values from the
 `adversarygraph-images.env` file attached to the exact GitHub release. The
 production preflight rejects tags and accepts only `repository@sha256:...`
 references. It also requires URL-safe Redis credentials because the stack
@@ -182,7 +182,7 @@ that exact candidate without rebuilding. It serializes release jobs, verifies
 that each anonymously readable public manifest contains the scanned image ID,
 and attaches the verified immutable digest set as
 `adversarygraph-images.env`. Shared `latest` tags are not advanced because the
-seven-image family cannot be updated atomically. The workflow refuses to
+eight-image family cannot be updated atomically. The workflow refuses to
 modify a published GitHub release. It resumes a draft only when the title,
 notes, and sole manifest asset exactly match the regenerated release; otherwise
 it stops for explicit review. The workflow currently publishes Linux/AMD64

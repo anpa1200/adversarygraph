@@ -85,6 +85,8 @@ class ThreatAssetScan(Base):
     nmap_result: Mapped[dict] = mapped_column(JSONB, default=dict)
     web_probe_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     web_probe_result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    additional_scanners: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    scanner_results: Mapped[dict] = mapped_column(JSONB, default=dict)
     inventory_update: Mapped[dict] = mapped_column(JSONB, default=dict)
     findings: Mapped[list[dict]] = mapped_column(JSONB, default=list)
     ai_requested: Mapped[bool] = mapped_column(Boolean, default=False)

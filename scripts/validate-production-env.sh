@@ -71,6 +71,7 @@ errors=()
 db_pass="$(effective_value DB_PASS)"
 redis_password="$(effective_value REDIS_PASSWORD)"
 rate_limit_proxy_secret="$(effective_value RATE_LIMIT_PROXY_SECRET)"
+asset_scanner_mcp_token="$(effective_value ASSET_SCANNER_MCP_TOKEN)"
 cors_origins="$(effective_value CORS_ALLOWED_ORIGINS)"
 auth_enabled="$(normalize "$(effective_value AUTH_ENABLED true)")"
 secure_cookies="$(normalize "$(effective_value SECURE_COOKIES true)")"
@@ -78,7 +79,7 @@ bootstrap_password="$(effective_value AUTH_BOOTSTRAP_ADMIN_PASSWORD)"
 proxy_secret="$(effective_value PROXY_SECRET)"
 existing_admin_confirmed="$(normalize "$(effective_value AUTH_EXISTING_ADMIN_CONFIRMED false)")"
 
-for key in DB_PASS REDIS_PASSWORD RATE_LIMIT_PROXY_SECRET; do
+for key in DB_PASS REDIS_PASSWORD RATE_LIMIT_PROXY_SECRET ASSET_SCANNER_MCP_TOKEN; do
   value="$(effective_value "$key")"
   if [[ -z "$value" ]]; then
     errors+=("$key is required")
@@ -93,14 +94,22 @@ if [[ -n "$rate_limit_proxy_secret" && ! "$rate_limit_proxy_secret" =~ ^[A-Za-z0
   errors+=("RATE_LIMIT_PROXY_SECRET may contain only letters, digits, underscore, and hyphen")
 fi
 
+if [[ -n "$asset_scanner_mcp_token" &&
+      "$asset_scanner_mcp_token" == "development-only-scanner-mcp-token" ]]; then
+  errors+=("ASSET_SCANNER_MCP_TOKEN must not use the source-stack development value")
+fi
+
 if [[ -n "$redis_password" && ! "$redis_password" =~ ^[A-Za-z0-9_-]+$ ]]; then
   errors+=("REDIS_PASSWORD may contain only letters, digits, underscore, and hyphen because it is embedded in a Redis URL")
 fi
 
 if [[ -n "$db_pass" && -n "$redis_password" && "$db_pass" == "$redis_password" ]] ||
    [[ -n "$db_pass" && -n "$rate_limit_proxy_secret" && "$db_pass" == "$rate_limit_proxy_secret" ]] ||
-   [[ -n "$redis_password" && -n "$rate_limit_proxy_secret" && "$redis_password" == "$rate_limit_proxy_secret" ]]; then
-  errors+=("DB_PASS, REDIS_PASSWORD, and RATE_LIMIT_PROXY_SECRET must be different secrets")
+   [[ -n "$redis_password" && -n "$rate_limit_proxy_secret" && "$redis_password" == "$rate_limit_proxy_secret" ]] ||
+   [[ -n "$asset_scanner_mcp_token" && -n "$db_pass" && "$asset_scanner_mcp_token" == "$db_pass" ]] ||
+   [[ -n "$asset_scanner_mcp_token" && -n "$redis_password" && "$asset_scanner_mcp_token" == "$redis_password" ]] ||
+   [[ -n "$asset_scanner_mcp_token" && -n "$rate_limit_proxy_secret" && "$asset_scanner_mcp_token" == "$rate_limit_proxy_secret" ]]; then
+  errors+=("DB_PASS, REDIS_PASSWORD, RATE_LIMIT_PROXY_SECRET, and ASSET_SCANNER_MCP_TOKEN must be different secrets")
 fi
 
 bootstrap_is_strong=false
@@ -154,6 +163,7 @@ fi
 custom_image_keys=(
   ADVERSARYGRAPH_POSTGRES_IMAGE
   ADVERSARYGRAPH_BACKEND_IMAGE
+  ADVERSARYGRAPH_SCANNER_MCP_IMAGE
   ADVERSARYGRAPH_FRONTEND_IMAGE
   ADVERSARYGRAPH_MALWAREGRAPH_IMAGE
   ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE

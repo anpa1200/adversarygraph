@@ -116,6 +116,14 @@ async def create_tables() -> None:
         ))
         await conn.execute(text(
             "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
+            "additional_scanners JSONB DEFAULT '[]'::jsonb"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
+            "scanner_results JSONB DEFAULT '{}'::jsonb"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE threat_asset_scans ADD COLUMN IF NOT EXISTS "
             "inventory_update JSONB DEFAULT '{}'::jsonb"
         ))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_auth_sessions_revoked_at ON auth_sessions (revoked_at)"))
