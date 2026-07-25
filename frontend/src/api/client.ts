@@ -3734,6 +3734,20 @@ export interface ThreatAssetScanProviderCatalog {
     permission: string;
     boundary: string;
   };
+  additional_scanners: Array<{
+    id: 'tls' | 'dns' | 'nuclei';
+    label: string;
+    enabled: boolean;
+    configured?: boolean;
+    profile: string;
+    timeout_seconds: number;
+    mode: string;
+    boundary: string;
+    engine?: string;
+    templates?: string;
+    rate_limit_per_second?: number;
+    template_concurrency?: number;
+  }>;
   passive: Array<{
     id: string;
     label: string;
@@ -3765,16 +3779,35 @@ export interface ThreatAssetScan {
     probes?: Array<Record<string, unknown>>;
     findings?: Array<Record<string, unknown>>;
   };
+  additional_scanners: Array<'tls' | 'dns' | 'nuclei'>;
+  scanner_results: Record<string, Record<string, unknown> & {
+    status?: string;
+    summary?: string;
+    profile?: string;
+    findings?: Array<Record<string, unknown>>;
+  }>;
   inventory_update: {
     requested?: boolean;
     changed?: boolean;
     observed_count?: number;
+    evaluated_count?: number;
     added?: {
       ip_addresses?: string[];
       domains?: string[];
       ports?: number[];
       technologies?: string[];
       cpes?: string[];
+    };
+    withheld?: {
+      count?: number;
+      domains?: string[];
+      ip_addresses?: string[];
+      reason?: string;
+    };
+    remediation?: {
+      removed_unverified_domain_count?: number;
+      removed_unverified_domains?: string[];
+      remediated_at?: string;
     };
     updated_at?: string;
   };
@@ -3973,6 +4006,7 @@ export const threatRadarApi = {
       providers?: string[];
       run_nmap?: boolean;
       run_web_probe?: boolean;
+      scanners?: Array<'tls' | 'dns' | 'nuclei'>;
       update_inventory?: boolean;
       ai_analyze?: boolean;
       ai_provider?: ThreatHuntAIProviderId;

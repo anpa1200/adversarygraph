@@ -90,9 +90,19 @@ The bundled development image builds checksum-pinned pgvector **0.8.2**.
 | `ASSET_SCANNER_ENABLED` | Enable inventory-bound Threat Radar asset assessments; default `true` |
 | `ASSET_SCANNER_NMAP_ENABLED` | Permit the fixed safe Nmap service-discovery stage; default `true` |
 | `ASSET_SCANNER_WEB_PROBE_ENABLED` | Permit root-only HTTP(S) security-header and configuration posture checks; default `true` |
+| `ASSET_SCANNER_TLS_ENABLED` | Permit one verified TLS certificate/protocol handshake; default `true` |
+| `ASSET_SCANNER_DNS_ENABLED` | Permit bounded read-only DNS posture queries; default `true` |
+| `ASSET_SCANNER_NUCLEI_ENABLED` | Permit the pinned, signed, rate-limited Nuclei network-template stage; default `true` |
 | `ASSET_SCANNER_NMAP_BINARY` | Operator-controlled Nmap executable path; default `/usr/bin/nmap` in the backend image |
+| `ASSET_SCANNER_NUCLEI_BINARY` | Operator-controlled Nuclei executable path; default `/usr/local/bin/nuclei` |
+| `ASSET_SCANNER_NUCLEI_TEMPLATES` | Pinned template directory; default `/app/nuclei-templates` |
 | `ASSET_SCANNER_TIMEOUT_SECONDS` | Per-assessment Nmap host timeout; default `120`, allowed range `15`–`600` seconds |
 | `ASSET_SCANNER_WEB_PROBE_TIMEOUT_SECONDS` | Timeout for each root-only web posture request; default `15`, allowed range `5`–`60` seconds |
+| `ASSET_SCANNER_TLS_TIMEOUT_SECONDS` | Verified TLS-handshake timeout; default `15`, allowed range `5`–`60` seconds |
+| `ASSET_SCANNER_DNS_TIMEOUT_SECONDS` | Per-record DNS query lifetime; default `10`, allowed range `3`–`60` seconds |
+| `ASSET_SCANNER_NUCLEI_TIMEOUT_SECONDS` | Whole bounded Nuclei-run timeout; default `180`, allowed range `30`–`900` seconds |
+| `ASSET_SCANNER_NUCLEI_RATE_LIMIT` | Maximum Nuclei requests per second; default `25`, allowed range `1`–`50` |
+| `ASSET_SCANNER_NUCLEI_CONCURRENCY` | Maximum concurrent Nuclei templates; default `5`, allowed range `1`–`10` |
 | `ASSET_SCANNER_TOP_PORTS` | Bounded Nmap top-port count; default `100`, allowed range `10`–`1000` |
 | `ASSET_SCANNER_MAX_RESOLVED_IPS` | Maximum authorized addresses scanned after an inventory hostname resolves; default `4`, range `1`–`16` |
 | `OPENCTI_URL` | Optional OpenCTI base URL for symmetric CTI sync |

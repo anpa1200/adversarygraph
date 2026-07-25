@@ -945,6 +945,7 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   const [runNmap, setRunNmap] = useState(false);
   const [runWebProbe, setRunWebProbe] = useState(false);
+  const [selectedScanners, setSelectedScanners] = useState<Array<'tls' | 'dns' | 'nuclei'>>([]);
   const [updateInventory, setUpdateInventory] = useState(true);
   const [aiAnalyze, setAiAnalyze] = useState(false);
   const [aiProvider, setAiProvider] = useState<ThreatHuntAIProviderId>('local');
@@ -963,6 +964,7 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
   const aiProviders = providers.data?.ai ?? [];
   const nmapPolicy = providers.data?.nmap;
   const webPolicy = providers.data?.web;
+  const additionalScanners = providers.data?.additional_scanners ?? [];
 
   useEffect(() => {
     if (!providers.data || providersInitialized.current) return;
@@ -981,6 +983,7 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
       providers: selectedProviders,
       run_nmap: runNmap,
       run_web_probe: runWebProbe,
+      scanners: selectedScanners,
       update_inventory: canManageInventory && updateInventory,
       ai_analyze: aiAnalyze,
       ai_provider: aiProvider,
@@ -1017,6 +1020,11 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
       current.includes(id) ? current.filter(item => item !== id) : [...current, id]
     ));
   };
+  const toggleScanner = (id: 'tls' | 'dns' | 'nuclei') => {
+    setSelectedScanners(current => (
+      current.includes(id) ? current.filter(item => item !== id) : [...current, id]
+    ));
+  };
 
   return (
     <Panel title="Authorized Asset Exposure Assessment">
@@ -1024,7 +1032,8 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
         <div className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100/80">
           Targets are restricted to this inventory record. Passive Shodan, Censys, VirusTotal, URLScan, OTX,
           GreyNoise, AbuseIPDB, and local intelligence run first when configured. Optional active checks use bounded
-          Nmap service discovery and root-only HTTP posture inspection—no NSE vulnerability scripts, crawling, or exploitation.
+          Nmap service discovery, root-only HTTP posture, TLS, DNS, and optional bounded Nuclei checks. Every active
+          scanner remains restricted to the exact inventory target and requires explicit authorization.
         </div>
 
         {!targets.length ? (
@@ -1101,6 +1110,46 @@ function AssetScanner({ asset }: { asset: ThreatSpaceAsset }) {
               </label>
             </div>
 
+            <fieldset>
+              <legend className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Additional vulnerability and posture scanners
+              </legend>
+              <div className="mt-2 grid gap-3 lg:grid-cols-3">
+                {additionalScanners.map(scanner => (
+                  <label
+                    key={scanner.id}
+                    className={`flex items-start gap-3 rounded border bg-gray-950 p-3 text-xs ${
+                      scanner.enabled ? 'border-gray-800 text-gray-300' : 'border-gray-900 text-gray-600'
+                    }`}
+                  >
+                    <input
+                      className="mt-0.5"
+                      type="checkbox"
+                      checked={selectedScanners.includes(scanner.id)}
+                      disabled={!scanner.enabled}
+                      onChange={() => toggleScanner(scanner.id)}
+                    />
+                    <span>
+                      <b className={scanner.enabled ? 'text-white' : 'text-gray-500'}>
+                        {scanner.label}{scanner.enabled ? '' : ' · unavailable'}
+                      </b>
+                      <span className="mt-1 block text-gray-500">{scanner.boundary}</span>
+                      {(scanner.engine || scanner.templates) && (
+                        <span className="mt-1 block font-mono text-[10px] text-gray-600">
+                          {[scanner.engine, scanner.templates].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                      {scanner.rate_limit_per_second && scanner.template_concurrency && (
+                        <span className="mt-1 block font-mono text-[10px] text-gray-600">
+                          {scanner.rate_limit_per_second} req/s · {scanner.template_concurrency} concurrent templates
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <label className={`flex items-start gap-3 rounded border p-3 text-xs ${canManageInventory ? 'border-sky-500/30 bg-sky-950/20 text-sky-100/80' : 'border-gray-800 bg-gray-950 text-gray-600'}`}>
               <input
                 className="mt-0.5"
@@ -1174,6 +1223,7 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
   const webProbes = Array.isArray(scan.web_probe_result.probes)
     ? scan.web_probe_result.probes
     : [];
+  const scannerResults = Object.entries(scan.scanner_results ?? {});
   const additions = scan.inventory_update.added ?? {};
   const addedCount = [
     ...(additions.ip_addresses ?? []),
@@ -1182,6 +1232,12 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
     ...(additions.technologies ?? []),
     ...(additions.cpes ?? []),
   ].length;
+  const withheld = scan.inventory_update.withheld ?? {};
+  const withheldValues = [
+    ...(withheld.domains ?? []),
+    ...(withheld.ip_addresses ?? []),
+  ];
+  const withheldCount = Number(withheld.count || withheldValues.length);
   return (
     <section className="space-y-3 rounded border border-gray-800 bg-gray-950 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1195,12 +1251,13 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
       </div>
       {scan.error && <p className="rounded border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-100">{scan.error}</p>}
       {scan.warnings.map(warning => <p key={warning} className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100/80">{warning}</p>)}
-      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
         <Metric label="Passive lookups" value={scan.passive_results.length} />
         <Metric label="Open services" value={services.length} />
         <Metric label="Web endpoints" value={webProbes.length} />
         <Metric label="Findings / leads" value={findings.length} />
         <Metric label="CVE candidates" value={Array.isArray(analysis.cve_candidates) ? analysis.cve_candidates.length : 0} />
+        <Metric label="Scanner checks" value={scannerResults.length} />
         <Metric label="Inventory additions" value={addedCount} />
       </section>
       {scan.inventory_update.requested && (
@@ -1222,10 +1279,42 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
           )}
         </div>
       )}
+      {withheldCount > 0 && (
+        <div className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100/80">
+          <b className="text-white">Unverified provider relationships were not added</b>
+          <p className="mt-1">
+            {withheldCount} domain or IP association(s) were observed on shared or indirectly related infrastructure.
+            {' '}Censys, Shodan, TLS, PTR, and virtual-host association does not prove that the inventory owner controls them.
+          </p>
+          <p className="mt-1 text-amber-200/60">
+            {withheld.reason || 'Verify ownership independently before adding any candidate to company inventory.'}
+          </p>
+          {!!withheldValues.length && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {withheldValues.slice(0, 12).map(value => <EntityTag key={`withheld:${value}`} value={value} type="tag" />)}
+              {withheldCount > 12 && <span className="px-2 py-1 text-amber-200/60">+{withheldCount - 12} more withheld</span>}
+            </div>
+          )}
+        </div>
+      )}
       {scan.web_probe_requested && (
         <div className="rounded border border-gray-800 p-3 text-xs text-gray-300">
           <b className="text-white">Safe web posture · {String(scan.web_probe_result.status || 'unknown')}</b>
           <p className="mt-1 text-gray-500">{String(scan.web_probe_result.summary || 'No web posture summary.')}</p>
+        </div>
+      )}
+      {!!scannerResults.length && (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {scannerResults.map(([scanner, result]) => (
+            <div key={scanner} className="rounded border border-gray-800 p-3 text-xs text-gray-300">
+              <div className="flex items-start justify-between gap-2">
+                <b className="text-white">{scanner.toUpperCase()} assessment</b>
+                <span className="uppercase text-gray-500">{String(result.status || 'unknown')}</span>
+              </div>
+              <p className="mt-1 text-gray-500">{String(result.summary || 'No scanner summary.')}</p>
+              {result.profile && <p className="mt-2 font-mono text-[10px] text-gray-600">{String(result.profile)}</p>}
+            </div>
+          ))}
         </div>
       )}
       <div className="rounded border border-sky-500/30 bg-sky-950/20 p-3">

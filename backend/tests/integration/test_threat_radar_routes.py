@@ -580,6 +580,9 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
     assert "No NSE scripts" in provider_response.json()["nmap"]["boundary"]
     assert provider_response.json()["web"]["profile"] == "safe-root-http-posture"
     assert "No redirect following" in provider_response.json()["web"]["boundary"]
+    assert {
+        row["id"] for row in provider_response.json()["additional_scanners"]
+    } == {"tls", "dns", "nuclei"}
 
     missing_authorization = await client.post(
         f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans",
@@ -681,10 +684,36 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
             }],
         }
 
+    async def fake_additional_scanners(target, requested):
+        assert requested == ["tls", "nuclei"]
+        return {
+            "tls": {
+                "status": "ok",
+                "profile": "verified-tls-handshake",
+                "summary": "TLS verified.",
+                "findings": [],
+            },
+            "nuclei": {
+                "status": "ok",
+                "profile": "signed-bounded-network-templates",
+                "summary": "Nuclei reported one match.",
+                "findings": [{
+                    "category": "nuclei-template-match",
+                    "severity": "medium",
+                    "title": "Example exposure",
+                    "evidence": "Signed template matched the authorized target.",
+                    "source": "nuclei",
+                    "status": "observed",
+                    "verification_required": True,
+                }],
+            },
+        }
+
     monkeypatch.setattr(threat_radar_route.asset_scanner, "resolve_target", fake_resolve)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "run_passive_assessment", fake_passive)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "run_nmap_discovery", fake_nmap)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "run_web_posture_probe", fake_web_probe)
+    monkeypatch.setattr(threat_radar_route.asset_scanner, "run_additional_scanners", fake_additional_scanners)
     monkeypatch.setattr(threat_radar_route.asset_scanner, "match_local_cves", fake_cves)
 
     response = await client.post(
@@ -694,6 +723,7 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
             "providers": ["shodan"],
             "run_nmap": True,
             "run_web_probe": True,
+            "scanners": ["tls", "nuclei"],
             "update_inventory": True,
             "authorization_confirmed": True,
         },
@@ -703,14 +733,20 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
     assert scan["status"] == "completed"
     assert scan["nmap_result"]["open_port_count"] == 1
     assert scan["web_probe_result"]["status"] == "ok"
+    assert scan["additional_scanners"] == ["tls", "nuclei"]
+    assert scan["scanner_results"]["nuclei"]["status"] == "ok"
     assert scan["inventory_update"]["changed"] is True
-    assert scan["inventory_update"]["added"]["domains"] == ["edge-observed.example.test"]
+    assert scan["inventory_update"]["added"]["domains"] == []
     assert scan["inventory_update"]["added"]["ports"] == [443]
+    assert scan["inventory_update"]["withheld"]["count"] == 1
+    assert scan["inventory_update"]["withheld"]["domains"] == ["edge-observed.example.test"]
+    assert any("withheld from inventory" in warning for warning in scan["warnings"])
     assert "nginx" in scan["inventory_update"]["added"]["technologies"]
     assert scan["ai_analysis"]["provider"] == "deterministic"
     assert scan["ai_analysis"]["cve_candidates"][0]["verification_required"] is True
     assert any(item["category"] == "open-service" for item in scan["findings"])
     assert any(item["category"] == "local-cve-candidate" for item in scan["findings"])
+    assert any(item["category"] == "nuclei-template-match" for item in scan["findings"])
 
     history = await client.get(
         f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/scans"
@@ -728,7 +764,7 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
         f"/api/threat-radar/spaces/{space_id}/assets/{asset_id}/intelligence"
     )
     assert updated_asset.status_code == 200
-    assert "edge-observed.example.test" in updated_asset.json()["asset"]["domains"]
+    assert "edge-observed.example.test" not in updated_asset.json()["asset"]["domains"]
     assert 443 in updated_asset.json()["asset"]["metadata"]["ports"]
     assert updated_asset.json()["asset"]["metadata"]["last_surface_scan_id"] == scan["id"]
 

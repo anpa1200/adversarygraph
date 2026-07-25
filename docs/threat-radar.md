@@ -269,9 +269,12 @@ HTTP(S) URL host that is already recorded on the selected asset. It combines:
    Shodan, and Censys sources;
 3. optional, authorized Nmap service discovery;
 4. optional, authorized root-only web posture checks;
-5. product-family CPE correlation against the local CVE Library;
-6. deterministic or governed AI-assisted interpretation; and
-7. a controlled inventory merge for newly observed IP addresses, hostnames,
+5. optional verified TLS-handshake and read-only DNS posture checks;
+6. optional, authorized Nuclei vulnerability and misconfiguration detection
+   with pinned signed templates and a bounded execution policy;
+7. product-family CPE correlation against the local CVE Library;
+8. deterministic or governed AI-assisted interpretation; and
+9. a controlled inventory merge for newly observed IP addresses, hostnames,
    ports, technologies, and CPEs.
 
 The target field is not an arbitrary internet scanner. The API normalizes the
@@ -306,6 +309,24 @@ and bounded response headers. It checks observable redirect, security-header,
 cookie, CORS, and server-technology posture. It does not crawl, submit forms,
 authenticate, fuzz, inject payloads, brute-force, or exploit the application.
 
+### Additional scanners
+
+Three additional scanner adapters share the same exact-inventory target,
+`run_attack_simulation` permission, authorization confirmation, timeout,
+structured result, audit, history, deduplication, and AI-review controls:
+
+| Scanner | Profile | What it does | Enforced boundary |
+|---|---|---|---|
+| TLS | `verified-tls-handshake` | Verifies the certificate chain and hostname, then records negotiated TLS, cipher, ALPN, issuer, subject, SANs, and expiry. | One verified handshake. No downgrade, cipher exhaustion, renegotiation flood, or certificate-name inventory expansion. |
+| DNS | `read-only-dns-posture` | Reads A, AAAA, CAA, TXT, DNSKEY, and host-scoped DMARC answers. | No AXFR, brute-force subdomain enumeration, wildcard enumeration, recursion abuse, or mutation. Missing policy records are informational because policy can live at a parent zone. |
+| Nuclei | `signed-bounded-network-templates` | Runs pinned Nuclei v3.8.0 with pinned Nuclei Templates v10.4.6 and automatic technology-aware selection against the exact target. | Signature-valid HTTP, TLS, and DNS templates; operator-capped rate/concurrency (defaults: 25 requests/second and 5 templates); no fuzzing/DAST, headless, code, file, JavaScript, workflow, WebSocket, brute-force, intrusive, denial-of-service, or out-of-band templates. |
+
+Nuclei matches are **validation leads**, not automatically confirmed
+vulnerabilities. Each match retains its template ID, protocol, matched target,
+references, and review requirement. An analyst must reproduce it through an
+approved validation workflow and verify product/version and environmental
+applicability.
+
 An open port is an observation, not a vulnerability. Shodan/Censys
 vulnerability references and local CPE-to-CVE matches are explicitly labelled
 as candidates requiring analyst confirmation of the detected product, deployed
@@ -317,11 +338,17 @@ When **Add observed attack surfaces to this asset** is selected, the API
 normalizes and deduplicates observations before merging them into the same
 company asset. DNS resolution and bounded Nmap can contribute addresses,
 hostnames, ports, service products, and CPEs. Successful Shodan, Censys, and
-AbuseIPDB relationships can contribute typed hostnames, globally routable IPs,
-ports, and software. VirusTotal and URLScan remain evidence sources, but their
-historical passive-DNS and third-party page relationships are not
-automatically treated as company-owned asset identity. Reputation, attribution,
-hashes, and CVE candidates are also not converted into asset identity.
+AbuseIPDB relationships can contribute ports and software. Provider IPs are
+merged only when they are the exact inventory target or an address resolved
+from an inventoried hostname. Provider hostnames are merged only when they
+equal an existing inventory DNS namespace or are a descendant of it.
+Unrelated virtual hosts, PTR names, certificate names, and other tenants on
+shared GitHub Pages, cloud, CDN, or hosting addresses are withheld as
+`unverified-ownership` review context. VirusTotal and URLScan remain evidence
+sources, but their historical passive-DNS and third-party page relationships
+are not automatically treated as company-owned asset identity. Reputation,
+attribution, hashes, and CVE candidates are also not converted into asset
+identity.
 
 Every observation stored in `metadata.discovered_surfaces` records its source,
 evidence summary, first and last observation time, and latest assessment ID.
@@ -348,16 +375,17 @@ or assign a confirmed vulnerability.
 2. Open **Threat Radar -> Asset Inventory**, search or filter the registry,
    then open the asset's dedicated intelligence page.
 3. Select one inventory target and the configured passive providers.
-4. Optionally enable **Run safe Nmap discovery** and/or **Run safe web posture
-   checks**.
+4. Optionally enable **Run safe Nmap discovery**, **Run safe web posture
+   checks**, TLS, DNS, and/or the explicitly authorized bounded Nuclei scan.
 5. Keep **Add observed attack surfaces to this asset** selected to merge
    normalized discoveries with provenance, or clear it for a read-only
    assessment.
 6. Optionally select an available AI provider. Remote providers require the
    explicit TLP:AMBER processing acknowledgement shown in the UI.
 7. Confirm authorization for that exact inventory target.
-8. Run the assessment and review provider status, inventory additions, web
-   posture, open services, CVE candidates, caveats, and prioritized actions.
+8. Run the assessment and review provider status, withheld ownership
+   candidates, inventory additions, TLS/DNS/Nuclei summaries, web posture,
+   open services, CVE candidates, caveats, and prioritized actions.
 9. Validate ownership and product/version evidence in the authoritative CMDB,
    firewall, EDR, and vulnerability-management systems before triage.
 

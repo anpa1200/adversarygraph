@@ -406,6 +406,10 @@ class AssetScanIn(BaseModel):
     providers: list[str] = Field(default_factory=list, max_length=20)
     run_nmap: bool = False
     run_web_probe: bool = False
+    scanners: list[Literal["tls", "dns", "nuclei"]] = Field(
+        default_factory=list,
+        max_length=3,
+    )
     update_inventory: bool = True
     ai_analyze: bool = False
     ai_provider: Literal["local", "claude", "openai", "gemini", "minimax"] = "local"
@@ -679,6 +683,7 @@ async def asset_scanner_providers(
                 "crawling, form submission, injection payload, brute force, or exploitation."
             ),
         },
+        "additional_scanners": asset_scanner.additional_scanner_catalog(),
         "passive": asset_scanner.provider_catalog(),
         "ai": await governed_ai.provider_catalog_with_readiness(),
     }
@@ -750,12 +755,12 @@ async def create_asset_scan(
             "Confirm that you are authorized to assess this inventory asset",
         )
     if (
-        (payload.run_nmap or payload.run_web_probe)
+        (payload.run_nmap or payload.run_web_probe or payload.scanners)
         and not has_permission(user, "run_attack_simulation")
     ):
         raise HTTPException(
             403,
-            "Active Nmap or web posture checks require the run_attack_simulation permission",
+            "Active asset scanners require the run_attack_simulation permission",
         )
     if payload.update_inventory and not has_permission(user, "manage_intel"):
         raise HTTPException(
@@ -792,6 +797,7 @@ async def create_asset_scan(
         requested_providers=requested_providers,
         nmap_requested=payload.run_nmap,
         web_probe_requested=payload.run_web_probe,
+        additional_scanners=payload.scanners,
         ai_requested=payload.ai_analyze,
         ai_provider=payload.ai_provider if payload.ai_analyze else "",
         ai_model=payload.ai_model or "",
@@ -814,6 +820,7 @@ async def create_asset_scan(
             "providers": requested_providers,
             "nmap_requested": payload.run_nmap,
             "web_probe_requested": payload.run_web_probe,
+            "additional_scanners": payload.scanners,
             "update_inventory": payload.update_inventory,
             "ai_requested": payload.ai_analyze,
         },
@@ -856,18 +863,24 @@ async def create_asset_scan(
                 "findings": [],
             }
         )
+        scanner_results = await asset_scanner.run_additional_scanners(
+            target,
+            payload.scanners,
+        )
         cve_candidates = await asset_scanner.match_local_cves(session, nmap_result)
         findings = asset_scanner.build_findings(
             passive_results,
             nmap_result,
             cve_candidates,
             web_probe_result,
+            scanner_results,
         )
         analysis = asset_scanner.deterministic_analysis(
             passive_results,
             nmap_result,
             cve_candidates,
             web_probe_result,
+            scanner_results,
         )
         if payload.ai_analyze:
             try:
@@ -877,6 +890,7 @@ async def create_asset_scan(
                     passive_results=passive_results,
                     nmap_result=nmap_result,
                     web_probe_result=web_probe_result,
+                    scanner_results=scanner_results,
                     cve_candidates=cve_candidates,
                     provider=payload.ai_provider,
                     model=payload.ai_model,
@@ -898,12 +912,20 @@ async def create_asset_scan(
                 )
 
         discovery = asset_scanner.extract_discovered_surfaces(
+            asset,
             target,
             resolved_ips,
             passive_results,
             nmap_result,
             web_probe_result,
         )
+        review_candidates = discovery.get("review_candidates") or []
+        if review_candidates:
+            warnings.append(
+                f"{len(review_candidates)} OSINT relationship(s) were withheld from "
+                "inventory because shared-hosting or provider association does not "
+                "prove ownership."
+            )
         inventory_update: dict[str, Any] = {
             "requested": payload.update_inventory,
             "changed": False,
@@ -915,6 +937,27 @@ async def create_asset_scan(
                 "cpes": [],
             },
             "observed_count": len(discovery.get("observations") or []),
+            "evaluated_count": int(
+                discovery.get("evaluated_count")
+                or len(discovery.get("observations") or [])
+            ),
+            "withheld": {
+                "count": len(review_candidates),
+                "domains": [
+                    row.get("value")
+                    for row in review_candidates
+                    if row.get("kind") == "domain"
+                ][:100],
+                "ip_addresses": [
+                    row.get("value")
+                    for row in review_candidates
+                    if row.get("kind") == "ip"
+                ][:100],
+                "reason": (
+                    "Provider associations require ownership verification before "
+                    "inventory merge."
+                ),
+            },
         }
         if payload.update_inventory:
             inventory_update = asset_scanner.merge_discovered_surfaces(
@@ -947,10 +990,15 @@ async def create_asset_scan(
             "timeout",
             "unavailable",
             "unresolved",
-        } or web_probe_result.get("status") in {"partial", "unavailable"}
+        } or web_probe_result.get("status") in {"partial", "unavailable"} or any(
+            result.get("status") in {"partial", "error", "timeout", "unavailable"}
+            for result in scanner_results.values()
+        )
         scan.passive_results = jsonable_encoder(passive_results)
         scan.nmap_result = jsonable_encoder(nmap_result)
         scan.web_probe_result = jsonable_encoder(web_probe_result)
+        scan.additional_scanners = payload.scanners
+        scan.scanner_results = jsonable_encoder(scanner_results)
         scan.inventory_update = jsonable_encoder(inventory_update)
         scan.findings = jsonable_encoder(findings)
         scan.ai_analysis = jsonable_encoder({
@@ -973,6 +1021,11 @@ async def create_asset_scan(
                 "finding_count": len(findings),
                 "open_port_count": int(nmap_result.get("open_port_count") or 0),
                 "web_probe_count": len(web_probe_result.get("probes") or []),
+                "additional_scanners": payload.scanners,
+                "additional_scanner_finding_count": sum(
+                    len(result.get("findings") or [])
+                    for result in scanner_results.values()
+                ),
                 "inventory_changed": inventory_update["changed"],
                 "passive_source_count": len(passive_results),
             },
@@ -2788,6 +2841,8 @@ def _asset_scan_obj(scan: ThreatAssetScan) -> dict[str, Any]:
         "nmap_result": scan.nmap_result or {},
         "web_probe_requested": scan.web_probe_requested,
         "web_probe_result": scan.web_probe_result or {},
+        "additional_scanners": scan.additional_scanners or [],
+        "scanner_results": scan.scanner_results or {},
         "inventory_update": scan.inventory_update or {},
         "findings": scan.findings or [],
         "ai_requested": scan.ai_requested,

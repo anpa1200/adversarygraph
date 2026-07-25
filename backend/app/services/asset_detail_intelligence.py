@@ -630,6 +630,12 @@ def _scan_summary(scan: ThreatAssetScan) -> dict[str, Any]:
         "scan_profile": scan.scan_profile,
         "nmap_requested": scan.nmap_requested,
         "open_port_count": int((scan.nmap_result or {}).get("open_port_count") or 0),
+        "additional_scanners": scan.additional_scanners or [],
+        "additional_scanner_findings": sum(
+            len(result.get("findings") or [])
+            for result in (scan.scanner_results or {}).values()
+            if isinstance(result, dict)
+        ),
         "finding_count": len(scan.findings or []),
         "ai_requested": scan.ai_requested,
         "ai_provider": scan.ai_provider,

@@ -171,6 +171,7 @@ def test_storage_writable_check_creates_and_removes_probe(tmp_path):
 def test_asset_scanner_readiness_requires_configured_nmap_binary(monkeypatch, tmp_path):
     monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_enabled", True)
     monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nmap_enabled", True)
+    monkeypatch.setattr("app.api.routes.system.settings.asset_scanner_nuclei_enabled", False)
     monkeypatch.setattr(
         "app.api.routes.system.settings.asset_scanner_nmap_binary",
         str(tmp_path / "missing-nmap"),

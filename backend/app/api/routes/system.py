@@ -514,6 +514,19 @@ def _asset_scanner_readiness_check() -> SelfTestCheck:
         )
     binary = Path(settings.asset_scanner_nmap_binary)
     nmap_ready = binary.is_file() and os.access(binary, os.X_OK)
+    nuclei_binary = Path(settings.asset_scanner_nuclei_binary)
+    nuclei_templates = Path(settings.asset_scanner_nuclei_templates)
+    try:
+        nuclei_templates_ready = (
+            nuclei_templates.is_dir() and any(nuclei_templates.iterdir())
+        )
+    except OSError:
+        nuclei_templates_ready = False
+    nuclei_ready = (
+        nuclei_binary.is_file()
+        and os.access(nuclei_binary, os.X_OK)
+        and nuclei_templates_ready
+    )
     if settings.asset_scanner_nmap_enabled and not nmap_ready:
         return _check_status(
             "asset_scanner",
@@ -526,19 +539,38 @@ def _asset_scanner_readiness_check() -> SelfTestCheck:
                 "profile": "safe-service-discovery",
             },
         )
+    if settings.asset_scanner_nuclei_enabled and not nuclei_ready:
+        return _check_status(
+            "asset_scanner",
+            "error",
+            "Asset assessment is enabled, but Nuclei or its pinned templates are unavailable.",
+            {
+                "enabled": True,
+                "nuclei_enabled": True,
+                "nuclei_binary": str(nuclei_binary),
+                "nuclei_templates": str(nuclei_templates),
+                "profile": "signed-bounded-network-templates",
+            },
+        )
     return _check_status(
         "asset_scanner",
         "ok",
         (
-            "Inventory-bound passive and safe Nmap service discovery are ready."
+            "Inventory-bound passive, Nmap, TLS, DNS, and Nuclei assessment are ready."
             if settings.asset_scanner_nmap_enabled
-            else "Inventory-bound passive assessment is ready; Nmap is disabled by the operator."
+            else "Inventory-bound passive, TLS, DNS, and Nuclei assessment are ready; Nmap is disabled."
         ),
         {
             "enabled": True,
             "nmap_enabled": settings.asset_scanner_nmap_enabled,
             "nmap_binary": str(binary),
             "nmap_ready": nmap_ready,
+            "tls_enabled": settings.asset_scanner_tls_enabled,
+            "dns_enabled": settings.asset_scanner_dns_enabled,
+            "nuclei_enabled": settings.asset_scanner_nuclei_enabled,
+            "nuclei_binary": str(nuclei_binary),
+            "nuclei_templates": str(nuclei_templates),
+            "nuclei_ready": nuclei_ready,
             "top_ports": settings.asset_scanner_top_ports,
             "timeout_seconds": settings.asset_scanner_timeout_seconds,
             "profile": "safe-service-discovery",
