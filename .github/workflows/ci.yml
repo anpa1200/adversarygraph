@@ -277,12 +277,14 @@ jobs:
             --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             >/tmp/adversarygraph-production.yaml
           helm template adversarygraph helm/adversarygraph \
             --set secrets.existingSecret= \
             --set secrets.dbPassword=helm_validation_db_password \
             --set secrets.redisPassword=helm_validation_redis_password \
             --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
+            --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
           if helm template adversarygraph helm/adversarygraph --set secrets.existingSecret= >/dev/null 2>&1; then

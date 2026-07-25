@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -188,23 +188,25 @@ async def run_authorized_asset_assessment(
     target: str = Field(min_length=1, max_length=2_048),
     run_nmap_requested: bool = False,
     run_web_requested: bool = False,
-    additional_scanners: list[Literal["tls", "dns", "nuclei"]] = Field(
-        default_factory=list,
-        max_length=3,
-    ),
+    additional_scanners: Annotated[
+        list[Literal["tls", "dns", "nuclei"]],
+        Field(max_length=3),
+    ]
+    | None = None,
     authorization_confirmed: bool = False,
 ) -> dict[str, Any]:
     """Execute one explicit bounded tool plan and return an AI-reviewable trace."""
 
     _require_authorization(authorization_confirmed)
-    unknown = sorted(set(additional_scanners) - set(ADDITIONAL_SCANNERS))
+    selected_scanners = list(additional_scanners or [])
+    unknown = sorted(set(selected_scanners) - set(ADDITIONAL_SCANNERS))
     if unknown:
         raise ValueError(f"Unsupported scanner(s): {', '.join(unknown)}")
     return await run_assessment_plan(
         target,
         run_nmap_requested=run_nmap_requested,
         run_web_requested=run_web_requested,
-        additional_scanners=list(additional_scanners),
+        additional_scanners=selected_scanners,
     )
 
 

@@ -13,21 +13,21 @@ import os
 import re
 import socket
 import ssl
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Awaitable, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
-from defusedxml import ElementTree as ET
 import dns.asyncresolver
 import dns.exception
 import dns.resolver
 import httpx
+from defusedxml import ElementTree as ET
 
 from .config import settings
 from .models import ScanTarget, normalize_ip, normalize_target
-
 
 SCANNER_IDS = ("nmap", "web", "tls", "dns", "nuclei")
 ADDITIONAL_SCANNERS = ("tls", "dns", "nuclei")
@@ -704,7 +704,10 @@ async def run_assessment_plan(
         call_started = perf_counter()
         try:
             result = await runner(target)
-        except Exception as exc:
+        # Every isolated scanner is an optional boundary. Convert unexpected
+        # tool failures into a non-evidentiary result so one scanner cannot
+        # abort the complete assessment plan.
+        except Exception as exc:  # noqa: BLE001
             result = {
                 "status": "error",
                 "scanner": name,

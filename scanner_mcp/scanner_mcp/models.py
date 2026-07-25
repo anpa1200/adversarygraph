@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
-
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}\.?$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$",
