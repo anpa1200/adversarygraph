@@ -1167,9 +1167,10 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
   const nmapHosts = Array.isArray(scan.nmap_result.hosts)
     ? scan.nmap_result.hosts as Array<Record<string, unknown>>
     : [];
-  const ports = nmapHosts.flatMap(host => (
-    Array.isArray(host.ports) ? host.ports as Array<Record<string, unknown>> : []
-  ));
+  const services = Array.isArray(scan.nmap_result.services)
+    ? (scan.nmap_result.services as unknown[]).filter(isRecord)
+    : aggregateNmapServices(nmapHosts);
+  const findings = deduplicateScanFindings(scan.findings);
   const webProbes = Array.isArray(scan.web_probe_result.probes)
     ? scan.web_probe_result.probes
     : [];
@@ -1196,9 +1197,9 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
       {scan.warnings.map(warning => <p key={warning} className="rounded border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100/80">{warning}</p>)}
       <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Passive lookups" value={scan.passive_results.length} />
-        <Metric label="Open services" value={ports.length} />
+        <Metric label="Open services" value={services.length} />
         <Metric label="Web endpoints" value={webProbes.length} />
-        <Metric label="Findings / leads" value={scan.findings.length} />
+        <Metric label="Findings / leads" value={findings.length} />
         <Metric label="CVE candidates" value={Array.isArray(analysis.cve_candidates) ? analysis.cve_candidates.length : 0} />
         <Metric label="Inventory additions" value={addedCount} />
       </section>
@@ -1235,28 +1236,33 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
         <p className="mt-2 text-sm leading-6 text-sky-100/80">{String(analysis.summary || 'No interpretation is available.')}</p>
         <p className="mt-2 text-xs text-sky-200/60">{String(analysis.evidence_boundary || '')}</p>
       </div>
-      {!!ports.length && (
+      {!!services.length && (
         <div className="overflow-x-auto rounded border border-gray-800">
-          <table className="w-full min-w-[680px] text-left text-xs">
-            <thead className="bg-gray-900 text-gray-500"><tr><th className="p-2">Port</th><th>Service</th><th>Product</th><th>Version</th><th>CPE</th></tr></thead>
+          <table className="w-full min-w-[820px] text-left text-xs">
+            <thead className="bg-gray-900 text-gray-500"><tr><th className="p-2">Port</th><th>Service</th><th>Product</th><th>Version</th><th>Endpoints</th><th>CPE</th></tr></thead>
             <tbody className="divide-y divide-gray-800">
-              {ports.map((port, index) => (
-                <tr key={`${String(port.protocol)}:${String(port.port)}:${index}`}>
-                  <td className="p-2 font-mono text-white">{String(port.protocol)}/{String(port.port)}</td>
-                  <td>{String(port.service || '-')}</td>
-                  <td>{String(port.product || '-')}</td>
-                  <td>{String(port.version || '-')}</td>
-                  <td className="max-w-xs break-all">{Array.isArray(port.cpes) ? port.cpes.join(', ') : '-'}</td>
+              {services.map(service => (
+                <tr key={`${String(service.protocol)}:${String(service.port)}`}>
+                  <td className="p-2 font-mono text-white">{String(service.protocol)}/{String(service.port)}</td>
+                  <td>{String(service.service || '-')}</td>
+                  <td>{String(service.product || '-')}</td>
+                  <td>{String(service.version || '-')}</td>
+                  <td className="max-w-xs break-all">
+                    {Array.isArray(service.endpoints) && service.endpoints.length
+                      ? service.endpoints.join(', ')
+                      : '-'}
+                  </td>
+                  <td className="max-w-xs break-all">{Array.isArray(service.cpes) && service.cpes.length ? service.cpes.join(', ') : '-'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {!!scan.findings.length && (
+      {!!findings.length && (
         <div className="grid gap-2 lg:grid-cols-2">
-          {scan.findings.slice(0, 20).map((finding, index) => (
-            <div key={`${finding.category}:${finding.title}:${index}`} className="rounded border border-gray-800 p-3 text-xs">
+          {findings.slice(0, 20).map(finding => (
+            <div key={`${finding.category}:${finding.title}:${finding.source}:${finding.evidence}`} className="rounded border border-gray-800 p-3 text-xs">
               <div className="flex items-start justify-between gap-2">
                 <b className="text-white">{finding.title || 'Assessment lead'}</b>
                 <span className="uppercase text-gray-500">{finding.severity || 'unknown'}</span>
@@ -1269,6 +1275,85 @@ function AssetScanResult({ scan }: { scan: ThreatAssetScan }) {
       )}
     </section>
   );
+}
+
+function aggregateNmapServices(hosts: Array<Record<string, unknown>>) {
+  const grouped = new Map<string, Record<string, unknown>>();
+  hosts.forEach(host => {
+    const endpoints = nmapHostEndpoints(host);
+    const ports = Array.isArray(host.ports) ? host.ports.filter(isRecord) : [];
+    ports.forEach(port => {
+      const protocol = String(port.protocol || 'tcp').toLowerCase();
+      const portNumber = Number(port.port || 0);
+      if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return;
+      const key = `${protocol}:${portNumber}`;
+      const existing = grouped.get(key) ?? {
+        ...port,
+        protocol,
+        port: portNumber,
+        endpoints: [],
+        cpes: [],
+        observation_count: 0,
+      };
+      ['service', 'product', 'version'].forEach(field => {
+        existing[field] = mergeDisplayValues(existing[field], port[field]);
+      });
+      existing.endpoints = mergeArrayValues(existing.endpoints, endpoints);
+      existing.cpes = mergeArrayValues(existing.cpes, port.cpes);
+      existing.observation_count = Number(existing.observation_count || 0) + 1;
+      grouped.set(key, existing);
+    });
+  });
+  return [...grouped.values()].sort((left, right) => (
+    String(left.protocol).localeCompare(String(right.protocol))
+    || Number(left.port) - Number(right.port)
+  ));
+}
+
+function nmapHostEndpoints(host: Record<string, unknown>) {
+  const addresses = Array.isArray(host.addresses)
+    ? host.addresses.filter(isRecord).map(row => String(row.address || '').trim()).filter(Boolean)
+    : [];
+  if (addresses.length) return [...new Set(addresses)];
+  return Array.isArray(host.hostnames)
+    ? [...new Set(host.hostnames.map(value => String(value).trim()).filter(Boolean))]
+    : [];
+}
+
+function mergeDisplayValues(current: unknown, incoming: unknown) {
+  return mergeArrayValues(
+    String(current || '').split(', '),
+    [incoming],
+  ).join(', ');
+}
+
+function mergeArrayValues(current: unknown, incoming: unknown) {
+  const values = [
+    ...(Array.isArray(current) ? current : [current]),
+    ...(Array.isArray(incoming) ? incoming : [incoming]),
+  ]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  return [...new Set(values)];
+}
+
+function deduplicateScanFindings(findings: ThreatAssetScan['findings']) {
+  const seen = new Set<string>();
+  return findings.filter(finding => {
+    const key = [
+      finding.category,
+      finding.title,
+      finding.source,
+      finding.evidence,
+    ].map(value => String(value || '').trim().toLowerCase()).join('\u0000');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function apiErrorMessage(error: unknown) {
