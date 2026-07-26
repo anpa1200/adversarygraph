@@ -202,6 +202,16 @@ def _overall_selftest_status(checks: list[SelfTestCheck]) -> str:
     return "ok"
 
 
+def _rag_index_run_snapshot(
+    latest_run: RAGIndexRun | None,
+) -> tuple[str, datetime | None]:
+    """Detach readiness values before a rollback expires ORM state."""
+
+    if latest_run is None:
+        return "never", None
+    return str(latest_run.status), latest_run.completed_at
+
+
 def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
     duplicate_groups = summary.get("duplicate_groups") or {}
     scan_status = summary.get("status")
@@ -1074,14 +1084,11 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                         .limit(1)
                     )
                 ).scalar_one_or_none()
+                latest_run_status, completed_at = _rag_index_run_snapshot(latest_run)
                 attempted_index_problem = bool(
-                    latest_run
-                    and (
-                        latest_run.status in {"failed", "degraded"}
-                        or (latest_run.status == "completed" and rag_documents == 0)
-                    )
+                    latest_run_status in {"failed", "degraded"}
+                    or (latest_run_status == "completed" and rag_documents == 0)
                 )
-                completed_at = latest_run.completed_at if latest_run else None
                 if completed_at is not None and completed_at.tzinfo is None:
                     completed_at = completed_at.replace(tzinfo=timezone.utc)
                 index_age_hours = (
@@ -1158,13 +1165,9 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                             ),
                             "max_index_age_hours": settings.rag_max_index_age_hours,
                             "embedding_readiness": embedding_readiness,
-                            "latest_run_status": (
-                                latest_run.status if latest_run else "never"
-                            ),
+                            "latest_run_status": latest_run_status,
                             "latest_run_completed_at": (
-                                latest_run.completed_at.isoformat()
-                                if latest_run and latest_run.completed_at
-                                else None
+                                completed_at.isoformat() if completed_at else None
                             ),
                         },
                     )

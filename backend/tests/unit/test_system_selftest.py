@@ -1,18 +1,22 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.api.routes import system as system_route
 from app.api.routes.system import (
     _asset_scanner_readiness_check,
+    _auth_readiness_check,
+    _check_status,
     _cpu_percent_from_totals,
     _data_integrity_check,
     _format_bytes,
     _memory_usage_details,
-    _auth_readiness_check,
-    _check_status,
     _overall_selftest_status,
+    _rag_index_run_snapshot,
     _storage_writable_check,
     _taxonomy_normalization_check,
 )
+from app.models.rag import RAGIndexRun
 
 
 def test_format_bytes_uses_binary_units():
@@ -64,19 +68,38 @@ def test_memory_usage_details_reads_proc_and_cgroup(tmp_path):
 
 def test_overall_selftest_status_distinguishes_degraded_from_error():
     assert _overall_selftest_status([_check_status("database", "ok", "ok")]) == "ok"
-    assert _overall_selftest_status(
-        [
-            _check_status("database", "ok", "ok"),
-            _check_status("ioc_sync", "degraded", "feed degraded"),
-        ]
-    ) == "degraded"
-    assert _overall_selftest_status(
-        [
-            _check_status("database", "ok", "ok"),
-            _check_status("redis", "error", "redis failed"),
-            _check_status("ioc_sync", "degraded", "feed degraded"),
-        ]
-    ) == "error"
+    assert (
+        _overall_selftest_status(
+            [
+                _check_status("database", "ok", "ok"),
+                _check_status("ioc_sync", "degraded", "feed degraded"),
+            ]
+        )
+        == "degraded"
+    )
+    assert (
+        _overall_selftest_status(
+            [
+                _check_status("database", "ok", "ok"),
+                _check_status("redis", "error", "redis failed"),
+                _check_status("ioc_sync", "degraded", "feed degraded"),
+            ]
+        )
+        == "error"
+    )
+
+
+def test_rag_index_run_snapshot_detaches_values_before_session_rollback():
+    completed_at = datetime(2026, 7, 26, 8, 0, tzinfo=timezone.utc)
+    run = RAGIndexRun(status="completed", completed_at=completed_at)
+
+    status, captured_at = _rag_index_run_snapshot(run)
+    run.status = "failed"
+    run.completed_at = None
+
+    assert status == "completed"
+    assert captured_at == completed_at
+    assert _rag_index_run_snapshot(None) == ("never", None)
 
 
 def test_data_integrity_check_passes_with_cross_source_overlap_only():
@@ -145,7 +168,9 @@ def test_auth_readiness_passes_with_local_auth_disabled_warning(monkeypatch):
 
 def test_auth_readiness_fails_when_enabled_without_users_or_bootstrap(monkeypatch):
     monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", True)
-    monkeypatch.setattr("app.api.routes.system.settings.auth_bootstrap_admin_password", "")
+    monkeypatch.setattr(
+        "app.api.routes.system.settings.auth_bootstrap_admin_password", ""
+    )
 
     check = _auth_readiness_check(total_users=0, enabled_users=0)
 
@@ -155,7 +180,9 @@ def test_auth_readiness_fails_when_enabled_without_users_or_bootstrap(monkeypatc
 
 def test_auth_readiness_passes_with_enabled_user(monkeypatch):
     monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", True)
-    monkeypatch.setattr("app.api.routes.system.settings.auth_bootstrap_admin_password", "")
+    monkeypatch.setattr(
+        "app.api.routes.system.settings.auth_bootstrap_admin_password", ""
+    )
 
     check = _auth_readiness_check(total_users=2, enabled_users=1)
 
