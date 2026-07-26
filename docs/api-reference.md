@@ -4,7 +4,7 @@
 
 - Version: **6.5.0**
 - Modules: **28**
-Operations: **322**
+Operations: **323**
 
 Interactive contracts are available from a running deployment at `/docs`,
 `/redoc`, and `/openapi.json`. All platform operations use `/api`; protected
@@ -519,11 +519,12 @@ suite rather than by the live smoke command.
 
 ## Unified Intelligence RAG
 
-12 operations.
+13 operations.
 
 | Method | Path | Operation | Success |
 |---|---|---|---|
 | `POST` | `/api/rag/assist` | Assist | 200 |
+| `GET` | `/api/rag/company-spaces` | Company Spaces | 200 |
 | `GET` | `/api/rag/entity/{source_type}/{source_id}` | Entity | 200 |
 | `GET` | `/api/rag/index-runs` | Index Runs | 200 |
 | `GET` | `/api/rag/profiles` | Client Profiles | 200 |
