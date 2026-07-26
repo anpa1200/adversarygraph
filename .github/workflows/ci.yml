@@ -459,7 +459,66 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
-        run: docker compose up -d --build postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api frontend
+        run: docker compose up -d --build --wait --wait-timeout 300 postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api worker frontend
+      - name: Queue initial dynamic RAG reconciliation
+        timeout-minutes: 8
+        run: |
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base_url = "http://127.0.0.1:3000"
+          deadline = time.monotonic() + 300
+          last_status = ""
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(
+                      f"{base_url}/api/system/startup",
+                      timeout=10,
+                  ) as response:
+                      payload = json.load(response)
+                  status = str(payload.get("status", "error"))
+                  if status != last_status:
+                      print(f"startup status: {status}", flush=True)
+                      last_status = status
+                  if status == "ready":
+                      break
+                  if status == "degraded":
+                      raise SystemExit(
+                          "Reference ingestion degraded before RAG bootstrap"
+                      )
+              except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                  print(
+                      f"waiting for startup endpoint: {type(exc).__name__}",
+                      flush=True,
+                  )
+              time.sleep(3)
+          else:
+              raise SystemExit("Timed out waiting for reference ingestion")
+
+          request = urllib.request.Request(
+              f"{base_url}/api/rag/reindex",
+              data=json.dumps(
+                  {"source_types": [], "include_embeddings": False}
+              ).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status != 202:
+                  raise SystemExit(
+                      f"RAG bootstrap returned HTTP {response.status}"
+                  )
+              result = json.load(response)
+          if not result.get("run_id"):
+              raise SystemExit("RAG bootstrap did not persist a run ID")
+          print(
+              f"queued RAG reconciliation {result['run_id']}",
+              flush=True,
+          )
+          PY
       - name: Run self-test service
         # The dependencies are already running. Avoid recreating the API after
         # nginx has resolved its container address, which would leave the

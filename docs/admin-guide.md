@@ -67,7 +67,8 @@ Important settings:
 | `RAG_CHUNK_CHARS`, `RAG_CHUNK_OVERLAP_CHARS` | Bounded source chunk and overlap size; defaults `3500` and `350` |
 | `RAG_DEFAULT_RESULT_LIMIT` | Default hybrid retrieval result count; default `12`, maximum API result limit `25` |
 | `RAG_MAX_CONTEXT_CHARS` | Hard maximum for the serialized AI user context, including question, business profile, source titles, metadata, and excerpts; default `32000`, range `4000`–`80000` |
-| `RAG_RECONCILE_HOUR`, `RAG_RECONCILE_MINUTE` | Daily Celery corpus reconciliation time in UTC; defaults `04:15` |
+| `RAG_MAX_INDEX_AGE_HOURS` | Maximum age of the latest completed corpus reconciliation before RAG readiness degrades; default `2` |
+| `RAG_RECONCILE_INTERVAL_MINUTES` | Near-live incremental corpus reconciliation interval; default `15`, range `5`–`1440`; overlapping work is deduplicated and serialized |
 | `RAG_TOMBSTONE_RETENTION_DAYS` | Days to retain inactive derived RAG documents and their chunks; default `30`; `0` disables this automatic deletion path |
 | `RAG_ASSISTANCE_RETENTION_DAYS` | Days to retain generated assistance records and associated Navigator proposals; default `90`; `0` disables this automatic deletion path |
 | `RAG_RETENTION_BATCH_SIZE`, `RAG_RETENTION_MAX_BATCHES` | Bounded deletions per table and maximum transactions per scheduled run; defaults `1000` and `20` |
@@ -152,6 +153,16 @@ adapter refuses a public `LOCAL_LLM_BASE_URL`, even over HTTPS; use a loopback,
 private/link-local IP, single-label service name, `host.docker.internal`, or a
 recognized private service suffix. Verify model availability before setting
 `RAG_EMBEDDING_ENABLED=true`.
+
+When embeddings are enabled, `/api/rag/status` and the system self-test make a
+real, bounded embedding request and validate the returned vector contract. They
+also require a completed, fresh index and at least one embedded chunk before
+reporting RAG ready. The probe never sends corpus content.
+
+Corpus reconciliation is incremental: unchanged documents keep their stable
+chunk IDs and vectors, while changed ordinals are updated and re-embedded.
+Operators should still back up PostgreSQL before dimension changes or other
+schema migrations.
 
 RAG reconciliation holds a PostgreSQL session advisory lock on one dedicated
 physical connection across commits. The worker database connection must

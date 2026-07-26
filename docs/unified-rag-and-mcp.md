@@ -190,8 +190,8 @@ RAG_CHUNK_CHARS=3500
 RAG_CHUNK_OVERLAP_CHARS=350
 RAG_DEFAULT_RESULT_LIMIT=12
 RAG_MAX_CONTEXT_CHARS=32000
-RAG_RECONCILE_HOUR=4
-RAG_RECONCILE_MINUTE=15
+RAG_MAX_INDEX_AGE_HOURS=2
+RAG_RECONCILE_INTERVAL_MINUTES=15
 RAG_TOMBSTONE_RETENTION_DAYS=30
 RAG_ASSISTANCE_RETENTION_DAYS=90
 RAG_RETENTION_BATCH_SIZE=1000
@@ -251,6 +251,22 @@ then reconcile and confirm non-zero `chunks_embedded`. A production smoke test
 must use the deployment's actual private model; mocked unit tests validate the
 protocol and policy contract but do not prove that model availability, quality,
 or network routing.
+
+`/api/rag/status` and the platform self-test perform that endpoint contract
+probe when embeddings are enabled. RAG is reported ready only when the latest
+reconciliation completed, the index is no older than
+`RAG_MAX_INDEX_AGE_HOURS`, the embedding endpoint is reachable, and the corpus
+contains embedded chunks. Lexical retrieval remains available during an
+embedding outage, but readiness is deliberately degraded instead of presenting
+the vector path as healthy.
+
+Reconciliation is incremental and runs every
+`RAG_RECONCILE_INTERVAL_MINUTES`. It compares each source document checksum and
+updates only changed chunk ordinals, preserving stable chunk identifiers and
+valid vectors for unchanged text. Removed source chunks are deleted and changed
+chunks are re-embedded. It does not erase and recreate the complete corpus on
+every scheduled run. The scheduler and worker serialize overlapping requests,
+so a slower run is reused instead of starting a competing corpus writer.
 
 The bundled PostgreSQL image installs pgvector. An external PostgreSQL 16
 service must install pgvector before the API starts, because startup executes:
@@ -315,10 +331,10 @@ authoritative single-writer guard; lock contention retries after 15 seconds
 rather than creating a second writer. A broker publication failure leaves the
 persisted run recoverable for the next UI, API, or scheduled enqueue.
 
-Celery Beat queues a daily reconciliation at `RAG_RECONCILE_HOUR` and
-`RAG_RECONCILE_MINUTE` in UTC. UI and scheduled requests reuse an active run,
-and workers also hold a corpus-wide PostgreSQL advisory lock so different run
-IDs cannot replace the shared chunks concurrently.
+Celery Beat queues incremental reconciliation every
+`RAG_RECONCILE_INTERVAL_MINUTES`. UI and scheduled requests reuse an active
+run, and workers also hold a corpus-wide PostgreSQL advisory lock so different
+run IDs cannot replace the shared chunks concurrently.
 
 The reconciliation worker holds a PostgreSQL **session** advisory lock on one
 dedicated physical connection across commits and binds all corpus reads/writes
@@ -368,7 +384,17 @@ docker compose exec worker \
 ## Business-context IOC workflow
 
 Open **ATT&CK Navigator**, then open **AI RAG assistant**. The assistant supports
-source filters and an optional saved client profile.
+source filters and two mutually exclusive business-context sources:
+
+- **Local company space (recommended)** derives current sector, region,
+  technologies, products, components, and high/critical assets from the running
+  Threat Radar database at request time.
+- **Saved business profile** provides manually maintained context when a company
+  space is not appropriate.
+
+Selecting a local company space also permits retrieval of that space's
+sanitized asset records. A request without an explicit space searches global
+corpus records only; it cannot retrieve another space's scoped asset records.
 
 An analyst with `manage_intel` can select **Create business profile** in the
 assistant and save a name, sector, region, technologies, and crown jewels. The
@@ -381,11 +407,14 @@ To investigate “find IOCs relevant for my business: Israel tech company”:
    `manage_feeds` selects **Build / refresh RAG index** and waits for the run to
    finish. A search during a partial embedding outage can still use exact and
    full-text retrieval.
-2. Create or select a business profile such as **Israel technology company**.
-   Set `sector=technology`, `region=Israel`, list the technologies actually in
-   use, and identify crown jewels at a useful but non-secret level. Selecting a
-   saved profile makes those server-loaded fields authoritative reranking
-   context; typing the same words only in the question does not.
+2. Select the current local company space. AdversaryGraph derives its context
+   from saved company-space settings and asset inventory in the same database.
+   Review and correct that inventory before relying on the ranking. If no
+   company space is suitable, create or select a business profile such as
+   **Israel technology company**, set `sector=technology`, `region=Israel`,
+   list technologies actually in use, and identify crown jewels at a useful but
+   non-secret level. In both cases, server-loaded fields are authoritative
+   reranking context; typing the same words only in the question is not.
 3. Keep **IOCs** and **Actors** selected. Add **Reports** when report, Knowledge,
    Threat Radar, hunt, and Evidence Graph context should contribute; add
    **Assets** only when its local-only handling is intended. The six UI groups
@@ -395,7 +424,7 @@ To investigate “find IOCs relevant for my business: Israel tech company”:
    a cited synthesis from a configured provider.
 
    ```text
-   Find recent IOCs relevant to this saved business profile. Separate direct
+   Find recent IOCs relevant to this company context. Separate direct
    facts from relationship-based relevance. For each IOC show the actor or
    campaign link, source, first/last seen, confidence, freshness limitation,
    and why the profile affected ranking. Do not claim targeting or compromise.
@@ -416,7 +445,7 @@ To investigate “find IOCs relevant for my business: Israel tech company”:
 
 When a remote chat provider is selected, the analyst must acknowledge that
 policy-eligible request context and excerpts may leave the deployment. A
-selected business profile, asset, threat hunt, Evidence Graph node,
+selected company space, business profile, asset, threat hunt, Evidence Graph node,
 `TLP:AMBER+STRICT`, `TLP:RED`, or any other legally sensitive result makes the
 request local-only even if remote AI is enabled. **Search evidence** does not
 call a chat model, although vector search can call the configured private
@@ -507,6 +536,7 @@ Proposals expire after 30 minutes and cannot be confirmed twice.
 |---|---|---|---|
 | `GET` | `/api/rag/status` | `read` | Corpus, embedding, coverage, and freshness status |
 | `GET` | `/api/rag/profiles` | `run_analysis` | Bounded client-profile selector data |
+| `GET` | `/api/rag/company-spaces` | `run_analysis` | Current local company-space selector data |
 | `POST` | `/api/rag/profiles` | `manage_intel` | Create a saved business profile |
 | `PUT` | `/api/rag/profiles/{id}` | `manage_intel` | Replace a saved business profile |
 | `DELETE` | `/api/rag/profiles/{id}` | `manage_intel` | Delete a saved business profile |
@@ -525,6 +555,7 @@ Example search:
   "query": "Israel technology sector phishing infrastructure",
   "source_types": ["actor_intel", "ioc", "attack_group", "attack_campaign", "analysis_report", "attack_technique"],
   "domain": "enterprise-attack",
+  "company_space_id": "<company-space-uuid>",
   "limit": 12
 }
 ```
@@ -535,18 +566,22 @@ additions do not silently broaden the evidence boundary. `attack_version` is an
 optional optimistic guard: when supplied, it must equal the current local
 catalog for the selected domain.
 
-Example grounded request using a pre-existing profile:
+`company_space_id` and `client_profile_id` are mutually exclusive. A company
+space derives context and asset scope from the current local database; a saved
+profile uses its manually maintained fields.
+
+Example grounded request using a local company space:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3000/api/rag/assist \
   -H 'Content-Type: application/json' \
   -b 'ag_session=<session-token>' \
   --data '{
-    "query": "Propose only cited Enterprise ATT&CK techniques relevant to this profile and create a Navigator proposal for review.",
+    "query": "Propose only cited Enterprise ATT&CK techniques relevant to this company and create a Navigator proposal for review.",
     "source_types": ["attack_technique", "attack_group", "attack_campaign", "actor_intel", "ioc", "cve", "analysis_report"],
     "domain": "enterprise-attack",
     "attack_version": "<current-version>",
-    "client_profile_id": 4,
+    "company_space_id": "<company-space-uuid>",
     "limit": 20,
     "provider": "local",
     "cloud_processing_acknowledged": false
@@ -651,6 +686,14 @@ Check that `RAG_EMBEDDING_ENABLED=true`, the configured model exists, the API
 and worker can reach `LOCAL_LLM_BASE_URL`, and returned vectors have exactly
 `RAG_EMBEDDING_DIMENSIONS` values. Review the latest index run rather than
 assuming a generated answer used vector retrieval.
+
+### Status says stale or embedding endpoint unavailable
+
+Review `index_age_hours`, `max_index_age_hours`, and `embedding_readiness` in
+`GET /api/rag/status`. Restore the private embedding endpoint before reindexing;
+then queue one reconciliation and verify a completed run with non-zero
+`chunks_embedded`. Increasing the maximum age hides delayed indexing and should
+not be used as a substitute for repairing the worker or its schedule.
 
 ### PostgreSQL reports that type `vector` does not exist
 

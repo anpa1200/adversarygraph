@@ -109,6 +109,13 @@ services:
               echo "AdversaryGraph self-test passed."
               exit 0
             fi
+            if printf '%s\n' "$$response" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"rag_index"[[:space:]]*,[[:space:]]*"status"[[:space:]]*:[[:space:]]*"warning"' \
+              && printf '%s\n' "$$response" | grep -Eq '"latest_run_status"[[:space:]]*:[[:space:]]*"(queued|running)"'; then
+              echo "RAG reconciliation is still running ($$elapsed/$$max seconds)."
+              sleep "$$interval"
+              elapsed=$$((elapsed + interval))
+              continue
+            fi
             echo "AdversaryGraph self-test returned a non-passing status." >&2
             exit 1
           fi
@@ -463,8 +470,8 @@ services:
       RAG_CHUNK_OVERLAP_CHARS: ${RAG_CHUNK_OVERLAP_CHARS:-350}
       RAG_DEFAULT_RESULT_LIMIT: ${RAG_DEFAULT_RESULT_LIMIT:-12}
       RAG_MAX_CONTEXT_CHARS: ${RAG_MAX_CONTEXT_CHARS:-32000}
-      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
-      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_MAX_INDEX_AGE_HOURS: ${RAG_MAX_INDEX_AGE_HOURS:-2}
+      RAG_RECONCILE_INTERVAL_MINUTES: ${RAG_RECONCILE_INTERVAL_MINUTES:-15}
       RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
       RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
       RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}
@@ -616,8 +623,8 @@ services:
       RAG_VECTOR_MAX_COSINE_DISTANCE: ${RAG_VECTOR_MAX_COSINE_DISTANCE:-0.55}
       RAG_CHUNK_CHARS: ${RAG_CHUNK_CHARS:-3500}
       RAG_CHUNK_OVERLAP_CHARS: ${RAG_CHUNK_OVERLAP_CHARS:-350}
-      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
-      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_MAX_INDEX_AGE_HOURS: ${RAG_MAX_INDEX_AGE_HOURS:-2}
+      RAG_RECONCILE_INTERVAL_MINUTES: ${RAG_RECONCILE_INTERVAL_MINUTES:-15}
       RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
       RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
       RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}
@@ -743,8 +750,7 @@ services:
       DYNAMIC_DB_IOC_SYNC_DAYS: ${DYNAMIC_DB_IOC_SYNC_DAYS:-7}
       RAG_ENABLED: ${RAG_ENABLED:-true}
       RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
-      RAG_RECONCILE_HOUR: ${RAG_RECONCILE_HOUR:-4}
-      RAG_RECONCILE_MINUTE: ${RAG_RECONCILE_MINUTE:-15}
+      RAG_RECONCILE_INTERVAL_MINUTES: ${RAG_RECONCILE_INTERVAL_MINUTES:-15}
       RAG_TOMBSTONE_RETENTION_DAYS: ${RAG_TOMBSTONE_RETENTION_DAYS:-30}
       RAG_ASSISTANCE_RETENTION_DAYS: ${RAG_ASSISTANCE_RETENTION_DAYS:-90}
       RAG_RETENTION_BATCH_SIZE: ${RAG_RETENTION_BATCH_SIZE:-1000}

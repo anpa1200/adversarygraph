@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 from celery import Celery
 from celery.schedules import crontab
@@ -27,16 +28,16 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    result_expires=86400,           # 24 h
+    result_expires=86400,  # 24 h
 )
 
 # ── Periodic tasks (celery beat) ──────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
     # Check for new ATT&CK releases every day at 03:00 UTC
     "sync-attck-daily": {
-        "task":     "sync.check_and_sync",
+        "task": "sync.check_and_sync",
         "schedule": crontab(hour=3, minute=0),
-        "options":  {"queue": "celery"},
+        "options": {"queue": "celery"},
     },
     "sync-dynamic-reference-db-daily": {
         "task": "sync.dynamic_reference_db",
@@ -56,15 +57,12 @@ celery_app.conf.beat_schedule = {
     "retrohunt-collect-6h": {
         "task": "retrohunt.collect_all",
         "schedule": crontab(minute=0, hour="*/6"),
-        "args": (7,),   # last 7 days window
+        "args": (7,),  # last 7 days window
         "options": {"queue": "celery"},
     },
-    "rag-reconcile-daily": {
+    "rag-reconcile-incremental": {
         "task": "rag.queue_reconcile",
-        "schedule": crontab(
-            hour=settings.rag_reconcile_hour,
-            minute=settings.rag_reconcile_minute,
-        ),
+        "schedule": timedelta(minutes=settings.rag_reconcile_interval_minutes),
         "options": {"queue": "celery"},
     },
     "rag-retention-daily": {
@@ -103,8 +101,7 @@ def queue_rag_reconcile():
                 )
                 if active is not None:
                     should_dispatch = (
-                        active.status == "queued"
-                        or rag_index_run_is_stale(active)
+                        active.status == "queued" or rag_index_run_is_stale(active)
                     )
                     # Release the transaction-scoped enqueue lock before any
                     # broker call. Publishing an existing queued/stale run is

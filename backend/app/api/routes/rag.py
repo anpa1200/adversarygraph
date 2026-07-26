@@ -22,6 +22,7 @@ from app.models.rag import (
     RAGNavigatorProposal,
 )
 from app.models.sector import ClientProfile
+from app.models.threat_radar import ThreatCompanySpace
 from app.services import rag as rag_service
 from app.services import rag_ai
 from app.services import threat_hunting_ai as governed_ai
@@ -57,13 +58,20 @@ class SearchRequest(BaseModel):
     domain: AttackDomain = "enterprise-attack"
     attack_version: str | None = Field(default=None, min_length=1, max_length=40)
     client_profile_id: int | None = Field(default=None, ge=1)
+    company_space_id: UUID | None = None
     limit: int = Field(default=settings.rag_default_result_limit, ge=1, le=25)
 
     @model_validator(mode="after")
     def validate_sources(self):
-        unknown = sorted(set(self.source_types).difference(rag_service.SUPPORTED_SOURCE_TYPES))
+        unknown = sorted(
+            set(self.source_types).difference(rag_service.SUPPORTED_SOURCE_TYPES)
+        )
         if unknown:
             raise ValueError(f"Unsupported RAG source types: {', '.join(unknown)}")
+        if self.client_profile_id is not None and self.company_space_id is not None:
+            raise ValueError(
+                "Select either a business profile or a company space, not both"
+            )
         self.source_types = list(dict.fromkeys(self.source_types))
         return self
 
@@ -82,7 +90,9 @@ class ReindexRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_sources(self):
-        unknown = sorted(set(self.source_types).difference(rag_service.SUPPORTED_SOURCE_TYPES))
+        unknown = sorted(
+            set(self.source_types).difference(rag_service.SUPPORTED_SOURCE_TYPES)
+        )
         if unknown:
             raise ValueError(f"Unsupported RAG source types: {', '.join(unknown)}")
         self.source_types = list(dict.fromkeys(self.source_types))
@@ -92,7 +102,9 @@ class ReindexRequest(BaseModel):
 class ProposalConfirmRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
-    proposal_checksum: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    proposal_checksum: str = Field(
+        ..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
     mode: Literal["add", "replace"] = "add"
 
 
@@ -206,7 +218,13 @@ async def status(
     _: TeamUser = Depends(read_rag),
 ) -> dict[str, Any]:
     result = await rag_service.get_index_status(db)
-    providers = await governed_ai.provider_catalog_with_readiness() if settings.rag_enabled else []
+    await db.rollback()
+    embedding_readiness = await rag_service.probe_embedding_readiness()
+    providers = (
+        await governed_ai.provider_catalog_with_readiness()
+        if settings.rag_enabled
+        else []
+    )
     latest_payload = result.get("latest_run")
     if isinstance(latest_payload, dict):
         try:
@@ -216,31 +234,110 @@ async def status(
         if latest_id is not None:
             persisted_run = await db.get(RAGIndexRun, latest_id)
             if persisted_run is not None:
-                latest_payload["attempt_count"] = int(
-                    persisted_run.attempt_count or 0
-                )
+                latest_payload["attempt_count"] = int(persisted_run.attempt_count or 0)
                 latest_payload["heartbeat_at"] = persisted_run.heartbeat_at
-    result.update({
-        "enabled": settings.rag_enabled,
-        "embedding_enabled": settings.rag_embedding_enabled,
-        "embedding_provider": settings.rag_embedding_provider,
-        "embedding_model": settings.rag_embedding_model,
-        "embedding_dimensions": settings.rag_embedding_dimensions,
-        "default_result_limit": settings.rag_default_result_limit,
-        "supported_source_types": list(rag_service.SUPPORTED_SOURCE_TYPES),
-        "providers": providers,
-    })
+    result.update(
+        {
+            "enabled": settings.rag_enabled,
+            "embedding_enabled": settings.rag_embedding_enabled,
+            "embedding_provider": settings.rag_embedding_provider,
+            "embedding_model": settings.rag_embedding_model,
+            "embedding_dimensions": settings.rag_embedding_dimensions,
+            "default_result_limit": settings.rag_default_result_limit,
+            "max_index_age_hours": settings.rag_max_index_age_hours,
+            "supported_source_types": list(rag_service.SUPPORTED_SOURCE_TYPES),
+            "providers": providers,
+            "embedding_readiness": embedding_readiness,
+        }
+    )
     document_count = int(result.get("documents_sanitized") or 0)
-    result["ready"] = bool(settings.rag_enabled and document_count > 0)
+    latest_status = (
+        str(latest_payload.get("status") or "")
+        if isinstance(latest_payload, dict)
+        else ""
+    )
+    completed_at = (
+        latest_payload.get("completed_at") if isinstance(latest_payload, dict) else None
+    )
+    if isinstance(completed_at, str):
+        try:
+            completed_at = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+        except ValueError:
+            completed_at = None
+    if isinstance(completed_at, datetime) and completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    index_age_hours = (
+        max(
+            0.0,
+            (
+                datetime.now(timezone.utc) - completed_at.astimezone(timezone.utc)
+            ).total_seconds()
+            / 3_600,
+        )
+        if isinstance(completed_at, datetime)
+        else None
+    )
+    index_fresh = bool(
+        index_age_hours is not None
+        and index_age_hours <= settings.rag_max_index_age_hours
+    )
+    embeddings_ready = bool(
+        not settings.rag_embedding_enabled
+        or (
+            embedding_readiness.get("available")
+            and int(result.get("chunks_embedded") or 0) > 0
+        )
+    )
+    result["index_age_hours"] = (
+        round(index_age_hours, 2) if index_age_hours is not None else None
+    )
+    result["index_fresh"] = index_fresh
+    result["ready"] = bool(
+        settings.rag_enabled
+        and document_count > 0
+        and latest_status == "completed"
+        and index_fresh
+        and embeddings_ready
+    )
+    result["operational_status"] = (
+        "ready"
+        if result["ready"]
+        else "degraded" if settings.rag_enabled and document_count > 0 else "not_ready"
+    )
     result.setdefault(
         "retrieval_mode",
         "hybrid" if int(result.get("chunks_embedded") or 0) > 0 else "exact+fts",
     )
     warnings: list[str] = []
     if settings.rag_enabled and document_count == 0:
-        warnings.append("The sanitized RAG corpus is empty; queue a reconciliation before searching.")
+        warnings.append(
+            "The sanitized RAG corpus is empty; queue a reconciliation before searching."
+        )
+    if latest_status not in {"completed"}:
+        warnings.append("The latest RAG reconciliation did not complete successfully.")
+    if document_count > 0 and not index_fresh:
+        warnings.append(
+            f"The RAG corpus is stale or has no completed timestamp; expected a refresh within {settings.rag_max_index_age_hours} hours."
+        )
+    if not settings.rag_embedding_enabled:
+        warnings.append(
+            "Semantic vector retrieval is disabled; exact and full-text retrieval remain available."
+        )
+    elif not embedding_readiness.get("available"):
+        warnings.append(
+            str(
+                embedding_readiness.get("reason")
+                or "The embedding provider is unavailable."
+            )
+        )
+    elif int(result.get("chunks_embedded") or 0) == 0:
+        warnings.append(
+            "The embedding provider is ready, but no corpus chunks have embeddings yet."
+        )
     if int(result.get("chunks_pending_or_failed") or 0) > 0:
-        warnings.append("Some chunks do not have usable embeddings; exact and full-text search remain available.")
+        warnings.append(
+            "Some chunks do not have usable embeddings; exact and full-text search remain available."
+        )
     result["warnings"] = warnings
     return result
 
@@ -250,8 +347,34 @@ async def client_profiles(
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(run_rag),
 ) -> list[dict[str, Any]]:
-    rows = await db.execute(select(ClientProfile).order_by(ClientProfile.name).limit(250))
+    rows = await db.execute(
+        select(ClientProfile).order_by(ClientProfile.name).limit(250)
+    )
     return [_profile_payload(row) for row in rows.scalars().all()]
+
+
+@router.get("/company-spaces")
+async def company_spaces(
+    db: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_rag),
+) -> list[dict[str, Any]]:
+    """Expose local database contexts that RAG can derive dynamically."""
+
+    rows = await db.execute(
+        select(ThreatCompanySpace)
+        .order_by(ThreatCompanySpace.name, ThreatCompanySpace.id)
+        .limit(250)
+    )
+    return [
+        {
+            "id": str(space.id),
+            "name": space.name,
+            "sector": space.sector,
+            "region": space.region,
+            "updated_at": space.updated_at,
+        }
+        for space in rows.scalars().all()
+    ]
 
 
 @router.post("/profiles", status_code=201)
@@ -339,8 +462,12 @@ async def search(
     _: TeamUser = Depends(run_rag),
 ) -> dict[str, Any]:
     _require_enabled()
-    if body.client_profile_id is not None:
-        await _client_profile_context(db, body.client_profile_id)
+    if body.client_profile_id is not None or body.company_space_id is not None:
+        await _business_context(
+            db,
+            body.client_profile_id,
+            body.company_space_id,
+        )
         await db.rollback()
     result = await rag_service.hybrid_search(
         db,
@@ -348,14 +475,19 @@ async def search(
         source_types=body.source_types or None,
         domain=body.domain,
         client_profile_id=body.client_profile_id,
+        company_space_id=body.company_space_id,
         limit=body.limit,
     )
     await _require_current_attack_version(db, body.domain, body.attack_version)
     payload = _search_response_payload(result)
     payload["query"] = body.query
-    if body.client_profile_id is None and _looks_like_business_relevance_query(body.query):
+    if (
+        body.client_profile_id is None
+        and body.company_space_id is None
+        and _looks_like_business_relevance_query(body.query)
+    ):
         payload.setdefault("warnings", []).append(
-            "No saved client profile was selected; prompt text is being used as search context, not authoritative business scope."
+            "No saved client profile or local company space was selected; prompt text is being used as search context, not authoritative business scope."
         )
     return payload
 
@@ -364,6 +496,7 @@ async def search(
 async def entity(
     source_type: str,
     source_id: str,
+    company_space_id: UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(run_rag),
 ) -> dict[str, Any]:
@@ -372,7 +505,15 @@ async def entity(
         raise HTTPException(404, "Indexed entity not found")
     if not source_id or len(source_id) > 255:
         raise HTTPException(400, "Invalid source ID")
-    result = await rag_service.get_indexed_entity(db, source_type, source_id)
+    if company_space_id is not None:
+        await _business_context(db, None, company_space_id)
+        await db.rollback()
+    result = await rag_service.get_indexed_entity(
+        db,
+        source_type,
+        source_id,
+        space_id=company_space_id,
+    )
     if result is None:
         raise HTTPException(404, "Indexed entity not found")
     return result
@@ -385,8 +526,12 @@ async def assist(
     user: TeamUser = Depends(run_rag),
 ) -> dict[str, Any]:
     _require_enabled()
-    if body.client_profile_id is not None:
-        await _client_profile_context(db, body.client_profile_id)
+    if body.client_profile_id is not None or body.company_space_id is not None:
+        await _business_context(
+            db,
+            body.client_profile_id,
+            body.company_space_id,
+        )
         await db.rollback()
     result = await rag_service.hybrid_search(
         db,
@@ -394,6 +539,7 @@ async def assist(
         source_types=body.source_types or None,
         domain=body.domain,
         client_profile_id=body.client_profile_id,
+        company_space_id=body.company_space_id,
         limit=body.limit,
     )
     await _require_current_attack_version(db, body.domain, body.attack_version)
@@ -408,15 +554,19 @@ async def assist(
             ),
         )
 
-    business_context = await _client_profile_context(db, body.client_profile_id)
+    business_context = await _business_context(
+        db,
+        body.client_profile_id,
+        body.company_space_id,
+    )
     if (
-        body.client_profile_id is not None
+        business_context is not None
         and result.business_context_checksum
         != rag_service.checksum(business_context or {})
     ):
         raise HTTPException(
             409,
-            "The selected business profile changed during retrieval; run the query again",
+            "The selected business context changed during retrieval; run the query again",
         )
     sources, context_warnings = rag_ai.build_sources(
         items,
@@ -425,7 +575,9 @@ async def assist(
         business_context=business_context,
     )
     if not sources:
-        raise HTTPException(409, "Retrieved records contained no safe source excerpts for AI grounding")
+        raise HTTPException(
+            409, "Retrieved records contained no safe source excerpts for AI grounding"
+        )
     effective_tlp = _effective_tlp(
         items,
         includes_business_profile=business_context is not None,
@@ -442,24 +594,29 @@ async def assist(
         sources=sources,
         business_context=business_context,
     )
-    input_checksum = rag_ai.checksum({
-        "query": body.query,
-        "domain": body.domain,
-        "attack_version": body.attack_version,
-        "source_types": body.source_types,
-        "client_profile_id": body.client_profile_id,
-        "business_context_checksum": rag_ai.checksum(business_context or {}),
-        "source_refs": [
-            {
-                "type": source.source_type,
-                "id": source.source_id,
-                "chunk_id": source.chunk_id,
-                "content_hash": source.content_hash,
-                "excerpt_hash": rag_ai.checksum(source.excerpt),
-            }
-            for source in sources
-        ],
-    })
+    input_checksum = rag_ai.checksum(
+        {
+            "query": body.query,
+            "domain": body.domain,
+            "attack_version": body.attack_version,
+            "source_types": body.source_types,
+            "client_profile_id": body.client_profile_id,
+            "company_space_id": (
+                str(body.company_space_id) if body.company_space_id else None
+            ),
+            "business_context_checksum": rag_ai.checksum(business_context or {}),
+            "source_refs": [
+                {
+                    "type": source.source_type,
+                    "id": source.source_id,
+                    "chunk_id": source.chunk_id,
+                    "content_hash": source.content_hash,
+                    "excerpt_hash": rag_ai.checksum(source.excerpt),
+                }
+                for source in sources
+            ],
+        }
+    )
     if governed_ai.provider_is_remote(body.provider):
         # Persist the fact of remote egress before the call. Timeouts, malformed
         # output, and later freshness rejection must not erase this audit fact.
@@ -475,6 +632,9 @@ async def assist(
                 "effective_tlp": effective_tlp,
                 "source_count": len(sources),
                 "client_profile_id": body.client_profile_id,
+                "company_space_id": (
+                    str(body.company_space_id) if body.company_space_id else None
+                ),
                 "cloud_processing_acknowledged": bool(
                     body.cloud_processing_acknowledged
                 ),
@@ -487,9 +647,13 @@ async def assist(
     try:
         raw = await governed_ai.complete(adapter, system, prompt)
     except governed_ai.AIProviderTimeoutError as exc:
-        raise HTTPException(504, "AI provider timed out before returning a grounded answer") from exc
+        raise HTTPException(
+            504, "AI provider timed out before returning a grounded answer"
+        ) from exc
     except governed_ai.AIProviderCallError as exc:
-        raise HTTPException(502, "AI provider failed while producing a grounded answer") from exc
+        raise HTTPException(
+            502, "AI provider failed while producing a grounded answer"
+        ) from exc
 
     try:
         parsed = rag_ai.parse_output(raw)
@@ -503,18 +667,22 @@ async def assist(
         raise HTTPException(502, str(exc)) from exc
     stale = await _stale_source_refs(db, items)
     if stale:
-        raise HTTPException(409, "Retrieved intelligence changed while the answer was generated; run the query again")
-    if body.client_profile_id is not None:
+        raise HTTPException(
+            409,
+            "Retrieved intelligence changed while the answer was generated; run the query again",
+        )
+    if business_context is not None:
         try:
-            current_business_context = await _client_profile_context(
+            current_business_context = await _business_context(
                 db,
                 body.client_profile_id,
+                body.company_space_id,
             )
         except HTTPException as exc:
             if exc.status_code == 404:
                 raise HTTPException(
                     409,
-                    "The selected business profile changed while the answer was generated; run the query again",
+                    "The selected business context changed while the answer was generated; run the query again",
                 ) from exc
             raise
         if rag_ai.checksum(current_business_context or {}) != rag_ai.checksum(
@@ -522,7 +690,7 @@ async def assist(
         ):
             raise HTTPException(
                 409,
-                "The selected business profile changed while the answer was generated; run the query again",
+                "The selected business context changed while the answer was generated; run the query again",
             )
 
     cloud_ack = bool(
@@ -541,16 +709,25 @@ async def assist(
         }
         for source in sources
     ]
-    warnings = _clean_strings([
-        *search_payload.get("warnings", []),
-        *context_warnings,
-        *output_warnings,
-        *(
-            ["No saved client profile was selected; business scope in the prompt is non-authoritative."]
-            if body.client_profile_id is None and _looks_like_business_relevance_query(body.query)
-            else []
-        ),
-    ], 30)
+    warnings = _clean_strings(
+        [
+            *search_payload.get("warnings", []),
+            *context_warnings,
+            *output_warnings,
+            *(
+                [
+                    "No saved client profile or local company space was selected; business scope in the prompt is non-authoritative."
+                ]
+                if (
+                    body.client_profile_id is None
+                    and body.company_space_id is None
+                    and _looks_like_business_relevance_query(body.query)
+                )
+                else []
+            ),
+        ],
+        30,
+    )
     proposal_data = sanitized.get("navigator_proposal")
     proposal_version: AttackVersion | None = None
     if proposal_data:
@@ -588,6 +765,9 @@ async def assist(
             "domain": body.domain,
             "attack_version": body.attack_version,
             "client_profile_id": body.client_profile_id,
+            "company_space_id": (
+                str(body.company_space_id) if body.company_space_id else None
+            ),
             "limit": body.limit,
         },
         source_refs=source_refs,
@@ -601,8 +781,7 @@ async def assist(
     proposal_out: dict[str, Any] | None = None
     if proposal_data and proposal_version is not None:
         cited_refs = {
-            str(citation.get("source_ref") or "")
-            for citation in sanitized["citations"]
+            str(citation.get("source_ref") or "") for citation in sanitized["citations"]
         }
         proposal_source_refs = [
             source_ref
@@ -700,7 +879,9 @@ async def confirm_proposal(
     if proposal is None:
         raise HTTPException(404, "Navigator proposal not found")
     if proposal.created_by != user.name and not has_permission(user, "manage_intel"):
-        raise HTTPException(403, "Only the proposal owner or an intelligence manager can confirm it")
+        raise HTTPException(
+            403, "Only the proposal owner or an intelligence manager can confirm it"
+        )
     if proposal.status != "suggested":
         raise HTTPException(409, f"Navigator proposal is already {proposal.status}")
     now = datetime.now(timezone.utc)
@@ -710,9 +891,13 @@ async def confirm_proposal(
     if expires_at <= now:
         proposal.status = "expired"
         await db.commit()
-        raise HTTPException(409, "Navigator proposal expired; generate a fresh evidence-backed proposal")
+        raise HTTPException(
+            409, "Navigator proposal expired; generate a fresh evidence-backed proposal"
+        )
     if proposal.proposal_checksum != body.proposal_checksum:
-        raise HTTPException(409, "Navigator proposal checksum does not match the reviewed suggestion")
+        raise HTTPException(
+            409, "Navigator proposal checksum does not match the reviewed suggestion"
+        )
     if not await _proposal_sources_current(db, list(proposal.source_refs or [])):
         raise HTTPException(
             409,
@@ -728,14 +913,18 @@ async def confirm_proposal(
         )
     ).scalar_one_or_none()
     if version is None or str(version.version) != proposal.attack_version:
-        raise HTTPException(409, "ATT&CK catalog changed; generate a fresh Navigator proposal")
+        raise HTTPException(
+            409, "ATT&CK catalog changed; generate a fresh Navigator proposal"
+        )
     verified, validation_warnings = await governed_ai.verify_technique_ids(
         db,
         list(proposal.technique_ids or []),
         domain=proposal.domain,
     )
     if verified != list(proposal.technique_ids or []):
-        raise HTTPException(409, "Navigator proposal no longer matches the current ATT&CK catalog")
+        raise HTTPException(
+            409, "Navigator proposal no longer matches the current ATT&CK catalog"
+        )
 
     proposal.status = "confirmed"
     proposal.confirmed_by = user.name
@@ -790,9 +979,8 @@ async def reindex(
         .limit(1)
     )
     if active_run is not None:
-        should_dispatch = (
-            active_run.status == "queued"
-            or rag_index_run_is_stale(active_run)
+        should_dispatch = active_run.status == "queued" or rag_index_run_is_stale(
+            active_run
         )
         if should_dispatch:
             await audit(
@@ -890,23 +1078,22 @@ async def index_runs(
     ]
 
 
-async def _client_profile_context(
+async def _business_context(
     db: AsyncSession,
     profile_id: int | None,
+    company_space_id: UUID | None,
 ) -> dict[str, Any] | None:
-    if profile_id is None:
-        return None
-    profile = await db.get(ClientProfile, profile_id)
-    if profile is None:
-        raise HTTPException(404, "Client profile not found")
-    return {
-        "profile_id": profile.id,
-        "name": profile.name,
-        "sector": profile.sector,
-        "region": profile.region,
-        "technologies": list(profile.technologies or [])[:100],
-        "crown_jewels": list(profile.crown_jewels or [])[:100],
-    }
+    try:
+        context = await rag_service.load_business_context(
+            db,
+            client_profile_id=profile_id,
+            company_space_id=company_space_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message else 422
+        raise HTTPException(status_code, message) from exc
+    return dict(context.payload) if context is not None else None
 
 
 def _search_response_payload(result: rag_service.SearchResponse) -> dict[str, Any]:
@@ -914,7 +1101,9 @@ def _search_response_payload(result: rag_service.SearchResponse) -> dict[str, An
     for item in payload.get("items", []):
         if not isinstance(item, dict):
             continue
-        item["route"] = str(item.pop("canonical_route", item.get("route") or ""))[:1_000]
+        item["route"] = str(item.pop("canonical_route", item.get("route") or ""))[
+            :1_000
+        ]
     return payload
 
 
@@ -974,9 +1163,7 @@ async def _proposal_sources_current(
     source_refs: list[dict[str, Any]],
 ) -> bool:
     expected = {
-        str(source_ref.get("chunk_id") or ""): str(
-            source_ref.get("content_hash") or ""
-        )
+        str(source_ref.get("chunk_id") or ""): str(source_ref.get("content_hash") or "")
         for source_ref in source_refs
         if isinstance(source_ref, dict)
         and source_ref.get("chunk_id")
@@ -1024,15 +1211,17 @@ def _entities_from_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(key) or key in seen:
             continue
         seen.add(key)
-        entities.append({
-            "source_type": key[0],
-            "source_id": key[1],
-            "title": str(item.get("title") or "")[:700],
-            "route": str(item.get("route") or "")[:1_000],
-            "tlp": str(item.get("tlp") or "TLP:CLEAR"),
-            "legal_sensitive": bool(item.get("legal_sensitive")),
-            "metadata": dict(item.get("metadata") or {}),
-        })
+        entities.append(
+            {
+                "source_type": key[0],
+                "source_id": key[1],
+                "title": str(item.get("title") or "")[:700],
+                "route": str(item.get("route") or "")[:1_000],
+                "tlp": str(item.get("tlp") or "TLP:CLEAR"),
+                "legal_sensitive": bool(item.get("legal_sensitive")),
+                "metadata": dict(item.get("metadata") or {}),
+            }
+        )
     return entities[:50]
 
 
@@ -1063,7 +1252,14 @@ def _looks_like_business_relevance_query(query: str) -> bool:
     lowered = query.lower()
     return any(
         marker in lowered
-        for marker in ("my business", "our business", "my company", "our company", "relevant for", "relevant to")
+        for marker in (
+            "my business",
+            "our business",
+            "my company",
+            "our company",
+            "relevant for",
+            "relevant to",
+        )
     )
 
 

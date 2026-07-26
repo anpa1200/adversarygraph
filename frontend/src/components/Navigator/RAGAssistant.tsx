@@ -184,6 +184,7 @@ export function RAGAssistant({
   const [prompt, setPrompt] = useState('');
   const [providerId, setProviderId] = useState('local');
   const [clientProfileId, setClientProfileId] = useState('');
+  const [companySpaceId, setCompanySpaceId] = useState('');
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileSector, setProfileSector] = useState('');
@@ -235,6 +236,13 @@ export function RAGAssistant({
     staleTime: 60_000,
     retry: 1,
   });
+  const companySpacesQuery = useQuery({
+    queryKey: ['rag-company-spaces'],
+    queryFn: ragApi.companySpaces,
+    enabled: canRunAnalysis && open,
+    staleTime: 60_000,
+    retry: 1,
+  });
 
   const status = statusQuery.data;
   const providers = status?.providers.length ? status.providers : FALLBACK_PROVIDERS;
@@ -250,9 +258,10 @@ export function RAGAssistant({
       domain: normalizeDomain(domain),
       attackVersion,
       clientProfileId: clientProfileId.trim(),
+      companySpaceId: companySpaceId.trim(),
       sourceTypes: sourceFilterKey,
     }),
-    [attackVersion, clientProfileId, domain, prompt, providerId, sourceFilterKey],
+    [attackVersion, clientProfileId, companySpaceId, domain, prompt, providerId, sourceFilterKey],
   );
   const fingerprintRef = useRef(requestFingerprint);
   const selectedFingerprint = useMemo(
@@ -384,6 +393,7 @@ export function RAGAssistant({
         technologies: splitProfileTerms(profileTechnologies),
         crown_jewels: splitProfileTerms(profileCrownJewels),
       });
+      setCompanySpaceId('');
       setClientProfileId(String(created.id));
       setProfileName('');
       setProfileSector('');
@@ -422,6 +432,7 @@ export function RAGAssistant({
       domain,
       attack_version: attackVersion ?? undefined,
       client_profile_id: normalizedClientProfileId ? parsedClientProfileId : undefined,
+      company_space_id: companySpaceId || undefined,
       source_types: Array.from(new Set(
         [...sourceFilters].flatMap(source => SOURCE_TYPE_MAP[source]),
       )).sort(),
@@ -669,13 +680,45 @@ export function RAGAssistant({
                 )}
 
                 <label className="block text-xs text-gray-500">
-                  Business profile <span className="text-gray-700">(optional)</span>
+                  Local company space <span className="text-gray-700">(recommended)</span>
+                  <select
+                    aria-label="Local company space"
+                    className="field mt-1"
+                    value={companySpaceId}
+                    disabled={Boolean(pending) || confirming || companySpacesQuery.isLoading}
+                    onChange={event => {
+                      setCompanySpaceId(event.target.value);
+                      if (event.target.value) setClientProfileId('');
+                    }}
+                  >
+                    <option value="">No local inventory context</option>
+                    {(companySpacesQuery.data ?? []).map(space => (
+                      <option key={space.id} value={space.id}>
+                        {space.name} · {space.sector || 'unspecified sector'}{space.region ? ` · ${space.region}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-[10px] leading-4 text-gray-700">
+                    Dynamically derives region, sector, technologies, crown-jewel assets, and private asset scope from the running database.
+                  </span>
+                  {companySpacesQuery.isError && (
+                    <span role="alert" className="mt-1 block text-xs text-amber-300">
+                      Local company spaces are unavailable: {errorMessage(companySpacesQuery.error)}
+                    </span>
+                  )}
+                </label>
+
+                <label className="block text-xs text-gray-500">
+                  Saved business profile <span className="text-gray-700">(alternative)</span>
                   <select
                     aria-label="Business profile"
                     className="field mt-1"
                     value={clientProfileId}
                     disabled={Boolean(pending) || confirming || profilesQuery.isLoading}
-                    onChange={event => setClientProfileId(event.target.value)}
+                    onChange={event => {
+                      setClientProfileId(event.target.value);
+                      if (event.target.value) setCompanySpaceId('');
+                    }}
                   >
                     <option value="">Prompt context only</option>
                     {(profilesQuery.data ?? []).map(profile => (
@@ -685,7 +728,7 @@ export function RAGAssistant({
                     ))}
                   </select>
                   <span className="mt-1 block text-[10px] leading-4 text-gray-700">
-                    The server loads region, sector, technologies, and crown jewels from the selected saved profile.
+                    Use a manually maintained profile when no company inventory space represents the required business scope.
                   </span>
                   {profilesQuery.isError && <span role="alert" className="mt-1 block text-xs text-amber-300">Business profiles are unavailable: {errorMessage(profilesQuery.error)}</span>}
                   {!clientProfileValid && <span role="alert" className="mt-1 block text-xs text-amber-300">Enter a positive numeric profile ID.</span>}

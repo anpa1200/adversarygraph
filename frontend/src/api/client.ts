@@ -1339,12 +1339,21 @@ export interface RagClientProfile {
   crown_jewels: string[];
 }
 
+export interface RagCompanySpace {
+  id: string;
+  name: string;
+  sector: string;
+  region: string;
+  updated_at: string | null;
+}
+
 export interface RagQueryPayload {
   query: string;
   source_types?: string[];
   domain?: string;
   attack_version?: string;
   client_profile_id?: number;
+  company_space_id?: string;
   limit?: number;
 }
 
@@ -1353,6 +1362,8 @@ export const ragApi = {
     http.get('/rag/status').then(r => r.data),
   profiles: (): Promise<RagClientProfile[]> =>
     http.get('/rag/profiles').then(r => r.data),
+  companySpaces: (): Promise<RagCompanySpace[]> =>
+    http.get('/rag/company-spaces').then(r => r.data),
   createProfile: (payload: {
     name: string;
     sector: string;

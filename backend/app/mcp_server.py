@@ -17,6 +17,7 @@ import sys
 from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias
 from urllib.parse import quote, urlsplit
+from uuid import UUID
 
 import httpx
 from pydantic import Field
@@ -76,6 +77,7 @@ Query: TypeAlias = Annotated[str, Field(min_length=1, max_length=2_000)]
 SourceId: TypeAlias = Annotated[str, Field(min_length=1, max_length=255)]
 SearchLimit: TypeAlias = Annotated[int, Field(ge=1, le=25)]
 ProfileId: TypeAlias = Annotated[int | None, Field(ge=1, le=2_147_483_647)]
+CompanySpaceId: TypeAlias = Annotated[str | None, Field(min_length=36, max_length=36)]
 SourceFilters: TypeAlias = Annotated[list[SourceType] | None, Field(max_length=12)]
 
 SUPPORTED_SOURCE_TYPES = frozenset(SourceType.__args__)
@@ -136,7 +138,9 @@ def _validated_base_url(value: str | None = None) -> str:
     if parsed.username is not None or parsed.password is not None:
         raise MCPConfigurationError("MCP_API_BASE_URL must not contain credentials")
     if parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
-        raise MCPConfigurationError("MCP_API_BASE_URL must be an origin without a path, query, or fragment")
+        raise MCPConfigurationError(
+            "MCP_API_BASE_URL must be an origin without a path, query, or fragment"
+        )
     if port is not None and not 1 <= port <= 65_535:
         raise MCPConfigurationError("MCP_API_BASE_URL has an invalid port")
     if parsed.scheme.lower() == "http" and not _is_private_api_host(parsed.hostname):
@@ -163,7 +167,9 @@ def _is_private_api_host(value: str | None) -> bool:
 
 def _validated_api_token() -> str:
     token = str(settings.mcp_api_token or "").strip()
-    if len(token) > _MAX_API_TOKEN or any(ord(char) <= 32 or ord(char) == 127 for char in token):
+    if len(token) > _MAX_API_TOKEN or any(
+        ord(char) <= 32 or ord(char) == 127 for char in token
+    ):
         raise MCPConfigurationError("MCP_API_TOKEN is invalid")
     if settings.auth_enabled and not token:
         raise MCPConfigurationError(
@@ -184,9 +190,13 @@ def _build_url(
     if endpoint is _Endpoint.ENTITY:
         normalized_type = _validated_source_type(source_type)
         normalized_id = _bounded_text(source_id, "source_id", 255)
-        path = f"{path}/{quote(normalized_type, safe='')}/{quote(normalized_id, safe='')}"
+        path = (
+            f"{path}/{quote(normalized_type, safe='')}/{quote(normalized_id, safe='')}"
+        )
     elif source_type is not None or source_id is not None:
-        raise MCPConfigurationError("Dynamic path values are allowed only for indexed entity lookup")
+        raise MCPConfigurationError(
+            "Dynamic path values are allowed only for indexed entity lookup"
+        )
     return f"{_validated_base_url()}{path}"
 
 
@@ -205,6 +215,7 @@ async def _request_json(
     body: dict[str, Any] | None = None,
     source_type: str | None = None,
     source_id: str | None = None,
+    company_space_id: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(endpoint, _Endpoint):
         raise MCPConfigurationError("The requested API operation is not allowlisted")
@@ -212,6 +223,10 @@ async def _request_json(
         raise MCPConfigurationError("GET operations cannot include a request body")
     if endpoint.method == "POST" and not isinstance(body, dict):
         raise MCPConfigurationError("POST operations require a bounded JSON object")
+    if company_space_id is not None and endpoint is not _Endpoint.ENTITY:
+        raise MCPConfigurationError(
+            "Company-space query parameters are allowed only for indexed entity lookup"
+        )
 
     token = _validated_api_token()
     headers = {
@@ -229,44 +244,72 @@ async def _request_json(
                 url,
                 headers=headers,
                 json=body if endpoint.method == "POST" else None,
+                params=(
+                    {"company_space_id": company_space_id}
+                    if company_space_id is not None
+                    else None
+                ),
             ) as response:
                 if response.status_code >= 400:
                     raise _sanitized_http_error(endpoint, response.status_code)
                 declared_size = response.headers.get("content-length", "")
                 try:
-                    if declared_size and int(declared_size) > endpoint.max_response_bytes:
-                        raise MCPAPIError("AdversaryGraph API response exceeded the MCP safety limit")
+                    if (
+                        declared_size
+                        and int(declared_size) > endpoint.max_response_bytes
+                    ):
+                        raise MCPAPIError(
+                            "AdversaryGraph API response exceeded the MCP safety limit"
+                        )
                 except ValueError:
                     pass
                 content = bytearray()
                 async for chunk in response.aiter_bytes():
                     if len(content) + len(chunk) > endpoint.max_response_bytes:
-                        raise MCPAPIError("AdversaryGraph API response exceeded the MCP safety limit")
+                        raise MCPAPIError(
+                            "AdversaryGraph API response exceeded the MCP safety limit"
+                        )
                     content.extend(chunk)
     except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError) as exc:
-        logger.warning("MCP API request failed endpoint=%s error=%s", endpoint.name, type(exc).__name__)
+        logger.warning(
+            "MCP API request failed endpoint=%s error=%s",
+            endpoint.name,
+            type(exc).__name__,
+        )
         raise MCPAPIError("Unable to reach the AdversaryGraph API") from exc
     except httpx.HTTPError as exc:
-        logger.warning("MCP API request failed endpoint=%s error=%s", endpoint.name, type(exc).__name__)
+        logger.warning(
+            "MCP API request failed endpoint=%s error=%s",
+            endpoint.name,
+            type(exc).__name__,
+        )
         raise MCPAPIError("AdversaryGraph API request failed safely") from exc
 
     try:
         payload = json.loads(content)
     except (ValueError, UnicodeDecodeError, RecursionError) as exc:
-        raise MCPAPIError("AdversaryGraph API returned an invalid JSON response") from exc
+        raise MCPAPIError(
+            "AdversaryGraph API returned an invalid JSON response"
+        ) from exc
     if not isinstance(payload, dict):
         raise MCPAPIError("AdversaryGraph API returned an unexpected response shape")
     return payload
 
 
 def _sanitized_http_error(endpoint: _Endpoint, status_code: int) -> MCPAPIError:
-    logger.warning("MCP API rejected request endpoint=%s status=%s", endpoint.name, status_code)
+    logger.warning(
+        "MCP API rejected request endpoint=%s status=%s", endpoint.name, status_code
+    )
     if status_code in {401, 403}:
-        return MCPAPIError("AdversaryGraph API rejected the MCP credentials or permissions")
+        return MCPAPIError(
+            "AdversaryGraph API rejected the MCP credentials or permissions"
+        )
     if status_code == 404 and endpoint is _Endpoint.ENTITY:
         return MCPAPIError("The requested indexed entity was not found")
     if status_code == 409:
-        return MCPAPIError("Indexed evidence is unavailable or changed; refresh the RAG index and retry")
+        return MCPAPIError(
+            "Indexed evidence is unavailable or changed; refresh the RAG index and retry"
+        )
     if status_code == 422:
         return MCPAPIError("AdversaryGraph rejected the validated MCP request")
     if status_code == 429:
@@ -281,6 +324,7 @@ async def search_intelligence(
     source_types: SourceFilters = None,
     domain: AttackDomain = "enterprise-attack",
     client_profile_id: ProfileId = None,
+    company_space_id: CompanySpaceId = None,
     limit: SearchLimit = 12,
 ) -> dict[str, Any]:
     """Search the governed IOC, CVE, ATT&CK, report, and related RAG corpus."""
@@ -288,7 +332,10 @@ async def search_intelligence(
     normalized_query = _bounded_text(query, "query", 2_000)
     normalized_sources = _validated_source_types(source_types)
     normalized_domain = _validated_domain(domain)
-    normalized_profile = _validated_profile_id(client_profile_id)
+    normalized_profile, normalized_space = _validated_business_context(
+        client_profile_id,
+        company_space_id,
+    )
     normalized_limit = _bounded_int(limit, "limit", 1, 25)
     payload = await _request_json(
         _Endpoint.SEARCH,
@@ -297,6 +344,7 @@ async def search_intelligence(
             "source_types": normalized_sources,
             "domain": normalized_domain,
             "client_profile_id": normalized_profile,
+            "company_space_id": normalized_space,
             "limit": normalized_limit,
         },
     )
@@ -308,6 +356,7 @@ async def ask_intelligence(
     source_types: SourceFilters = None,
     domain: AttackDomain = "enterprise-attack",
     client_profile_id: ProfileId = None,
+    company_space_id: CompanySpaceId = None,
     limit: SearchLimit = 12,
 ) -> dict[str, Any]:
     """Ask the local governed AI for a citation-bound answer over retrieved evidence."""
@@ -315,7 +364,10 @@ async def ask_intelligence(
     normalized_question = _bounded_text(question, "question", 2_000)
     normalized_sources = _validated_source_types(source_types)
     normalized_domain = _validated_domain(domain)
-    normalized_profile = _validated_profile_id(client_profile_id)
+    normalized_profile, normalized_space = _validated_business_context(
+        client_profile_id,
+        company_space_id,
+    )
     normalized_limit = _bounded_int(limit, "limit", 1, 25)
     payload = await _request_json(
         _Endpoint.ASSIST,
@@ -324,6 +376,7 @@ async def ask_intelligence(
             "source_types": normalized_sources,
             "domain": normalized_domain,
             "client_profile_id": normalized_profile,
+            "company_space_id": normalized_space,
             "limit": normalized_limit,
             # MCP deliberately cannot acknowledge cloud processing on a user's behalf.
             "provider": "local",
@@ -336,15 +389,18 @@ async def ask_intelligence(
 async def get_indexed_entity(
     source_type: SourceType,
     source_id: SourceId,
+    company_space_id: CompanySpaceId = None,
 ) -> dict[str, Any]:
     """Read one sanitized indexed entity and its source/chunk provenance."""
 
     normalized_type = _validated_source_type(source_type)
     normalized_id = _bounded_text(source_id, "source_id", 255)
+    normalized_space = _validated_company_space_id(company_space_id)
     payload = await _request_json(
         _Endpoint.ENTITY,
         source_type=normalized_type,
         source_id=normalized_id,
+        company_space_id=normalized_space,
     )
     return _entity_output(payload)
 
@@ -353,12 +409,16 @@ async def propose_navigator_layer(
     objective: Query,
     domain: AttackDomain = "enterprise-attack",
     client_profile_id: ProfileId = None,
+    company_space_id: CompanySpaceId = None,
 ) -> dict[str, Any]:
     """Request an evidence-backed Navigator suggestion without confirming or applying it."""
 
     normalized_objective = _bounded_text(objective, "objective", 2_000)
     normalized_domain = _validated_domain(domain)
-    normalized_profile = _validated_profile_id(client_profile_id)
+    normalized_profile, normalized_space = _validated_business_context(
+        client_profile_id,
+        company_space_id,
+    )
     question = (
         f"{normalized_objective}\n\n"
         "Map and preview a reviewed ATT&CK Navigator layer from only the retrieved evidence. "
@@ -371,6 +431,7 @@ async def propose_navigator_layer(
             "source_types": [],
             "domain": normalized_domain,
             "client_profile_id": normalized_profile,
+            "company_space_id": normalized_space,
             "limit": 25,
             "provider": "local",
             "cloud_processing_acknowledged": False,
@@ -399,14 +460,22 @@ def _bounded_text(value: Any, label: str, maximum: int) -> str:
     normalized = value.strip()
     if not normalized or len(normalized) > maximum:
         raise MCPInputError(f"{label} must contain between 1 and {maximum} characters")
-    if "\x00" in normalized or any(ord(char) < 32 and char not in "\n\r\t" for char in normalized):
+    if "\x00" in normalized or any(
+        ord(char) < 32 and char not in "\n\r\t" for char in normalized
+    ):
         raise MCPInputError(f"{label} contains unsupported control characters")
     return normalized
 
 
 def _bounded_int(value: Any, label: str, minimum: int, maximum: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
-        raise MCPInputError(f"{label} must be an integer between {minimum} and {maximum}")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not minimum <= value <= maximum
+    ):
+        raise MCPInputError(
+            f"{label} must be an integer between {minimum} and {maximum}"
+        )
     return value
 
 
@@ -416,15 +485,43 @@ def _validated_profile_id(value: Any) -> int | None:
     return _bounded_int(value, "client_profile_id", 1, 2_147_483_647)
 
 
+def _validated_company_space_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise MCPInputError("company_space_id must be a UUID string")
+    try:
+        return str(UUID(value))
+    except ValueError as exc:
+        raise MCPInputError("company_space_id must be a valid UUID") from exc
+
+
+def _validated_business_context(
+    profile_id: Any,
+    company_space_id: Any,
+) -> tuple[int | None, str | None]:
+    normalized_profile = _validated_profile_id(profile_id)
+    normalized_space = _validated_company_space_id(company_space_id)
+    if normalized_profile is not None and normalized_space is not None:
+        raise MCPInputError(
+            "Select either client_profile_id or company_space_id, not both"
+        )
+    return normalized_profile, normalized_space
+
+
 def _validated_domain(value: Any) -> str:
     if not isinstance(value, str) or value not in SUPPORTED_DOMAINS:
-        raise MCPInputError(f"domain must be one of: {', '.join(sorted(SUPPORTED_DOMAINS))}")
+        raise MCPInputError(
+            f"domain must be one of: {', '.join(sorted(SUPPORTED_DOMAINS))}"
+        )
     return value
 
 
 def _validated_source_type(value: Any) -> str:
     if not isinstance(value, str) or value not in SUPPORTED_SOURCE_TYPES:
-        raise MCPInputError("source_type is not supported by the unified intelligence index")
+        raise MCPInputError(
+            "source_type is not supported by the unified intelligence index"
+        )
     return value
 
 
@@ -443,7 +540,11 @@ def _validated_source_types(values: Any) -> list[str]:
 
 def _search_output(payload: dict[str, Any], query: str, limit: int) -> dict[str, Any]:
     raw_items = payload.get("items")
-    items = [_search_item(item) for item in raw_items[:limit] if isinstance(item, dict)] if isinstance(raw_items, list) else []
+    items = (
+        [_search_item(item) for item in raw_items[:limit] if isinstance(item, dict)]
+        if isinstance(raw_items, list)
+        else []
+    )
     return {
         "query": query,
         "retrieval_mode": _safe_string(payload.get("retrieval_mode"), 80),
@@ -475,7 +576,9 @@ def _search_item(item: dict[str, Any]) -> dict[str, Any]:
         "exact_match": bool(item.get("exact_match", False)),
         "retrieval_signals": _safe_string_list(item.get("retrieval_signals"), 10, 40),
         "content_hash": content_hash,
-        "indexed_at": _safe_string(item.get("indexed_at") or item.get("source_updated_at"), 80),
+        "indexed_at": _safe_string(
+            item.get("indexed_at") or item.get("source_updated_at"), 80
+        ),
         "metadata": _safe_json(item.get("metadata")),
         "provenance": {
             "source_type": source_type,
@@ -537,7 +640,11 @@ def _proposal(value: Any) -> dict[str, Any] | None:
     if isinstance(technique_values, list):
         for raw in technique_values[:100]:
             candidate = _safe_string(raw, 40).upper()
-            if candidate and _TECHNIQUE_ID.fullmatch(candidate) and candidate not in technique_ids:
+            if (
+                candidate
+                and _TECHNIQUE_ID.fullmatch(candidate)
+                and candidate not in technique_ids
+            ):
                 technique_ids.append(candidate)
     return {
         "id": _safe_string(value.get("id"), 80),
@@ -562,14 +669,16 @@ def _entity_output(payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             content = _safe_string(raw.get("content"), min(10_000, remaining_chars))
             remaining_chars -= len(content)
-            normalized_chunks.append({
-                "id": _safe_string(raw.get("id"), 80),
-                "ordinal": _safe_integer(raw.get("ordinal"), 0, 100_000),
-                "content": content,
-                "content_hash": _safe_string(raw.get("content_hash"), 128),
-                "token_count": _safe_integer(raw.get("token_count"), 0, 10_000_000),
-                "embedding_status": _safe_string(raw.get("embedding_status"), 40),
-            })
+            normalized_chunks.append(
+                {
+                    "id": _safe_string(raw.get("id"), 80),
+                    "ordinal": _safe_integer(raw.get("ordinal"), 0, 100_000),
+                    "content": content,
+                    "content_hash": _safe_string(raw.get("content_hash"), 128),
+                    "token_count": _safe_integer(raw.get("token_count"), 0, 10_000_000),
+                    "embedding_status": _safe_string(raw.get("embedding_status"), 40),
+                }
+            )
     source_type = _safe_string(payload.get("source_type"), 40)
     source_id = _safe_string(payload.get("source_id"), 255)
     content_hash = _safe_string(payload.get("content_hash"), 128)
@@ -691,9 +800,13 @@ def _build_mcp_server():
         openWorldHint=False,
     )
     server.add_tool(search_intelligence, annotations=read_only, structured_output=True)
-    server.add_tool(ask_intelligence, annotations=advisory_recorded, structured_output=True)
+    server.add_tool(
+        ask_intelligence, annotations=advisory_recorded, structured_output=True
+    )
     server.add_tool(get_indexed_entity, annotations=read_only, structured_output=True)
-    server.add_tool(propose_navigator_layer, annotations=advisory_recorded, structured_output=True)
+    server.add_tool(
+        propose_navigator_layer, annotations=advisory_recorded, structured_output=True
+    )
     return server
 
 
@@ -709,7 +822,9 @@ def run_server(transport: str | None = None) -> None:
     _validated_base_url()
     _validated_api_token()
     if _MCP_IMPORT_ERROR is not None or mcp is None:
-        raise MCPConfigurationError("The pinned MCP Python SDK is not installed correctly")
+        raise MCPConfigurationError(
+            "The pinned MCP Python SDK is not installed correctly"
+        )
     mcp.run(transport="stdio")
 
 

@@ -73,10 +73,12 @@ not become unrestricted because it was returned through MCP.
 Inputs and outputs have hard size and count limits. Supported source filters
 are `attack_technique`, `attack_group`, `attack_campaign`, `actor_intel`, `ioc`,
 `cve`, `analysis_report`, `knowledge`, `threat_signal`, `threat_hunt`,
-`evidence_node`, and `asset`. A saved client profile is selected with
-`client_profile_id`; it is private request context and is not an indexed corpus
-source. Supported domains are `enterprise-attack`, `mobile-attack`,
-`ics-attack`, and `atlas`.
+`evidence_node`, and `asset`. Select either a saved profile with
+`client_profile_id` or a live local company space with `company_space_id`;
+these fields are mutually exclusive private request context. A selected company
+space derives context and scoped asset retrieval from the running database.
+Supported domains are `enterprise-attack`, `mobile-attack`, `ics-attack`, and
+`atlas`.
 
 Search can perform one bounded relationship expansion when the request
 explicitly names a target class such as IOCs, CVEs, TTPs, campaigns, or actors
@@ -96,10 +98,10 @@ AdversaryGraph host.
 
 | Tool | Inputs | Returned evidence | Side effects and exclusions |
 |---|---|---|---|
-| `search_intelligence` | `query`, optional `source_types`, `domain`, `client_profile_id`, `limit` | Bounded source cards with excerpt, route, TLP, legal flag, scores, retrieval signals, content hash, index time, and sanitized metadata | No chat generation; vector search can call the configured private embedding endpoint |
+| `search_intelligence` | `query`, optional `source_types`, `domain`, one of `client_profile_id` or `company_space_id`, and `limit` | Bounded source cards with excerpt, route, TLP, legal flag, scores, retrieval signals, content hash, index time, and sanitized metadata | No chat generation; vector search can call the configured private embedding endpoint |
 | `ask_intelligence` | `question` plus the same filters | Local-provider answer, verified citations, normalized entities, cautions, warnings, effective TLP, and optional unconfirmed proposal | Creates an assistance/audit record; never confirms or applies a proposal |
-| `get_indexed_entity` | `source_type`, `source_id` | One active sanitized document and bounded chunks with hashes and embedding status | No raw authoritative row, provider JSON, secret, or arbitrary path read |
-| `propose_navigator_layer` | `objective`, `domain`, optional `client_profile_id` | Local-provider answer, citations, cautions, warnings, and optional expiring proposal | Searches all enabled corpus source types; cannot accept a source filter, confirm, apply, or save |
+| `get_indexed_entity` | `source_type`, `source_id`, optional `company_space_id` for scoped assets | One active sanitized document and bounded chunks with hashes and embedding status | No raw authoritative row, provider JSON, secret, or arbitrary path read |
+| `propose_navigator_layer` | `objective`, `domain`, optional `client_profile_id` or `company_space_id` | Local-provider answer, citations, cautions, warnings, and optional expiring proposal | Searches all enabled corpus source types; cannot accept a source filter, confirm, apply, or save |
 
 Local MCP validation enforces these bounds before the API call:
 
@@ -108,6 +110,7 @@ Local MCP validation enforces these bounds before the API call:
 - source filters: at most the twelve unique allowlisted values;
 - result limit: 1–25;
 - client profile ID: a positive 32-bit integer;
+- company space ID: one canonical UUID;
 - domains: `enterprise-attack`, `mobile-attack`, `ics-attack`, or `atlas`;
 - search response: at most 2 MiB; assistance/entity response: at most 4 MiB;
 - redirects and environment proxy variables: ignored; and
@@ -120,10 +123,10 @@ browser workflow independently rechecks the active Navigator version before
 application. Use the web assistant when an interactive version-pinned preview
 and Add/Replace confirmation are required.
 
-A selected `client_profile_id` must already exist. MCP can use a profile but
-cannot list, create, update, or delete profiles. Create and review it in the
-Navigator assistant with `manage_intel`, then give only its numeric ID to the
-dedicated MCP client.
+A selected `client_profile_id` or `company_space_id` must already exist. MCP can
+use one context but cannot list, create, update, or delete it. Create and review
+profiles with `manage_intel`, maintain company inventory in Threat Radar, then
+give only the selected identifier to the dedicated MCP client.
 
 ## Index lifecycle
 
