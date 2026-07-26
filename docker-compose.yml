@@ -109,6 +109,13 @@ services:
               echo "AdversaryGraph self-test passed."
               exit 0
             fi
+            if printf '%s\n' "$$response" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"rag_index"[[:space:]]*,[[:space:]]*"status"[[:space:]]*:[[:space:]]*"warning"' \
+              && printf '%s\n' "$$response" | grep -Eq '"latest_run_status"[[:space:]]*:[[:space:]]*"(never|queued|running)"'; then
+              echo "RAG reconciliation is still running ($$elapsed/$$max seconds)."
+              sleep "$$interval"
+              elapsed=$$((elapsed + interval))
+              continue
+            fi
             echo "AdversaryGraph self-test returned a non-passing status." >&2
             exit 1
           fi

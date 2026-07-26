@@ -459,7 +459,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
-        run: docker compose up -d --build postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api frontend
+        run: docker compose up -d --build postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api worker frontend
+      - name: Queue initial dynamic RAG reconciliation
+        run: docker compose exec -T worker celery -A app.tasks.celery_app call rag.queue_reconcile
       - name: Run self-test service
         # The dependencies are already running. Avoid recreating the API after
         # nginx has resolved its container address, which would leave the
