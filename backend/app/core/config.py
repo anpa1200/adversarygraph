@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     threat_hunting_ai_enabled: bool = True
     threat_hunting_ai_cloud_enabled: bool = False
     threat_hunting_ai_default_provider: str = "local"
-    threat_hunting_ai_timeout_seconds: float = 45.0
+    # CPU-hosted local models can require substantially longer than cloud
+    # providers for a bounded structured response. The provider adapter still
+    # has an independent 180-second transport ceiling.
+    threat_hunting_ai_timeout_seconds: float = 120.0
     threat_hunting_ai_source_char_limit: int = 40_000
     threat_hunting_ai_max_candidates: int = 3
 
@@ -45,6 +48,10 @@ class Settings(BaseSettings):
     # OpenAI-compatible boundary as the local LLM by default, but a distinct
     # model because chat models are not valid embedding models.
     rag_enabled: bool = True
+    # Optional generation model dedicated to citation-bound RAG. Keeping this
+    # separate prevents a large general-purpose hunt model from making MCP
+    # assistance unusable on CPU-only deployments.
+    rag_local_model: str = ""
     rag_embedding_enabled: bool = False
     rag_embedding_provider: Literal["local"] = "local"
     rag_embedding_model: str = "nomic-embed-text"

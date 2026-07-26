@@ -172,15 +172,30 @@ rules.
 
 ## Configuration
 
-The MCP subprocess reads only these four settings; it does not require or load
+The MCP subprocess reads only these five settings; it does not require or load
 database, Redis, feed, or provider credentials:
 
 ```dotenv
 MCP_TRANSPORT=stdio
 MCP_API_BASE_URL=http://127.0.0.1:3000
 MCP_API_TOKEN=
+MCP_REMOTE_AI_ENABLED=false
 AUTH_ENABLED=false
 ```
+
+`MCP_REMOTE_AI_ENABLED=false` keeps MCP generation on the configured local
+provider. To permit an already configured Claude, OpenAI, Gemini, or MiniMax
+provider, an operator must set it to `true`; every remote `ask_intelligence` or
+`propose_navigator_layer` call must also pass
+`cloud_processing_acknowledged=true`. The API then independently enforces
+provider availability, cloud-AI policy, TLP/legal restrictions, and audit
+logging. MCP cannot override those controls.
+
+For CPU-only self-hosting, `RAG_LOCAL_MODEL` may select a smaller installed
+local model for citation-bound MCP/RAG generation without changing
+`LOCAL_LLM_MODEL`, which remains the general threat-hunting model. Compose
+defaults this dedicated path to `qwen2.5:3b`; set it to an empty value to reuse
+`LOCAL_LLM_MODEL`.
 
 `MCP_API_BASE_URL` is the API origin, not an API route. For example, use
 `https://adversarygraph.example.com`, not
@@ -239,6 +254,7 @@ repository path to the installation:
         "MCP_TRANSPORT": "stdio",
         "MCP_API_BASE_URL": "http://127.0.0.1:3000",
         "MCP_API_TOKEN": "REDACTED_SESSION_TOKEN",
+        "MCP_REMOTE_AI_ENABLED": "false",
         "AUTH_ENABLED": "true"
       }
     }

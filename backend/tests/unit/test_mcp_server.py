@@ -53,6 +53,7 @@ def test_mcp_settings_do_not_require_platform_database_credentials(monkeypatch):
         "mcp_transport",
         "mcp_api_base_url",
         "mcp_api_token",
+        "mcp_remote_ai_enabled",
         "auth_enabled",
     }
 
@@ -63,6 +64,7 @@ def local_api(monkeypatch):
         mcp_server.settings, "mcp_api_base_url", "http://127.0.0.1:8000"
     )
     monkeypatch.setattr(mcp_server.settings, "mcp_api_token", "")
+    monkeypatch.setattr(mcp_server.settings, "mcp_remote_ai_enabled", False)
     monkeypatch.setattr(mcp_server.settings, "auth_enabled", False)
 
 
@@ -298,6 +300,58 @@ async def test_assistant_is_pinned_to_local_provider_without_cloud_ack(
     assert result["citations"][0]["verified"] is True
     assert result["citations"][0]["legal_sensitive"] is True
     assert result["provenance_preserved"] is True
+
+
+@pytest.mark.asyncio
+async def test_remote_assistant_requires_operator_gate_and_ack(
+    monkeypatch, local_api
+):
+    async def should_not_run(*_args, **_kwargs):
+        pytest.fail("API request must not run before remote policy passes")
+
+    monkeypatch.setattr(mcp_server, "_request_json", should_not_run)
+    with pytest.raises(mcp_server.MCPInputError, match="disabled"):
+        await mcp_server.ask_intelligence(
+            "Summarize T1059.001",
+            provider="claude",
+            cloud_processing_acknowledged=True,
+        )
+
+    monkeypatch.setattr(mcp_server.settings, "mcp_remote_ai_enabled", True)
+    with pytest.raises(mcp_server.MCPInputError, match="acknowledged=true"):
+        await mcp_server.ask_intelligence(
+            "Summarize T1059.001",
+            provider="claude",
+        )
+
+
+@pytest.mark.asyncio
+async def test_remote_assistant_passes_provider_and_ack(monkeypatch, local_api):
+    captured = {}
+    monkeypatch.setattr(mcp_server.settings, "mcp_remote_ai_enabled", True)
+
+    async def fake_request(endpoint, **kwargs):
+        captured.update({"endpoint": endpoint, **kwargs})
+        return {
+            "answer": "PowerShell evidence [S1]",
+            "citations": [{"source_ref": "S1", "verified": True}],
+            "retrieval_mode": "exact+fts",
+            "effective_tlp": "TLP:CLEAR",
+        }
+
+    monkeypatch.setattr(mcp_server, "_request_json", fake_request)
+    await mcp_server.ask_intelligence(
+        "Summarize T1059.001",
+        provider="claude",
+        cloud_processing_acknowledged=True,
+    )
+
+    assert captured["body"]["provider"] == "claude"
+    assert captured["body"]["cloud_processing_acknowledged"] is True
+
+
+def test_assistance_transport_timeout_exceeds_provider_ceiling():
+    assert mcp_server._Endpoint.ASSIST.timeout_seconds > 180
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,9 @@ class MCPSettings(BaseSettings):
     # opt into the internal http://api:8000 origin explicitly.
     mcp_api_base_url: str = "http://127.0.0.1:3000"
     mcp_api_token: str = ""
+    # Remote provider use requires both this operator gate and explicit
+    # per-tool acknowledgement. The API independently enforces TLP/legal policy.
+    mcp_remote_ai_enabled: bool = False
     auth_enabled: bool = False
 
     model_config = {"env_file": ".env", "extra": "ignore"}
@@ -73,6 +76,7 @@ AttackDomain: TypeAlias = Literal[
     "ics-attack",
     "atlas",
 ]
+AIProvider: TypeAlias = Literal["local", "claude", "openai", "gemini", "minimax"]
 Query: TypeAlias = Annotated[str, Field(min_length=1, max_length=2_000)]
 SourceId: TypeAlias = Annotated[str, Field(min_length=1, max_length=255)]
 SearchLimit: TypeAlias = Annotated[int, Field(ge=1, le=25)]
@@ -82,6 +86,7 @@ SourceFilters: TypeAlias = Annotated[list[SourceType] | None, Field(max_length=1
 
 SUPPORTED_SOURCE_TYPES = frozenset(SourceType.__args__)
 SUPPORTED_DOMAINS = frozenset(AttackDomain.__args__)
+SUPPORTED_AI_PROVIDERS = frozenset(AIProvider.__args__)
 _MAX_API_BASE_URL = 2_048
 _MAX_API_TOKEN = 4_096
 _MAX_JSON_DEPTH = 4
@@ -104,7 +109,9 @@ class MCPAPIError(RuntimeError):
 
 class _Endpoint(Enum):
     SEARCH = ("POST", "/api/rag/search", 30.0, 2 * 1024 * 1024)
-    ASSIST = ("POST", "/api/rag/assist", 70.0, _MAX_RESPONSE_BYTES)
+    # Keep the MCP transport deadline above the API/local-provider ceiling so
+    # callers receive the API's governed timeout instead of a client-side race.
+    ASSIST = ("POST", "/api/rag/assist", 210.0, _MAX_RESPONSE_BYTES)
     ENTITY = ("GET", "/api/rag/entity", 30.0, _MAX_RESPONSE_BYTES)
 
     @property
@@ -358,8 +365,15 @@ async def ask_intelligence(
     client_profile_id: ProfileId = None,
     company_space_id: CompanySpaceId = None,
     limit: SearchLimit = 12,
+    provider: AIProvider = "local",
+    cloud_processing_acknowledged: bool = False,
 ) -> dict[str, Any]:
-    """Ask the local governed AI for a citation-bound answer over retrieved evidence."""
+    """Ask governed AI for a citation-bound answer over retrieved evidence.
+
+    Remote providers require MCP_REMOTE_AI_ENABLED=true and explicit
+    cloud_processing_acknowledged=true. Never acknowledge remote processing
+    unless the human explicitly authorized that provider for this request.
+    """
 
     normalized_question = _bounded_text(question, "question", 2_000)
     normalized_sources = _validated_source_types(source_types)
@@ -369,6 +383,10 @@ async def ask_intelligence(
         company_space_id,
     )
     normalized_limit = _bounded_int(limit, "limit", 1, 25)
+    normalized_provider = _validated_ai_provider(
+        provider,
+        cloud_processing_acknowledged=cloud_processing_acknowledged,
+    )
     payload = await _request_json(
         _Endpoint.ASSIST,
         body={
@@ -378,9 +396,10 @@ async def ask_intelligence(
             "client_profile_id": normalized_profile,
             "company_space_id": normalized_space,
             "limit": normalized_limit,
-            # MCP deliberately cannot acknowledge cloud processing on a user's behalf.
-            "provider": "local",
-            "cloud_processing_acknowledged": False,
+            "provider": normalized_provider,
+            "cloud_processing_acknowledged": bool(
+                normalized_provider != "local" and cloud_processing_acknowledged
+            ),
         },
     )
     return _assistance_output(payload)
@@ -410,14 +429,25 @@ async def propose_navigator_layer(
     domain: AttackDomain = "enterprise-attack",
     client_profile_id: ProfileId = None,
     company_space_id: CompanySpaceId = None,
+    provider: AIProvider = "local",
+    cloud_processing_acknowledged: bool = False,
 ) -> dict[str, Any]:
-    """Request an evidence-backed Navigator suggestion without confirming or applying it."""
+    """Request an evidence-backed Navigator suggestion without applying it.
+
+    Remote providers require MCP_REMOTE_AI_ENABLED=true and explicit
+    cloud_processing_acknowledged=true. The resulting proposal still requires
+    separate human confirmation in AdversaryGraph.
+    """
 
     normalized_objective = _bounded_text(objective, "objective", 2_000)
     normalized_domain = _validated_domain(domain)
     normalized_profile, normalized_space = _validated_business_context(
         client_profile_id,
         company_space_id,
+    )
+    normalized_provider = _validated_ai_provider(
+        provider,
+        cloud_processing_acknowledged=cloud_processing_acknowledged,
     )
     question = (
         f"{normalized_objective}\n\n"
@@ -433,8 +463,11 @@ async def propose_navigator_layer(
             "client_profile_id": normalized_profile,
             "company_space_id": normalized_space,
             "limit": 25,
-            "provider": "local",
-            "cloud_processing_acknowledged": False,
+            "provider": normalized_provider,
+            "navigator_proposal_requested": True,
+            "cloud_processing_acknowledged": bool(
+                normalized_provider != "local" and cloud_processing_acknowledged
+            ),
         },
     )
     assistance = _assistance_output(payload)
@@ -513,6 +546,35 @@ def _validated_domain(value: Any) -> str:
     if not isinstance(value, str) or value not in SUPPORTED_DOMAINS:
         raise MCPInputError(
             f"domain must be one of: {', '.join(sorted(SUPPORTED_DOMAINS))}"
+        )
+    return value
+
+
+def _validated_ai_provider(
+    value: Any,
+    *,
+    cloud_processing_acknowledged: Any,
+) -> str:
+    if not isinstance(value, str) or value not in SUPPORTED_AI_PROVIDERS:
+        raise MCPInputError(
+            f"provider must be one of: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}"
+        )
+    if not isinstance(cloud_processing_acknowledged, bool):
+        raise MCPInputError("cloud_processing_acknowledged must be a boolean")
+    if value == "local":
+        if cloud_processing_acknowledged:
+            raise MCPInputError(
+                "cloud_processing_acknowledged must be false for the local provider"
+            )
+        return value
+    if not settings.mcp_remote_ai_enabled:
+        raise MCPInputError(
+            "Remote MCP AI is disabled; set MCP_REMOTE_AI_ENABLED=true only after "
+            "reviewing provider data handling"
+        )
+    if not cloud_processing_acknowledged:
+        raise MCPInputError(
+            "Explicit cloud_processing_acknowledged=true is required for remote MCP AI"
         )
     return value
 

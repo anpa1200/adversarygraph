@@ -478,6 +478,7 @@ def create_adapter(
     *,
     effective_tlp: str,
     cloud_processing_acknowledged: bool,
+    server_configured_model: str | None = None,
 ):
     """Enforce provider, classification, and acknowledgement policy."""
     if not settings.threat_hunting_ai_enabled:
@@ -488,6 +489,11 @@ def create_adapter(
     if model is not None and not _MODEL_RE.fullmatch(model.strip()):
         raise HTTPException(422, "Invalid AI model name")
     configured_model = _provider_model(provider)
+    if server_configured_model is not None:
+        candidate = server_configured_model.strip()
+        if provider != "local" or not candidate or not _MODEL_RE.fullmatch(candidate):
+            raise HTTPException(500, "Invalid server-configured local AI model")
+        configured_model = candidate
     if model is not None and model.strip() != configured_model:
         raise HTTPException(422, "AI model override is not allowed; use the server-configured provider model")
     if not _provider_configured(provider):
@@ -517,6 +523,8 @@ def create_adapter(
 async def complete(adapter, system: str, user: str) -> str:
     """Run one bounded provider call and sanitize all failure surfaces."""
     timeout = min(max(float(settings.threat_hunting_ai_timeout_seconds), 5.0), 180.0)
+    if getattr(adapter, "provider", "") == "local":
+        timeout = 180.0
     try:
         return await asyncio.wait_for(adapter._raw_complete(system, user), timeout=timeout)
     except TimeoutError as exc:
