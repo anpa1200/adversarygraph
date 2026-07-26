@@ -23,6 +23,7 @@ from app.models.attack import AttackVersion
 from app.models.pipeline import AuditEvent
 from app.models.rag import RAGAssistance, RAGIndexRun, RAGNavigatorProposal
 from app.models.sector import ClientProfile
+from app.models.threat_radar import ThreatCompanySpace
 from app.services import rag as rag_service
 from app.services import threat_hunting_ai as governed_ai
 from app.services.auth import TeamUser, current_user
@@ -46,15 +47,33 @@ def _rag_defaults(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         governed_ai,
         "probe_local_provider_readiness",
-        AsyncMock(return_value=governed_ai.LocalProviderReadiness(
-            "ready",
-            "Local AI endpoint is reachable and the configured model is available.",
-        )),
+        AsyncMock(
+            return_value=governed_ai.LocalProviderReadiness(
+                "ready",
+                "Local AI endpoint is reachable and the configured model is available.",
+            )
+        ),
     )
     monkeypatch.setattr(
         rag_routes,
         "_proposal_sources_current",
         AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        rag_service,
+        "probe_embedding_readiness",
+        AsyncMock(
+            return_value={
+                "enabled": True,
+                "configured": True,
+                "available": True,
+                "status": "ready",
+                "provider": "local",
+                "model": "test-embed",
+                "dimensions": 768,
+                "reason": "Ready.",
+            }
+        ),
     )
 
 
@@ -128,16 +147,17 @@ def _proposal(
         attack_version=attack_version,
         technique_ids=["T1059.001"],
         rationale="The cited source explicitly contains T1059.001.",
-        source_refs=[{
-            "source_ref": "S1",
-            "source_type": "ioc",
-            "chunk_id": CHUNK_ID,
-            "content_hash": CONTENT_HASH,
-        }],
+        source_refs=[
+            {
+                "source_ref": "S1",
+                "source_type": "ioc",
+                "chunk_id": CHUNK_ID,
+                "content_hash": CONTENT_HASH,
+            }
+        ],
         proposal_checksum=checksum,
         created_by=created_by,
-        expires_at=expires_at
-        or datetime.now(timezone.utc) + timedelta(minutes=20),
+        expires_at=expires_at or datetime.now(timezone.utc) + timedelta(minutes=20),
     )
     conftest._mock_session.add(proposal)
     return proposal
@@ -231,12 +251,15 @@ async def test_search_contract_preserves_canonical_route_and_filters(
     search = AsyncMock(return_value=_result(_item()))
     monkeypatch.setattr(rag_service, "hybrid_search", search)
 
-    response = await client.post("/api/rag/search", json={
-        "query": "find IOC relevant for my business",
-        "source_types": ["ioc", "ioc", "cve"],
-        "domain": "enterprise-attack",
-        "limit": 7,
-    })
+    response = await client.post(
+        "/api/rag/search",
+        json={
+            "query": "find IOC relevant for my business",
+            "source_types": ["ioc", "ioc", "cve"],
+            "domain": "enterprise-attack",
+            "limit": 7,
+        },
+    )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -274,6 +297,7 @@ async def test_search_contract_preserves_canonical_route_and_filters(
         source_types=["ioc", "cve"],
         domain="enterprise-attack",
         client_profile_id=None,
+        company_space_id=None,
         limit=7,
     )
 
@@ -285,10 +309,13 @@ async def test_search_rejects_unknown_attack_domain_before_retrieval(
     service = AsyncMock(return_value=_result())
     monkeypatch.setattr(rag_service, "hybrid_search", service)
 
-    response = await client.post("/api/rag/search", json={
-        "query": "review evidence",
-        "domain": "arbitrary-prompt-domain",
-    })
+    response = await client.post(
+        "/api/rag/search",
+        json={
+            "query": "review evidence",
+            "domain": "arbitrary-prompt-domain",
+        },
+    )
 
     assert response.status_code == 422
     service.assert_not_awaited()
@@ -298,46 +325,105 @@ async def test_profiles_and_path_entity_return_only_route_contract(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    conftest._mock_session.add(ClientProfile(
-        id=7,
-        name="Israel technology company",
-        sector="technology",
-        region="Israel",
-        technologies=["Kubernetes", "Microsoft 365"],
-        crown_jewels=["source code"],
-    ))
-    indexed_entity = AsyncMock(return_value={
-        "source_type": "analysis_report",
-        "source_id": "reports/2026/incident-7",
-        "title": "Sanitized incident report",
-        "route": "/analysis/reports/7",
-        "tlp": "TLP:AMBER+STRICT",
-    })
+    conftest._mock_session.add(
+        ClientProfile(
+            id=7,
+            name="Israel technology company",
+            sector="technology",
+            region="Israel",
+            technologies=["Kubernetes", "Microsoft 365"],
+            crown_jewels=["source code"],
+        )
+    )
+    indexed_entity = AsyncMock(
+        return_value={
+            "source_type": "analysis_report",
+            "source_id": "reports/2026/incident-7",
+            "title": "Sanitized incident report",
+            "route": "/analysis/reports/7",
+            "tlp": "TLP:AMBER+STRICT",
+        }
+    )
     monkeypatch.setattr(rag_service, "get_indexed_entity", indexed_entity)
 
     profiles = await client.get("/api/rag/profiles")
-    entity = await client.get(
-        "/api/rag/entity/analysis_report/reports/2026/incident-7"
-    )
+    entity = await client.get("/api/rag/entity/analysis_report/reports/2026/incident-7")
     unknown = await client.get("/api/rag/entity/raw_database/secret")
 
     assert profiles.status_code == 200
-    assert profiles.json() == [{
-        "id": 7,
-        "name": "Israel technology company",
-        "sector": "technology",
-        "region": "Israel",
-        "technologies": ["Kubernetes", "Microsoft 365"],
-        "crown_jewels": ["source code"],
-    }]
+    assert profiles.json() == [
+        {
+            "id": 7,
+            "name": "Israel technology company",
+            "sector": "technology",
+            "region": "Israel",
+            "technologies": ["Kubernetes", "Microsoft 365"],
+            "crown_jewels": ["source code"],
+        }
+    ]
     assert entity.status_code == 200
     assert entity.json()["source_id"] == "reports/2026/incident-7"
     indexed_entity.assert_awaited_once_with(
         conftest._mock_session,
         "analysis_report",
         "reports/2026/incident-7",
+        space_id=None,
     )
     assert unknown.status_code == 404
+
+
+async def test_company_space_context_is_exposed_and_scopes_search(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    space = ThreatCompanySpace(
+        id=uuid4(),
+        name="Local technology company",
+        slug="local-technology-company",
+        sector="technology",
+        region="Israel",
+        settings={},
+    )
+    conftest._mock_session.add(space)
+    search = AsyncMock(return_value=_result(_item()))
+    monkeypatch.setattr(rag_service, "hybrid_search", search)
+
+    spaces = await client.get("/api/rag/company-spaces")
+    response = await client.post(
+        "/api/rag/search",
+        json={
+            "query": "find relevant IOCs",
+            "source_types": ["ioc"],
+            "company_space_id": str(space.id),
+        },
+    )
+
+    assert spaces.status_code == 200
+    assert spaces.json()[0]["id"] == str(space.id)
+    assert response.status_code == 200, response.text
+    search.assert_awaited_once_with(
+        conftest._mock_session,
+        "find relevant IOCs",
+        source_types=["ioc"],
+        domain="enterprise-attack",
+        client_profile_id=None,
+        company_space_id=space.id,
+        limit=12,
+    )
+
+
+async def test_search_rejects_conflicting_business_contexts(client: AsyncClient):
+    response = await client.post(
+        "/api/rag/search",
+        json={
+            "query": "find relevant IOCs",
+            "client_profile_id": 7,
+            "company_space_id": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert "either a business profile or a company space" in response.text
 
 
 async def test_empty_retrieval_prevents_any_ai_provider_call(
@@ -348,10 +434,13 @@ async def test_empty_retrieval_prevents_any_ai_provider_call(
     provider = AsyncMock(side_effect=AssertionError("provider must not be called"))
     monkeypatch.setattr(governed_ai, "complete", provider)
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "find relevant indicators",
-        "provider": "local",
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "find relevant indicators",
+            "provider": "local",
+        },
+    )
 
     assert response.status_code == 409
     assert "No indexed evidence matched" in response.text
@@ -364,13 +453,15 @@ async def test_empty_retrieval_prevents_any_ai_provider_call(
     [
         ("not JSON", "malformed JSON"),
         (
-            json.dumps({
-                "answer": "A claim carrying the wrong marker [S2]",
-                "cited_source_ids": ["S1"],
-                "relevant_source_ids": ["S1"],
-                "cautions": [],
-                "navigator_proposal": None,
-            }),
+            json.dumps(
+                {
+                    "answer": "A claim carrying the wrong marker [S2]",
+                    "cited_source_ids": ["S1"],
+                    "relevant_source_ids": ["S1"],
+                    "cautions": [],
+                    "navigator_proposal": None,
+                }
+            ),
             "citation markers",
         ),
     ],
@@ -381,18 +472,25 @@ async def test_malformed_or_citation_invalid_ai_output_maps_to_502(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(rag_service, "hybrid_search", AsyncMock(return_value=_result(_item())))
+    monkeypatch.setattr(
+        rag_service, "hybrid_search", AsyncMock(return_value=_result(_item()))
+    )
     monkeypatch.setattr(
         governed_ai,
         "create_adapter",
         MagicMock(return_value=SimpleNamespace(model="test-local-model")),
     )
-    monkeypatch.setattr(governed_ai, "complete", AsyncMock(return_value=provider_output))
+    monkeypatch.setattr(
+        governed_ai, "complete", AsyncMock(return_value=provider_output)
+    )
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "what is relevant?",
-        "provider": "local",
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "what is relevant?",
+            "provider": "local",
+        },
+    )
 
     assert response.status_code == 502
     assert message in response.text
@@ -410,14 +508,19 @@ async def test_legal_sensitive_source_is_blocked_from_cloud_even_if_tlp_is_clear
         "hybrid_search",
         AsyncMock(return_value=_result(_item(tlp="TLP:CLEAR", legal_sensitive=True))),
     )
-    provider = AsyncMock(side_effect=AssertionError("restricted evidence must not leave the host"))
+    provider = AsyncMock(
+        side_effect=AssertionError("restricted evidence must not leave the host")
+    )
     monkeypatch.setattr(governed_ai, "complete", provider)
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "summarize this source",
-        "provider": "openai",
-        "cloud_processing_acknowledged": True,
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "summarize this source",
+            "provider": "openai",
+            "cloud_processing_acknowledged": True,
+        },
+    )
 
     assert response.status_code == 403
     assert "TLP:AMBER+STRICT" in response.text
@@ -434,25 +537,32 @@ async def test_restricted_cve_relationship_evidence_is_blocked_from_cloud(
     monkeypatch.setattr(
         rag_service,
         "hybrid_search",
-        AsyncMock(return_value=_result(_item(
-            source_type="cve",
-            source_id="CVE-2026-23456",
-            title="CVE with restricted IOC relationship evidence",
-            canonical_route="/cve?search=CVE-2026-23456",
-            tlp="TLP:RED",
-            legal_sensitive=True,
-        ))),
+        AsyncMock(
+            return_value=_result(
+                _item(
+                    source_type="cve",
+                    source_id="CVE-2026-23456",
+                    title="CVE with restricted IOC relationship evidence",
+                    canonical_route="/cve?search=CVE-2026-23456",
+                    tlp="TLP:RED",
+                    legal_sensitive=True,
+                )
+            )
+        ),
     )
     provider = AsyncMock(
         side_effect=AssertionError("restricted CVE evidence must not leave the host")
     )
     monkeypatch.setattr(governed_ai, "complete", provider)
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "summarize this CVE relationship evidence",
-        "provider": "openai",
-        "cloud_processing_acknowledged": True,
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "summarize this CVE relationship evidence",
+            "provider": "openai",
+            "cloud_processing_acknowledged": True,
+        },
+    )
 
     assert response.status_code == 403
     assert "TLP:RED" in response.text
@@ -476,11 +586,14 @@ async def test_malformed_tlp_is_blocked_from_remote_generation(
     )
     monkeypatch.setattr(governed_ai, "complete", provider)
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "summarize this source",
-        "provider": "openai",
-        "cloud_processing_acknowledged": True,
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "summarize this source",
+            "provider": "openai",
+            "cloud_processing_acknowledged": True,
+        },
+    )
 
     assert response.status_code == 403
     assert "TLP:AMBER+STRICT" in response.text
@@ -508,11 +621,14 @@ async def test_remote_provider_attempt_is_audited_before_timeout(
         AsyncMock(side_effect=governed_ai.AIProviderTimeoutError()),
     )
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "summarize the evidence",
-        "provider": "openai",
-        "cloud_processing_acknowledged": True,
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "summarize the evidence",
+            "provider": "openai",
+            "cloud_processing_acknowledged": True,
+        },
+    )
 
     assert response.status_code == 504
     audits = _objects(AuditEvent)
@@ -528,24 +644,30 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
 ):
     _attack_version()
     source = _item()
-    monkeypatch.setattr(rag_service, "hybrid_search", AsyncMock(return_value=_result(source)))
+    monkeypatch.setattr(
+        rag_service, "hybrid_search", AsyncMock(return_value=_result(source))
+    )
     monkeypatch.setattr(
         governed_ai,
         "create_adapter",
         MagicMock(return_value=SimpleNamespace(model="test-local-model")),
     )
-    provider_output = json.dumps({
-        "answer": "The reviewed indicator is associated with PowerShell activity [S1].",
-        "cited_source_ids": ["S1"],
-        "relevant_source_ids": ["S1"],
-        "cautions": ["Relevance does not establish targeting or compromise."],
-        "navigator_proposal": {
-            "name": "Reviewed PowerShell evidence",
-            "technique_ids": ["T1059.001"],
-            "rationale": "T1059.001 appears verbatim in the cited evidence.",
-        },
-    })
-    monkeypatch.setattr(governed_ai, "complete", AsyncMock(return_value=provider_output))
+    provider_output = json.dumps(
+        {
+            "answer": "The reviewed indicator is associated with PowerShell activity [S1].",
+            "cited_source_ids": ["S1"],
+            "relevant_source_ids": ["S1"],
+            "cautions": ["Relevance does not establish targeting or compromise."],
+            "navigator_proposal": {
+                "name": "Reviewed PowerShell evidence",
+                "technique_ids": ["T1059.001"],
+                "rationale": "T1059.001 appears verbatim in the cited evidence.",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        governed_ai, "complete", AsyncMock(return_value=provider_output)
+    )
     monkeypatch.setattr(
         governed_ai,
         "verify_technique_ids",
@@ -553,30 +675,35 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
     )
     monkeypatch.setattr(rag_routes, "_stale_source_refs", AsyncMock(return_value=False))
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "paste on Navigator all relevant TTPs",
-        "provider": "local",
-        "source_types": ["ioc"],
-        "domain": "enterprise-attack",
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "paste on Navigator all relevant TTPs",
+            "provider": "local",
+            "source_types": ["ioc"],
+            "domain": "enterprise-attack",
+        },
+    )
 
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["effective_tlp"] == "TLP:AMBER"
     assert body["requires_human_review"] is True
     assert "did not change Navigator state" in body["execution_boundary"]
-    assert body["citations"] == [{
-        "source_ref": "S1",
-        "source_type": "ioc",
-        "source_id": "203.0.113.10",
-        "title": "Reviewed command-and-control indicator",
-        "excerpt": "203.0.113.10 was observed with PowerShell T1059.001 activity.",
-        "route": "/ioc?value=203.0.113.10",
-        "tlp": "TLP:AMBER",
-        "legal_sensitive": False,
-        "score": 0.91,
-        "verified": True,
-    }]
+    assert body["citations"] == [
+        {
+            "source_ref": "S1",
+            "source_type": "ioc",
+            "source_id": "203.0.113.10",
+            "title": "Reviewed command-and-control indicator",
+            "excerpt": "203.0.113.10 was observed with PowerShell T1059.001 activity.",
+            "route": "/ioc?value=203.0.113.10",
+            "tlp": "TLP:AMBER",
+            "legal_sensitive": False,
+            "score": 0.91,
+            "verified": True,
+        }
+    ]
     assert body["navigator_proposal"]["technique_ids"] == ["T1059.001"]
     assert body["navigator_proposal"]["requires_confirmation"] is True
 
@@ -593,6 +720,7 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
         "domain": "enterprise-attack",
         "attack_version": None,
         "client_profile_id": None,
+        "company_space_id": None,
         "limit": 12,
     }
     assert assistance.source_refs[0]["source_ref"] == "S1"
@@ -613,7 +741,9 @@ async def test_assistance_rejects_source_hash_changed_during_provider_call(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(rag_service, "hybrid_search", AsyncMock(return_value=_result(_item())))
+    monkeypatch.setattr(
+        rag_service, "hybrid_search", AsyncMock(return_value=_result(_item()))
+    )
     monkeypatch.setattr(
         governed_ai,
         "create_adapter",
@@ -622,20 +752,27 @@ async def test_assistance_rejects_source_hash_changed_during_provider_call(
     monkeypatch.setattr(
         governed_ai,
         "complete",
-        AsyncMock(return_value=json.dumps({
-            "answer": "The evidence contains an indicator [S1].",
-            "cited_source_ids": ["S1"],
-            "relevant_source_ids": ["S1"],
-            "cautions": [],
-            "navigator_proposal": None,
-        })),
+        AsyncMock(
+            return_value=json.dumps(
+                {
+                    "answer": "The evidence contains an indicator [S1].",
+                    "cited_source_ids": ["S1"],
+                    "relevant_source_ids": ["S1"],
+                    "cautions": [],
+                    "navigator_proposal": None,
+                }
+            )
+        ),
     )
     monkeypatch.setattr(rag_routes, "_stale_source_refs", AsyncMock(return_value=True))
 
-    response = await client.post("/api/rag/assist", json={
-        "query": "summarize the indicator",
-        "provider": "local",
-    })
+    response = await client.post(
+        "/api/rag/assist",
+        json={
+            "query": "summarize the indicator",
+            "provider": "local",
+        },
+    )
 
     assert response.status_code == 409
     assert "changed while the answer was generated" in response.text
@@ -772,7 +909,9 @@ async def test_proposal_confirmation_is_one_time_and_never_saves_a_layer(
     payload = {"proposal_checksum": proposal.proposal_checksum, "mode": "replace"}
 
     first = await client.post(f"/api/rag/proposals/{proposal.id}/confirm", json=payload)
-    second = await client.post(f"/api/rag/proposals/{proposal.id}/confirm", json=payload)
+    second = await client.post(
+        f"/api/rag/proposals/{proposal.id}/confirm", json=payload
+    )
 
     assert first.status_code == 200, first.text
     assert first.json() == {
@@ -798,7 +937,9 @@ async def test_proposal_confirmation_is_one_time_and_never_saves_a_layer(
     assert audits[0].action == "rag.navigator.confirm"
 
 
-async def test_reindex_fails_closed_when_disabled(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+async def test_reindex_fails_closed_when_disabled(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr(settings, "rag_enabled", False)
 
     response = await client.post("/api/rag/reindex", json={"source_types": ["ioc"]})
@@ -817,10 +958,13 @@ async def test_reindex_queue_failure_preserves_redispatchable_state_and_is_sanit
     queue = MagicMock(side_effect=RuntimeError("redis://user:secret@internal.example"))
     monkeypatch.setattr(reconcile_rag, "delay", queue)
 
-    response = await client.post("/api/rag/reindex", json={
-        "source_types": ["ioc", "cve"],
-        "include_embeddings": False,
-    })
+    response = await client.post(
+        "/api/rag/reindex",
+        json={
+            "source_types": ["ioc", "cve"],
+            "include_embeddings": False,
+        },
+    )
 
     assert response.status_code == 503
     assert response.json()["detail"] == "RAG index worker queue is unavailable"
@@ -943,7 +1087,9 @@ async def test_index_run_endpoints_expose_recovery_state(
     monkeypatch.setattr(
         rag_service,
         "get_index_status",
-        AsyncMock(return_value={"documents_sanitized": 1, "latest_run": {"id": str(run.id)}}),
+        AsyncMock(
+            return_value={"documents_sanitized": 1, "latest_run": {"id": str(run.id)}}
+        ),
     )
 
     status_response = await client.get("/api/rag/status")

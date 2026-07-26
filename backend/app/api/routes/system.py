@@ -12,17 +12,34 @@ from sqlalchemy import func, select, text
 from app.core.config import settings
 from app.core.database import async_session_factory, get_session
 from app.core.version import APP_VERSION
-from app.models.attack import AptGroup, AttackVersion, StixObject, StixRelationship, Tactic, Technique
+from app.models.attack import (
+    AptGroup,
+    AttackVersion,
+    StixObject,
+    StixRelationship,
+    Tactic,
+    Technique,
+)
 from app.models.auth import UserAccount
-from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
+from app.models.cve import (
+    CVEActorLink,
+    CVEIOCLink,
+    CVERecord,
+    CVESource,
+    CVETechniqueLink,
+)
 from app.models.ioc import IOCIndicator, IOCSource
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.services.auth import TeamUser, audit, require_permission
 from app.services import asset_scanner_mcp
+from app.services import rag as rag_service
 from app.services.cve_intel import ensure_cve_sources
 from app.services.data_integrity import ioc_cve_integrity_snapshot
 from app.services.startup_status import startup_status
-from app.services.taxonomy_migration import normalize_existing_taxonomy, taxonomy_normalization_status
+from app.services.taxonomy_migration import (
+    normalize_existing_taxonomy,
+    taxonomy_normalization_status,
+)
 
 router = APIRouter(prefix="/system", tags=["System"])
 manage_taxonomy = require_permission("manage_feeds")
@@ -132,25 +149,34 @@ async def api_capabilities(request: Request) -> ApiCapabilitiesOut:
 
 
 @router.get("/taxonomy/status")
-async def taxonomy_status(db=Depends(get_session), _: TeamUser = Depends(manage_taxonomy)) -> dict[str, Any]:
+async def taxonomy_status(
+    db=Depends(get_session), _: TeamUser = Depends(manage_taxonomy)
+) -> dict[str, Any]:
     return await taxonomy_normalization_status(db)
 
 
 @router.post("/taxonomy/normalize")
-async def normalize_taxonomy(db=Depends(get_session), user: TeamUser = Depends(manage_taxonomy)) -> dict[str, Any]:
+async def normalize_taxonomy(
+    db=Depends(get_session), user: TeamUser = Depends(manage_taxonomy)
+) -> dict[str, Any]:
     result = await normalize_existing_taxonomy(db, commit=False)
     await audit(
         db,
         user,
         "system.taxonomy_normalize",
         "taxonomy",
-        details={"rows_changed": result.get("rows_changed", 0), "tables": result.get("tables", {})},
+        details={
+            "rows_changed": result.get("rows_changed", 0),
+            "tables": result.get("tables", {}),
+        },
     )
     await db.commit()
     return result
 
 
-def _check(name: str, ok: bool, message: str, details: dict[str, Any] | None = None) -> SelfTestCheck:
+def _check(
+    name: str, ok: bool, message: str, details: dict[str, Any] | None = None
+) -> SelfTestCheck:
     return _check_status(name, "ok" if ok else "error", message, details)
 
 
@@ -198,9 +224,10 @@ def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
     cve_duplicates = int(duplicate_groups.get("normalized_cve_id") or 0)
     cross_source = int(duplicate_groups.get("cross_source_ioc_overlap") or 0)
     if status == "ok":
-        message = (
-            "IOC/CVE deduplication integrity passed"
-            + (f"; {cross_source} cross-source IOC overlap sample group(s) observed." if cross_source else ".")
+        message = "IOC/CVE deduplication integrity passed" + (
+            f"; {cross_source} cross-source IOC overlap sample group(s) observed."
+            if cross_source
+            else "."
         )
     else:
         message = (
@@ -247,7 +274,10 @@ def _api_key_check() -> SelfTestCheck:
             "configured": bool(settings.threatfox_auth_key),
             "env_var": "THREATFOX_AUTH_KEY",
             "category": "feed",
-            "required_for": ["ThreatFox IOC sync", "ThreatFox IOC Investigation lookup"],
+            "required_for": [
+                "ThreatFox IOC sync",
+                "ThreatFox IOC Investigation lookup",
+            ],
         },
         "otx": {
             "configured": bool(settings.otx_api_key),
@@ -259,7 +289,10 @@ def _api_key_check() -> SelfTestCheck:
             "configured": bool(settings.virustotal_api_key),
             "env_var": "VIRUSTOTAL_API_KEY",
             "category": "investigation",
-            "required_for": ["VirusTotal IOC lookup", "VirusTotal IOC Investigation enrichment"],
+            "required_for": [
+                "VirusTotal IOC lookup",
+                "VirusTotal IOC Investigation enrichment",
+            ],
         },
         "urlscan": {
             "configured": True,
@@ -287,14 +320,18 @@ def _api_key_check() -> SelfTestCheck:
             "configured": bool(settings.shodan_api_key),
             "env_var": "SHODAN_API_KEY",
             "category": "investigation",
-            "required_for": ["Shodan host exposure, ports, hostnames, and vulnerability context"],
+            "required_for": [
+                "Shodan host exposure, ports, hostnames, and vulnerability context"
+            ],
         },
         "censys": {
             "configured": bool(settings.censys_api_key),
             "env_var": "CENSYS_API_KEY",
             "optional_env_var": "CENSYS_ORG_ID",
             "category": "investigation",
-            "required_for": ["Censys host, DNS, service, ASN, and certificate-name pivots"],
+            "required_for": [
+                "Censys host, DNS, service, ASN, and certificate-name pivots"
+            ],
         },
         "opencti": {
             "configured": bool(settings.opencti_url and settings.opencti_token),
@@ -340,7 +377,9 @@ def _api_key_check() -> SelfTestCheck:
             "configured": bool(settings.vulncheck_api_key),
             "env_var": "VULNCHECK_API_KEY",
             "category": "product_security",
-            "required_for": ["VulnCheck KEV, NVD++, exploit, and ransomware-enriched CVE intelligence"],
+            "required_for": [
+                "VulnCheck KEV, NVD++, exploit, and ransomware-enriched CVE intelligence"
+            ],
         },
         "snyk": {
             "configured": bool(settings.snyk_token),
@@ -407,11 +446,15 @@ def _api_key_check() -> SelfTestCheck:
             "configured": bool(settings.recorded_future_api_key),
             "env_var": "RECORDED_FUTURE_API_KEY",
             "category": "product_security",
-            "required_for": ["Recorded Future vulnerability, actor, and exposure enrichment"],
+            "required_for": [
+                "Recorded Future vulnerability, actor, and exposure enrichment"
+            ],
         },
     }
     configured = [name for name, data in providers.items() if data["configured"]]
-    missing_optional = [name for name, data in providers.items() if not data["configured"]]
+    missing_optional = [
+        name for name, data in providers.items() if not data["configured"]
+    ]
     configured_by_category: dict[str, list[str]] = {}
     missing_by_category: dict[str, list[str]] = {}
     for name, data in providers.items():
@@ -438,14 +481,19 @@ def _auth_readiness_check(total_users: int, enabled_users: int) -> SelfTestCheck
         "auth_enabled": settings.auth_enabled,
         "sso_mode": settings.auth_sso_mode,
         "native_login_enabled": True,
-        "bootstrap_configured": bool(settings.auth_bootstrap_admin_username and settings.auth_bootstrap_admin_password),
+        "bootstrap_configured": bool(
+            settings.auth_bootstrap_admin_username
+            and settings.auth_bootstrap_admin_password
+        ),
         "total_users": total_users,
         "enabled_users": enabled_users,
         "session_minutes": settings.auth_session_minutes,
         "mfa_available": settings.auth_mfa_enabled,
     }
     if not settings.auth_enabled:
-        details["production_recommendation"] = "Enable AUTH_ENABLED before exposing the platform to untrusted networks."
+        details["production_recommendation"] = (
+            "Enable AUTH_ENABLED before exposing the platform to untrusted networks."
+        )
         return _check_status(
             "auth_readiness",
             "ok",
@@ -483,7 +531,9 @@ def _taxonomy_normalization_check(status: dict[str, Any]) -> SelfTestCheck:
     )
 
 
-def _storage_writable_check(path: str | Path, name: str = "storage_writable") -> SelfTestCheck:
+def _storage_writable_check(
+    path: str | Path, name: str = "storage_writable"
+) -> SelfTestCheck:
     target = Path(path)
     probe = target / ".adversarygraph-selftest"
     try:
@@ -528,11 +578,7 @@ async def _asset_scanner_readiness_check() -> SelfTestCheck:
                 "api_contains_scanner_binaries": False,
             },
         )
-    tools = [
-        row
-        for row in catalog.get("tools") or []
-        if isinstance(row, dict)
-    ]
+    tools = [row for row in catalog.get("tools") or [] if isinstance(row, dict)]
     unavailable = [
         str(row.get("id"))
         for row in tools
@@ -560,11 +606,15 @@ async def _asset_scanner_readiness_check() -> SelfTestCheck:
     )
 
 
-async def _service_health_check(name: str, base_url: str, *, timeout_seconds: float = 3.0) -> SelfTestCheck:
+async def _service_health_check(
+    name: str, base_url: str, *, timeout_seconds: float = 3.0
+) -> SelfTestCheck:
     url = base_url.rstrip("/") + "/health"
     started = perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout_seconds, trust_env=False
+        ) as client:
             response = await client.get(url)
         duration_ms = int((perf_counter() - started) * 1000)
         ok = 200 <= response.status_code < 300
@@ -594,7 +644,14 @@ async def _malwaregraph_health_check() -> SelfTestCheck:
     started = perf_counter()
     try:
         async with httpx.AsyncClient(timeout=3.0, trust_env=False) as client:
-            response = await client.get(url, headers={"X-API-Key": settings.malwaregraph_api_key} if settings.malwaregraph_api_key else None)
+            response = await client.get(
+                url,
+                headers=(
+                    {"X-API-Key": settings.malwaregraph_api_key}
+                    if settings.malwaregraph_api_key
+                    else None
+                ),
+            )
         duration_ms = int((perf_counter() - started) * 1000)
         ok = 200 <= response.status_code < 300
         return _check(
@@ -648,7 +705,9 @@ def _cpu_percent_from_totals(first: tuple[int, int], second: tuple[int, int]) ->
     return round(max(0.0, min(100.0, (1 - idle_delta / total_delta) * 100)), 2)
 
 
-def _cpu_usage_details(sample_seconds: float = 0.1, proc_stat_path: str = "/proc/stat") -> dict[str, Any]:
+def _cpu_usage_details(
+    sample_seconds: float = 0.1, proc_stat_path: str = "/proc/stat"
+) -> dict[str, Any]:
     first = _read_proc_cpu_totals(proc_stat_path)
     sleep(max(0.01, sample_seconds))
     second = _read_proc_cpu_totals(proc_stat_path)
@@ -763,13 +822,22 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     {
                         "db_name": settings.db_name,
                         "db_host": settings.db_host,
-                        "external_data_dir": os.environ.get("ADVERSARYGRAPH_DB_DIR", "./data/postgres"),
+                        "external_data_dir": os.environ.get(
+                            "ADVERSARYGRAPH_DB_DIR", "./data/postgres"
+                        ),
                         "layout": "persistent external Postgres data directory; public references and private/custom data are source-separated",
                     },
                 )
             )
-            db_size_bytes = int(await session.scalar(text("select pg_database_size(current_database())")) or 0)
-            db_size_pretty = await session.scalar(text("select pg_size_pretty(pg_database_size(current_database()))"))
+            db_size_bytes = int(
+                await session.scalar(
+                    text("select pg_database_size(current_database())")
+                )
+                or 0
+            )
+            db_size_pretty = await session.scalar(
+                text("select pg_size_pretty(pg_database_size(current_database()))")
+            )
             checks.append(
                 _check(
                     "database_size",
@@ -779,27 +847,49 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                         "db_name": settings.db_name,
                         "size_bytes": db_size_bytes,
                         "size": db_size_pretty or _format_bytes(db_size_bytes),
-                        "external_data_dir": os.environ.get("ADVERSARYGRAPH_DB_DIR", "./data/postgres"),
+                        "external_data_dir": os.environ.get(
+                            "ADVERSARYGRAPH_DB_DIR", "./data/postgres"
+                        ),
                     },
                 )
             )
 
-            total_users = int(await session.scalar(select(func.count()).select_from(UserAccount)) or 0)
-            enabled_users = int(await session.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.enabled.is_(True))) or 0)
+            total_users = int(
+                await session.scalar(select(func.count()).select_from(UserAccount)) or 0
+            )
+            enabled_users = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(UserAccount)
+                    .where(UserAccount.enabled.is_(True))
+                )
+                or 0
+            )
             checks.append(_auth_readiness_check(total_users, enabled_users))
 
             versions = (await session.execute(select(AttackVersion))).scalars().all()
-            version_map = {version.domain: version.version for version in versions if version.is_latest}
+            version_map = {
+                version.domain: version.version
+                for version in versions
+                if version.is_latest
+            }
             expected_domains = settings.attck_domain_list
-            missing_domains = [domain for domain in expected_domains if domain not in version_map]
+            missing_domains = [
+                domain for domain in expected_domains if domain not in version_map
+            ]
             checks.append(
                 _check(
                     "attack_versions",
                     not missing_domains,
-                    "ATT&CK/ATLAS versions are present."
-                    if not missing_domains
-                    else f"Missing ingested domains: {', '.join(missing_domains)}.",
-                    {"latest_versions": version_map, "expected_domains": expected_domains},
+                    (
+                        "ATT&CK/ATLAS versions are present."
+                        if not missing_domains
+                        else f"Missing ingested domains: {', '.join(missing_domains)}."
+                    ),
+                    {
+                        "latest_versions": version_map,
+                        "expected_domains": expected_domains,
+                    },
                 )
             )
 
@@ -821,11 +911,31 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                         "stix_relationships": 0,
                     }
                     continue
-                tactics = await session.scalar(select(func.count()).select_from(Tactic).where(Tactic.version_id == version_id))
-                techniques = await session.scalar(select(func.count()).select_from(Technique).where(Technique.version_id == version_id))
-                groups = await session.scalar(select(func.count()).select_from(AptGroup).where(AptGroup.version_id == version_id))
-                stix_objects = await session.scalar(select(func.count()).select_from(StixObject).where(StixObject.version_id == version_id))
-                stix_relationships = await session.scalar(select(func.count()).select_from(StixRelationship).where(StixRelationship.version_id == version_id))
+                tactics = await session.scalar(
+                    select(func.count())
+                    .select_from(Tactic)
+                    .where(Tactic.version_id == version_id)
+                )
+                techniques = await session.scalar(
+                    select(func.count())
+                    .select_from(Technique)
+                    .where(Technique.version_id == version_id)
+                )
+                groups = await session.scalar(
+                    select(func.count())
+                    .select_from(AptGroup)
+                    .where(AptGroup.version_id == version_id)
+                )
+                stix_objects = await session.scalar(
+                    select(func.count())
+                    .select_from(StixObject)
+                    .where(StixObject.version_id == version_id)
+                )
+                stix_relationships = await session.scalar(
+                    select(func.count())
+                    .select_from(StixRelationship)
+                    .where(StixRelationship.version_id == version_id)
+                )
                 domain_counts[domain] = {
                     "tactics": int(tactics or 0),
                     "techniques": int(techniques or 0),
@@ -835,25 +945,33 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                 }
 
             empty_domains = [
-                domain for domain, counts in domain_counts.items()
+                domain
+                for domain, counts in domain_counts.items()
                 if counts["tactics"] == 0 or counts["techniques"] == 0
             ]
             checks.append(
                 _check(
                     "attack_data",
                     not empty_domains,
-                    "ATT&CK/ATLAS tactics and techniques are loaded."
-                    if not empty_domains
-                    else f"No tactics or techniques loaded for: {', '.join(empty_domains)}.",
+                    (
+                        "ATT&CK/ATLAS tactics and techniques are loaded."
+                        if not empty_domains
+                        else f"No tactics or techniques loaded for: {', '.join(empty_domains)}."
+                    ),
                     {"domain_counts": domain_counts},
                 )
             )
 
             source_rows = (await session.execute(select(IOCSource))).scalars().all()
             source_counts_raw = await session.execute(
-                select(IOCIndicator.source_id, func.count(IOCIndicator.id)).group_by(IOCIndicator.source_id)
+                select(IOCIndicator.source_id, func.count(IOCIndicator.id)).group_by(
+                    IOCIndicator.source_id
+                )
             )
-            source_counts = {str(source_id): int(count or 0) for source_id, count in source_counts_raw.all()}
+            source_counts = {
+                str(source_id): int(count or 0)
+                for source_id, count in source_counts_raw.all()
+            }
             sources = [
                 {
                     "source_id": source.source_id,
@@ -862,15 +980,21 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     "enabled": source.enabled,
                     "sync_status": source.sync_status,
                     "sync_error": source.sync_error,
-                    "last_synced_at": source.last_synced_at.isoformat() if source.last_synced_at else None,
+                    "last_synced_at": (
+                        source.last_synced_at.isoformat()
+                        if source.last_synced_at
+                        else None
+                    ),
                     "indicator_count": source_counts.get(source.source_id, 0),
                 }
                 for source in sorted(source_rows, key=lambda item: item.label.lower())
             ]
             enabled_sources = [source for source in sources if source["enabled"]]
             degraded_sources = [
-                source for source in enabled_sources
-                if source["sync_status"] and source["sync_status"] not in {"ok", "active", "configured"}
+                source
+                for source in enabled_sources
+                if source["sync_status"]
+                and source["sync_status"] not in {"ok", "active", "configured"}
             ]
             checks.append(
                 _check_status(
@@ -880,7 +1004,9 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     f"{sum(int(item.get('indicator_count') or 0) for item in sources)} indicators stored.",
                     {
                         "auto_full_sync_on_startup": settings.auto_ioc_full_sync_on_startup,
-                        "startup_sync_days": max(1, min(7, settings.auto_threatfox_sync_days)),
+                        "startup_sync_days": max(
+                            1, min(7, settings.auto_threatfox_sync_days)
+                        ),
                         "enabled_sources": len(enabled_sources),
                         "degraded_sources": len(degraded_sources),
                         "sources": sources,
@@ -894,7 +1020,9 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                 )
                 rag_documents = int(
                     await session.scalar(
-                        select(func.count()).select_from(RAGDocument).where(
+                        select(func.count())
+                        .select_from(RAGDocument)
+                        .where(
                             RAGDocument.is_active.is_(True),
                             RAGDocument.sanitized.is_(True),
                         )
@@ -941,45 +1069,79 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                 )
                 latest_run = (
                     await session.execute(
-                        select(RAGIndexRun).order_by(RAGIndexRun.created_at.desc()).limit(1)
+                        select(RAGIndexRun)
+                        .order_by(RAGIndexRun.created_at.desc())
+                        .limit(1)
                     )
                 ).scalar_one_or_none()
                 attempted_index_problem = bool(
                     latest_run
                     and (
                         latest_run.status in {"failed", "degraded"}
-                        or (
-                            latest_run.status == "completed"
-                            and rag_documents == 0
-                        )
+                        or (latest_run.status == "completed" and rag_documents == 0)
                     )
                 )
+                completed_at = latest_run.completed_at if latest_run else None
+                if completed_at is not None and completed_at.tzinfo is None:
+                    completed_at = completed_at.replace(tzinfo=timezone.utc)
+                index_age_hours = (
+                    max(
+                        0.0,
+                        (
+                            datetime.now(timezone.utc)
+                            - completed_at.astimezone(timezone.utc)
+                        ).total_seconds()
+                        / 3_600,
+                    )
+                    if completed_at is not None
+                    else None
+                )
+                index_stale = bool(
+                    index_age_hours is None
+                    or index_age_hours > settings.rag_max_index_age_hours
+                )
+                # Do not retain a database transaction while probing the
+                # private embedding service.
+                await session.rollback()
+                embedding_readiness = await rag_service.probe_embedding_readiness()
                 rag_status = (
                     "error"
                     if not vector_version
-                    else "warning"
-                    if (
-                        attempted_index_problem
-                        or failed_embeddings > 0
-                        or (
-                            settings.rag_embedding_enabled
-                            and rag_chunks > 0
-                            and ready_embeddings == 0
+                    else (
+                        "warning"
+                        if (
+                            attempted_index_problem
+                            or index_stale
+                            or failed_embeddings > 0
+                            or (
+                                settings.rag_embedding_enabled
+                                and (
+                                    rag_chunks > 0
+                                    and ready_embeddings == 0
+                                    or not embedding_readiness.get("available")
+                                )
+                            )
                         )
+                        else "ok"
                     )
-                    else "ok"
                 )
                 checks.append(
                     _check_status(
                         "rag_index",
                         rag_status,
-                        "Unified intelligence RAG index is ready."
-                        if rag_status == "ok" and rag_documents > 0
-                        else "Unified intelligence RAG is enabled; run the initial reconciliation before first use."
-                        if rag_status == "ok"
-                        else "Unified intelligence RAG needs an initial/retry reconciliation."
-                        if vector_version
-                        else "PostgreSQL pgvector extension is unavailable.",
+                        (
+                            "Unified intelligence RAG index is ready."
+                            if rag_status == "ok" and rag_documents > 0
+                            else (
+                                "Unified intelligence RAG is enabled; run the initial reconciliation before first use."
+                                if rag_status == "ok"
+                                else (
+                                    "Unified intelligence RAG needs an initial/retry reconciliation."
+                                    if vector_version
+                                    else "PostgreSQL pgvector extension is unavailable."
+                                )
+                            )
+                        ),
                         {
                             "pgvector_version": vector_version,
                             "documents": rag_documents,
@@ -987,11 +1149,18 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                             "ready_embeddings": ready_embeddings,
                             "failed_embeddings": failed_embeddings,
                             "retrieval_mode": (
-                                "hybrid"
-                                if ready_embeddings > 0
-                                else "exact+fts"
+                                "hybrid" if ready_embeddings > 0 else "exact+fts"
                             ),
-                            "latest_run_status": latest_run.status if latest_run else "never",
+                            "index_age_hours": (
+                                round(index_age_hours, 2)
+                                if index_age_hours is not None
+                                else None
+                            ),
+                            "max_index_age_hours": settings.rag_max_index_age_hours,
+                            "embedding_readiness": embedding_readiness,
+                            "latest_run_status": (
+                                latest_run.status if latest_run else "never"
+                            ),
                             "latest_run_completed_at": (
                                 latest_run.completed_at.isoformat()
                                 if latest_run and latest_run.completed_at
@@ -1012,11 +1181,28 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
 
             await ensure_cve_sources(session)
             cve_source_rows = (await session.execute(select(CVESource))).scalars().all()
-            cve_total = int(await session.scalar(select(func.count()).select_from(CVERecord)) or 0)
-            cve_known_exploited = int(await session.scalar(select(func.count()).select_from(CVERecord).where(CVERecord.known_exploited.is_(True))) or 0)
-            cve_technique_links = int(await session.scalar(select(func.count()).select_from(CVETechniqueLink)) or 0)
-            cve_ioc_links = int(await session.scalar(select(func.count()).select_from(CVEIOCLink)) or 0)
-            cve_actor_links = int(await session.scalar(select(func.count()).select_from(CVEActorLink)) or 0)
+            cve_total = int(
+                await session.scalar(select(func.count()).select_from(CVERecord)) or 0
+            )
+            cve_known_exploited = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(CVERecord)
+                    .where(CVERecord.known_exploited.is_(True))
+                )
+                or 0
+            )
+            cve_technique_links = int(
+                await session.scalar(select(func.count()).select_from(CVETechniqueLink))
+                or 0
+            )
+            cve_ioc_links = int(
+                await session.scalar(select(func.count()).select_from(CVEIOCLink)) or 0
+            )
+            cve_actor_links = int(
+                await session.scalar(select(func.count()).select_from(CVEActorLink))
+                or 0
+            )
             cve_sources = [
                 {
                     "source_id": source.source_id,
@@ -1025,13 +1211,22 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     "enabled": source.enabled,
                     "sync_status": source.sync_status,
                     "sync_error": source.sync_error,
-                    "last_synced_at": source.last_synced_at.isoformat() if source.last_synced_at else None,
+                    "last_synced_at": (
+                        source.last_synced_at.isoformat()
+                        if source.last_synced_at
+                        else None
+                    ),
                 }
-                for source in sorted(cve_source_rows, key=lambda item: item.label.lower())
+                for source in sorted(
+                    cve_source_rows, key=lambda item: item.label.lower()
+                )
             ]
             degraded_cve_sources = [
-                source for source in cve_sources
-                if source["enabled"] and source["sync_status"] and source["sync_status"] not in {"ok", "active", "configured"}
+                source
+                for source in cve_sources
+                if source["enabled"]
+                and source["sync_status"]
+                and source["sync_status"] not in {"ok", "active", "configured"}
             ]
             checks.append(
                 _check_status(
@@ -1051,7 +1246,11 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                 )
             )
             checks.append(_data_integrity_check(ioc_cve_integrity_snapshot()))
-            checks.append(_taxonomy_normalization_check(await taxonomy_normalization_status(session)))
+            checks.append(
+                _taxonomy_normalization_check(
+                    await taxonomy_normalization_status(session)
+                )
+            )
     except Exception as exc:
         checks.append(
             _check(
@@ -1064,11 +1263,17 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
     try:
         import redis
 
-        client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
+        client = redis.Redis.from_url(
+            settings.redis_url, socket_connect_timeout=2, socket_timeout=2
+        )
         client.ping()
         checks.append(_check("redis", True, "Redis connection succeeded."))
     except Exception as exc:
-        checks.append(_check("redis", False, f"Redis self-test failed: {type(exc).__name__}: {exc}"))
+        checks.append(
+            _check(
+                "redis", False, f"Redis self-test failed: {type(exc).__name__}: {exc}"
+            )
+        )
 
     try:
         cpu_details = _cpu_usage_details()
@@ -1081,7 +1286,13 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
             )
         )
     except Exception as exc:
-        checks.append(_check("cpu_usage", False, f"CPU usage self-test failed: {type(exc).__name__}: {exc}"))
+        checks.append(
+            _check(
+                "cpu_usage",
+                False,
+                f"CPU usage self-test failed: {type(exc).__name__}: {exc}",
+            )
+        )
 
     try:
         memory_details = _memory_usage_details()
@@ -1095,12 +1306,20 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
             )
         )
     except Exception as exc:
-        checks.append(_check("memory_usage", False, f"Memory usage self-test failed: {type(exc).__name__}: {exc}"))
+        checks.append(
+            _check(
+                "memory_usage",
+                False,
+                f"Memory usage self-test failed: {type(exc).__name__}: {exc}",
+            )
+        )
 
     checks.append(_api_key_check())
     checks.append(await _asset_scanner_readiness_check())
     checks.append(_storage_writable_check(settings.log_dir, "log_storage_writable"))
-    checks.append(_storage_writable_check(settings.attck_data_dir, "attck_storage_writable"))
+    checks.append(
+        _storage_writable_check(settings.attck_data_dir, "attck_storage_writable")
+    )
     checks.append(
         await _service_health_check(
             "attack_lab_web_health",
@@ -1110,7 +1329,9 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
     checks.append(
         await _service_health_check(
             "attack_lab_endpoint_health",
-            os.environ.get("ATTACK_LAB_ENDPOINT_URL", "http://attack-lab-endpoint:8090"),
+            os.environ.get(
+                "ATTACK_LAB_ENDPOINT_URL", "http://attack-lab-endpoint:8090"
+            ),
         )
     )
     checks.append(await _malwaregraph_health_check())

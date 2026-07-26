@@ -106,6 +106,17 @@ def test_only_rag_reconciliation_requeues_after_abrupt_worker_loss():
     assert rag_tasks.reconcile_rag.max_retries is None
 
 
+def test_rag_schedule_is_near_live_and_incremental():
+    entry = celery_app.conf.beat_schedule["rag-reconcile-incremental"]
+    interval = entry["schedule"]
+
+    assert entry["task"] == "rag.queue_reconcile"
+    assert interval == timedelta(
+        minutes=celery_module.settings.rag_reconcile_interval_minutes
+    )
+    assert interval <= timedelta(minutes=15)
+
+
 def test_running_staleness_uses_heartbeat_then_persisted_timestamps():
     now = datetime.now(timezone.utc)
     run = RAGIndexRun(
@@ -162,7 +173,9 @@ def test_scheduler_redispatches_abandoned_runs_under_enqueue_lock(
         "redispatched": True,
     }
     assert send_task.calls == [("rag.reconcile", (str(run.id),))]
-    assert any("pg_advisory_xact_lock" in statement for statement, _ in session.statements)
+    assert any(
+        "pg_advisory_xact_lock" in statement for statement, _ in session.statements
+    )
     assert session.commits == 1
     assert engine.disposals == 2
 

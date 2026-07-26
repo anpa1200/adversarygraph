@@ -72,7 +72,7 @@ retrieval smoke test. In a staging environment that matches production:
    Verify its four fixed tools, then confirm it cannot reindex, confirm a
    proposal, save a layer, fetch arbitrary URLs, execute SQL, or perform an
    operational action.
-7. Confirm daily reconciliation and retention schedules are active. RAG workers
+7. Confirm incremental reconciliation and daily retention schedules are active. RAG workers
    must connect directly to PostgreSQL or through PgBouncer session pooling;
    transaction or statement pooling is not compatible with the session
    advisory lock.

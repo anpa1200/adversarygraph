@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import math
 import re
+import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -41,8 +43,14 @@ from app.models.ioc import IOCIndicator
 from app.models.knowledge import KnowledgeArticle
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.models.sector import ActorIntelObservation, ClientProfile
-from app.models.threat_radar import ThreatHuntRequest, ThreatSignal
+from app.models.threat_radar import (
+    ThreatCompanySpace,
+    ThreatHuntRequest,
+    ThreatSignal,
+    ThreatSpaceAsset,
+)
 
+logger = logging.getLogger(__name__)
 
 SUPPORTED_SOURCE_TYPES: tuple[str, ...] = (
     "attack_technique",
@@ -92,35 +100,71 @@ _ATTACK_ID_RE = re.compile(
 )
 _CVE_ID_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
 _HASH_RE = re.compile(r"\b(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b")
-_DOMAIN_RE = re.compile(r"(?<![@\w-])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,62})\.)+[a-zA-Z]{2,63}\b")
+_DOMAIN_RE = re.compile(
+    r"(?<![@\w-])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,62})\.)+[a-zA-Z]{2,63}\b"
+)
 _MAX_QUERY_CHARS = 4_000
 _MAX_SEARCH_LIMIT = 100
 _MAX_METADATA_LIST = 200
 _RRF_WEIGHTS = {"exact": 2.0, "fts": 1.25, "relationship": 1.1, "vector": 1.0}
 _PROFILE_QUERY_TERM_LIMIT = 24
 _RELATIONSHIP_QUERY_TERM_LIMIT = 32
-_RELATIONSHIP_METADATA_KEYS = frozenset({
-    "actor_attack_id",
-    "actor_ids",
-    "actor_name",
-    "actor_names",
-    "attack_id",
-    "campaign",
-    "campaign_ids",
-    "campaign_names",
-    "cve_id",
-    "cve_ids",
-    "group_ids",
-    "group_names",
-    "indicator_refs",
-    "malware_family",
-    "technique_ids",
-})
-_EXCERPT_STOPWORDS = frozenset({
-    "about", "all", "and", "are", "business", "company", "find", "for",
-    "from", "ioc", "iocs", "most", "our", "relevant", "show", "that",
-    "the", "their", "these", "this", "those", "through", "what", "with",
-})
+_BUSINESS_CONTEXT_SEED_TYPES: tuple[str, ...] = (
+    "actor_intel",
+    "attack_campaign",
+    "attack_group",
+    "threat_signal",
+    "knowledge",
+)
+_RELATIONSHIP_METADATA_KEYS = frozenset(
+    {
+        "actor_attack_id",
+        "actor_ids",
+        "actor_name",
+        "actor_names",
+        "attack_id",
+        "campaign",
+        "campaign_ids",
+        "campaign_names",
+        "cve_id",
+        "cve_ids",
+        "group_ids",
+        "group_names",
+        "indicator_refs",
+        "malware_family",
+        "technique_ids",
+    }
+)
+_EXCERPT_STOPWORDS = frozenset(
+    {
+        "about",
+        "all",
+        "and",
+        "are",
+        "business",
+        "company",
+        "find",
+        "for",
+        "from",
+        "ioc",
+        "iocs",
+        "most",
+        "our",
+        "relevant",
+        "show",
+        "that",
+        "the",
+        "their",
+        "these",
+        "this",
+        "those",
+        "through",
+        "what",
+        "with",
+    }
+)
+_EMBEDDING_PROBE_TTL_SECONDS = 60.0
+_embedding_probe_cache: tuple[tuple[Any, ...], float, dict[str, Any]] | None = None
 
 
 class RAGError(RuntimeError):
@@ -167,7 +211,10 @@ class SourceRecord:
         ):
             if not isinstance(value, str):
                 raise TypeError(f"{label} must be a string")
-            if label in {"source_id", "source_version", "logical_key", "title"} and not value.strip():
+            if (
+                label in {"source_id", "source_version", "logical_key", "title"}
+                and not value.strip()
+            ):
                 raise ValueError(f"{label} cannot be empty")
             if len(value) > maximum:
                 raise ValueError(f"{label} exceeds {maximum} characters")
@@ -255,7 +302,9 @@ class SearchItem:
             "verified": True,
             "retrieval_signals": list(self.retrieval_signals),
             "content_hash": self.content_hash,
-            "source_updated_at": self.source_updated_at.isoformat() if self.source_updated_at else None,
+            "source_updated_at": (
+                self.source_updated_at.isoformat() if self.source_updated_at else None
+            ),
             "indexed_at": self.indexed_at.isoformat() if self.indexed_at else "",
             "metadata": dict(self.metadata),
         }
@@ -274,7 +323,9 @@ class SearchResponse:
             "items": [item.to_dict() for item in self.items],
             "retrieval_mode": self.retrieval_mode,
             "warnings": list(self.warnings),
-            "corpus_indexed_at": self.corpus_indexed_at.isoformat() if self.corpus_indexed_at else None,
+            "corpus_indexed_at": (
+                self.corpus_indexed_at.isoformat() if self.corpus_indexed_at else None
+            ),
         }
 
 
@@ -313,6 +364,17 @@ class ClientContext:
     crown_jewels: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class BusinessContext:
+    """Server-owned business context derived from a saved profile or company space."""
+
+    kind: str
+    identifier: str
+    context: ClientContext
+    checksum: str
+    payload: Mapping[str, Any]
+
+
 @dataclass(slots=True)
 class _Candidate:
     chunk: RAGChunk
@@ -326,7 +388,9 @@ class _Candidate:
 def normalize_tlp(value: Any, default: str = "TLP:AMBER+STRICT") -> str:
     """Return one canonical TLP 2.0 label; unknown labels fail closed."""
 
-    normalized_default = str(default or "TLP:AMBER+STRICT").strip().upper().replace(" ", "")
+    normalized_default = (
+        str(default or "TLP:AMBER+STRICT").strip().upper().replace(" ", "")
+    )
     normalized_default = _TLP_ALIASES.get(normalized_default, normalized_default)
     if normalized_default not in _TLP_VALUES:
         normalized_default = "TLP:AMBER+STRICT"
@@ -368,7 +432,9 @@ def checksum(value: Any) -> str:
 def normalize_text(value: Any) -> str:
     """Normalize source text without changing words or evidence offsets later."""
 
-    text = str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
+    text = (
+        str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
+    )
     paragraphs: list[str] = []
     for paragraph in re.split(r"\n\s*\n", text):
         collapsed = re.sub(r"[\t\f\v ]+", " ", paragraph)
@@ -378,15 +444,21 @@ def normalize_text(value: Any) -> str:
     return "\n\n".join(paragraphs)
 
 
-def chunk_text(text: str, max_chars: int | None = None, overlap_chars: int | None = None) -> list[str]:
+def chunk_text(
+    text: str, max_chars: int | None = None, overlap_chars: int | None = None
+) -> list[str]:
     """Deterministically split normalized text at readable boundaries."""
 
     maximum = int(max_chars if max_chars is not None else settings.rag_chunk_chars)
-    overlap = int(overlap_chars if overlap_chars is not None else settings.rag_chunk_overlap_chars)
+    overlap = int(
+        overlap_chars if overlap_chars is not None else settings.rag_chunk_overlap_chars
+    )
     if maximum < 128:
         raise ValueError("max_chars must be at least 128")
     if overlap < 0 or overlap >= maximum:
-        raise ValueError("overlap_chars must be non-negative and smaller than max_chars")
+        raise ValueError(
+            "overlap_chars must be non-negative and smaller than max_chars"
+        )
 
     source = normalize_text(text)
     if not source:
@@ -411,7 +483,11 @@ def chunk_text(text: str, max_chars: int | None = None, overlap_chars: int | Non
             ]
             boundary = max(candidates)
             if boundary >= minimum_break:
-                end = start + boundary + (2 if window[boundary : boundary + 2] in {". ", "; "} else 0)
+                end = (
+                    start
+                    + boundary
+                    + (2 if window[boundary : boundary + 2] in {". ", "; "} else 0)
+                )
         chunk = source[start:end].strip()
         if chunk and (not chunks or chunk != chunks[-1]):
             chunks.append(chunk)
@@ -460,8 +536,14 @@ def business_relevance_score(text: str, context: ClientContext) -> float:
         score += 0.30
     if _contains_term(haystack, context.sector):
         score += 0.25
-    score += min(0.30, sum(0.15 for term in context.technologies if _contains_term(haystack, term)))
-    score += min(0.15, sum(0.15 for term in context.crown_jewels if _contains_term(haystack, term)))
+    score += min(
+        0.30,
+        sum(0.15 for term in context.technologies if _contains_term(haystack, term)),
+    )
+    score += min(
+        0.15,
+        sum(0.15 for term in context.crown_jewels if _contains_term(haystack, term)),
+    )
     return round(min(1.0, score), 6)
 
 
@@ -478,13 +560,22 @@ class OpenAICompatibleEmbeddingAdapter:
     ) -> None:
         normalized_provider = provider.strip().lower()
         if normalized_provider not in {"local", "openai"}:
-            raise EmbeddingConfigurationError("Embedding provider must be 'local' or 'openai'")
+            raise EmbeddingConfigurationError(
+                "Embedding provider must be 'local' or 'openai'"
+            )
         if not model.strip() or len(model) > 160:
             raise EmbeddingConfigurationError("Embedding model is missing or invalid")
         if dimensions <= 0 or dimensions > 65_535:
-            raise EmbeddingConfigurationError("Embedding dimensions are outside the supported range")
-        if normalized_provider == "openai" and not settings.threat_hunting_ai_cloud_enabled:
-            raise EmbeddingConfigurationError("Cloud embedding processing is disabled by operator policy")
+            raise EmbeddingConfigurationError(
+                "Embedding dimensions are outside the supported range"
+            )
+        if (
+            normalized_provider == "openai"
+            and not settings.threat_hunting_ai_cloud_enabled
+        ):
+            raise EmbeddingConfigurationError(
+                "Cloud embedding processing is disabled by operator policy"
+            )
 
         self.provider = normalized_provider
         self.model = model.strip()
@@ -497,11 +588,17 @@ class OpenAICompatibleEmbeddingAdapter:
 
         if self.provider == "openai":
             if not settings.openai_api_key:
-                raise EmbeddingConfigurationError("OpenAI embedding credentials are not configured")
-            return AsyncOpenAI(api_key=settings.openai_api_key, timeout=45.0, max_retries=1)
+                raise EmbeddingConfigurationError(
+                    "OpenAI embedding credentials are not configured"
+                )
+            return AsyncOpenAI(
+                api_key=settings.openai_api_key, timeout=45.0, max_retries=1
+            )
         base_url = str(settings.local_llm_base_url or "").strip().rstrip("/")
         if not base_url:
-            raise EmbeddingConfigurationError("Local embedding endpoint is not configured")
+            raise EmbeddingConfigurationError(
+                "Local embedding endpoint is not configured"
+            )
         from app.services.threat_hunting_ai import local_ai_endpoint_is_private
 
         if not local_ai_endpoint_is_private(base_url):
@@ -525,36 +622,56 @@ class OpenAICompatibleEmbeddingAdapter:
         response = await self._client.embeddings.create(**request)
         data = list(getattr(response, "data", []) or [])
         if len(data) != len(bounded):
-            raise EmbeddingValidationError("Embedding response count does not match input count")
+            raise EmbeddingValidationError(
+                "Embedding response count does not match input count"
+            )
 
         indexed: dict[int, Any] = {}
         for position, item in enumerate(data):
             item_index = _response_value(item, "index", position)
-            if isinstance(item_index, bool) or not isinstance(item_index, int) or item_index in indexed:
+            if (
+                isinstance(item_index, bool)
+                or not isinstance(item_index, int)
+                or item_index in indexed
+            ):
                 raise EmbeddingValidationError("Embedding response indexes are invalid")
             indexed[item_index] = item
         if set(indexed) != set(range(len(bounded))):
             raise EmbeddingValidationError("Embedding response indexes are incomplete")
 
-        return [self._validate_vector(_response_value(indexed[index], "embedding", None)) for index in range(len(bounded))]
+        return [
+            self._validate_vector(_response_value(indexed[index], "embedding", None))
+            for index in range(len(bounded))
+        ]
 
     async def embed_query(self, query: str) -> list[float]:
         vectors = await self.embed_texts([query])
         return vectors[0]
 
     def _validate_vector(self, raw_vector: Any) -> list[float]:
-        if not isinstance(raw_vector, (list, tuple)) or len(raw_vector) != self.dimensions:
-            raise EmbeddingValidationError(f"Embedding vector must contain exactly {self.dimensions} values")
+        if (
+            not isinstance(raw_vector, (list, tuple))
+            or len(raw_vector) != self.dimensions
+        ):
+            raise EmbeddingValidationError(
+                f"Embedding vector must contain exactly {self.dimensions} values"
+            )
         vector: list[float] = []
         for value in raw_vector:
             if isinstance(value, bool):
-                raise EmbeddingValidationError("Embedding vector contains a non-numeric value")
+                raise EmbeddingValidationError(
+                    "Embedding vector contains a non-numeric value"
+                )
             try:
                 numeric = float(value)
             except (TypeError, ValueError) as exc:
-                raise EmbeddingValidationError("Embedding vector contains a non-numeric value") from exc
+                raise EmbeddingValidationError(
+                    "Embedding vector contains a non-numeric value"
+                ) from exc
             if not math.isfinite(numeric):
-                raise EmbeddingValidationError("Embedding vector contains a non-finite value")
+                raise EmbeddingValidationError(
+                    "Embedding vector contains a non-finite value"
+                )
             vector.append(numeric)
         if not any(abs(value) > 1e-15 for value in vector):
             raise EmbeddingValidationError("Embedding vector cannot be all zeros")
@@ -569,7 +686,80 @@ def create_embedding_adapter() -> OpenAICompatibleEmbeddingAdapter:
     )
 
 
-async def collect_source_records(db: AsyncSession, source_types: Sequence[str] | None = None) -> list[SourceRecord]:
+async def probe_embedding_readiness(*, force: bool = False) -> dict[str, Any]:
+    """Verify the configured embedding contract against the private endpoint."""
+
+    global _embedding_probe_cache
+    configured = bool(
+        settings.rag_embedding_model
+        and settings.rag_embedding_dimensions
+        and (settings.rag_embedding_provider != "local" or settings.local_llm_base_url)
+    )
+    if not settings.rag_embedding_enabled:
+        _embedding_probe_cache = None
+        return {
+            "enabled": False,
+            "configured": configured,
+            "available": False,
+            "status": "disabled",
+            "provider": settings.rag_embedding_provider,
+            "model": settings.rag_embedding_model,
+            "dimensions": settings.rag_embedding_dimensions,
+            "reason": "Semantic embeddings are disabled; exact and full-text retrieval remain available.",
+        }
+
+    key = (
+        settings.rag_embedding_provider,
+        settings.rag_embedding_model,
+        settings.rag_embedding_dimensions,
+        str(settings.local_llm_base_url or ""),
+    )
+    now = time.monotonic()
+    cached = _embedding_probe_cache
+    if (
+        not force
+        and cached is not None
+        and cached[0] == key
+        and now - cached[1] < _EMBEDDING_PROBE_TTL_SECONDS
+    ):
+        return dict(cached[2])
+
+    try:
+        adapter = create_embedding_adapter()
+        vector = await adapter.embed_query(
+            "AdversaryGraph private embedding readiness probe"
+        )
+        result = {
+            "enabled": True,
+            "configured": True,
+            "available": True,
+            "status": "ready",
+            "provider": adapter.provider,
+            "model": adapter.model,
+            "dimensions": len(vector),
+            "reason": "The configured embedding endpoint returned a valid vector.",
+        }
+    except Exception as exc:
+        result = {
+            "enabled": True,
+            "configured": configured,
+            "available": False,
+            "status": "unavailable",
+            "provider": settings.rag_embedding_provider,
+            "model": settings.rag_embedding_model,
+            "dimensions": settings.rag_embedding_dimensions,
+            "reason": (
+                f"The configured embedding endpoint failed its contract probe "
+                f"({type(exc).__name__})."
+            ),
+        }
+    _embedding_probe_cache = (key, now, dict(result))
+    return result
+
+
+async def collect_source_records(
+    db: AsyncSession, source_types: Sequence[str] | None = None
+) -> list[SourceRecord]:
     """Collect the selected allowlisted source types in deterministic order."""
 
     selected = _validate_source_types(source_types)
@@ -611,7 +801,9 @@ async def reconcile_corpus(
     selected = _validate_source_types(source_types)
     now = datetime.now(timezone.utc)
     if run is None:
-        run = RAGIndexRun(source_types=list(selected), include_embeddings=bool(include_embeddings))
+        run = RAGIndexRun(
+            source_types=list(selected), include_embeddings=bool(include_embeddings)
+        )
         db.add(run)
     run.status = "running"
     run.source_types = list(selected)
@@ -635,24 +827,11 @@ async def reconcile_corpus(
         records = await collect_source_records(db, selected)
         run.documents_seen = len(records)
 
-        # RAG chunks are a derived index. For real SQLAlchemy sessions, clear
-        # chunks for the selected source types before loading existing documents
-        # so reconciliation can rebuild them deterministically without violating
-        # the (document_id, ordinal) uniqueness constraint on repeated runs.
-        # Unit tests use a lightweight fake session without SQL execution; that
-        # path still validates the pure reconciliation decision logic.
-        if hasattr(db, "execute"):
-            await db.execute(
-                delete(RAGChunk).where(
-                    RAGChunk.document_id.in_(
-                        select(RAGDocument.id).where(RAGDocument.source_type.in_(selected))
-                    )
-                )
-            )
-            await db.flush()
-
         existing = await _load_existing_documents(db, selected)
-        existing_by_key = {(doc.source_type, doc.source_id, doc.source_version): doc for doc in existing}
+        existing_by_key = {
+            (doc.source_type, doc.source_id, doc.source_version): doc
+            for doc in existing
+        }
         seen: set[tuple[str, str, str]] = set()
         pending_embeddings: list[RAGChunk] = []
 
@@ -660,7 +839,11 @@ async def reconcile_corpus(
             key = (record.source_type, record.source_id, record.source_version)
             seen.add(key)
             document = existing_by_key.get(key)
-            changed = document is None or document.content_hash != record.content_hash or not document.is_active or not document.chunks
+            changed = (
+                document is None
+                or _document_needs_update(document, record)
+                or not document.chunks
+            )
             if document is None:
                 document = _new_document(record, now)
                 db.add(document)
@@ -672,16 +855,18 @@ async def reconcile_corpus(
                     run.documents_updated += 1
 
             if changed:
-                document.chunks = _new_chunks(
+                changed_chunks = _reconcile_document_chunks(
                     document,
                     record,
                     embedding_requested=bool(
                         include_embeddings and settings.rag_embedding_enabled
                     ),
                 )
-                run.chunks_created += len(document.chunks)
+                run.chunks_created += changed_chunks
             if include_embeddings and settings.rag_embedding_enabled:
-                pending_embeddings.extend(chunk for chunk in document.chunks if _embedding_needed(chunk))
+                pending_embeddings.extend(
+                    chunk for chunk in document.chunks if _embedding_needed(chunk)
+                )
 
         for document in existing:
             key = (document.source_type, document.source_id, document.source_version)
@@ -696,6 +881,7 @@ async def reconcile_corpus(
             # safely retry chunks left pending by a provider/process failure.
             await db.flush()
             await db.commit()
+
             async def persist_heartbeat() -> None:
                 run.heartbeat_at = datetime.now(timezone.utc)
                 await db.commit()
@@ -725,14 +911,19 @@ async def reconcile_corpus(
         )
     except Exception as exc:
         run.status = "failed"
-        run.failure_summary = f"{type(exc).__name__}: corpus reconciliation failed"[:500]
+        run.failure_summary = f"{type(exc).__name__}: corpus reconciliation failed"[
+            :500
+        ]
         run.completed_at = datetime.now(timezone.utc)
         try:
             await db.flush()
-        except Exception:
-            # Preserve the original reconciliation failure. A SQL error may
-            # already have placed this transaction in a rollback-only state.
-            pass
+        # Preserve the original reconciliation error if the failed transaction
+        # can no longer flush its bounded status update.
+        except Exception as status_exc:
+            logger.warning(
+                "RAG reconciliation status flush failed error=%s",
+                type(status_exc).__name__,
+            )
         raise
 
 
@@ -742,6 +933,7 @@ async def hybrid_search(
     source_types: Sequence[str] | None = None,
     domain: str | None = None,
     client_profile_id: int | None = None,
+    company_space_id: UUID | None = None,
     limit: int = 12,
 ) -> SearchResponse:
     """Run exact, PostgreSQL FTS, and optional vector retrieval with RRF."""
@@ -765,21 +957,16 @@ async def hybrid_search(
     context: ClientContext | None = None
     business_context_checksum: str | None = None
     profile_query = ""
-    if client_profile_id is not None:
-        profile = await db.get(ClientProfile, client_profile_id)
-        if profile is None:
-            raise ValueError("client profile was not found")
-        context = _client_context(profile)
-        business_context_checksum = checksum({
-            "profile_id": profile.id,
-            "name": profile.name,
-            "sector": profile.sector,
-            "region": profile.region,
-            "technologies": list(profile.technologies or [])[:100],
-            "crown_jewels": list(profile.crown_jewels or [])[:100],
-        })
+    business_context = await load_business_context(
+        db,
+        client_profile_id=client_profile_id,
+        company_space_id=company_space_id,
+    )
+    if business_context is not None:
+        context = business_context.context
+        business_context_checksum = business_context.checksum
         profile_query = _profile_search_query(context)
-        # Loading a profile opens a transaction. Release it before any local
+        # Loading business context opens a transaction. Release it before local
         # embedding-provider call; the assist route rechecks this context after
         # generation before it accepts the result.
         await db.rollback()
@@ -790,15 +977,26 @@ async def hybrid_search(
     if settings.rag_embedding_enabled:
         try:
             adapter = create_embedding_adapter()
-            if adapter.is_remote and client_profile_id is not None:
-                raise EmbeddingConfigurationError("Business-profile queries require the private embedding provider")
+            if adapter.is_remote and business_context is not None:
+                raise EmbeddingConfigurationError(
+                    "Business-context queries require the private embedding provider"
+                )
             query_embedding = await adapter.embed_query(
                 _embedding_query(normalized_query, context)
             )
         except Exception as exc:
-            warnings.append(f"Vector retrieval unavailable ({type(exc).__name__}); exact and full-text results were used.")
+            warnings.append(
+                f"Vector retrieval unavailable ({type(exc).__name__}); exact and full-text results were used."
+            )
 
-    exact = await _exact_candidates(db, normalized_query, selected, normalized_domain, candidate_limit)
+    exact = await _exact_candidates(
+        db,
+        normalized_query,
+        selected,
+        normalized_domain,
+        candidate_limit,
+        space_id=company_space_id,
+    )
     if exact:
         modes.append("exact")
     lexical = await _fts_candidates(
@@ -808,6 +1006,7 @@ async def hybrid_search(
         normalized_domain,
         candidate_limit,
         profile_query=profile_query,
+        space_id=company_space_id,
     )
     modes.append("fts")
 
@@ -815,7 +1014,14 @@ async def hybrid_search(
     if query_embedding is not None:
         # Do not swallow PostgreSQL errors: a failed vector statement can
         # abort the transaction and must be visible to readiness checks.
-        vector = await _vector_candidates(db, query_embedding, selected, normalized_domain, candidate_limit)
+        vector = await _vector_candidates(
+            db,
+            query_embedding,
+            selected,
+            normalized_domain,
+            candidate_limit,
+            space_id=company_space_id,
+        )
         modes.append("vector")
 
     ranking_candidates = {"exact": exact, "fts": lexical, "vector": vector}
@@ -828,12 +1034,29 @@ async def hybrid_search(
     candidates = _merge_candidates(ranking_candidates, fused)
 
     relationship_targets = _relationship_target_types(normalized_query, selected)
-    if candidates and relationship_targets:
+    if relationship_targets:
         seeds = sorted(
             candidates.values(),
             key=lambda item: (item.fused_score, item.document.logical_key),
             reverse=True,
         )[:24]
+        if context is not None and profile_query:
+            context_seeds = await _fts_candidates(
+                db,
+                profile_query,
+                _BUSINESS_CONTEXT_SEED_TYPES,
+                normalized_domain,
+                24,
+                signal="business-context",
+                natural_language_fallback=False,
+                space_id=company_space_id,
+            )
+            existing_seed_ids = {str(seed.document.id) for seed in seeds}
+            seeds.extend(
+                seed
+                for seed in context_seeds
+                if str(seed.document.id) not in existing_seed_ids
+            )
         relationship_query = _relationship_search_query(seeds)
         if relationship_query:
             relationship = await _fts_candidates(
@@ -844,6 +1067,7 @@ async def hybrid_search(
                 candidate_limit,
                 signal="relationship",
                 natural_language_fallback=False,
+                space_id=company_space_id,
             )
             if relationship:
                 ranking_candidates["relationship"] = relationship
@@ -868,19 +1092,24 @@ async def hybrid_search(
 
     ordered = sorted(
         candidates.values(),
-        key=lambda item: (item.fused_score + item.profile_score * 0.02, item.fused_score, item.document.logical_key),
+        key=lambda item: (
+            item.fused_score + item.profile_score * 0.02,
+            item.fused_score,
+            item.document.logical_key,
+        ),
         reverse=True,
     )[:limit]
     excerpt_query = f"{normalized_query} {profile_query}".strip()
     items = tuple(_candidate_to_item(candidate, excerpt_query) for candidate in ordered)
     corpus_indexed_at = await db.scalar(
         select(func.max(RAGDocument.indexed_at)).where(
-            RAGDocument.is_active.is_(True),
-            RAGDocument.sanitized.is_(True),
+            *_search_filters(selected, normalized_domain, company_space_id),
         )
     )
     if corpus_indexed_at is None:
-        warnings.append("The sanitized RAG corpus is empty or has not been reconciled yet.")
+        warnings.append(
+            "The sanitized RAG corpus is empty or has not been reconciled yet."
+        )
     retrieval_mode = "+".join(modes) if modes else "none"
     return SearchResponse(
         items=items,
@@ -894,8 +1123,18 @@ async def hybrid_search(
 async def get_index_status(db: AsyncSession) -> dict[str, Any]:
     """Return bounded corpus/index health without exposing document content."""
 
-    active = int(await db.scalar(select(func.count(RAGDocument.id)).where(RAGDocument.is_active.is_(True))) or 0)
-    tombstoned = int(await db.scalar(select(func.count(RAGDocument.id)).where(RAGDocument.is_active.is_(False))) or 0)
+    active = int(
+        await db.scalar(
+            select(func.count(RAGDocument.id)).where(RAGDocument.is_active.is_(True))
+        )
+        or 0
+    )
+    tombstoned = int(
+        await db.scalar(
+            select(func.count(RAGDocument.id)).where(RAGDocument.is_active.is_(False))
+        )
+        or 0
+    )
     sanitized = int(
         await db.scalar(
             select(func.count(RAGDocument.id)).where(
@@ -936,7 +1175,9 @@ async def get_index_status(db: AsyncSession) -> dict[str, Any]:
         )
         or 0
     )
-    indexed_at = await db.scalar(select(func.max(RAGDocument.indexed_at)).where(RAGDocument.is_active.is_(True)))
+    indexed_at = await db.scalar(
+        select(func.max(RAGDocument.indexed_at)).where(RAGDocument.is_active.is_(True))
+    )
     source_rows = (
         await db.execute(
             select(RAGDocument.source_type, func.count(RAGDocument.id))
@@ -945,7 +1186,9 @@ async def get_index_status(db: AsyncSession) -> dict[str, Any]:
             .order_by(RAGDocument.source_type)
         )
     ).all()
-    latest_run = await db.scalar(select(RAGIndexRun).order_by(RAGIndexRun.created_at.desc()).limit(1))
+    latest_run = await db.scalar(
+        select(RAGIndexRun).order_by(RAGIndexRun.created_at.desc()).limit(1)
+    )
     return {
         "enabled": bool(settings.rag_enabled),
         "embedding_enabled": bool(settings.rag_embedding_enabled),
@@ -961,13 +1204,21 @@ async def get_index_status(db: AsyncSession) -> dict[str, Any]:
         "chunks_embedded": embedded,
         "chunks_pending_or_failed": pending,
         "ready_embeddings": bool(embedded > 0),
-        "source_counts": {str(source_type): int(count) for source_type, count in source_rows},
+        "source_counts": {
+            str(source_type): int(count) for source_type, count in source_rows
+        },
         "corpus_indexed_at": indexed_at,
         "latest_run": _index_run_dict(latest_run) if latest_run else None,
     }
 
 
-async def get_indexed_entity(db: AsyncSession, source_type: str, source_id: str) -> dict[str, Any] | None:
+async def get_indexed_entity(
+    db: AsyncSession,
+    source_type: str,
+    source_id: str,
+    *,
+    space_id: UUID | None = None,
+) -> dict[str, Any] | None:
     """Return one active sanitized indexed entity and its provenance chunks."""
 
     selected = _validate_source_types([source_type])
@@ -982,6 +1233,14 @@ async def get_indexed_entity(db: AsyncSession, source_type: str, source_id: str)
             RAGDocument.source_id == normalized_id,
             RAGDocument.is_active.is_(True),
             RAGDocument.sanitized.is_(True),
+            (
+                RAGDocument.space_id.is_(None)
+                if space_id is None
+                else or_(
+                    RAGDocument.space_id.is_(None),
+                    RAGDocument.space_id == space_id,
+                )
+            ),
         )
         .order_by(RAGDocument.indexed_at.desc())
         .limit(1)
@@ -1027,10 +1286,14 @@ async def _collect_attack_techniques(db: AsyncSession) -> list[SourceRecord]:
             select(Technique, AttackVersion)
             .options(
                 selectinload(Technique.tactics),
-                selectinload(Technique.group_usages).selectinload(AptGroupTechnique.group),
+                selectinload(Technique.group_usages).selectinload(
+                    AptGroupTechnique.group
+                ),
             )
             .join(AttackVersion, AttackVersion.id == Technique.version_id)
-            .where(AttackVersion.is_latest.is_(True), Technique.is_deprecated.is_(False))
+            .where(
+                AttackVersion.is_latest.is_(True), Technique.is_deprecated.is_(False)
+            )
             .order_by(Technique.domain, Technique.attack_id)
         )
     ).all()
@@ -1044,19 +1307,32 @@ async def _collect_attack_techniques(db: AsyncSession) -> list[SourceRecord]:
         actor_names = _safe_values(
             [usage.group.name for usage in technique.group_usages if usage.group]
         )
-        actor_usage = _safe_values([
-            _compose_sections((
-                ("Actor", f"{usage.group.attack_id} — {usage.group.name}" if usage.group else ""),
-                ("Stored ATT&CK usage", usage.use_description),
-            ))
-            for usage in technique.group_usages
-            if usage.group
-        ])
+        actor_usage = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        (
+                            "Actor",
+                            (
+                                f"{usage.group.attack_id} — {usage.group.name}"
+                                if usage.group
+                                else ""
+                            ),
+                        ),
+                        ("Stored ATT&CK usage", usage.use_description),
+                    )
+                )
+                for usage in technique.group_usages
+                if usage.group
+            ]
+        )
         records.append(
             SourceRecord(
                 source_type="attack_technique",
                 source_id=technique.attack_id,
-                source_version=_attack_source_version(technique.domain, attack_version.version),
+                source_version=_attack_source_version(
+                    technique.domain, attack_version.version
+                ),
                 logical_key=technique.attack_id,
                 title=f"{technique.attack_id} — {technique.name}",
                 body=_compose_sections(
@@ -1096,7 +1372,9 @@ async def _collect_attack_groups(db: AsyncSession) -> list[SourceRecord]:
         await db.execute(
             select(AptGroup, AttackVersion)
             .options(
-                selectinload(AptGroup.technique_usages).selectinload(AptGroupTechnique.technique),
+                selectinload(AptGroup.technique_usages).selectinload(
+                    AptGroupTechnique.technique
+                ),
                 selectinload(AptGroup.campaigns),
             )
             .join(AttackVersion, AttackVersion.id == AptGroup.version_id)
@@ -1107,52 +1385,74 @@ async def _collect_attack_groups(db: AsyncSession) -> list[SourceRecord]:
     records: list[SourceRecord] = []
     for group, attack_version in rows:
         technique_usages = [
-            usage for usage in group.technique_usages
+            usage
+            for usage in group.technique_usages
             if usage.technique and not usage.technique.is_deprecated
         ]
-        technique_ids = _safe_values([usage.technique.attack_id for usage in technique_usages])
-        technique_names = _safe_values([usage.technique.name for usage in technique_usages])
-        campaign_ids = _safe_values([campaign.attack_id for campaign in group.campaigns])
+        technique_ids = _safe_values(
+            [usage.technique.attack_id for usage in technique_usages]
+        )
+        technique_names = _safe_values(
+            [usage.technique.name for usage in technique_usages]
+        )
+        campaign_ids = _safe_values(
+            [campaign.attack_id for campaign in group.campaigns]
+        )
         campaign_names = _safe_values([campaign.name for campaign in group.campaigns])
-        usage_evidence = _safe_values([
-            _compose_sections((
-                ("Technique", f"{usage.technique.attack_id} — {usage.technique.name}"),
-                ("Stored ATT&CK usage", usage.use_description),
-            ))
-            for usage in technique_usages
-        ])
-        records.append(SourceRecord(
-            source_type="attack_group",
-            source_id=group.attack_id,
-            source_version=_attack_source_version(group.domain, attack_version.version or group.attack_version),
-            logical_key=group.attack_id,
-            title=f"{group.attack_id} — {group.name}",
-            body=_compose_sections(
-                (
-                    ("Description", group.description),
-                    ("Aliases", _safe_values(group.aliases)),
-                    ("Techniques", usage_evidence),
-                    ("Attributed campaigns", [
-                        f"{campaign.attack_id} — {campaign.name}" for campaign in group.campaigns
-                    ]),
-                    ("Created", group.created),
-                    ("Modified", group.modified),
+        usage_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        (
+                            "Technique",
+                            f"{usage.technique.attack_id} — {usage.technique.name}",
+                        ),
+                        ("Stored ATT&CK usage", usage.use_description),
+                    )
                 )
-            ),
-            canonical_route=f"/apt?group={quote(group.attack_id)}",
-            domain=group.domain,
-            tlp="TLP:CLEAR",
-            source_updated_at=attack_version.ingested_at,
-            metadata={
-                "attack_id": group.attack_id,
-                "stix_id": group.stix_id,
-                "aliases": _safe_values(group.aliases),
-                "technique_ids": technique_ids,
-                "technique_names": technique_names,
-                "campaign_ids": campaign_ids,
-                "campaign_names": campaign_names,
-            },
-        ))
+                for usage in technique_usages
+            ]
+        )
+        records.append(
+            SourceRecord(
+                source_type="attack_group",
+                source_id=group.attack_id,
+                source_version=_attack_source_version(
+                    group.domain, attack_version.version or group.attack_version
+                ),
+                logical_key=group.attack_id,
+                title=f"{group.attack_id} — {group.name}",
+                body=_compose_sections(
+                    (
+                        ("Description", group.description),
+                        ("Aliases", _safe_values(group.aliases)),
+                        ("Techniques", usage_evidence),
+                        (
+                            "Attributed campaigns",
+                            [
+                                f"{campaign.attack_id} — {campaign.name}"
+                                for campaign in group.campaigns
+                            ],
+                        ),
+                        ("Created", group.created),
+                        ("Modified", group.modified),
+                    )
+                ),
+                canonical_route=f"/apt?group={quote(group.attack_id)}",
+                domain=group.domain,
+                tlp="TLP:CLEAR",
+                source_updated_at=attack_version.ingested_at,
+                metadata={
+                    "attack_id": group.attack_id,
+                    "stix_id": group.stix_id,
+                    "aliases": _safe_values(group.aliases),
+                    "technique_ids": technique_ids,
+                    "technique_names": technique_names,
+                    "campaign_ids": campaign_ids,
+                    "campaign_names": campaign_names,
+                },
+            )
+        )
     return records
 
 
@@ -1161,7 +1461,9 @@ async def _collect_attack_campaigns(db: AsyncSession) -> list[SourceRecord]:
         await db.execute(
             select(Campaign, AttackVersion)
             .options(
-                selectinload(Campaign.technique_usages).selectinload(CampaignTechnique.technique),
+                selectinload(Campaign.technique_usages).selectinload(
+                    CampaignTechnique.technique
+                ),
                 selectinload(Campaign.groups),
             )
             .join(AttackVersion, AttackVersion.id == Campaign.version_id)
@@ -1172,50 +1474,70 @@ async def _collect_attack_campaigns(db: AsyncSession) -> list[SourceRecord]:
     records: list[SourceRecord] = []
     for campaign, attack_version in rows:
         technique_usages = [
-            usage for usage in campaign.technique_usages
+            usage
+            for usage in campaign.technique_usages
             if usage.technique and not usage.technique.is_deprecated
         ]
-        technique_ids = _safe_values([usage.technique.attack_id for usage in technique_usages])
-        technique_names = _safe_values([usage.technique.name for usage in technique_usages])
+        technique_ids = _safe_values(
+            [usage.technique.attack_id for usage in technique_usages]
+        )
+        technique_names = _safe_values(
+            [usage.technique.name for usage in technique_usages]
+        )
         group_ids = _safe_values([group.attack_id for group in campaign.groups])
         group_names = _safe_values([group.name for group in campaign.groups])
-        usage_evidence = _safe_values([
-            _compose_sections((
-                ("Technique", f"{usage.technique.attack_id} — {usage.technique.name}"),
-                ("Stored ATT&CK usage", usage.use_description),
-            ))
-            for usage in technique_usages
-        ])
-        records.append(SourceRecord(
-            source_type="attack_campaign",
-            source_id=campaign.attack_id,
-            source_version=_attack_source_version(campaign.domain, attack_version.version),
-            logical_key=campaign.attack_id,
-            title=f"{campaign.attack_id} — {campaign.name}",
-            body=_compose_sections(
-                (
-                    ("Description", campaign.description),
-                    ("Attributed actors", [
-                        f"{group.attack_id} — {group.name}" for group in campaign.groups
-                    ]),
-                    ("Techniques", usage_evidence),
-                    ("First seen", campaign.first_seen),
-                    ("Last seen", campaign.last_seen),
+        usage_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        (
+                            "Technique",
+                            f"{usage.technique.attack_id} — {usage.technique.name}",
+                        ),
+                        ("Stored ATT&CK usage", usage.use_description),
+                    )
                 )
-            ),
-            canonical_route=f"/apt?campaign={quote(campaign.attack_id)}&tab=campaigns",
-            domain=campaign.domain,
-            tlp="TLP:CLEAR",
-            source_updated_at=attack_version.ingested_at,
-            metadata={
-                "attack_id": campaign.attack_id,
-                "stix_id": campaign.stix_id,
-                "technique_ids": technique_ids,
-                "technique_names": technique_names,
-                "group_ids": group_ids,
-                "group_names": group_names,
-            },
-        ))
+                for usage in technique_usages
+            ]
+        )
+        records.append(
+            SourceRecord(
+                source_type="attack_campaign",
+                source_id=campaign.attack_id,
+                source_version=_attack_source_version(
+                    campaign.domain, attack_version.version
+                ),
+                logical_key=campaign.attack_id,
+                title=f"{campaign.attack_id} — {campaign.name}",
+                body=_compose_sections(
+                    (
+                        ("Description", campaign.description),
+                        (
+                            "Attributed actors",
+                            [
+                                f"{group.attack_id} — {group.name}"
+                                for group in campaign.groups
+                            ],
+                        ),
+                        ("Techniques", usage_evidence),
+                        ("First seen", campaign.first_seen),
+                        ("Last seen", campaign.last_seen),
+                    )
+                ),
+                canonical_route=f"/apt?campaign={quote(campaign.attack_id)}&tab=campaigns",
+                domain=campaign.domain,
+                tlp="TLP:CLEAR",
+                source_updated_at=attack_version.ingested_at,
+                metadata={
+                    "attack_id": campaign.attack_id,
+                    "stix_id": campaign.stix_id,
+                    "technique_ids": technique_ids,
+                    "technique_names": technique_names,
+                    "group_ids": group_ids,
+                    "group_names": group_names,
+                },
+            )
+        )
     return records
 
 
@@ -1231,52 +1553,67 @@ async def _collect_actor_intel(db: AsyncSession) -> list[SourceRecord]:
                     ActorIntelObservation.id,
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     records: list[SourceRecord] = []
     for observation in rows:
         actor_id = str(observation.actor_attack_id or "").strip()
-        actor_label = f"{actor_id} — {observation.actor_name}" if actor_id else observation.actor_name
-        records.append(SourceRecord(
-            source_type="actor_intel",
-            source_id=str(observation.id),
-            source_version="current",
-            logical_key=f"actor-observation:{observation.id}",
-            title=f"{actor_label}: {observation.observation_type} — {observation.value}"[:700],
-            body=_compose_sections((
-                ("Actor", actor_label),
-                ("Observation type", observation.observation_type),
-                ("Observed value", observation.value),
-                ("Confidence", observation.confidence),
-                ("First seen", observation.first_seen),
-                ("Last seen", observation.last_seen),
-                ("Available source evidence", observation.evidence),
-                ("Source", observation.source_id),
-                ("Source reference", _safe_source_reference(observation.source_url)),
-            )),
-            canonical_route=(
-                f"/apt?group={quote(actor_id)}&tab=overview"
-                if actor_id
-                else "/sector-intel"
-            ),
-            # IntelSource has no per-observation distribution marking. Keep
-            # these records local-only unless a future ingestion path stores
-            # and validates explicit TLP metadata.
-            tlp="TLP:AMBER+STRICT",
-            source_updated_at=observation.created_at,
-            metadata={
-                "actor_attack_id": actor_id,
-                "actor_name": observation.actor_name,
-                "actor_ids": [actor_id] if actor_id else [],
-                "actor_names": [observation.actor_name],
-                "observation_type": observation.observation_type,
-                "observation_value": observation.value,
-                "normalized_value": observation.normalized_value,
-                "confidence": int(observation.confidence or 0),
-                "source_id": observation.source_id,
-                "source_reference": _safe_source_reference(observation.source_url),
-            },
-        ))
+        actor_label = (
+            f"{actor_id} — {observation.actor_name}"
+            if actor_id
+            else observation.actor_name
+        )
+        records.append(
+            SourceRecord(
+                source_type="actor_intel",
+                source_id=str(observation.id),
+                source_version="current",
+                logical_key=f"actor-observation:{observation.id}",
+                title=f"{actor_label}: {observation.observation_type} — {observation.value}"[
+                    :700
+                ],
+                body=_compose_sections(
+                    (
+                        ("Actor", actor_label),
+                        ("Observation type", observation.observation_type),
+                        ("Observed value", observation.value),
+                        ("Confidence", observation.confidence),
+                        ("First seen", observation.first_seen),
+                        ("Last seen", observation.last_seen),
+                        ("Available source evidence", observation.evidence),
+                        ("Source", observation.source_id),
+                        (
+                            "Source reference",
+                            _safe_source_reference(observation.source_url),
+                        ),
+                    )
+                ),
+                canonical_route=(
+                    f"/apt?group={quote(actor_id)}&tab=overview"
+                    if actor_id
+                    else "/sector-intel"
+                ),
+                # IntelSource has no per-observation distribution marking. Keep
+                # these records local-only unless a future ingestion path stores
+                # and validates explicit TLP metadata.
+                tlp="TLP:AMBER+STRICT",
+                source_updated_at=observation.created_at,
+                metadata={
+                    "actor_attack_id": actor_id,
+                    "actor_name": observation.actor_name,
+                    "actor_ids": [actor_id] if actor_id else [],
+                    "actor_names": [observation.actor_name],
+                    "observation_type": observation.observation_type,
+                    "observation_value": observation.value,
+                    "normalized_value": observation.normalized_value,
+                    "confidence": int(observation.confidence or 0),
+                    "source_id": observation.source_id,
+                    "source_reference": _safe_source_reference(observation.source_url),
+                },
+            )
+        )
     return records
 
 
@@ -1288,69 +1625,79 @@ async def _collect_iocs(db: AsyncSession) -> list[SourceRecord]:
                 .options(selectinload(IOCIndicator.actor_links))
                 .order_by(IOCIndicator.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     records: list[SourceRecord] = []
     for indicator in rows:
         if not str(indicator.value or "").strip():
             continue
-        actor_ids = _safe_values([link.actor_attack_id for link in indicator.actor_links])
+        actor_ids = _safe_values(
+            [link.actor_attack_id for link in indicator.actor_links]
+        )
         actor_names = _safe_values([link.actor_name for link in indicator.actor_links])
-        actor_evidence = _safe_values([
-            _compose_sections((
-                ("Actor", f"{link.actor_attack_id} — {link.actor_name}"),
-                ("Relationship", link.relationship_type),
-                ("Confidence", link.confidence),
-                ("Source", link.source_id),
-                ("Available source evidence", link.evidence),
-            ))
-            for link in indicator.actor_links
-        ])
-        records.append(SourceRecord(
-            source_type="ioc",
-            source_id=str(indicator.id),
-            source_version="current",
-            # Exact observable lookup uses the indexed logical key. Indicator
-            # type remains explicit in title/body/metadata.
-            logical_key=str(indicator.value).casefold()[:500],
-            title=f"{indicator.indicator_type}: {indicator.value}"[:700],
-            body=_compose_sections(
-                (
-                    ("Indicator", indicator.value),
-                    ("Type", indicator.indicator_type),
-                    ("Description", indicator.description),
-                    ("Malware family", indicator.malware_family),
-                    ("Campaign", indicator.campaign),
-                    ("ATT&CK techniques", _safe_values(indicator.technique_ids)),
-                    ("Linked actors", actor_evidence),
-                    ("Tags", _safe_values(indicator.tags)),
-                    ("First seen", indicator.first_seen),
-                    ("Last seen", indicator.last_seen),
-                    ("Confidence", indicator.confidence),
-                    ("Source", indicator.source_id),
+        actor_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        ("Actor", f"{link.actor_attack_id} — {link.actor_name}"),
+                        ("Relationship", link.relationship_type),
+                        ("Confidence", link.confidence),
+                        ("Source", link.source_id),
+                        ("Available source evidence", link.evidence),
+                    )
                 )
-            ),
-            canonical_route=f"/ioc-library/{indicator.id}",
-            # Unknown/malformed markings fail closed. Valid legacy labels such
-            # as "clear" remain accepted by normalize_tlp.
-            tlp=normalize_tlp(indicator.tlp),
-            source_updated_at=indicator.updated_at,
-            metadata={
-                "indicator_type": indicator.indicator_type,
-                "indicator_value": indicator.value,
-                "indicator_refs": [f"ioc-record-{indicator.id}"],
-                "source_id": indicator.source_id,
-                "confidence": int(indicator.confidence or 0),
-                "malware_family": indicator.malware_family or "",
-                "campaign": indicator.campaign or "",
-                "technique_ids": _safe_values(indicator.technique_ids),
-                "actor_ids": actor_ids,
-                "actor_names": actor_names,
-                "tags": _safe_values(indicator.tags),
-                "first_seen": indicator.first_seen or "",
-                "last_seen": indicator.last_seen or "",
-            },
-        ))
+                for link in indicator.actor_links
+            ]
+        )
+        records.append(
+            SourceRecord(
+                source_type="ioc",
+                source_id=str(indicator.id),
+                source_version="current",
+                # Exact observable lookup uses the indexed logical key. Indicator
+                # type remains explicit in title/body/metadata.
+                logical_key=str(indicator.value).casefold()[:500],
+                title=f"{indicator.indicator_type}: {indicator.value}"[:700],
+                body=_compose_sections(
+                    (
+                        ("Indicator", indicator.value),
+                        ("Type", indicator.indicator_type),
+                        ("Description", indicator.description),
+                        ("Malware family", indicator.malware_family),
+                        ("Campaign", indicator.campaign),
+                        ("ATT&CK techniques", _safe_values(indicator.technique_ids)),
+                        ("Linked actors", actor_evidence),
+                        ("Tags", _safe_values(indicator.tags)),
+                        ("First seen", indicator.first_seen),
+                        ("Last seen", indicator.last_seen),
+                        ("Confidence", indicator.confidence),
+                        ("Source", indicator.source_id),
+                    )
+                ),
+                canonical_route=f"/ioc-library/{indicator.id}",
+                # Unknown/malformed markings fail closed. Valid legacy labels such
+                # as "clear" remain accepted by normalize_tlp.
+                tlp=normalize_tlp(indicator.tlp),
+                source_updated_at=indicator.updated_at,
+                metadata={
+                    "indicator_type": indicator.indicator_type,
+                    "indicator_value": indicator.value,
+                    "indicator_refs": [f"ioc-record-{indicator.id}"],
+                    "source_id": indicator.source_id,
+                    "confidence": int(indicator.confidence or 0),
+                    "malware_family": indicator.malware_family or "",
+                    "campaign": indicator.campaign or "",
+                    "technique_ids": _safe_values(indicator.technique_ids),
+                    "actor_ids": actor_ids,
+                    "actor_names": actor_names,
+                    "tags": _safe_values(indicator.tags),
+                    "first_seen": indicator.first_seen or "",
+                    "last_seen": indicator.last_seen or "",
+                },
+            )
+        )
     return records
 
 
@@ -1368,7 +1715,9 @@ async def _collect_cves(db: AsyncSession) -> list[SourceRecord]:
                 )
                 .order_by(CVERecord.cve_id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     records: list[SourceRecord] = []
     for cve in rows:
@@ -1377,9 +1726,9 @@ async def _collect_cves(db: AsyncSession) -> list[SourceRecord]:
         technique_ids = _safe_values([link.attack_id for link in cve.technique_links])
         actor_ids = _safe_values([link.actor_attack_id for link in cve.actor_links])
         actor_names = _safe_values([link.actor_name for link in cve.actor_links])
-        indicator_refs = _safe_values([
-            f"ioc-record-{link.indicator_id}" for link in cve.ioc_links
-        ])
+        indicator_refs = _safe_values(
+            [f"ioc-record-{link.indicator_id}" for link in cve.ioc_links]
+        )
         linked_ioc_tlps: list[str] = []
         unresolved_relationship_provenance = bool(cve.actor_links)
         for link in cve.ioc_links:
@@ -1395,84 +1744,98 @@ async def _collect_cves(db: AsyncSession) -> list[SourceRecord]:
             linked_ioc_tlps.append("TLP:AMBER+STRICT")
         relationship_evidence_is_sensitive = bool(cve.ioc_links or cve.actor_links)
         effective_tlp = _strictest_tlp(linked_ioc_tlps)
-        technique_evidence = _safe_values([
-            _compose_sections((
-                ("Technique", link.attack_id),
-                ("Relationship", link.relationship_type),
-                ("Confidence", link.confidence),
-                ("Source", link.source_id),
-                ("Available source evidence", link.evidence),
-            ))
-            for link in cve.technique_links
-        ])
-        actor_evidence = _safe_values([
-            _compose_sections((
-                ("Actor", f"{link.actor_attack_id} — {link.actor_name}"),
-                ("Relationship", link.relationship_type),
-                ("Confidence", link.confidence),
-                ("Source", link.source_id),
-                ("Available source evidence", link.evidence),
-            ))
-            for link in cve.actor_links
-        ])
-        ioc_evidence = _safe_values([
-            _compose_sections((
-                ("Indicator record", f"ioc-record-{link.indicator_id}"),
-                ("Relationship", link.relationship_type),
-                ("Confidence", link.confidence),
-                ("Source", link.source_id),
-                ("Available source evidence", link.evidence),
-            ))
-            for link in cve.ioc_links
-        ])
-        records.append(SourceRecord(
-            source_type="cve",
-            source_id=cve.cve_id,
-            source_version="current",
-            logical_key=cve.cve_id,
-            title=f"{cve.cve_id} — {cve.cvss_severity or 'unrated'}",
-            body=_compose_sections(
-                (
-                    ("Description", cve.description),
-                    ("Status", cve.vuln_status),
-                    ("CVSS score", cve.cvss_score),
-                    ("CVSS severity", cve.cvss_severity),
-                    ("CVSS vector", cve.cvss_vector),
-                    ("CWEs", _safe_values(cve.cwe_ids)),
-                    ("Affected CPEs", _safe_values(cve.cpe_matches)),
-                    ("Known exploited", bool(cve.known_exploited)),
-                    ("Linked ATT&CK techniques", technique_evidence),
-                    ("Linked actors", actor_evidence),
-                    ("Linked indicator records", ioc_evidence),
-                    ("KEV due date", cve.kev_due_date),
-                    ("KEV action", cve.kev_required_action),
-                    ("Published", cve.published),
-                    ("Last modified", cve.last_modified),
-                    ("Tags", _safe_values(cve.tags)),
+        technique_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        ("Technique", link.attack_id),
+                        ("Relationship", link.relationship_type),
+                        ("Confidence", link.confidence),
+                        ("Source", link.source_id),
+                        ("Available source evidence", link.evidence),
+                    )
                 )
-            ),
-            canonical_route=f"/cve?search={quote(cve.cve_id)}",
-            tlp=effective_tlp,
-            # Relationship evidence may contain restricted observables or
-            # analyst narrative, but the current link schema has no dedicated
-            # legal-sensitivity flag. Fail closed until it does.
-            legal_sensitive=relationship_evidence_is_sensitive,
-            source_updated_at=cve.updated_at,
-            metadata={
-                "cve_id": cve.cve_id,
-                "source_id": cve.source_id or "",
-                "cvss_score": cve.cvss_score or "",
-                "cvss_severity": cve.cvss_severity or "",
-                "known_exploited": bool(cve.known_exploited),
-                "technique_ids": technique_ids,
-                "actor_ids": actor_ids,
-                "actor_names": actor_names,
-                "indicator_refs": indicator_refs,
-                "cwe_ids": _safe_values(cve.cwe_ids),
-                "cpe_matches": _safe_values(cve.cpe_matches),
-                "tags": _safe_values(cve.tags),
-            },
-        ))
+                for link in cve.technique_links
+            ]
+        )
+        actor_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        ("Actor", f"{link.actor_attack_id} — {link.actor_name}"),
+                        ("Relationship", link.relationship_type),
+                        ("Confidence", link.confidence),
+                        ("Source", link.source_id),
+                        ("Available source evidence", link.evidence),
+                    )
+                )
+                for link in cve.actor_links
+            ]
+        )
+        ioc_evidence = _safe_values(
+            [
+                _compose_sections(
+                    (
+                        ("Indicator record", f"ioc-record-{link.indicator_id}"),
+                        ("Relationship", link.relationship_type),
+                        ("Confidence", link.confidence),
+                        ("Source", link.source_id),
+                        ("Available source evidence", link.evidence),
+                    )
+                )
+                for link in cve.ioc_links
+            ]
+        )
+        records.append(
+            SourceRecord(
+                source_type="cve",
+                source_id=cve.cve_id,
+                source_version="current",
+                logical_key=cve.cve_id,
+                title=f"{cve.cve_id} — {cve.cvss_severity or 'unrated'}",
+                body=_compose_sections(
+                    (
+                        ("Description", cve.description),
+                        ("Status", cve.vuln_status),
+                        ("CVSS score", cve.cvss_score),
+                        ("CVSS severity", cve.cvss_severity),
+                        ("CVSS vector", cve.cvss_vector),
+                        ("CWEs", _safe_values(cve.cwe_ids)),
+                        ("Affected CPEs", _safe_values(cve.cpe_matches)),
+                        ("Known exploited", bool(cve.known_exploited)),
+                        ("Linked ATT&CK techniques", technique_evidence),
+                        ("Linked actors", actor_evidence),
+                        ("Linked indicator records", ioc_evidence),
+                        ("KEV due date", cve.kev_due_date),
+                        ("KEV action", cve.kev_required_action),
+                        ("Published", cve.published),
+                        ("Last modified", cve.last_modified),
+                        ("Tags", _safe_values(cve.tags)),
+                    )
+                ),
+                canonical_route=f"/cve?search={quote(cve.cve_id)}",
+                tlp=effective_tlp,
+                # Relationship evidence may contain restricted observables or
+                # analyst narrative, but the current link schema has no dedicated
+                # legal-sensitivity flag. Fail closed until it does.
+                legal_sensitive=relationship_evidence_is_sensitive,
+                source_updated_at=cve.updated_at,
+                metadata={
+                    "cve_id": cve.cve_id,
+                    "source_id": cve.source_id or "",
+                    "cvss_score": cve.cvss_score or "",
+                    "cvss_severity": cve.cvss_severity or "",
+                    "known_exploited": bool(cve.known_exploited),
+                    "technique_ids": technique_ids,
+                    "actor_ids": actor_ids,
+                    "actor_names": actor_names,
+                    "indicator_refs": indicator_refs,
+                    "cwe_ids": _safe_values(cve.cwe_ids),
+                    "cpe_matches": _safe_values(cve.cpe_matches),
+                    "tags": _safe_values(cve.tags),
+                },
+            )
+        )
     return records
 
 
@@ -1487,9 +1850,16 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
     ).all()
     records: list[SourceRecord] = []
     for report, result in rows:
-        technique_ids = _extract_named_values(result.extracted_techniques if result else [], ("attack_id", "technique_id"))
-        actor_ids = _extract_named_values(result.apt_matches if result else [], ("group_attack_id", "attack_id", "name"))
-        title = str(report.name or report.filename or f"Analysis report {report.id}").strip()
+        technique_ids = _extract_named_values(
+            result.extracted_techniques if result else [], ("attack_id", "technique_id")
+        )
+        actor_ids = _extract_named_values(
+            result.apt_matches if result else [],
+            ("group_attack_id", "attack_id", "name"),
+        )
+        title = str(
+            report.name or report.filename or f"Analysis report {report.id}"
+        ).strip()
         body = _compose_sections(
             (
                 ("Summary", result.summary if result else ""),
@@ -1525,7 +1895,11 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_knowledge(db: AsyncSession) -> list[SourceRecord]:
-    rows = list((await db.execute(select(KnowledgeArticle).order_by(KnowledgeArticle.id))).scalars().all())
+    rows = list(
+        (await db.execute(select(KnowledgeArticle).order_by(KnowledgeArticle.id)))
+        .scalars()
+        .all()
+    )
     return [
         SourceRecord(
             source_type="knowledge",
@@ -1557,10 +1931,20 @@ async def _collect_knowledge(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_threat_signals(db: AsyncSession) -> list[SourceRecord]:
-    rows = list((await db.execute(select(ThreatSignal).order_by(ThreatSignal.created_at, ThreatSignal.id))).scalars().all())
+    rows = list(
+        (
+            await db.execute(
+                select(ThreatSignal).order_by(ThreatSignal.created_at, ThreatSignal.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     records: list[SourceRecord] = []
     for signal in rows:
-        ioc_values = _extract_named_values(signal.iocs, ("value", "indicator", "observable"))
+        ioc_values = _extract_named_values(
+            signal.iocs, ("value", "indicator", "observable")
+        )
         records.append(
             SourceRecord(
                 source_type="threat_signal",
@@ -1607,7 +1991,17 @@ async def _collect_threat_signals(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_threat_hunts(db: AsyncSession) -> list[SourceRecord]:
-    rows = list((await db.execute(select(ThreatHuntRequest).order_by(ThreatHuntRequest.created_at, ThreatHuntRequest.id))).scalars().all())
+    rows = list(
+        (
+            await db.execute(
+                select(ThreatHuntRequest).order_by(
+                    ThreatHuntRequest.created_at, ThreatHuntRequest.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     return [
         SourceRecord(
             source_type="threat_hunt",
@@ -1658,7 +2052,17 @@ async def _collect_threat_hunts(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_evidence_nodes(db: AsyncSession) -> list[SourceRecord]:
-    rows = list((await db.execute(select(EvidenceGraphNode).order_by(EvidenceGraphNode.created_at, EvidenceGraphNode.id))).scalars().all())
+    rows = list(
+        (
+            await db.execute(
+                select(EvidenceGraphNode).order_by(
+                    EvidenceGraphNode.created_at, EvidenceGraphNode.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     return [
         SourceRecord(
             source_type="evidence_node",
@@ -1716,8 +2120,18 @@ async def _collect_evidence_nodes(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_assets(db: AsyncSession) -> list[SourceRecord]:
-    rows = list((await db.execute(select(AssetRegistryItem).order_by(AssetRegistryItem.last_seen_at, AssetRegistryItem.id))).scalars().all())
-    return [
+    rows = list(
+        (
+            await db.execute(
+                select(AssetRegistryItem).order_by(
+                    AssetRegistryItem.last_seen_at, AssetRegistryItem.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    records = [
         SourceRecord(
             source_type="asset",
             source_id=str(asset.id),
@@ -1768,16 +2182,80 @@ async def _collect_assets(db: AsyncSession) -> list[SourceRecord]:
         for asset in rows
         if str(asset.name or "").strip()
     ]
+    space_assets = list(
+        (
+            await db.execute(
+                select(ThreatSpaceAsset).order_by(
+                    ThreatSpaceAsset.space_id,
+                    ThreatSpaceAsset.updated_at,
+                    ThreatSpaceAsset.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    records.extend(
+        SourceRecord(
+            source_type="asset",
+            source_id=f"space:{asset.space_id}:{asset.id}",
+            source_version="current",
+            logical_key=f"{asset.space_id}:{asset.asset_id}"[:500],
+            title=asset.name[:700],
+            body=_compose_sections(
+                (
+                    ("Company space", asset.space_id),
+                    ("Inventory ID", asset.asset_id),
+                    ("Asset type", asset.asset_type),
+                    ("Environment", asset.environment),
+                    ("Owner", asset.owner),
+                    ("Exposure", asset.exposure),
+                    ("Criticality", asset.criticality),
+                    ("IP addresses", _safe_values(asset.ip_addresses)),
+                    ("Domains", _safe_values(asset.domains)),
+                    ("Technologies", _safe_values(asset.technologies)),
+                    ("Products", _safe_values(asset.products)),
+                    ("Components", _safe_values(asset.components)),
+                    ("Tags", _safe_values(asset.tags)),
+                )
+            ),
+            canonical_route=f"/threat-radar/assets/{asset.space_id}/{asset.id}",
+            tlp="TLP:AMBER+STRICT",
+            source_updated_at=asset.updated_at,
+            metadata={
+                "company_space_id": str(asset.space_id),
+                "inventory_asset_id": asset.asset_id,
+                "asset_type": asset.asset_type,
+                "environment": asset.environment,
+                "exposure": asset.exposure,
+                "criticality": asset.criticality,
+                "technologies": _safe_values(asset.technologies),
+                "products": _safe_values(asset.products),
+                "components": _safe_values(asset.components),
+                "tags": _safe_values(asset.tags),
+            },
+            space_id=asset.space_id,
+            legal_sensitive=True,
+            sanitized=True,
+        )
+        for asset in space_assets
+        if str(asset.name or "").strip()
+    )
+    return records
 
 
-async def _load_existing_documents(db: AsyncSession, source_types: Sequence[str]) -> list[RAGDocument]:
+async def _load_existing_documents(
+    db: AsyncSession, source_types: Sequence[str]
+) -> list[RAGDocument]:
     if not source_types:
         return []
     rows = await db.execute(
         select(RAGDocument)
         .options(selectinload(RAGDocument.chunks))
         .where(RAGDocument.source_type.in_(source_types))
-        .order_by(RAGDocument.source_type, RAGDocument.source_id, RAGDocument.source_version)
+        .order_by(
+            RAGDocument.source_type, RAGDocument.source_id, RAGDocument.source_version
+        )
     )
     return list(rows.scalars().all())
 
@@ -1790,7 +2268,9 @@ def _new_document(record: SourceRecord, now: datetime) -> RAGDocument:
     return document
 
 
-def _apply_record(document: RAGDocument, record: SourceRecord, indexed_at: datetime | None) -> None:
+def _apply_record(
+    document: RAGDocument, record: SourceRecord, indexed_at: datetime | None
+) -> None:
     document.source_type = record.source_type
     document.source_id = record.source_id
     document.source_version = record.source_version
@@ -1810,37 +2290,90 @@ def _apply_record(document: RAGDocument, record: SourceRecord, indexed_at: datet
         document.indexed_at = indexed_at
 
 
-def _new_chunks(
+def _document_needs_update(document: RAGDocument, record: SourceRecord) -> bool:
+    """Detect content, provenance, policy, route, and ownership changes."""
+
+    return any(
+        (
+            document.content_hash != record.content_hash,
+            document.logical_key != record.logical_key,
+            document.title != record.title,
+            document.canonical_route != record.canonical_route,
+            document.domain != record.domain,
+            document.tlp != record.tlp,
+            document.space_id != record.space_id,
+            bool(document.legal_sensitive) != record.legal_sensitive,
+            bool(document.sanitized) != record.sanitized,
+            dict(document.metadata_ or {}) != dict(record.metadata),
+            _iso(document.source_updated_at) != _iso(record.source_updated_at),
+            not document.is_active,
+        )
+    )
+
+
+def _reconcile_document_chunks(
     document: RAGDocument,
     record: SourceRecord,
     *,
     embedding_requested: bool = True,
-) -> list[RAGChunk]:
-    chunks = chunk_text(record.rendered_text)
-    if not chunks:
-        chunks = [record.title]
-    return [
-        RAGChunk(
-            document=document,
-            ordinal=ordinal,
-            content=content,
-            content_hash=checksum(content),
-            token_count=len(_TOKEN_RE.findall(content)),
-            embedding=None,
-            embedding_provider="",
-            embedding_model="",
-            embedding_dimensions=None,
-            embedding_status="pending" if embedding_requested else "not_requested",
-            embedding_error="",
-            metadata_={
-                "source_type": record.source_type,
-                "source_id": record.source_id,
-                "source_version": record.source_version,
-                "ordinal": ordinal,
-            },
-        )
-        for ordinal, content in enumerate(chunks)
-    ]
+) -> int:
+    """Incrementally update derived chunks while preserving stable chunk IDs.
+
+    Stable IDs keep persisted citation/proposal provenance valid when source
+    content has not changed.  Existing rows are updated in place by ordinal,
+    which also avoids a delete/insert ordering race on ``(document_id,
+    ordinal)``.  Embeddings are retained only when their source text and model
+    contract are unchanged.
+    """
+
+    desired = chunk_text(record.rendered_text) or [record.title]
+    existing_by_ordinal = {chunk.ordinal: chunk for chunk in document.chunks}
+    retained: list[RAGChunk] = []
+    changed = 0
+
+    for ordinal, content in enumerate(desired):
+        content_hash = checksum(content)
+        metadata = {
+            "source_type": record.source_type,
+            "source_id": record.source_id,
+            "source_version": record.source_version,
+            "ordinal": ordinal,
+        }
+        chunk = existing_by_ordinal.pop(ordinal, None)
+        if chunk is None:
+            chunk = RAGChunk(document=document, ordinal=ordinal)
+            changed += 1
+        elif chunk.content_hash != content_hash or chunk.content != content:
+            # The citation freshness check binds both chunk ID and content
+            # hash, so changing source text is detected without rotating IDs.
+            chunk.embedding = None
+            chunk.embedding_provider = ""
+            chunk.embedding_model = ""
+            chunk.embedding_dimensions = None
+            changed += 1
+
+        chunk.ordinal = ordinal
+        chunk.content = content
+        chunk.content_hash = content_hash
+        chunk.token_count = len(_TOKEN_RE.findall(content))
+        chunk.metadata_ = metadata
+
+        if chunk.embedding is None:
+            chunk.embedding_status = (
+                "pending" if embedding_requested else "not_requested"
+            )
+            chunk.embedding_error = ""
+        elif embedding_requested and _embedding_needed(chunk):
+            chunk.embedding_status = "pending"
+            chunk.embedding_error = ""
+        retained.append(chunk)
+
+    # Replacing the relationship list marks surplus rows as delete-orphans.
+    # No retained ordinal is inserted twice, so PostgreSQL's uniqueness
+    # constraint remains satisfied without a corpus-wide delete.
+    changed += len(existing_by_ordinal)
+    document.chunks = retained
+    return changed
 
 
 def _embedding_needed(chunk: RAGChunk) -> bool:
@@ -1871,7 +2404,10 @@ async def _embed_chunks(
     blocked = 0
     for chunk in chunks:
         document = chunk.document
-        if adapter.is_remote and (document.legal_sensitive or normalize_tlp(document.tlp) in _REMOTE_BLOCKED_TLPS):
+        if adapter.is_remote and (
+            document.legal_sensitive
+            or normalize_tlp(document.tlp) in _REMOTE_BLOCKED_TLPS
+        ):
             chunk.embedding = None
             chunk.embedding_status = "blocked"
             chunk.embedding_error = "cloud_policy_blocked"
@@ -1908,7 +2444,11 @@ async def _embed_chunks(
     return created, failed
 
 
-def _search_filters(source_types: Sequence[str], domain: str) -> list[Any]:
+def _search_filters(
+    source_types: Sequence[str],
+    domain: str,
+    space_id: UUID | None = None,
+) -> list[Any]:
     filters: list[Any] = [
         RAGDocument.is_active.is_(True),
         RAGDocument.sanitized.is_(True),
@@ -1921,6 +2461,19 @@ def _search_filters(source_types: Sequence[str], domain: str) -> list[Any]:
         # Domain scopes versioned ATT&CK/report records without excluding
         # global IOC, CVE, asset, evidence, and business-context sources.
         filters.append(or_(RAGDocument.domain == "", RAGDocument.domain == domain))
+    # Space-owned material is opt-in. Without an explicit company-space
+    # selection, retrieval is limited to deployment-wide records. With one,
+    # global reference intelligence and only that space's private records are
+    # visible to the query.
+    if space_id is None:
+        filters.append(RAGDocument.space_id.is_(None))
+    else:
+        filters.append(
+            or_(
+                RAGDocument.space_id.is_(None),
+                RAGDocument.space_id == space_id,
+            )
+        )
     return filters
 
 
@@ -1930,6 +2483,8 @@ async def _exact_candidates(
     source_types: Sequence[str],
     domain: str,
     limit: int,
+    *,
+    space_id: UUID | None = None,
 ) -> list[_Candidate]:
     identifiers = extract_exact_identifiers(query)
     if not identifiers:
@@ -1946,7 +2501,7 @@ async def _exact_candidates(
             select(RAGChunk, RAGDocument)
             .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
             .where(
-                *_search_filters(source_types, domain),
+                *_search_filters(source_types, domain, space_id),
                 RAGChunk.ordinal == 0,
                 or_(
                     RAGDocument.source_id.in_(normalized_identifiers),
@@ -1957,7 +2512,10 @@ async def _exact_candidates(
             .limit(limit)
         )
     ).all()
-    return [_Candidate(chunk=chunk, document=document, signals={"exact"}) for chunk, document in rows]
+    return [
+        _Candidate(chunk=chunk, document=document, signals={"exact"})
+        for chunk, document in rows
+    ]
 
 
 async def _fts_candidates(
@@ -1970,6 +2528,7 @@ async def _fts_candidates(
     profile_query: str = "",
     signal: str = "fts",
     natural_language_fallback: bool = True,
+    space_id: UUID | None = None,
 ) -> list[_Candidate]:
     broad_query = _lexical_fallback_query(query) if natural_language_fallback else ""
     combined_query = f"({query}) OR ({broad_query})" if broad_query else query
@@ -1984,7 +2543,10 @@ async def _fts_candidates(
         await db.execute(
             select(RAGChunk, RAGDocument, rank.label("rank"))
             .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
-            .where(*_search_filters(source_types, domain), RAGChunk.search_vector.op("@@")(ts_query))
+            .where(
+                *_search_filters(source_types, domain, space_id),
+                RAGChunk.search_vector.op("@@")(ts_query),
+            )
             .order_by(rank.desc(), RAGDocument.indexed_at.desc())
             # Chunk ranking precedes document deduplication. Bounded
             # over-fetching prevents a long report from consuming the entire
@@ -2001,6 +2563,8 @@ async def _vector_candidates(
     source_types: Sequence[str],
     domain: str,
     limit: int,
+    *,
+    space_id: UUID | None = None,
 ) -> list[_Candidate]:
     distance = RAGChunk.embedding.cosine_distance(list(query_embedding))
     rows = (
@@ -2008,7 +2572,7 @@ async def _vector_candidates(
             select(RAGChunk, RAGDocument, distance.label("distance"))
             .join(RAGDocument, RAGDocument.id == RAGChunk.document_id)
             .where(
-                *_search_filters(source_types, domain),
+                *_search_filters(source_types, domain, space_id),
                 RAGChunk.embedding.is_not(None),
                 RAGChunk.embedding_status == "complete",
                 RAGChunk.embedding_provider == settings.rag_embedding_provider,
@@ -2066,14 +2630,20 @@ def _relationship_target_types(query: str, selected: Sequence[str]) -> tuple[str
     normalized = _search_normalize(query)
     requested: set[str] = set()
     patterns: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-        (("ioc", "iocs", "indicator", "indicators", "observable", "observables"), ("ioc",)),
+        (
+            ("ioc", "iocs", "indicator", "indicators", "observable", "observables"),
+            ("ioc",),
+        ),
         (("cve", "cves", "vulnerability", "vulnerabilities"), ("cve",)),
         (
             ("ttp", "ttps", "technique", "techniques", "navigator", "attack layer"),
             ("attack_technique",),
         ),
         (("campaign", "campaigns", "operation", "operations"), ("attack_campaign",)),
-        (("actor", "actors", "apt", "group", "groups"), ("attack_group", "actor_intel")),
+        (
+            ("actor", "actors", "apt", "group", "groups"),
+            ("attack_group", "actor_intel"),
+        ),
     )
     for terms, source_types in patterns:
         if any(_contains_term(normalized, term) for term in terms):
@@ -2092,7 +2662,12 @@ def _relationship_search_query(candidates: Sequence[_Candidate]) -> str:
             if key not in metadata:
                 continue
             for raw in _safe_values(metadata.get(key), limit=20):
-                term = normalize_text(raw)[:160].replace('"', " ").replace("\\", " ").strip()
+                term = (
+                    normalize_text(raw)[:160]
+                    .replace('"', " ")
+                    .replace("\\", " ")
+                    .strip()
+                )
                 normalized = term.casefold()
                 if len(term) < 2 or normalized in seen:
                     continue
@@ -2178,9 +2753,7 @@ def _excerpt(content: str, query: str, limit: int = 600) -> str:
         for token in _TOKEN_RE.findall(query)
         if len(token) >= 3 and token.casefold() not in _EXCERPT_STOPWORDS
     ]
-    positions = [
-        lowered.find(token.casefold()) for token in search_terms[:50] if token
-    ]
+    positions = [lowered.find(token.casefold()) for token in search_terms[:50] if token]
     positions = [position for position in positions if position >= 0]
     center = min(positions) if positions else 0
     start = max(0, center - limit // 3)
@@ -2198,6 +2771,108 @@ def _client_context(profile: ClientProfile) -> ClientContext:
         region=normalize_text(profile.region),
         technologies=tuple(_safe_values(profile.technologies)),
         crown_jewels=tuple(_safe_values(profile.crown_jewels)),
+    )
+
+
+async def load_business_context(
+    db: AsyncSession,
+    *,
+    client_profile_id: int | None = None,
+    company_space_id: UUID | None = None,
+) -> BusinessContext | None:
+    """Load authoritative business context from the running local database."""
+
+    if client_profile_id is not None and company_space_id is not None:
+        raise ValueError("Select either a client profile or a company space, not both")
+    if client_profile_id is not None:
+        profile = await db.get(ClientProfile, client_profile_id)
+        if profile is None:
+            raise ValueError("client profile was not found")
+        context = _client_context(profile)
+        payload = {
+            "context_type": "client_profile",
+            "profile_id": profile.id,
+            "name": context.name,
+            "sector": context.sector,
+            "region": context.region,
+            "technologies": list(context.technologies),
+            "crown_jewels": list(context.crown_jewels),
+        }
+        return BusinessContext(
+            kind="client_profile",
+            identifier=str(profile.id),
+            context=context,
+            checksum=checksum(payload),
+            payload=payload,
+        )
+    if company_space_id is None:
+        return None
+
+    space = await db.get(ThreatCompanySpace, company_space_id)
+    if space is None:
+        raise ValueError("company space was not found")
+    assets = list(
+        (
+            await db.execute(
+                select(ThreatSpaceAsset)
+                .where(ThreatSpaceAsset.space_id == space.id)
+                .order_by(ThreatSpaceAsset.updated_at.desc(), ThreatSpaceAsset.id)
+                .limit(2_000)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    technologies = _safe_values(
+        [
+            value
+            for asset in assets
+            for value in (
+                *(asset.technologies or []),
+                *(asset.products or []),
+                *(asset.components or []),
+            )
+        ]
+    )
+    settings_payload = space.settings if isinstance(space.settings, Mapping) else {}
+    crown_jewels = _safe_values(
+        [
+            *(
+                settings_payload.get("crown_jewels", [])
+                if isinstance(settings_payload.get("crown_jewels", []), list)
+                else []
+            ),
+            *[
+                asset.name
+                for asset in assets
+                if str(asset.criticality or "").casefold() in {"critical", "high"}
+            ],
+        ]
+    )
+    context = ClientContext(
+        name=normalize_text(space.name),
+        sector=normalize_text(space.sector),
+        region=normalize_text(space.region),
+        technologies=tuple(technologies[:100]),
+        crown_jewels=tuple(crown_jewels[:100]),
+    )
+    payload = {
+        "context_type": "company_space",
+        "company_space_id": str(space.id),
+        "name": context.name,
+        "sector": context.sector,
+        "region": context.region,
+        "technologies": list(context.technologies),
+        "crown_jewels": list(context.crown_jewels),
+        "asset_count": len(assets),
+        "updated_at": _iso(space.updated_at),
+    }
+    return BusinessContext(
+        kind="company_space",
+        identifier=str(space.id),
+        context=context,
+        checksum=checksum(payload),
+        payload=payload,
     )
 
 
@@ -2232,11 +2907,7 @@ def _lexical_fallback_query(query: str) -> str:
     for raw in _TOKEN_RE.findall(query):
         term = raw.strip(".+-/:")[:80]
         normalized = term.casefold()
-        if (
-            len(term) < 3
-            or normalized in _EXCERPT_STOPWORDS
-            or normalized in seen
-        ):
+        if len(term) < 3 or normalized in _EXCERPT_STOPWORDS or normalized in seen:
             continue
         seen.add(normalized)
         terms.append(f'"{term.replace(chr(34), " ")}"')
@@ -2285,11 +2956,15 @@ def _validate_source_types(source_types: Sequence[str] | None) -> tuple[str, ...
         return SUPPORTED_SOURCE_TYPES
     if isinstance(source_types, str):
         source_types = [source_types]
-    selected = tuple(dict.fromkeys(str(item).strip() for item in source_types if str(item).strip()))
+    selected = tuple(
+        dict.fromkeys(str(item).strip() for item in source_types if str(item).strip())
+    )
     unsupported = sorted(set(selected) - set(SUPPORTED_SOURCE_TYPES))
     if unsupported:
         raise ValueError(f"Unsupported RAG source types: {', '.join(unsupported)}")
-    return tuple(source_type for source_type in SUPPORTED_SOURCE_TYPES if source_type in selected)
+    return tuple(
+        source_type for source_type in SUPPORTED_SOURCE_TYPES if source_type in selected
+    )
 
 
 def _safe_values(values: Any, *, limit: int = _MAX_METADATA_LIST) -> list[str]:

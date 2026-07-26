@@ -256,8 +256,8 @@ config:
   ragChunkOverlapChars: "350"
   ragDefaultResultLimit: "12"
   ragMaxContextChars: "32000"
-  ragReconcileHour: "4"
-  ragReconcileMinute: "15"
+  ragMaxIndexAgeHours: "2"
+  ragReconcileIntervalMinutes: "15"
   # Set either retention day value to "0" to disable that automatic purge
   # path for an operator-controlled legal hold. Backup policy is separate.
   ragTombstoneRetentionDays: "30"

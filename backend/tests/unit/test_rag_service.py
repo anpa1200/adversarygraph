@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.models.analysis import AnalysisResult, AnalysisSession
@@ -13,10 +14,13 @@ from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVETechniqueLink
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.models.sector import ActorIntelObservation
+from app.models.threat_radar import ThreatCompanySpace, ThreatSpaceAsset
 from app.services import rag
 
 
-def _record(*, body: str = "PowerShell execution was observed.", source_id: str = "T1059.001") -> rag.SourceRecord:
+def _record(
+    *, body: str = "PowerShell execution was observed.", source_id: str = "T1059.001"
+) -> rag.SourceRecord:
     return rag.SourceRecord(
         source_type="attack_technique",
         source_id=source_id,
@@ -85,6 +89,20 @@ class _FakeEmbeddings:
         return SimpleNamespace(data=self.data)
 
 
+class _BusinessContextDB:
+    def __init__(self, space, assets):
+        self.space = space
+        self.assets = assets
+
+    async def get(self, model, identifier):
+        if model is ThreatCompanySpace and identifier == self.space.id:
+            return self.space
+        return None
+
+    async def execute(self, _statement):
+        return _Result(self.assets)
+
+
 def test_normalize_tlp_accepts_legacy_aliases_and_fails_closed():
     assert rag.normalize_tlp("clear") == "TLP:CLEAR"
     assert rag.normalize_tlp("TLP:WHITE") == "TLP:CLEAR"
@@ -127,6 +145,89 @@ def test_chunk_text_rejects_unsafe_boundaries(maximum: int, overlap: int):
         rag.chunk_text("source text", max_chars=maximum, overlap_chars=overlap)
 
 
+def test_incremental_chunk_reconciliation_preserves_unchanged_ids_and_embeddings():
+    document = rag._new_document(
+        _record(body="Stable source evidence."),
+        rag.datetime.now(rag.timezone.utc),
+    )
+    created = rag._reconcile_document_chunks(
+        document,
+        _record(body="Stable source evidence."),
+        embedding_requested=True,
+    )
+    assert created == 1
+    chunk = document.chunks[0]
+    chunk.id = uuid4()
+    original_id = chunk.id
+    chunk.embedding = [0.1] * settings.rag_embedding_dimensions
+    chunk.embedding_provider = settings.rag_embedding_provider
+    chunk.embedding_model = settings.rag_embedding_model
+    chunk.embedding_dimensions = settings.rag_embedding_dimensions
+    chunk.embedding_status = "complete"
+
+    changed = rag._reconcile_document_chunks(
+        document,
+        _record(body="Stable source evidence."),
+        embedding_requested=True,
+    )
+
+    assert changed == 0
+    assert document.chunks[0] is chunk
+    assert document.chunks[0].id == original_id
+    assert document.chunks[0].embedding_status == "complete"
+    assert document.chunks[0].embedding is not None
+
+
+def test_incremental_chunk_reconciliation_invalidates_only_changed_content():
+    document = rag._new_document(
+        _record(body="Original source evidence."),
+        rag.datetime.now(rag.timezone.utc),
+    )
+    rag._reconcile_document_chunks(
+        document,
+        _record(body="Original source evidence."),
+        embedding_requested=True,
+    )
+    chunk = document.chunks[0]
+    chunk.id = uuid4()
+    original_id = chunk.id
+    chunk.embedding = [0.1] * settings.rag_embedding_dimensions
+    chunk.embedding_provider = settings.rag_embedding_provider
+    chunk.embedding_model = settings.rag_embedding_model
+    chunk.embedding_dimensions = settings.rag_embedding_dimensions
+    chunk.embedding_status = "complete"
+
+    changed = rag._reconcile_document_chunks(
+        document,
+        _record(body="Updated source evidence."),
+        embedding_requested=True,
+    )
+
+    assert changed == 1
+    assert document.chunks[0].id == original_id
+    assert document.chunks[0].embedding is None
+    assert document.chunks[0].embedding_status == "pending"
+    assert "Updated source evidence" in document.chunks[0].content
+
+
+def test_reconciliation_detects_provenance_and_scope_changes():
+    record = _record()
+    document = rag._new_document(record, rag.datetime.now(rag.timezone.utc))
+
+    assert rag._document_needs_update(document, record) is False
+
+    document.canonical_route = "/obsolete"
+    assert rag._document_needs_update(document, record) is True
+    document.canonical_route = record.canonical_route
+
+    document.space_id = uuid4()
+    assert rag._document_needs_update(document, record) is True
+    document.space_id = record.space_id
+
+    document.metadata_ = {"attack_id": record.source_id}
+    assert rag._document_needs_update(document, record) is True
+
+
 def test_source_record_rejects_unsanitized_content_and_drops_nested_metadata():
     with pytest.raises(ValueError, match="Unsanitized"):
         rag.SourceRecord(
@@ -146,7 +247,11 @@ def test_source_record_rejects_unsanitized_content_and_drops_nested_metadata():
         logical_key="article-1",
         title="Safe article",
         body="body",
-        metadata={"category": "guide", "raw": {"password": "secret"}, "tags": ["hunting", {"token": "secret"}]},
+        metadata={
+            "category": "guide",
+            "raw": {"password": "secret"},
+            "tags": ["hunting", {"token": "secret"}],
+        },
     )
     serialized = json.dumps(record.metadata)
 
@@ -208,7 +313,10 @@ def test_ranked_chunk_rows_keep_only_best_chunk_per_document():
         limit=10,
     )
 
-    assert [candidate.chunk.id for candidate in candidates] == [first_best.id, second.id]
+    assert [candidate.chunk.id for candidate in candidates] == [
+        first_best.id,
+        second.id,
+    ]
 
 
 def test_candidate_merge_keeps_chunk_from_strongest_rank_contribution():
@@ -249,7 +357,9 @@ def test_business_context_rerank_matches_region_sector_technology_and_crown_jewe
         "The campaign targets technology companies in Israel using Microsoft Azure and Kubernetes to reach source code.",
         context,
     )
-    unrelated = rag.business_relevance_score("Retail organizations in Brazil using point-of-sale systems.", context)
+    unrelated = rag.business_relevance_score(
+        "Retail organizations in Brazil using point-of-sale systems.", context
+    )
 
     assert relevant == 1.0
     assert unrelated == 0.0
@@ -271,6 +381,70 @@ def test_business_profile_expands_lexical_and_private_embedding_queries():
     assert '"Microsoft 365"' in lexical
     assert "Business relevance context" in embedding
     assert "source code" in embedding
+
+
+@pytest.mark.asyncio
+async def test_company_space_context_is_derived_from_live_inventory():
+    space = ThreatCompanySpace(
+        id=uuid4(),
+        name="Example Company",
+        slug="example-company",
+        sector="technology",
+        region="Israel",
+        settings={"crown_jewels": ["customer data"]},
+    )
+    assets = [
+        ThreatSpaceAsset(
+            id=uuid4(),
+            space_id=space.id,
+            asset_id="web-1",
+            name="Public web application",
+            criticality="critical",
+            technologies=["Kubernetes"],
+            products=["Microsoft 365"],
+            components=["nginx"],
+        ),
+    ]
+
+    result = await rag.load_business_context(
+        _BusinessContextDB(space, assets),  # type: ignore[arg-type]
+        company_space_id=space.id,
+    )
+
+    assert result is not None
+    assert result.kind == "company_space"
+    assert result.payload["asset_count"] == 1
+    assert result.context.region == "Israel"
+    assert result.context.sector == "technology"
+    assert set(result.context.technologies) == {
+        "Kubernetes",
+        "Microsoft 365",
+        "nginx",
+    }
+    assert set(result.context.crown_jewels) == {
+        "customer data",
+        "Public web application",
+    }
+    assert len(result.checksum) == 64
+
+
+def test_search_filters_require_explicit_scope_for_private_space_documents():
+    unscoped = str(
+        select(RAGDocument).where(*rag._search_filters(["asset"], "enterprise-attack"))
+    )
+    scoped = str(
+        select(RAGDocument).where(
+            *rag._search_filters(
+                ["asset"],
+                "enterprise-attack",
+                uuid4(),
+            )
+        )
+    )
+
+    assert "rag_documents.space_id IS NULL" in unscoped
+    assert "rag_documents.space_id IS NULL" in scoped
+    assert "rag_documents.space_id =" in scoped
 
 
 def test_natural_language_fallback_drops_generic_words_and_keeps_scope():
@@ -324,7 +498,9 @@ def test_relationship_query_uses_only_allowlisted_reviewed_metadata():
         token_count=4,
     )
 
-    query = rag._relationship_search_query([rag._Candidate(chunk=chunk, document=document)])
+    query = rag._relationship_search_query(
+        [rag._Candidate(chunk=chunk, document=document)]
+    )
 
     assert '"G0123"' in query
     assert '"Example Actor"' in query
@@ -387,12 +563,16 @@ async def test_hybrid_search_expands_business_actor_evidence_to_linked_iocs(
         signal = kwargs.get("signal", "fts")
         if signal == "relationship":
             relationship_calls.append((query, tuple(source_types)))
-            return [rag._Candidate(
-                chunk=ioc_chunk,
-                document=ioc_document,
-                signals={"relationship"},
-            )]
-        return [rag._Candidate(chunk=actor_chunk, document=actor_document, signals={"fts"})]
+            return [
+                rag._Candidate(
+                    chunk=ioc_chunk,
+                    document=ioc_document,
+                    signals={"relationship"},
+                )
+            ]
+        return [
+            rag._Candidate(chunk=actor_chunk, document=actor_document, signals={"fts"})
+        ]
 
     monkeypatch.setattr(settings, "rag_embedding_enabled", False)
     monkeypatch.setattr(rag, "_exact_candidates", exact)
@@ -405,11 +585,13 @@ async def test_hybrid_search_expands_business_actor_evidence_to_linked_iocs(
         limit=12,
     )
 
-    assert relationship_calls == [('\"G0123\" OR \"Example Actor\"', ("ioc",))]
+    assert relationship_calls == [('"G0123" OR "Example Actor"', ("ioc",))]
     linked_ioc = next(item for item in response.items if item.source_type == "ioc")
     assert "relationship" in linked_ioc.retrieval_signals
     assert "relationship" in response.retrieval_mode
-    assert any("relationship expansion" in warning.lower() for warning in response.warnings)
+    assert any(
+        "relationship expansion" in warning.lower() for warning in response.warnings
+    )
 
 
 def test_exact_identifier_extraction_is_ordered_validated_and_deduplicated():
@@ -440,10 +622,12 @@ async def test_exact_lookup_uses_indexed_equality_without_chunk_substring_scan()
 
 
 def test_source_reference_removes_credentials_queries_fragments_and_local_paths():
-    assert rag._safe_source_reference("https://user:secret@example.test:8443/report?token=secret#part") == (
-        "https://example.test:8443/report"
+    assert rag._safe_source_reference(
+        "https://user:secret@example.test:8443/report?token=secret#part"
+    ) == ("https://example.test:8443/report")
+    assert (
+        rag._safe_source_reference("/home/analyst/private/report.txt") == "report.txt"
     )
-    assert rag._safe_source_reference("/home/analyst/private/report.txt") == "report.txt"
     assert rag._safe_source_reference("evidence-record-17") == "evidence-record-17"
 
 
@@ -478,14 +662,18 @@ async def test_embedding_adapter_rejects_invalid_vectors(vector):
         provider="local",
         model="test-embed",
         dimensions=3,
-        client=SimpleNamespace(embeddings=_FakeEmbeddings([SimpleNamespace(index=0, embedding=vector)])),
+        client=SimpleNamespace(
+            embeddings=_FakeEmbeddings([SimpleNamespace(index=0, embedding=vector)])
+        ),
     )
 
     with pytest.raises(rag.EmbeddingValidationError):
         await adapter.embed_query("query")
 
 
-def test_openai_embeddings_respect_cloud_processing_gate(monkeypatch: pytest.MonkeyPatch):
+def test_openai_embeddings_respect_cloud_processing_gate(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)
 
     with pytest.raises(rag.EmbeddingConfigurationError, match="disabled"):
@@ -498,7 +686,49 @@ def test_openai_embeddings_respect_cloud_processing_gate(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
-async def test_remote_embedding_blocks_legal_sensitive_chunks(monkeypatch: pytest.MonkeyPatch):
+async def test_embedding_readiness_probes_the_configured_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class _ReadyAdapter:
+        provider = "local"
+        model = "nomic-embed-text"
+
+        async def embed_query(self, _query):
+            return [0.1, 0.2, 0.3]
+
+    monkeypatch.setattr(settings, "rag_embedding_enabled", True)
+    monkeypatch.setattr(settings, "rag_embedding_dimensions", 3)
+    monkeypatch.setattr(rag, "create_embedding_adapter", lambda: _ReadyAdapter())
+    monkeypatch.setattr(rag, "_embedding_probe_cache", None)
+
+    status = await rag.probe_embedding_readiness(force=True)
+
+    assert status["available"] is True
+    assert status["status"] == "ready"
+    assert status["dimensions"] == 3
+
+
+@pytest.mark.asyncio
+async def test_embedding_readiness_reports_disabled_without_calling_provider(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "rag_embedding_enabled", False)
+    monkeypatch.setattr(
+        rag,
+        "create_embedding_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("provider must not be called")),
+    )
+
+    status = await rag.probe_embedding_readiness(force=True)
+
+    assert status["available"] is False
+    assert status["status"] == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_remote_embedding_blocks_legal_sensitive_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+):
     class _RemoteAdapter:
         provider = "openai"
         model = "test"
@@ -581,15 +811,17 @@ async def test_ioc_collector_preserves_reviewed_actor_relationship_evidence():
         tlp="clear",
         description="Reviewed observable.",
     )
-    indicator.actor_links = [IOCActorLink(
-        indicator_id=9,
-        actor_attack_id="G0123",
-        actor_name="Example Actor",
-        source_id="reviewed-feed",
-        relationship_type="attributed-to",
-        confidence=88,
-        evidence="Analyst-reviewed campaign report.",
-    )]
+    indicator.actor_links = [
+        IOCActorLink(
+            indicator_id=9,
+            actor_attack_id="G0123",
+            actor_name="Example Actor",
+            source_id="reviewed-feed",
+            relationship_type="attributed-to",
+            confidence=88,
+            evidence="Analyst-reviewed campaign report.",
+        )
+    ]
 
     records = await rag.collect_source_records(_ExecuteDB([indicator]), ["ioc"])
 
@@ -607,28 +839,34 @@ async def test_cve_collector_preserves_reviewed_graph_links_without_raw_payload(
         description="Example vulnerability.",
         raw={"provider_secret": "must-not-be-indexed"},
     )
-    cve.technique_links = [CVETechniqueLink(
-        cve_id=cve.cve_id,
-        attack_id="T1190",
-        source_id="reviewed-feed",
-        confidence=90,
-        evidence="Exploitation evidence.",
-    )]
-    cve.actor_links = [CVEActorLink(
-        cve_id=cve.cve_id,
-        actor_attack_id="G0123",
-        actor_name="Example Actor",
-        source_id="reviewed-feed",
-        confidence=80,
-        evidence="Actor usage report.",
-    )]
-    cve.ioc_links = [CVEIOCLink(
-        cve_id=cve.cve_id,
-        indicator_id=9,
-        source_id="reviewed-feed",
-        confidence=75,
-        evidence="Observed during exploitation.",
-    )]
+    cve.technique_links = [
+        CVETechniqueLink(
+            cve_id=cve.cve_id,
+            attack_id="T1190",
+            source_id="reviewed-feed",
+            confidence=90,
+            evidence="Exploitation evidence.",
+        )
+    ]
+    cve.actor_links = [
+        CVEActorLink(
+            cve_id=cve.cve_id,
+            actor_attack_id="G0123",
+            actor_name="Example Actor",
+            source_id="reviewed-feed",
+            confidence=80,
+            evidence="Actor usage report.",
+        )
+    ]
+    cve.ioc_links = [
+        CVEIOCLink(
+            cve_id=cve.cve_id,
+            indicator_id=9,
+            source_id="reviewed-feed",
+            confidence=75,
+            evidence="Observed during exploitation.",
+        )
+    ]
 
     records = await rag.collect_source_records(_ExecuteDB([cve]), ["cve"])
     serialized = records[0].rendered_text + json.dumps(records[0].metadata)
@@ -688,13 +926,15 @@ async def test_cve_collector_fails_closed_for_unresolved_relationship_provenance
     cve = CVERecord(id=5, cve_id="CVE-2026-34567", description="Actor link test.")
     cve.technique_links = []
     cve.ioc_links = []
-    cve.actor_links = [CVEActorLink(
-        cve_id=cve.cve_id,
-        actor_attack_id="G0999",
-        actor_name="Unresolved Example Actor",
-        source_id="derived-correlation",
-        evidence="Derived relationship without an originating IOC reference.",
-    )]
+    cve.actor_links = [
+        CVEActorLink(
+            cve_id=cve.cve_id,
+            actor_attack_id="G0999",
+            actor_name="Unresolved Example Actor",
+            source_id="derived-correlation",
+            evidence="Derived relationship without an originating IOC reference.",
+        )
+    ]
 
     records = await rag.collect_source_records(_ExecuteDB([cve]), ["cve"])
 
@@ -718,7 +958,9 @@ async def test_actor_intel_collector_indexes_business_context_and_fails_closed()
         raw={"api_key": "must-not-be-indexed"},
     )
 
-    records = await rag.collect_source_records(_ExecuteDB([observation]), ["actor_intel"])
+    records = await rag.collect_source_records(
+        _ExecuteDB([observation]), ["actor_intel"]
+    )
     serialized = records[0].rendered_text + json.dumps(records[0].metadata)
 
     assert records[0].tlp == "TLP:AMBER+STRICT"
@@ -769,7 +1011,9 @@ async def test_report_collector_omits_raw_provider_response():
         raw_response="provider-secret-response",
     )
 
-    records = await rag.collect_source_records(_ExecuteDB([(session, result)]), ["analysis_report"])
+    records = await rag.collect_source_records(
+        _ExecuteDB([(session, result)]), ["analysis_report"]
+    )
     serialized = records[0].rendered_text + json.dumps(records[0].metadata)
 
     assert records[0].metadata["filename"] == "report.txt"
@@ -779,7 +1023,9 @@ async def test_report_collector_omits_raw_provider_response():
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(monkeypatch: pytest.MonkeyPatch):
+async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+):
     db = _ReconcileDB()
     run = RAGIndexRun(created_by="test")
     source = _record()
@@ -795,11 +1041,15 @@ async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(monkeypa
     monkeypatch.setattr(rag, "_load_existing_documents", load)
     monkeypatch.setattr(settings, "rag_embedding_enabled", False)
 
-    first = await rag.reconcile_corpus(db, run, ["attack_technique"], include_embeddings=False)
+    first = await rag.reconcile_corpus(
+        db, run, ["attack_technique"], include_embeddings=False
+    )
     document = next(value for value in db.added if isinstance(value, RAGDocument))
     original_chunks = tuple(document.chunks)
     existing.append(document)
-    second = await rag.reconcile_corpus(db, run, ["attack_technique"], include_embeddings=False)
+    second = await rag.reconcile_corpus(
+        db, run, ["attack_technique"], include_embeddings=False
+    )
 
     assert first.documents_created == 1
     assert first.chunks_created == len(original_chunks) > 0
@@ -811,7 +1061,9 @@ async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_tombstones_disappeared_source(monkeypatch: pytest.MonkeyPatch):
+async def test_reconciliation_tombstones_disappeared_source(
+    monkeypatch: pytest.MonkeyPatch,
+):
     db = _ReconcileDB()
     document = rag._new_document(_record(), rag.datetime.now(rag.timezone.utc))
     document.id = uuid4()
@@ -827,14 +1079,24 @@ async def test_reconciliation_tombstones_disappeared_source(monkeypatch: pytest.
     monkeypatch.setattr(rag, "_load_existing_documents", load)
     monkeypatch.setattr(settings, "rag_embedding_enabled", False)
 
-    result = await rag.reconcile_corpus(db, RAGIndexRun(created_by="test"), ["attack_technique"], include_embeddings=False)
+    result = await rag.reconcile_corpus(
+        db,
+        RAGIndexRun(created_by="test"),
+        ["attack_technique"],
+        include_embeddings=False,
+    )
 
     assert result.documents_removed == 1
     assert document.is_active is False
 
 
 def test_search_response_is_strictly_json_serializable():
-    response = rag.SearchResponse(items=(), retrieval_mode="exact+fts", warnings=("warning",), corpus_indexed_at=None)
+    response = rag.SearchResponse(
+        items=(),
+        retrieval_mode="exact+fts",
+        warnings=("warning",),
+        corpus_indexed_at=None,
+    )
 
     assert json.dumps(response.to_dict())
     assert response.to_dict() == {

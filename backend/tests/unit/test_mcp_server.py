@@ -59,7 +59,9 @@ def test_mcp_settings_do_not_require_platform_database_credentials(monkeypatch):
 
 @pytest.fixture
 def local_api(monkeypatch):
-    monkeypatch.setattr(mcp_server.settings, "mcp_api_base_url", "http://127.0.0.1:8000")
+    monkeypatch.setattr(
+        mcp_server.settings, "mcp_api_base_url", "http://127.0.0.1:8000"
+    )
     monkeypatch.setattr(mcp_server.settings, "mcp_api_token", "")
     monkeypatch.setattr(mcp_server.settings, "auth_enabled", False)
 
@@ -86,12 +88,18 @@ def test_api_base_url_rejects_public_plain_http_and_allows_https_or_private_http
     with pytest.raises(mcp_server.MCPConfigurationError, match="Plain HTTP"):
         mcp_server._validated_base_url("http://api.example.com")
 
-    assert mcp_server._validated_base_url("https://api.example.com") == "https://api.example.com"
+    assert (
+        mcp_server._validated_base_url("https://api.example.com")
+        == "https://api.example.com"
+    )
     assert mcp_server._validated_base_url("http://api:8000") == "http://api:8000"
 
 
 def test_api_urls_are_fixed_and_entity_segments_are_encoded(local_api):
-    assert mcp_server._build_url(mcp_server._Endpoint.SEARCH) == "http://127.0.0.1:8000/api/rag/search"
+    assert (
+        mcp_server._build_url(mcp_server._Endpoint.SEARCH)
+        == "http://127.0.0.1:8000/api/rag/search"
+    )
 
     url = mcp_server._build_url(
         mcp_server._Endpoint.ENTITY,
@@ -101,7 +109,9 @@ def test_api_urls_are_fixed_and_entity_segments_are_encoded(local_api):
     parsed = urlsplit(url)
     assert parsed.query == ""
     assert parsed.fragment == ""
-    assert parsed.path.startswith("/api/rag/entity/cve/CVE%2F..%2F..%2Fproposals%2Fabc%2Fconfirm%3F")
+    assert parsed.path.startswith(
+        "/api/rag/entity/cve/CVE%2F..%2F..%2Fproposals%2Fabc%2Fconfirm%3F"
+    )
     assert parsed.path.count("/") == 5
 
     with pytest.raises(mcp_server.MCPConfigurationError, match="allowlisted"):
@@ -115,7 +125,11 @@ def test_endpoint_policy_contains_no_confirmation_or_mutation_route():
         mcp_server._Endpoint.ENTITY,
     }
     for endpoint in mcp_server._Endpoint:
-        assert endpoint.path in {"/api/rag/search", "/api/rag/assist", "/api/rag/entity"}
+        assert endpoint.path in {
+            "/api/rag/search",
+            "/api/rag/assist",
+            "/api/rag/entity",
+        }
         assert "/confirm" not in endpoint.path
         assert "/reindex" not in endpoint.path
         assert "/layers" not in endpoint.path
@@ -124,7 +138,9 @@ def test_endpoint_policy_contains_no_confirmation_or_mutation_route():
 @pytest.mark.asyncio
 async def test_stable_sdk_registers_four_tools_with_security_annotations():
     if mcp_server.mcp is None:
-        pytest.skip("MCP SDK dependencies are not installed in this diagnostic environment")
+        pytest.skip(
+            "MCP SDK dependencies are not installed in this diagnostic environment"
+        )
 
     tools = {tool.name: tool for tool in await mcp_server.mcp.list_tools()}
 
@@ -139,12 +155,25 @@ async def test_stable_sdk_registers_four_tools_with_security_annotations():
     assert tools["ask_intelligence"].annotations.destructiveHint is False
     assert tools["propose_navigator_layer"].annotations.destructiveHint is False
     assert all(tool.annotations.openWorldHint is False for tool in tools.values())
-    assert tools["search_intelligence"].inputSchema["properties"]["query"]["maxLength"] == 2_000
-    assert tools["search_intelligence"].inputSchema["properties"]["limit"]["maximum"] == 25
+    assert (
+        tools["search_intelligence"].inputSchema["properties"]["query"]["maxLength"]
+        == 2_000
+    )
+    assert (
+        tools["search_intelligence"].inputSchema["properties"]["limit"]["maximum"] == 25
+    )
+    assert (
+        tools["search_intelligence"].inputSchema["properties"]["company_space_id"][
+            "anyOf"
+        ][0]["maxLength"]
+        == 36
+    )
 
 
 @pytest.mark.asyncio
-async def test_search_validates_hard_input_bounds_before_api_call(monkeypatch, local_api):
+async def test_search_validates_hard_input_bounds_before_api_call(
+    monkeypatch, local_api
+):
     async def should_not_run(*_args, **_kwargs):
         pytest.fail("API request should not run for invalid MCP input")
 
@@ -158,10 +187,20 @@ async def test_search_validates_hard_input_bounds_before_api_call(monkeypatch, l
         await mcp_server.search_intelligence("ioc", source_types=["not-a-source"])  # type: ignore[list-item]
     with pytest.raises(mcp_server.MCPInputError, match="domain"):
         await mcp_server.search_intelligence("ioc", domain="unknown")  # type: ignore[arg-type]
+    with pytest.raises(mcp_server.MCPInputError, match="valid UUID"):
+        await mcp_server.search_intelligence("ioc", company_space_id="not-a-uuid")
+    with pytest.raises(mcp_server.MCPInputError, match="either"):
+        await mcp_server.search_intelligence(
+            "ioc",
+            client_profile_id=1,
+            company_space_id="4b52b91b-a98e-45a3-af4d-a8dcfe10c020",
+        )
 
 
 @pytest.mark.asyncio
-async def test_search_calls_only_search_and_preserves_provenance(monkeypatch, local_api):
+async def test_search_calls_only_search_and_preserves_provenance(
+    monkeypatch, local_api
+):
     captured = {}
 
     async def fake_request(endpoint, **kwargs):
@@ -205,7 +244,29 @@ async def test_search_calls_only_search_and_preserves_provenance(monkeypatch, lo
 
 
 @pytest.mark.asyncio
-async def test_assistant_is_pinned_to_local_provider_without_cloud_ack(monkeypatch, local_api):
+async def test_search_passes_validated_company_space_context(monkeypatch, local_api):
+    captured = {}
+    space_id = "4b52b91b-a98e-45a3-af4d-a8dcfe10c020"
+
+    async def fake_request(endpoint, **kwargs):
+        captured.update({"endpoint": endpoint, **kwargs})
+        return {"retrieval_mode": "fts", "warnings": [], "items": []}
+
+    monkeypatch.setattr(mcp_server, "_request_json", fake_request)
+
+    await mcp_server.search_intelligence(
+        "relevant vulnerabilities",
+        company_space_id=space_id,
+    )
+
+    assert captured["body"]["client_profile_id"] is None
+    assert captured["body"]["company_space_id"] == space_id
+
+
+@pytest.mark.asyncio
+async def test_assistant_is_pinned_to_local_provider_without_cloud_ack(
+    monkeypatch, local_api
+):
     captured = {}
 
     async def fake_request(endpoint, **kwargs):
@@ -240,7 +301,9 @@ async def test_assistant_is_pinned_to_local_provider_without_cloud_ack(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_navigator_tool_only_requests_proposal_and_never_confirms(monkeypatch, local_api):
+async def test_navigator_tool_only_requests_proposal_and_never_confirms(
+    monkeypatch, local_api
+):
     calls = []
 
     async def fake_request(endpoint, **kwargs):
@@ -261,7 +324,9 @@ async def test_navigator_tool_only_requests_proposal_and_never_confirms(monkeypa
         }
 
     monkeypatch.setattr(mcp_server, "_request_json", fake_request)
-    result = await mcp_server.propose_navigator_layer("Paste relevant TTPs on Navigator")
+    result = await mcp_server.propose_navigator_layer(
+        "Paste relevant TTPs on Navigator"
+    )
 
     assert len(calls) == 1
     assert calls[0][0] is mcp_server._Endpoint.ASSIST
@@ -282,16 +347,18 @@ async def test_entity_id_bound_is_enforced_before_request(monkeypatch, local_api
 
 
 def test_entity_output_preserves_policy_and_partial_chunk_markers():
-    result = mcp_server._entity_output({
-        "document_id": "doc-1",
-        "source_type": "analysis_report",
-        "source_id": "report-1",
-        "tlp": "TLP:AMBER",
-        "legal_sensitive": True,
-        "chunk_count": 73,
-        "chunks_truncated": True,
-        "chunks": [{"id": "chunk-1", "content": "bounded evidence"}],
-    })
+    result = mcp_server._entity_output(
+        {
+            "document_id": "doc-1",
+            "source_type": "analysis_report",
+            "source_id": "report-1",
+            "tlp": "TLP:AMBER",
+            "legal_sensitive": True,
+            "chunk_count": 73,
+            "chunks_truncated": True,
+            "chunks": [{"id": "chunk-1", "content": "bounded evidence"}],
+        }
+    )
 
     assert result["legal_sensitive"] is True
     assert result["chunk_count"] == 73
@@ -299,8 +366,40 @@ def test_entity_output_preserves_policy_and_partial_chunk_markers():
     assert len(result["chunks"]) == 1
 
 
+@pytest.mark.asyncio
+async def test_entity_scope_is_sent_as_a_validated_query_parameter(
+    monkeypatch, local_api
+):
+    calls = {}
+    space_id = "4b52b91b-a98e-45a3-af4d-a8dcfe10c020"
+    response = _response(
+        200,
+        {
+            "document_id": "doc-1",
+            "source_type": "asset",
+            "source_id": "space:asset",
+            "chunks": [],
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_new_http_client",
+        lambda _timeout: _FakeClient(response, calls),
+    )
+
+    await mcp_server.get_indexed_entity(
+        "asset",
+        "space:asset",
+        company_space_id=space_id,
+    )
+
+    assert calls["kwargs"]["params"] == {"company_space_id": space_id}
+
+
 def test_non_stdio_transport_fails_closed_before_sdk_run(monkeypatch, local_api):
-    fake_mcp = SimpleNamespace(run=lambda **_kwargs: pytest.fail("MCP SDK must not start"))
+    fake_mcp = SimpleNamespace(
+        run=lambda **_kwargs: pytest.fail("MCP SDK must not start")
+    )
     monkeypatch.setattr(mcp_server, "mcp", fake_mcp)
     monkeypatch.setattr(mcp_server, "_MCP_IMPORT_ERROR", None)
 
@@ -316,14 +415,18 @@ def test_auth_enabled_requires_api_token(monkeypatch, local_api):
     monkeypatch.setattr(mcp_server, "_MCP_IMPORT_ERROR", None)
     monkeypatch.setattr(mcp_server, "mcp", SimpleNamespace(run=lambda **_kwargs: None))
 
-    with pytest.raises(mcp_server.MCPConfigurationError, match="MCP_API_TOKEN is required"):
+    with pytest.raises(
+        mcp_server.MCPConfigurationError, match="MCP_API_TOKEN is required"
+    ):
         mcp_server.run_server("stdio")
 
 
 def test_auth_disabled_local_mode_can_start_without_token(monkeypatch, local_api):
     calls = []
     monkeypatch.setattr(mcp_server, "_MCP_IMPORT_ERROR", None)
-    monkeypatch.setattr(mcp_server, "mcp", SimpleNamespace(run=lambda **kwargs: calls.append(kwargs)))
+    monkeypatch.setattr(
+        mcp_server, "mcp", SimpleNamespace(run=lambda **kwargs: calls.append(kwargs))
+    )
 
     mcp_server.run_server("stdio")
 
@@ -331,16 +434,22 @@ def test_auth_disabled_local_mode_can_start_without_token(monkeypatch, local_api
 
 
 @pytest.mark.asyncio
-async def test_http_errors_are_sanitized_and_do_not_echo_body_token_or_url(monkeypatch, local_api):
+async def test_http_errors_are_sanitized_and_do_not_echo_body_token_or_url(
+    monkeypatch, local_api
+):
     calls = {}
     secret = "DATABASE_PASSWORD=do-not-disclose"
     token = "session-token-do-not-disclose"
     monkeypatch.setattr(mcp_server.settings, "mcp_api_token", token)
     response = _response(500, {"detail": secret, "traceback": "/internal/path"})
-    monkeypatch.setattr(mcp_server, "_new_http_client", lambda _timeout: _FakeClient(response, calls))
+    monkeypatch.setattr(
+        mcp_server, "_new_http_client", lambda _timeout: _FakeClient(response, calls)
+    )
 
     with pytest.raises(mcp_server.MCPAPIError) as exc_info:
-        await mcp_server._request_json(mcp_server._Endpoint.SEARCH, body={"query": "safe"})
+        await mcp_server._request_json(
+            mcp_server._Endpoint.SEARCH, body={"query": "safe"}
+        )
 
     message = str(exc_info.value)
     assert message == "AdversaryGraph API is temporarily unavailable"
@@ -351,7 +460,9 @@ async def test_http_errors_are_sanitized_and_do_not_echo_body_token_or_url(monke
 
 
 @pytest.mark.asyncio
-async def test_chunked_response_is_stopped_at_decoded_size_limit(monkeypatch, local_api):
+async def test_chunked_response_is_stopped_at_decoded_size_limit(
+    monkeypatch, local_api
+):
     class OversizedResponse:
         status_code = 200
         headers = {}
@@ -367,7 +478,9 @@ async def test_chunked_response_is_stopped_at_decoded_size_limit(monkeypatch, lo
     )
 
     with pytest.raises(mcp_server.MCPAPIError, match="safety limit"):
-        await mcp_server._request_json(mcp_server._Endpoint.SEARCH, body={"query": "safe"})
+        await mcp_server._request_json(
+            mcp_server._Endpoint.SEARCH, body={"query": "safe"}
+        )
 
 
 @pytest.mark.asyncio
@@ -382,7 +495,9 @@ async def test_client_disables_redirects_and_environment_proxy(monkeypatch, loca
 
     monkeypatch.setattr(httpx, "AsyncClient", fake_async_client)
     try:
-        await mcp_server._request_json(mcp_server._Endpoint.SEARCH, body={"query": "safe"})
+        await mcp_server._request_json(
+            mcp_server._Endpoint.SEARCH, body={"query": "safe"}
+        )
     finally:
         monkeypatch.setattr(httpx, "AsyncClient", real_client)
 

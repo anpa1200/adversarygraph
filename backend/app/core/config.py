@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     rag_chunk_overlap_chars: int = Field(default=350, ge=0, le=2_000)
     rag_default_result_limit: int = Field(default=12, ge=1, le=25)
     rag_max_context_chars: int = Field(default=32_000, ge=4_000, le=80_000)
-    rag_reconcile_hour: int = Field(default=4, ge=0, le=23)
-    rag_reconcile_minute: int = Field(default=15, ge=0, le=59)
+    rag_max_index_age_hours: int = Field(default=2, ge=1, le=720)
+    rag_reconcile_interval_minutes: int = Field(default=15, ge=5, le=1_440)
     # Derived RAG data has an explicit, bounded lifecycle. A zero retention
     # value disables automatic deletion for that record family (legal-hold
     # mode); backups and manual administrative deletion remain separate.
@@ -137,23 +137,27 @@ class Settings(BaseSettings):
     asset_scanner_max_resolved_ips: int = Field(default=4, ge=1, le=16)
 
     # RetroHunt collectors
-    nvd_api_key: str = ""          # Optional — increases NVD rate limit from 5 to 50 req/30s
-    github_token: str = ""         # Optional — increases GitHub API rate limit
-    gitlab_token: str = ""         # Optional — GitLab advisory and code/security searches
-    msrc_api_key: str = ""         # Optional — Microsoft Security Update Guide higher limits
-    deps_dev_api_key: str = ""     # Optional — deps.dev package/dependency API
-    vulncheck_api_key: str = ""    # Optional — VulnCheck KEV, NVD++, exploit intelligence
-    snyk_token: str = ""           # Optional — Snyk vulnerability/package intelligence
-    socket_token: str = ""         # Optional — Socket package supply-chain risk intelligence
-    endoflife_date_token: str = "" # Optional — endoflife.date commercial API, if used
-    hibp_api_key: str = ""         # Optional — Have I Been Pwned domain breach monitoring
-    leakix_api_key: str = ""       # Optional — LeakIX exposure monitoring
-    spycloud_api_key: str = ""     # Optional — SpyCloud breach/credential exposure
-    flare_api_key: str = ""        # Optional — Flare dark web and leaked credential monitoring
-    darkowl_api_key: str = ""      # Optional — DarkOwl darknet intelligence
-    intel471_api_key: str = ""     # Optional — Intel 471 adversary/darknet reporting
-    kela_api_key: str = ""         # Optional — KELA cybercrime intelligence
-    recorded_future_api_key: str = "" # Optional — Recorded Future vulnerability/threat intelligence
+    nvd_api_key: str = ""  # Optional — increases NVD rate limit from 5 to 50 req/30s
+    github_token: str = ""  # Optional — increases GitHub API rate limit
+    gitlab_token: str = ""  # Optional — GitLab advisory and code/security searches
+    msrc_api_key: str = ""  # Optional — Microsoft Security Update Guide higher limits
+    deps_dev_api_key: str = ""  # Optional — deps.dev package/dependency API
+    vulncheck_api_key: str = ""  # Optional — VulnCheck KEV, NVD++, exploit intelligence
+    snyk_token: str = ""  # Optional — Snyk vulnerability/package intelligence
+    socket_token: str = ""  # Optional — Socket package supply-chain risk intelligence
+    endoflife_date_token: str = ""  # Optional — endoflife.date commercial API, if used
+    hibp_api_key: str = ""  # Optional — Have I Been Pwned domain breach monitoring
+    leakix_api_key: str = ""  # Optional — LeakIX exposure monitoring
+    spycloud_api_key: str = ""  # Optional — SpyCloud breach/credential exposure
+    flare_api_key: str = (
+        ""  # Optional — Flare dark web and leaked credential monitoring
+    )
+    darkowl_api_key: str = ""  # Optional — DarkOwl darknet intelligence
+    intel471_api_key: str = ""  # Optional — Intel 471 adversary/darknet reporting
+    kela_api_key: str = ""  # Optional — KELA cybercrime intelligence
+    recorded_future_api_key: str = (
+        ""  # Optional — Recorded Future vulnerability/threat intelligence
+    )
 
     # OpenCTI symmetric sync
     opencti_url: str = ""
@@ -201,7 +205,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_rag_settings(self):
         if self.rag_chunk_overlap_chars >= self.rag_chunk_chars:
-            raise ValueError("RAG_CHUNK_OVERLAP_CHARS must be smaller than RAG_CHUNK_CHARS")
+            raise ValueError(
+                "RAG_CHUNK_OVERLAP_CHARS must be smaller than RAG_CHUNK_CHARS"
+            )
         return self
 
     @property

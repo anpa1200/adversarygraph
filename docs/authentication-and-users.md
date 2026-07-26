@@ -118,7 +118,7 @@ have separate server-side authorization:
 | Action | Required permission |
 |---|---|
 | Read corpus readiness/status | `read` |
-| List saved business profiles | `run_analysis` |
+| List saved business profiles or local company spaces | `run_analysis` |
 | Search, read one indexed entity, list providers, generate a grounded answer, or confirm an expiring proposal | `run_analysis` |
 | Create, replace, or delete a business profile | `manage_intel` |
 | Queue reconciliation or view index-run history | `manage_feeds` |
