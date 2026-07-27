@@ -134,6 +134,17 @@ def reconcile_rag(self, run_id: str) -> dict:
                     )
                     index_run.heartbeat_at = datetime.now(timezone.utc)
                     await db.commit()
+                    follow_up = await db.scalar(
+                        select(RAGIndexRun)
+                        .where(
+                            RAGIndexRun.status == "queued",
+                            RAGIndexRun.id != index_run.id,
+                        )
+                        .order_by(RAGIndexRun.created_at.asc())
+                        .limit(1)
+                    )
+                    if follow_up is not None:
+                        reconcile_rag.delay(str(follow_up.id))
                     return {"run_id": run_id, **result.to_dict()}
                 except Exception:
                     await db.rollback()

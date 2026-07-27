@@ -11,9 +11,10 @@ IOC_KINDS = {"domain", "ip", "ipv4", "ipv6", "url", "hash", "sha256", "sha1", "m
 TAXONOMY_SYSTEM_INSTRUCTIONS = """Taxonomy and label rules:
 - Store structured labels as namespace:value strings.
 - Use ttp:Txxxx or ttp:Txxxx.xxx for MITRE ATT&CK techniques.
+- Use tactic:TAxxxx for MITRE ATT&CK tactics and campaign:Cxxxx for ATT&CK campaigns.
 - Use actor:Gxxxx for ATT&CK groups when an ID is known; otherwise use actor:<canonical-slug>.
 - Use cve:CVE-YYYY-NNNN for CVEs.
-- Use sector:<canonical-slug>, risk:critical|high|medium|low, technology:<canonical-slug>, product:<canonical-slug>, supplier:<canonical-slug>, dependency:<canonical-slug>, environment:<canonical-slug>, exposure:internet|internal|third-party|unknown, and tag:<canonical-slug>.
+- Use sector:<canonical-slug>, risk:critical|high|medium|low, technology:<canonical-slug>, product:<canonical-slug>, supplier:<canonical-slug>, dependency:<canonical-slug>, environment:<canonical-slug>, exposure:internet|internal|third-party|unknown, source:<canonical-slug>, ioc_type:<canonical-slug>, cwe:<canonical-slug>, malware:<canonical-slug>, and tag:<canonical-slug>.
 - Do not invent new namespace names. Preserve original source labels in evidence/raw fields if useful, but normalized tags must follow this convention."""
 
 KIND_ALIASES = {
@@ -25,6 +26,13 @@ KIND_ALIASES = {
     "ttp": "ttp",
     "technique": "ttp",
     "attack": "ttp",
+    "tactic": "tactic",
+    "campaign": "campaign",
+    "malware": "malware",
+    "source": "source",
+    "ioc_type": "ioc_type",
+    "indicator_type": "ioc_type",
+    "cwe": "cwe",
     "cve": "cve",
     "vulnerability": "cve",
     "sector": "sector",
@@ -99,7 +107,7 @@ def canonical_value(kind: str, value: Any) -> str:
         normalized_raw_kind = canonical_kind(raw_kind)
         if normalized_raw_kind == kind or {normalized_raw_kind, kind} <= {"risk", "criticality"}:
             raw = raw_value.strip()
-    if kind in {"ttp", "actor"} and ATTACK_ID_RE.fullmatch(raw):
+    if kind in {"ttp", "tactic", "actor", "campaign"} and ATTACK_ID_RE.fullmatch(raw):
         return raw.upper()
     if kind == "cve" and CVE_ID_RE.fullmatch(raw):
         return raw.upper()
@@ -145,7 +153,12 @@ def normalize_freeform_tags(values: Any, *, limit: int = 100) -> list[str]:
             tags.append(canonical_tag("cve", raw))
         elif ATTACK_ID_RE.fullmatch(raw):
             prefix = raw[:1].upper()
-            tags.append(canonical_tag("actor" if prefix == "G" else "ttp", raw))
+            attack_kind = {
+                "G": "actor",
+                "C": "campaign",
+                "T": "tactic" if raw.upper().startswith("TA") else "ttp",
+            }[prefix]
+            tags.append(canonical_tag(attack_kind, raw))
         else:
             tags.append(canonical_tag("tag", raw))
     return _dedupe(tags, limit=limit)

@@ -1091,6 +1091,52 @@ async def create_asset_scan(
         scan.warnings = warnings
         scan.status = "partial" if degraded else "completed"
         scan.completed_at = datetime.now(UTC)
+        from app.services.intelligence_graph import link_entities, link_tagged_entities
+        scan_tags = [
+            "tag:asset-assessment",
+            f"asset_type:{asset.asset_type}",
+            f"exposure:{asset.exposure}",
+            *[f"cve:{row.get('cve_id')}" for row in cve_candidates if row.get("cve_id")],
+            *[f"technology:{value}" for value in (asset.technologies or [])],
+        ]
+        await link_tagged_entities(
+            session,
+            entity_type="asset_scan",
+            entity_id=scan.id,
+            tags=scan_tags,
+            provenance_type="scanner_mcp",
+            provenance_id=str(mcp_context.get("service") or "asset-scanner"),
+            confidence=80,
+            evidence=f"Authorized assessment of {target.value}",
+        )
+        await link_entities(
+            session,
+            source_type="asset",
+            source_id=asset.id,
+            relationship_type="assessed-by",
+            target_type="asset_scan",
+            target_id=scan.id,
+            provenance_type="scanner_mcp",
+            provenance_id=scan.id,
+            confidence=100,
+            evidence=f"Authorized assessment of {target.value}",
+        )
+        for row in cve_candidates:
+            cve_id = str(row.get("cve_id") or "")
+            if cve_id:
+                await link_entities(
+                    session,
+                    source_type="asset_scan",
+                    source_id=scan.id,
+                    relationship_type="observed-cve-candidate",
+                    target_type="cve",
+                    target_id=cve_id,
+                    provenance_type="scanner_mcp",
+                    provenance_id=scan.id,
+                    confidence=int(row.get("confidence") or 50),
+                    evidence=str(row.get("evidence") or row.get("reason") or ""),
+                    attributes={"validation_required": True},
+                )
         await audit_log(
             session,
             user.name,
@@ -1113,6 +1159,8 @@ async def create_asset_scan(
             },
         )
         await session.commit()
+        from app.services.rag_queue import queue_rag_after_ingest
+        await queue_rag_after_ingest(session, ["asset"], created_by="asset-scan")
         await session.refresh(scan)
         return _asset_scan_obj(scan)
     except HTTPException:

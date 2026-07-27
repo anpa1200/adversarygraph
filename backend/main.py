@@ -23,6 +23,7 @@ import app.models.evidence_graph as _evidence_graph_models  # noqa: F401 — reg
 import app.models.threat_radar as _threat_radar_models  # noqa: F401 — register Base metadata
 import app.models.threat_hunting as _threat_hunting_models  # noqa: F401 — register Base metadata
 import app.models.rag as _rag_models  # noqa: F401 — register Base metadata
+import app.models.intelligence as _intelligence_models  # noqa: F401 — register Base metadata
 import app.models.query_library as _query_library_models  # noqa: F401 — register Base metadata
 from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, query_library, rag, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
 from app.api.openapi import OPENAPI_TAGS

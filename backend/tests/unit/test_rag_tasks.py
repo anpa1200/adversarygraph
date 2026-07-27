@@ -73,6 +73,9 @@ class _Session:
     async def execute(self, _statement):
         return _Result(self.run)
 
+    async def scalar(self, _statement):
+        return None
+
     async def get(self, model, item_id):
         if model is RAGIndexRun and item_id == self.run.id:
             return self.run

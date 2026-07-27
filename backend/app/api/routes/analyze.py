@@ -38,7 +38,7 @@ from app.services.auth import TeamUser, audit, current_user, has_permission, req
 from app.services.asset_intel import retrohunt_assets
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
-from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
+from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS, normalize_freeform_tags
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 run_analysis = require_permission("run_analysis")
@@ -594,7 +594,25 @@ async def ingest_research_url(
             "report_images": [image.model_dump() for image in report_images],
             "metadata": fetched.metadata,
         }
-        session.add(ReportIntake(
+        extracted_iocs = extract_iocs_from_text(
+            fetched.source_text,
+            source_id="manual-report-import",
+            confidence=70,
+        )[:200]
+        for extracted_ioc in extracted_iocs:
+            extracted_ioc.source_url = source_url
+            extracted_ioc.raw = {
+                **(extracted_ioc.raw or {}),
+                "report_id": str(db_session.id),
+                "report_url": source_url,
+                "provenance_type": "url-report",
+            }
+        report_tags = normalize_freeform_tags([
+            "report",
+            "source:url",
+            *([f"ttp:{tech.attack_id}" for tech in result.techniques] if adapter else []),
+        ])
+        report = ReportIntake(
             title=title,
             url=source_url,
             publisher=_publisher_from_url(source_url),
@@ -603,13 +621,43 @@ async def ingest_research_url(
             source_reliability="unknown",
             actor_ids=[],
             technique_ids=[tech.attack_id for tech in result.techniques] if adapter else [],
-            indicators=[asdict(item) for item in extract_iocs_from_text(
-                fetched.source_text,
-                source_id="report-url",
-                confidence=70,
-            )[:200]],
+            indicators=[asdict(item) for item in extracted_iocs],
+            tags=report_tags,
+            provenance={
+                "source_kind": "url-report",
+                "source_url": source_url,
+                "analysis_session_id": str(db_session.id),
+            },
             analyst_notes=json.dumps(notes, ensure_ascii=False),
-        ))
+        )
+        session.add(report)
+        await session.flush()
+        from app.services.intelligence_graph import link_entities, link_tagged_entities
+        from app.services.ioc_intel import import_iocs
+        await link_tagged_entities(
+            session,
+            entity_type="analysis_report",
+            entity_id=report.id,
+            tags=report_tags,
+            provenance_type="report_url",
+            provenance_id=source_url,
+            confidence=70,
+            evidence=source_url,
+        )
+        imported = await import_iocs(session, extracted_iocs, commit=False, queue_rag=False)
+        for indicator_id in imported.get("indicator_ids", []):
+            await link_entities(
+                session,
+                source_type="analysis_report",
+                source_id=report.id,
+                relationship_type="contains-indicator",
+                target_type="ioc",
+                target_id=indicator_id,
+                provenance_type="report_url",
+                provenance_id=source_url,
+                confidence=70,
+                evidence=source_url,
+            )
         await _retrohunt_assets_after_report_ingest(session, source="url-report")
         await audit(session, user, "analyze.ingest_research_url", "analysis_session", str(db_session.id), {
             "domain": domain,
@@ -618,6 +666,12 @@ async def ingest_research_url(
             "image_count": len(report_images),
         })
         await session.commit()
+        from app.services.rag_queue import queue_rag_after_ingest
+        await queue_rag_after_ingest(
+            session,
+            ["analysis_report", "ioc"],
+            created_by="report-ingestion",
+        )
     except Exception as exc:
         db_session.status = "failed"
         db_session.error = _URL_INGEST_FAILURE

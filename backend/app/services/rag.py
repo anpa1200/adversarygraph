@@ -41,6 +41,7 @@ from app.models.cve import CVEIOCLink, CVERecord
 from app.models.evidence_graph import EvidenceGraphNode
 from app.models.ioc import IOCIndicator
 from app.models.knowledge import KnowledgeArticle
+from app.models.operations import ReportIntake
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
 from app.models.sector import ActorIntelObservation, ClientProfile
 from app.models.threat_radar import (
@@ -1840,6 +1841,20 @@ async def _collect_cves(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
+    intake_rows = list((await db.execute(select(ReportIntake))).scalars().all())
+    intakes_by_session: dict[str, ReportIntake] = {}
+    for intake in intake_rows:
+        if not isinstance(intake, ReportIntake):
+            continue
+        session_id = str((intake.provenance or {}).get("analysis_session_id") or "")
+        if not session_id and intake.analyst_notes:
+            try:
+                notes = json.loads(intake.analyst_notes)
+                session_id = str(notes.get("analysis_session_id") or "")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                session_id = ""
+        if session_id:
+            intakes_by_session[session_id] = intake
     rows = (
         await db.execute(
             select(AnalysisSession, AnalysisResult)
@@ -1850,6 +1865,7 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
     ).all()
     records: list[SourceRecord] = []
     for report, result in rows:
+        intake = intakes_by_session.get(str(report.id))
         technique_ids = _extract_named_values(
             result.extracted_techniques if result else [], ("attack_id", "technique_id")
         )
@@ -1866,6 +1882,15 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
                 ("Source report", report.source_text),
                 ("ATT&CK techniques", technique_ids),
                 ("Actor matches", actor_ids),
+                ("Normalized tags", _safe_values(intake.tags if intake else [])),
+                (
+                    "Extracted indicators",
+                    _safe_values([
+                        f"{item.get('indicator_type') or item.get('type')}: {item.get('value')}"
+                        for item in (intake.indicators if intake else [])
+                        if isinstance(item, dict) and item.get("value")
+                    ]),
+                ),
             )
         )
         if not body:
@@ -1887,6 +1912,7 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
                     "filename": _basename(report.filename),
                     "technique_ids": technique_ids,
                     "actor_ids": actor_ids,
+                    "tags": _safe_values(intake.tags if intake else []),
                 },
                 sanitized=True,
             )

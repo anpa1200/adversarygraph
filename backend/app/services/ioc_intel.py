@@ -905,7 +905,15 @@ async def sync_threatfox(
     }
 
 
-async def import_iocs(session: AsyncSession, items: list[IOCImportItem]) -> dict[str, int | str]:
+async def import_iocs(
+    session: AsyncSession,
+    items: list[IOCImportItem],
+    *,
+    commit: bool = True,
+    queue_rag: bool = True,
+) -> dict[str, Any]:
+    from app.services.intelligence_graph import link_entities, link_tagged_entities
+
     await ensure_ioc_sources(session)
     groups = await _latest_groups(session, "enterprise-attack")
     inserted = 0
@@ -917,6 +925,27 @@ async def import_iocs(session: AsyncSession, items: list[IOCImportItem]) -> dict
         touched_ids.append(indicator_id)
         inserted += int(was_inserted)
         updated += int(not was_inserted)
+        entity_tags = [
+            *(item.tags or []),
+            f"ioc_type:{item.indicator_type}",
+            *[f"ttp:{attack_id}" for attack_id in _item_technique_ids(item)],
+        ]
+        if item.actor_attack_id:
+            entity_tags.append(f"actor:{item.actor_attack_id}")
+        if item.campaign:
+            entity_tags.append(f"campaign:{item.campaign}")
+        if item.malware_family:
+            entity_tags.append(f"malware:{item.malware_family}")
+        await link_tagged_entities(
+            session,
+            entity_type="ioc",
+            entity_id=indicator_id,
+            tags=entity_tags,
+            provenance_type="ioc_source",
+            provenance_id=item.source,
+            confidence=item.confidence,
+            evidence=item.source_url or item.description,
+        )
         targets = _actor_link_targets(item, groups)
         if targets:
             for group, evidence in targets:
@@ -941,9 +970,34 @@ async def import_iocs(session: AsyncSession, items: list[IOCImportItem]) -> dict
                 evidence=item.description or "Manual source mapped this IOC to the actor.",
             ):
                 linked += 1
+        for attack_id in _item_technique_ids(item):
+            await link_entities(
+                session,
+                source_type="ioc",
+                source_id=indicator_id,
+                relationship_type="indicates-technique",
+                target_type="attack_technique",
+                target_id=attack_id,
+                provenance_type="ioc_source",
+                provenance_id=item.source,
+                confidence=item.confidence,
+                evidence=item.source_url or item.description,
+            )
     enriched = await enrich_ioc_ttp_mappings(session, indicator_ids=touched_ids, use_ai=False)
-    await session.commit()
-    return {"source": MANUAL_SOURCE_ID, "inserted": inserted, "updated": updated, "actor_links": linked, "ttp_enriched": enriched["updated"]}
+    result: dict[str, Any] = {
+        "source": MANUAL_SOURCE_ID,
+        "inserted": inserted,
+        "updated": updated,
+        "actor_links": linked,
+        "ttp_enriched": enriched["updated"],
+        "indicator_ids": list(dict.fromkeys(touched_ids)),
+    }
+    if commit:
+        await session.commit()
+        if queue_rag:
+            from app.services.rag_queue import queue_rag_after_ingest
+            result["rag"] = await queue_rag_after_ingest(session, ["ioc"], created_by="ioc-ingestion")
+    return result
 
 
 async def enrich_ioc_ttp_mappings(
@@ -2016,6 +2070,15 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
         item.value = existing_indicator.value
         item.indicator_type = existing_indicator.indicator_type
         technique_ids = _dedupe_attack_ids([*(existing_indicator.technique_ids or []), *technique_ids])
+    canonical_record_tags = normalize_freeform_tags([
+        *((existing_indicator.tags or []) if existing_indicator else []),
+        *(item.tags or []),
+        f"ioc_type:{item.indicator_type}",
+        *[f"ttp:{attack_id}" for attack_id in technique_ids],
+        *([f"actor:{item.actor_attack_id}"] if item.actor_attack_id else []),
+        *([f"campaign:{item.campaign}"] if item.campaign else []),
+        *([f"malware:{item.malware_family}"] if item.malware_family else []),
+    ], limit=200)
     raw = dict(item.raw or {})
     if _is_network_fingerprint_type(item.indicator_type):
         raw.setdefault(
@@ -2043,7 +2106,7 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
             campaign=item.campaign,
             technique_ids=technique_ids,
             description=item.description,
-            tags=normalize_freeform_tags(item.tags or []),
+            tags=canonical_record_tags,
             raw=raw,
         )
         .on_conflict_do_update(
@@ -2057,7 +2120,7 @@ async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple
                 "campaign": item.campaign,
                 "technique_ids": technique_ids,
                 "description": item.description,
-                "tags": normalize_freeform_tags(item.tags or []),
+                "tags": canonical_record_tags,
                 "raw": raw,
                 "updated_at": datetime.now(timezone.utc),
             },

@@ -101,6 +101,12 @@ async def create_tables() -> None:
             "ALTER TABLE analysis_sessions ALTER COLUMN tlp SET NOT NULL"
         ))
         await conn.execute(text("ALTER TABLE ioc_indicators ADD COLUMN IF NOT EXISTS technique_ids JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE report_intake ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE report_intake ADD COLUMN IF NOT EXISTS provenance JSONB DEFAULT '{}'::jsonb"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_report_intake_tags_gin ON report_intake USING gin (tags)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_intelligence_entity_tags_entity ON intelligence_entity_tags (entity_type, entity_id)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_intelligence_relationship_source ON intelligence_relationships (source_type, source_id)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_intelligence_relationship_target ON intelligence_relationships (target_type, target_id)"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local'"))
         await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS external_subject VARCHAR(255) DEFAULT ''"))

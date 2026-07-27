@@ -114,7 +114,15 @@ async def inspect_ioc_cve_integrity(session: AsyncSession, *, sample_limit: int 
                 (select count(*)::int from ioc_indicators) as ioc_records,
                 (select count(*)::int from cve_records) as cve_records,
                 (select count(distinct lower(trim(value)) || '|' || lower(trim(indicator_type)) || '|' || source_id)::int from ioc_indicators) as normalized_ioc_keys,
-                (select count(distinct upper(trim(cve_id)))::int from cve_records) as normalized_cve_keys
+                (select count(distinct upper(trim(cve_id)))::int from cve_records) as normalized_cve_keys,
+                (select count(*)::int from ioc_indicators where jsonb_array_length(coalesce(tags, '[]'::jsonb)) = 0) as untagged_iocs,
+                (select count(*)::int from cve_records where jsonb_array_length(coalesce(tags, '[]'::jsonb)) = 0) as untagged_cves,
+                (select count(*)::int from report_intake where jsonb_array_length(coalesce(tags, '[]'::jsonb)) = 0) as untagged_reports,
+                (select count(*)::int from intelligence_tags where canonical <> namespace || ':' || value) as malformed_canonical_tags,
+                (select count(*)::int
+                   from intelligence_entity_tags entity_tag
+                   left join intelligence_tags tag on tag.canonical = entity_tag.tag
+                  where tag.canonical is null) as orphan_entity_tags
             """
         )
     )
@@ -124,7 +132,22 @@ async def inspect_ioc_cve_integrity(session: AsyncSession, *, sample_limit: int 
     normalized_ioc_duplicate_groups = len(normalized_ioc_duplicates)
     cve_duplicate_groups = len(cve_duplicates)
     cross_source_overlap_groups = len(cross_source_ioc_overlap)
-    status = "error" if normalized_ioc_duplicate_groups or cve_duplicate_groups or exact_ioc_duplicate_groups else "ok"
+    structural_errors = sum(
+        int(totals.get(key) or 0)
+        for key in (
+            "untagged_iocs",
+            "untagged_cves",
+            "untagged_reports",
+            "malformed_canonical_tags",
+            "orphan_entity_tags",
+        )
+    )
+    status = "error" if (
+        normalized_ioc_duplicate_groups
+        or cve_duplicate_groups
+        or exact_ioc_duplicate_groups
+        or structural_errors
+    ) else "ok"
 
     result = {
         "status": status,
@@ -135,6 +158,7 @@ async def inspect_ioc_cve_integrity(session: AsyncSession, *, sample_limit: int 
             "normalized_ioc_value_type_source": normalized_ioc_duplicate_groups,
             "normalized_cve_id": cve_duplicate_groups,
             "cross_source_ioc_overlap": cross_source_overlap_groups,
+            "structural_tag_errors": structural_errors,
         },
         "samples": {
             "exact_ioc_duplicates": exact_ioc_duplicates,
@@ -146,6 +170,7 @@ async def inspect_ioc_cve_integrity(session: AsyncSession, *, sample_limit: int 
             "ioc_canonical_key": "lower(trim(value)) + lower(trim(indicator_type)) + source_id",
             "cve_canonical_key": "upper(trim(cve_id))",
             "cross_source_ioc_overlap": "reported for visibility; not treated as corruption",
+            "canonical_tags": "every IOC, CVE, and report must have at least one normalized tag; tag links must resolve",
         },
     }
     _publish_snapshot(result)

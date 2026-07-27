@@ -101,6 +101,11 @@ async def test_analysis_session_lists_reject_unbounded_pagination(client: AsyncC
 
 @pytest.mark.asyncio
 async def test_ingest_research_url_stores_text_and_images(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    async def fake_import_iocs(_session, items, **_kwargs):
+        return {"indicator_ids": list(range(1, len(items) + 1))}
+
+    monkeypatch.setattr("app.services.ioc_intel.import_iocs", fake_import_iocs)
+
     async def fake_safe_get(url: str, **_kwargs):
         return httpx.Response(
             200,

@@ -232,6 +232,7 @@ def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
     status = "ok" if scan_status == "ok" else "error"
     normalized_ioc = int(duplicate_groups.get("normalized_ioc_value_type_source") or 0)
     cve_duplicates = int(duplicate_groups.get("normalized_cve_id") or 0)
+    structural_tags = int(duplicate_groups.get("structural_tag_errors") or 0)
     cross_source = int(duplicate_groups.get("cross_source_ioc_overlap") or 0)
     if status == "ok":
         message = "IOC/CVE deduplication integrity passed" + (
@@ -243,7 +244,8 @@ def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
         message = (
             "IOC/CVE duplicate integrity failed: "
             f"{normalized_ioc} normalized IOC duplicate group(s), "
-            f"{cve_duplicates} CVE duplicate group(s)."
+            f"{cve_duplicates} CVE duplicate group(s), "
+            f"{structural_tags} canonical tag integrity error(s)."
         )
     return _check_status("ioc_cve_dedup_integrity", status, message, summary)
 

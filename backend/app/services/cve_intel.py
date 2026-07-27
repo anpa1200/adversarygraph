@@ -20,7 +20,7 @@ from app.models.attack import Technique
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ioc_intel import _dedupe_attack_ids
-from app.services.taxonomy import canonical_tags
+from app.services.taxonomy import canonical_tags, normalize_freeform_tags
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,7 @@ async def list_cve_sources(session: AsyncSession) -> list[CVESource]:
 
 
 async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict[str, Any]:
+    from app.services.intelligence_graph import link_tagged_entities
     await ensure_cve_sources(session)
     inserted = 0
     updated = 0
@@ -139,7 +140,13 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
             "cwe_ids": sorted(set(item.cwe_ids or [])),
             "cpe_matches": sorted(set(item.cpe_matches or [])),
             "references": item.references or [],
-            "tags": canonical_tags("tag", item.tags or []),
+            "tags": normalize_freeform_tags([
+                *(item.tags or []),
+                f"cve:{cve_id}",
+                *[f"cwe:{cwe}" for cwe in (item.cwe_ids or [])],
+                *(["tag:known-exploited", "risk:critical"] if item.known_exploited else []),
+                *([f"risk:{item.cvss_severity}"] if item.cvss_severity else []),
+            ], limit=200),
             "known_exploited": item.known_exploited,
             "kev_due_date": item.kev_due_date,
             "kev_required_action": item.kev_required_action,
@@ -163,9 +170,32 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
                     value = _merge_references(existing.references or [], value)
                 setattr(existing, key, value)
             updated += 1
+            record = existing
         else:
-            session.add(CVERecord(**values))
+            record = CVERecord(**values)
+            session.add(record)
+            await session.flush()
             inserted += 1
+        cve_tags = [
+            f"cve:{cve_id}",
+            *(record.tags or []),
+            *[f"cwe:{cwe}" for cwe in (record.cwe_ids or [])],
+            *[f"product:{cpe}" for cpe in (record.cpe_matches or [])],
+        ]
+        if record.known_exploited:
+            cve_tags.extend(["tag:known-exploited", "risk:critical"])
+        if record.cvss_severity:
+            cve_tags.append(f"risk:{record.cvss_severity}")
+        await link_tagged_entities(
+            session,
+            entity_type="cve",
+            entity_id=cve_id,
+            tags=cve_tags,
+            provenance_type="cve_source",
+            provenance_id=item.source_id,
+            confidence=95 if record.known_exploited else 80,
+            evidence=str((record.references or [item.source_id])[0]),
+        )
     await session.commit()
     result: dict[str, Any] = {"inserted": inserted, "updated": updated}
     if inserted or updated:
@@ -177,6 +207,8 @@ async def upsert_cves(session: AsyncSession, items: list[CVEImportItem]) -> dict
         except Exception:
             logger.exception("Asset retrohunt failed after CVE upsert")
             result["asset_retrohunt_error"] = "Asset retrohunt failed. See server logs."
+        from app.services.rag_queue import queue_rag_after_ingest
+        result["rag"] = await queue_rag_after_ingest(session, ["cve"], created_by="cve-ingestion")
     return result
 
 
