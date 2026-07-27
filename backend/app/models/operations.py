@@ -39,6 +39,8 @@ class ReportIntake(Base):
     actor_ids: Mapped[list] = mapped_column(JSONB, default=list)
     technique_ids: Mapped[list] = mapped_column(JSONB, default=list)
     indicators: Mapped[list] = mapped_column(JSONB, default=list)
+    tags: Mapped[list] = mapped_column(JSONB, default=list)
+    provenance: Mapped[dict] = mapped_column(JSONB, default=dict)
     analyst_notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
