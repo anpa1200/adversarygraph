@@ -386,6 +386,13 @@ function SelfTestReportPopup({
 }) {
   const apiCheck = result?.checks.find(check => check.name === 'api_keys');
   const syncCheck = result?.checks.find(check => check.name === 'ioc_sync');
+  const inventoryCheck = result?.checks.find(check => check.name === 'data_inventory');
+  const inventory = inventoryCheck?.details as {
+    totals?: Record<string, number>;
+    attack_by_domain?: Record<string, Record<string, number>>;
+    tags_by_namespace?: Record<string, number>;
+  } | undefined;
+  const inventoryTotals = inventory?.totals ?? {};
   const providers = getProviderEntries(apiCheck?.details.providers);
   const configuredProviders = providers
       .filter(([, value]) => value.configured)
@@ -465,6 +472,60 @@ function SelfTestReportPopup({
                 </div>
                 <p className="mt-3 text-xs text-gray-500">Configured: {configuredProviders.length ? configuredProviders.map(providerLabel).join(', ') : 'none'}</p>
               </section>
+
+              {inventory && (
+                <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+                  <h3 className="text-sm font-semibold text-white">Data inventory</h3>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">
+                    Live row counts across the core intelligence data model.
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+                    <InventoryMetric label="IOCs" value={inventoryTotals.ioc_total} />
+                    <InventoryMetric label="CVEs" value={inventoryTotals.cve_total} sub={`${(inventoryTotals.cve_known_exploited ?? 0).toLocaleString()} known exploited`} />
+                    <InventoryMetric label="ATT&CK techniques" value={inventoryTotals.technique_total} />
+                    <InventoryMetric label="ATT&CK tactics" value={inventoryTotals.tactic_total} />
+                    <InventoryMetric label="ATT&CK groups" value={inventoryTotals.group_total} />
+                    <InventoryMetric label="Campaigns" value={inventoryTotals.campaign_total} />
+                    <InventoryMetric label="Tags" value={inventoryTotals.tag_total} sub={`${(inventoryTotals.tag_application_total ?? 0).toLocaleString()} applications`} />
+                    <InventoryMetric label="Assets" value={inventoryTotals.asset_total} />
+                    <InventoryMetric label="Reports" value={inventoryTotals.report_total} />
+                    <InventoryMetric
+                      label="Correlations"
+                      value={(inventoryTotals.ioc_actor_link_total ?? 0) + (inventoryTotals.cve_actor_link_total ?? 0) + (inventoryTotals.cve_technique_link_total ?? 0)}
+                      sub="IOC/CVE ↔ actor/technique links"
+                    />
+                  </div>
+                  {inventory.attack_by_domain && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {(['technique', 'tactic', 'group'] as const).map(kind => (
+                        <div key={kind} className="rounded border border-gray-800 bg-gray-950/50 p-2 text-xs">
+                          <p className="font-semibold capitalize text-gray-300">{kind}s by domain</p>
+                          <div className="mt-1 space-y-0.5 text-gray-500">
+                            {Object.entries(inventory.attack_by_domain?.[kind] ?? {}).map(([domain, count]) => (
+                              <div key={domain} className="flex justify-between gap-2">
+                                <span>{domain}</span>
+                                <span className="text-gray-300">{count.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {inventory.tags_by_namespace && Object.keys(inventory.tags_by_namespace).length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-gray-300">Tags by namespace</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {Object.entries(inventory.tags_by_namespace).map(([namespace, count]) => (
+                          <span key={namespace} className="rounded bg-gray-800 px-2 py-0.5 text-[11px] text-gray-300">
+                            {namespace}:{count.toLocaleString()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
 
               <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -557,6 +618,16 @@ function ReportMetric({ label, value, tone = 'neutral' }: { label: string; value
     <div className="rounded border border-gray-800 bg-gray-900/70 p-3">
       <b className={`block text-lg ${valueColor}`}>{value}</b>
       <span className="text-[10px] text-gray-500">{label}</span>
+    </div>
+  );
+}
+
+function InventoryMetric({ label, value, sub }: { label: string; value?: number; sub?: string }) {
+  return (
+    <div className="rounded border border-gray-800 bg-gray-950/50 p-2">
+      <b className="block text-base text-white">{(value ?? 0).toLocaleString()}</b>
+      <span className="text-[10px] text-gray-500">{label}</span>
+      {sub && <span className="mt-0.5 block text-[10px] text-gray-600">{sub}</span>}
     </div>
   );
 }

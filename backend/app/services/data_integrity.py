@@ -177,6 +177,72 @@ async def inspect_ioc_cve_integrity(session: AsyncSession, *, sample_limit: int 
     return result
 
 
+async def database_inventory_snapshot(session: AsyncSession) -> dict[str, Any]:
+    """
+    Live counts across the core intelligence data model: IOCs, CVEs, ATT&CK
+    techniques/tactics/groups, campaigns, tags, cross-entity correlations,
+    assets, and reports. Read-only; safe to run on every self-test.
+    """
+    totals_result = await session.execute(
+        text(
+            """
+            select
+                (select count(*)::int from ioc_indicators) as ioc_total,
+                (select count(*)::int from cve_records) as cve_total,
+                (select count(*)::int from cve_records where known_exploited) as cve_known_exploited,
+                (select count(*)::int from techniques) as technique_total,
+                (select count(*)::int from tactics) as tactic_total,
+                (select count(*)::int from apt_groups) as group_total,
+                (select count(*)::int from campaigns) as campaign_total,
+                (select count(*)::int from intelligence_tags) as tag_total,
+                (select count(*)::int from intelligence_entity_tags) as tag_application_total,
+                (select count(*)::int from ioc_actor_links) as ioc_actor_link_total,
+                (select count(*)::int from cve_actor_links) as cve_actor_link_total,
+                (select count(*)::int from cve_technique_links) as cve_technique_link_total,
+                (select count(*)::int from asset_registry_items) as asset_total,
+                (select count(*)::int from report_intake) as report_total
+            """
+        )
+    )
+    totals = dict(totals_result.one()._mapping)
+
+    domain_rows = await session.execute(
+        text(
+            """
+            select 'technique' as kind, domain, count(*)::int as rows from techniques group by domain
+            union all
+            select 'tactic' as kind, domain, count(*)::int as rows from tactics group by domain
+            union all
+            select 'group' as kind, domain, count(*)::int as rows from apt_groups group by domain
+            order by kind, domain
+            """
+        )
+    )
+    by_domain: dict[str, dict[str, int]] = {"technique": {}, "tactic": {}, "group": {}}
+    for row in domain_rows.mappings():
+        by_domain[row["kind"]][row["domain"]] = row["rows"]
+
+    tag_namespace_rows = await session.execute(
+        text(
+            """
+            select namespace, count(*)::int as rows
+            from intelligence_tags
+            group by namespace
+            order by rows desc
+            limit 20
+            """
+        )
+    )
+    tags_by_namespace = {row["namespace"]: row["rows"] for row in tag_namespace_rows.mappings()}
+
+    return {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "totals": totals,
+        "attack_by_domain": by_domain,
+        "tags_by_namespace": tags_by_namespace,
+    }
+
+
 def mark_ioc_cve_integrity_unavailable(exc: Exception) -> dict[str, Any]:
     """Publish a safe failure state for self-test without exposing database details."""
     result = {

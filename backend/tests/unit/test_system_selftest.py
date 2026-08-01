@@ -9,6 +9,7 @@ from app.api.routes.system import (
     _check_status,
     _cpu_percent_from_totals,
     _data_integrity_check,
+    _data_inventory_check,
     _format_bytes,
     _memory_usage_details,
     _overall_selftest_status,
@@ -153,6 +154,49 @@ def test_data_integrity_check_reports_background_scan_without_blocking():
 
     assert check.status == "warning"
     assert "running in the background" in check.message
+
+
+def test_data_inventory_check_summarizes_core_counts():
+    check = _data_inventory_check(
+        {
+            "checked_at": "2026-08-01T00:00:00+00:00",
+            "totals": {
+                "ioc_total": 121811,
+                "cve_total": 8401,
+                "cve_known_exploited": 1656,
+                "technique_total": 1088,
+                "tactic_total": 55,
+                "group_total": 208,
+                "campaign_total": 67,
+                "tag_total": 13905,
+                "tag_application_total": 343646,
+                "ioc_actor_link_total": 10002,
+                "cve_actor_link_total": 86,
+                "cve_technique_link_total": 7,
+                "asset_total": 22,
+                "report_total": 0,
+            },
+            "attack_by_domain": {},
+            "tags_by_namespace": {},
+        }
+    )
+
+    assert check.name == "data_inventory"
+    assert check.status == "ok"
+    assert "121,811 IOCs" in check.message
+    assert "8,401 CVEs" in check.message
+    assert "1,656 known exploited" in check.message
+    assert "1,088 techniques" in check.message
+    assert "208 groups" in check.message
+    assert "13,905 tags" in check.message
+    assert check.details["totals"]["campaign_total"] == 67
+
+
+def test_data_inventory_check_handles_empty_totals():
+    check = _data_inventory_check({"totals": {}, "attack_by_domain": {}, "tags_by_namespace": {}})
+
+    assert check.status == "ok"
+    assert "0 IOCs" in check.message
 
 
 def test_auth_readiness_passes_with_local_auth_disabled_warning(monkeypatch):
