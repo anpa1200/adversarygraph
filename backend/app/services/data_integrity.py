@@ -235,11 +235,24 @@ async def database_inventory_snapshot(session: AsyncSession) -> dict[str, Any]:
     )
     tags_by_namespace = {row["namespace"]: row["rows"] for row in tag_namespace_rows.mappings()}
 
+    ioc_type_rows = await session.execute(
+        text(
+            """
+            select indicator_type, count(*)::int as rows
+            from ioc_indicators
+            group by indicator_type
+            order by rows desc
+            """
+        )
+    )
+    ioc_by_type = {row["indicator_type"]: row["rows"] for row in ioc_type_rows.mappings()}
+
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "totals": totals,
         "attack_by_domain": by_domain,
         "tags_by_namespace": tags_by_namespace,
+        "ioc_by_type": ioc_by_type,
     }
 
 

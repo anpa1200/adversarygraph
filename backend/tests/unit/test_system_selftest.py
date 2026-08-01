@@ -178,6 +178,7 @@ def test_data_inventory_check_summarizes_core_counts():
             },
             "attack_by_domain": {},
             "tags_by_namespace": {},
+            "ioc_by_type": {"url": 79924, "domain": 20018},
         }
     )
 
@@ -190,6 +191,7 @@ def test_data_inventory_check_summarizes_core_counts():
     assert "208 groups" in check.message
     assert "13,905 tags" in check.message
     assert check.details["totals"]["campaign_total"] == 67
+    assert check.details["ioc_by_type"] == {"url": 79924, "domain": 20018}
 
 
 def test_data_inventory_check_handles_empty_totals():

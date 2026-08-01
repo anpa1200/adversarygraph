@@ -391,6 +391,7 @@ function SelfTestReportPopup({
     totals?: Record<string, number>;
     attack_by_domain?: Record<string, Record<string, number>>;
     tags_by_namespace?: Record<string, number>;
+    ioc_by_type?: Record<string, number>;
   } | undefined;
   const inventoryTotals = inventory?.totals ?? {};
   const providers = getProviderEntries(apiCheck?.details.providers);
@@ -510,6 +511,18 @@ function SelfTestReportPopup({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {inventory.ioc_by_type && Object.keys(inventory.ioc_by_type).length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-gray-300">IOCs by type</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {Object.entries(inventory.ioc_by_type).map(([type, count]) => (
+                          <span key={type} className="rounded bg-gray-800 px-2 py-0.5 text-[11px] text-gray-300">
+                            {type}:{count.toLocaleString()}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {inventory.tags_by_namespace && Object.keys(inventory.tags_by_namespace).length > 0 && (

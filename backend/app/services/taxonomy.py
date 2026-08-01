@@ -55,6 +55,12 @@ KIND_ALIASES = {
     "label": "tag",
 }
 
+# The only namespaces the canonical taxonomy recognizes. Any other prefix on
+# freeform input (e.g. a raw source-supplied "jarm:" or "port:" label) is not
+# a namespace we control the vocabulary for, so it is folded into the
+# generic tag: namespace instead of silently becoming a new one.
+VALID_NAMESPACES = frozenset(KIND_ALIASES.values())
+
 RISK_ALIASES = {
     "crit": "critical",
     "critical": "critical",
@@ -148,7 +154,10 @@ def normalize_freeform_tags(values: Any, *, limit: int = 100) -> list[str]:
             continue
         if ":" in raw:
             kind, label = raw.split(":", 1)
-            tags.append(canonical_tag(kind, label))
+            if canonical_kind(kind) in VALID_NAMESPACES:
+                tags.append(canonical_tag(kind, label))
+            else:
+                tags.append(canonical_tag("tag", f"{_slug(kind)}_{label}"))
         elif CVE_ID_RE.fullmatch(raw):
             tags.append(canonical_tag("cve", raw))
         elif ATTACK_ID_RE.fullmatch(raw):
