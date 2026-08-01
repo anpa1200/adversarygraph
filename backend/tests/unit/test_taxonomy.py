@@ -63,6 +63,21 @@ def test_freeform_tags_preserve_known_structured_values():
     ]
 
 
+def test_freeform_tags_reject_unrecognized_namespaces():
+    # A raw source-supplied "namespace:value" label is not allowed to invent
+    # a new tag namespace outside the closed taxonomy; it folds into tag:.
+    assert normalize_freeform_tags(["jarm:1276612955", "port:1337", "pause_amd64:3.4"]) == [
+        "tag:jarm_1276612955",
+        "tag:port_1337",
+        "tag:pause_amd64_3.4",
+    ]
+    # Known namespaces still resolve normally, with values slugified.
+    assert normalize_freeform_tags(["actor:G0069", "malware:cobalt strike"]) == [
+        "actor:G0069",
+        "malware:cobalt-strike",
+    ]
+
+
 def test_canonical_value_maps_common_aliases():
     assert canonical_value("exposure", "DMZ") == "internet"
     assert canonical_value("exposure", "third party") == "third-party"
