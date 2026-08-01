@@ -45,6 +45,21 @@ def test_parse_output_is_strict_and_requires_exact_schema():
         rag_ai.parse_output(f"```json\n{json.dumps(parsed.model_dump())}\n```")
 
 
+def test_prompt_embeds_schema_generated_from_response_model():
+    system, _ = rag_ai.rag_prompt(
+        question="What does the source say?",
+        domain="enterprise-attack",
+        sources=_sources(),
+        business_context=None,
+    )
+    schema = rag_ai._RawRAGOutput.model_json_schema()
+
+    assert rag_ai.canonical_json(schema) in system
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {"answer", "cited_source_ids"}
+    assert rag_ai.PROMPT_VERSION == "unified-intelligence-rag-v2"
+
+
 @pytest.mark.asyncio
 async def test_sanitize_rejects_unverified_or_missing_citation_markers(monkeypatch):
     with pytest.raises(rag_ai.RAGOutputError, match="citation markers"):
@@ -61,19 +76,22 @@ async def test_sanitize_rejects_unverified_or_missing_citation_markers(monkeypat
             db=object(),
         )
 
-    with pytest.raises(rag_ai.RAGOutputError, match="omitted"):
-        await rag_ai.sanitize_output(
-            rag_ai.parse_output(json.dumps({
-                "answer": "Claim without marker",
-                "cited_source_ids": ["S1"],
-                "relevant_source_ids": [],
-                "cautions": [],
-                "navigator_proposal": None,
-            })),
-            sources=_sources(),
-            domain="enterprise-attack",
-            db=object(),
-        )
+    output, warnings = await rag_ai.sanitize_output(
+        rag_ai.parse_output(json.dumps({
+            "answer": "Claim without marker",
+            "cited_source_ids": ["S1"],
+            "relevant_source_ids": [],
+            "cautions": [],
+            "navigator_proposal": None,
+        })),
+        sources=_sources(),
+        domain="enterprise-attack",
+        db=object(),
+    )
+    assert output["answer"] == "Claim without marker [S1]"
+    assert warnings == [
+        "Normalized citation markers from the provider's explicitly declared verified source IDs."
+    ]
 
 
 @pytest.mark.asyncio
@@ -104,6 +122,26 @@ async def test_sanitize_locally_verifies_navigator_ids(monkeypatch):
         "Removed 1 Navigator technique(s) not present in the cited evidence.",
         "removed one",
     ]
+
+
+@pytest.mark.asyncio
+async def test_derive_navigator_proposal_uses_only_cited_verified_evidence(monkeypatch):
+    async def verify(_db, values, *, domain):
+        assert domain == "enterprise-attack"
+        assert values == ["T1566"]
+        return values, []
+
+    monkeypatch.setattr(rag_ai.governed_ai, "verify_technique_ids", verify)
+    proposal, warnings = await rag_ai.derive_navigator_proposal(
+        sources=_sources(),
+        cited_source_refs={"S1"},
+        domain="enterprise-attack",
+        db=object(),
+    )
+
+    assert proposal["technique_ids"] == ["T1566"]
+    assert proposal["name"] == "Reviewed T1566 evidence"
+    assert warnings == []
 
 
 @pytest.mark.asyncio

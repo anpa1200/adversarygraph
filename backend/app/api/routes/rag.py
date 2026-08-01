@@ -72,6 +72,7 @@ class AssistRequest(SearchRequest):
     provider: AIProvider = "local"
     model: str | None = Field(default=None, max_length=160)
     cloud_processing_acknowledged: bool = False
+    navigator_proposal_requested: bool = False
 
 
 class ReindexRequest(BaseModel):
@@ -418,9 +419,17 @@ async def assist(
             409,
             "The selected business profile changed during retrieval; run the query again",
         )
+    context_limit = settings.rag_max_context_chars
+    if body.provider == "local":
+        # CPU-hosted models commonly run with a 4K token window. Keep the
+        # schema, question, business scope, and evidence inside that window.
+        context_limit = min(
+            context_limit,
+            3_500 if body.navigator_proposal_requested else 4_000,
+        )
     sources, context_warnings = rag_ai.build_sources(
         items,
-        max_context_chars=settings.rag_max_context_chars,
+        max_context_chars=context_limit,
         question=body.query,
         business_context=business_context,
     )
@@ -430,11 +439,17 @@ async def assist(
         items,
         includes_business_profile=business_context is not None,
     )
+    rag_local_model = (
+        settings.rag_local_model.strip() or None
+        if body.provider == "local"
+        else None
+    )
     adapter = governed_ai.create_adapter(
         body.provider,
         body.model,
         effective_tlp=effective_tlp,
         cloud_processing_acknowledged=body.cloud_processing_acknowledged,
+        server_configured_model=rag_local_model,
     )
     system, prompt = rag_ai.rag_prompt(
         question=body.query,
@@ -484,12 +499,24 @@ async def assist(
     else:
         # Never retain a database transaction across provider egress.
         await db.rollback()
-    try:
-        raw = await governed_ai.complete(adapter, system, prompt)
-    except governed_ai.AIProviderTimeoutError as exc:
-        raise HTTPException(504, "AI provider timed out before returning a grounded answer") from exc
-    except governed_ai.AIProviderCallError as exc:
-        raise HTTPException(502, "AI provider failed while producing a grounded answer") from exc
+    if body.provider == "local" and body.navigator_proposal_requested:
+        raw = rag_ai.canonical_json({
+            "answer": "Prepared an evidence-verified Navigator proposal.",
+            "cited_source_ids": [sources[0].ref],
+            "relevant_source_ids": [sources[0].ref],
+            "cautions": [],
+            "navigator_proposal": None,
+        })
+        context_warnings.append(
+            "Local Navigator proposal structure was assembled deterministically from cited evidence; no generative model created or applied the layer."
+        )
+    else:
+        try:
+            raw = await governed_ai.complete(adapter, system, prompt)
+        except governed_ai.AIProviderTimeoutError as exc:
+            raise HTTPException(504, "AI provider timed out before returning a grounded answer") from exc
+        except governed_ai.AIProviderCallError as exc:
+            raise HTTPException(502, "AI provider failed while producing a grounded answer") from exc
 
     try:
         parsed = rag_ai.parse_output(raw)
@@ -501,7 +528,16 @@ async def assist(
         )
     except rag_ai.RAGOutputError as exc:
         raise HTTPException(502, str(exc)) from exc
-    stale = await _stale_source_refs(db, items)
+    stale = await _stale_source_refs(
+        db,
+        [
+            {
+                "chunk_id": source.chunk_id,
+                "content_hash": source.content_hash,
+            }
+            for source in sources
+        ],
+    )
     if stale:
         raise HTTPException(409, "Retrieved intelligence changed while the answer was generated; run the query again")
     if body.client_profile_id is not None:
@@ -552,6 +588,17 @@ async def assist(
         ),
     ], 30)
     proposal_data = sanitized.get("navigator_proposal")
+    if body.navigator_proposal_requested and proposal_data is None:
+        proposal_data, proposal_warnings = await rag_ai.derive_navigator_proposal(
+            sources=sources,
+            cited_source_refs={
+                str(item.get("source_ref") or "")
+                for item in sanitized.get("citations", [])
+            },
+            domain=body.domain,
+            db=db,
+        )
+        warnings.extend(proposal_warnings)
     proposal_version: AttackVersion | None = None
     if proposal_data:
         proposal_version = (

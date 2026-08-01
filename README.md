@@ -212,7 +212,8 @@ for dedicated-account and client configuration.
 | v6 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](docs/assets/adversarygraph-v6/manifest.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
-| Threat Hunting operational guide | [docs/threat-hunting-guide.md](docs/threat-hunting-guide.md) |
+| Threat Hunting methodology | [docs/threat-hunting-guide.md](docs/threat-hunting-guide.md) |
+| Threat Hunting with AdversaryGraph | [docs/threat-hunting-with-adversarygraph.md](docs/threat-hunting-with-adversarygraph.md) |
 | Threat Hunting Query Library | [docs/query-library.md](docs/query-library.md) |
 | Unified intelligence RAG and MCP | [docs/unified-rag-and-mcp.md](docs/unified-rag-and-mcp.md) |
 | MCP server configuration | [docs/mcp-server.md](docs/mcp-server.md) |

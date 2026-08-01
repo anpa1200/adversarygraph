@@ -267,6 +267,37 @@ def test_remote_provider_requires_policy_acknowledgement_and_permitted_tlp(monke
     factory.assert_called_once_with("openai", settings.openai_model)
 
 
+def test_server_configured_model_override_is_local_only(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    adapter = SimpleNamespace(provider="local", model="qwen2.5:3b")
+    factory = MagicMock(return_value=adapter)
+    monkeypatch.setattr(ai, "get_adapter", factory)
+    monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://localhost:11434/v1")
+
+    created = ai.create_adapter(
+        "local",
+        None,
+        effective_tlp="TLP:AMBER",
+        cloud_processing_acknowledged=False,
+        server_configured_model="qwen2.5:3b",
+    )
+
+    assert created is adapter
+    factory.assert_called_once_with("local", "qwen2.5:3b")
+
+    with pytest.raises(HTTPException) as remote_override:
+        ai.create_adapter(
+            "openai",
+            None,
+            effective_tlp="TLP:CLEAR",
+            cloud_processing_acknowledged=True,
+            server_configured_model="alternate-remote-model",
+        )
+    assert remote_override.value.status_code == 500
+
+
 def test_remote_provider_catalog_separates_configuration_from_cloud_policy(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "threat_hunting_ai_enabled", True)
     monkeypatch.setattr(settings, "threat_hunting_ai_cloud_enabled", False)

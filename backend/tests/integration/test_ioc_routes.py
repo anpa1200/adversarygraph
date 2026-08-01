@@ -167,7 +167,7 @@ async def test_ioc_investigation_route_shape(client: AsyncClient, monkeypatch):
             "ai_input": {},
         }
 
-    monkeypatch.setattr(ioc_route, "investigate_ioc", fake_investigate)
+    monkeypatch.setattr(ioc_route, "run_ioc_investigation", fake_investigate)
     resp = await client.post("/api/ioc/investigate", json={"artifact": "8.8.8.8", "depth": 2})
     assert resp.status_code == 200
     body = resp.json()

@@ -206,7 +206,7 @@ config:
   threatHuntingAiEnabled: "true"
   threatHuntingAiCloudEnabled: "false"
   threatHuntingAiDefaultProvider: local
-  threatHuntingAiTimeoutSeconds: "45"
+  threatHuntingAiTimeoutSeconds: "120"
   threatHuntingAiSourceCharLimit: "40000"
   threatHuntingAiMaxCandidates: "3"
   ragEnabled: "true"

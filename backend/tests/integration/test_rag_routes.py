@@ -381,12 +381,12 @@ async def test_malformed_or_citation_invalid_ai_output_maps_to_502(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.setattr(settings, "rag_local_model", "qwen2.5:3b")
     monkeypatch.setattr(rag_service, "hybrid_search", AsyncMock(return_value=_result(_item())))
-    monkeypatch.setattr(
-        governed_ai,
-        "create_adapter",
-        MagicMock(return_value=SimpleNamespace(model="test-local-model")),
+    create_adapter = MagicMock(
+        return_value=SimpleNamespace(model="test-local-model")
     )
+    monkeypatch.setattr(governed_ai, "create_adapter", create_adapter)
     monkeypatch.setattr(governed_ai, "complete", AsyncMock(return_value=provider_output))
 
     response = await client.post("/api/rag/assist", json={
@@ -396,6 +396,8 @@ async def test_malformed_or_citation_invalid_ai_output_maps_to_502(
 
     assert response.status_code == 502
     assert message in response.text
+    assert create_adapter.call_args.args[:2] == ("local", None)
+    assert create_adapter.call_args.kwargs["server_configured_model"] == "qwen2.5:3b"
     assert _objects(RAGAssistance) == []
 
 
@@ -585,7 +587,7 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
     assert assistance.provider == "local"
     assert assistance.model == "test-local-model"
     assert assistance.retrieval_mode == "hybrid"
-    assert assistance.prompt_version == "unified-intelligence-rag-v1"
+    assert assistance.prompt_version == "unified-intelligence-rag-v2"
     assert len(assistance.query_checksum) == 64
     assert len(assistance.output_checksum) == 64
     assert assistance.filters == {
@@ -607,6 +609,40 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
     assert audits[0].details["proposal_created"] is True
     assert audits[0].details["source_count"] == 1
     assert _objects(UserLayer) == []
+
+
+async def test_local_navigator_request_uses_deterministic_verified_assembly(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _attack_version()
+    monkeypatch.setattr(
+        rag_service, "hybrid_search", AsyncMock(return_value=_result(_item()))
+    )
+    provider = AsyncMock(side_effect=AssertionError("local proposal must not decode prose"))
+    monkeypatch.setattr(governed_ai, "complete", provider)
+    monkeypatch.setattr(
+        governed_ai,
+        "create_adapter",
+        MagicMock(return_value=SimpleNamespace(model="test-local-model")),
+    )
+    monkeypatch.setattr(
+        governed_ai,
+        "verify_technique_ids",
+        AsyncMock(return_value=(["T1059.001"], [])),
+    )
+    monkeypatch.setattr(rag_routes, "_stale_source_refs", AsyncMock(return_value=False))
+
+    response = await client.post("/api/rag/assist", json={
+        "query": "Create a Navigator layer for T1059.001",
+        "provider": "local",
+        "navigator_proposal_requested": True,
+    })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["navigator_proposal"]["technique_ids"] == ["T1059.001"]
+    assert response.json()["navigator_proposal"]["requires_confirmation"] is True
+    provider.assert_not_awaited()
 
 
 async def test_assistance_rejects_source_hash_changed_during_provider_call(

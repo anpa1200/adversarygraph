@@ -52,7 +52,7 @@ Important settings:
 | `THREAT_HUNTING_AI_ENABLED` | Enable governed Threat Hunting AI endpoints, default `true` |
 | `THREAT_HUNTING_AI_CLOUD_ENABLED` | Permit configured remote providers for eligible markings, default `false` |
 | `THREAT_HUNTING_AI_DEFAULT_PROVIDER` | Default Threat Hunting provider: `local`, `claude`, `openai`, `gemini`, or `minimax`; default `local` |
-| `THREAT_HUNTING_AI_TIMEOUT_SECONDS` | Maximum governed assistant generation time; default `45` seconds, enforced range `5`–`180` |
+| `THREAT_HUNTING_AI_TIMEOUT_SECONDS` | Maximum governed assistant generation time; default `120` seconds, enforced range `5`–`180`; local providers retain a 120-second minimum to support CPU-hosted structured generation |
 | `THREAT_HUNTING_AI_SOURCE_CHAR_LIMIT` | Maximum raw source-text characters included in report-to-hypothesis context; default `40000`, enforced range `4000`–`80000` |
 | `THREAT_HUNTING_AI_MAX_CANDIDATES` | Maximum returned report-to-hypothesis candidates; default `3`, enforced range `1`–`3` |
 | `RAG_ENABLED` | Enable unified hybrid retrieval and grounded assistant endpoints; default `true` |

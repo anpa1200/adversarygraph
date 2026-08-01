@@ -10,7 +10,8 @@ Published walkthrough and visual reference:
 
 - Current platform guide: [`adversarygraph-platform-guide.md`](adversarygraph-platform-guide.md)
 - Research analysis guide: [`research-analysis-guide.md`](research-analysis-guide.md)
-- Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
+- Threat hunting methodology: [`threat-hunting-guide.md`](threat-hunting-guide.md)
+- Threat Hunting with AdversaryGraph: [`threat-hunting-with-adversarygraph.md`](threat-hunting-with-adversarygraph.md)
 - Unified intelligence RAG and MCP guide: [`unified-rag-and-mcp.md`](unified-rag-and-mcp.md)
 - MCP client setup: [`mcp-server.md`](mcp-server.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)

@@ -1,8 +1,8 @@
 # Threat Hunting: From Hypothesis to Defensible Detection
 
 > A practical, evidence-led guide for building, running, reviewing, and improving
-> threat hunts with AdversaryGraph. This edition uses MITRE ATT&CK v19
-> terminology and was reviewed on 18 July 2026 against the current v19 release
+> threat hunts. This edition uses MITRE ATT&CK v19
+> terminology and was reviewed on 25 July 2026 against the current v19 release
 > and v19.1 data. Revalidate ATT&CK mappings whenever the platform's ATT&CK
 > content is upgraded.
 
@@ -14,10 +14,15 @@ evidence, and an explicit decision.
 
 This guide is written for SOC analysts, detection engineers, incident
 responders, threat-intelligence analysts, platform administrators, and security
-leaders. The core methodology is vendor-neutral; Section 14 and the worked
-playbooks show how to operate it in AdversaryGraph. Query examples are
-pseudocode and must be adapted to the local schema, backend, retention window,
-and business context before use.
+leaders. The core methodology is vendor-neutral. Query examples are pseudocode
+and must be adapted to the local schema, backend, retention window, and business
+context before use.
+
+AdversaryGraph resources:
+[platform](https://1200km.com/adversarygraph/) ·
+[operator guide](threat-hunting-with-adversarygraph.md) ·
+[GitHub](https://github.com/anpa1200/adversarygraph) ·
+[documentation](https://1200km.com/adversarygraph-docs/)
 
 ## Table of Contents
 
@@ -34,17 +39,13 @@ and business context before use.
 11. [Investigate matches and preserve evidence](#11-investigate-matches-and-preserve-evidence)
 12. [Decide, escalate, and close](#12-decide-escalate-and-close)
 13. [Convert learning into durable defense](#13-convert-learning-into-durable-defense)
-14. [AdversaryGraph threat-hunting workflow](#14-adversarygraph-threat-hunting-workflow)
-    - [Stored report or research session to hypothesis](#1431-turn-a-stored-report-or-research-session-into-a-hypothesis)
-    - [Assistance across the hunt](#1432-use-assistance-across-the-hunt-without-delegating-decisions)
-    - [Cross-source RAG evidence to a hunt](#1433-use-cross-source-rag-evidence-to-scope-a-hunt)
-15. [Security, privacy, and operational boundaries](#15-security-privacy-and-operational-boundaries)
-16. [Metrics and maturity](#16-metrics-and-maturity)
-17. [Twenty worked hunt playbooks](#17-twenty-worked-hunt-playbooks)
-18. [Reusable templates](#18-reusable-templates)
-19. [Operational checklists](#19-operational-checklists)
-    - [Governed AI assistance review](#198-governed-ai-assistance-review)
-20. [Primary references](#20-primary-references)
+14. [Security, privacy, and operational boundaries](#14-security-privacy-and-operational-boundaries)
+15. [Metrics and maturity](#15-metrics-and-maturity)
+16. [Twenty worked hunt playbooks](#16-twenty-worked-hunt-playbooks)
+17. [Reusable templates](#17-reusable-templates)
+18. [Operational checklists](#18-operational-checklists)
+    - [Governed AI assistance review](#188-governed-ai-assistance-review)
+19. [Primary references](#19-primary-references)
 
 ## 1. Purpose and outcomes
 
@@ -102,7 +103,7 @@ query as the whole hunt. See
 | Alert triage | A fired detection | True/false positive and next action | A match may become a hunt pivot, but triage is reactive. |
 | Incident response | A suspected or confirmed incident | Containment, eradication, recovery, lessons learned | A hunt escalates when evidence meets the incident threshold. |
 | Threat-intelligence research | Actors, campaigns, reports, infrastructure, or vulnerabilities | Assessed intelligence | Intelligence prioritizes hypotheses; it is not evidence that behavior occurred locally. |
-| AdversaryGraph RetroHunt | Historical intelligence, reports, indicators, techniques, and evidence stored in the platform | Repeated intelligence patterns and pivots | RetroHunt searches intelligence holdings; enterprise threat hunting searches authorized operational telemetry. |
+| Intelligence retrohunt | Historical intelligence, reports, indicators, techniques, and stored evidence | Repeated intelligence patterns and pivots | Intelligence retrohunt searches intelligence holdings; enterprise threat hunting searches authorized operational telemetry. |
 | Detection engineering | A behavior to detect continuously | Tested and governed detection content | A successful hunt often becomes a detection candidate. |
 | Vulnerability management | Exposure and weakness data | Prioritized remediation | Exposure can trigger a hunt for exploitation behavior. |
 | Penetration testing or attack simulation | Authorized control validation | Test evidence and remediation | Simulation can validate a hunt analytic, but only within an approved lab or test scope. |
@@ -293,8 +294,8 @@ accessed 17 July 2026).
 
 ### 5.4 Create quality gates
 
-Use [checklist 19.1](#191-ready-to-run-gate) as the single authoritative
-ready-to-run gate. Before closure, apply [checklist 19.4](#194-hunt-closeout) to
+Use [checklist 18.1](#181-ready-to-run-gate) as the single authoritative
+ready-to-run gate. Before closure, apply [checklist 18.4](#184-hunt-closeout) to
 run provenance, reviewed findings, disposition, limitations, the result
 summary, and follow-up ownership and dates.
 
@@ -372,8 +373,8 @@ the official [ATT&CK version history](https://attack.mitre.org/resources/version
 
 ATT&CK v18 deprecated the legacy top-level Data Source objects and introduced a
 defensive model centered on Detection Strategies, Analytics, and updated Data
-Components. New AdversaryGraph hunt content should not be designed around the
-old Data Source vocabulary. See MITRE's
+Components. New hunt content should not be designed around the old Data Source
+vocabulary. See MITRE's
 [October 2025 ATT&CK update](https://attack.mitre.org/resources/updates/updates-october-2025/)
 (accessed 17 July 2026) and the current
 [Detection Strategies catalog](https://attack.mitre.org/detectionstrategies/)
@@ -606,8 +607,8 @@ Use safe, authorized validation evidence:
 - shadow-mode execution measures volume before operational use.
 
 Do not execute adversary procedures on production systems merely to make a hunt
-return data. AdversaryGraph Attack Simulation belongs in an isolated,
-specifically authorized lab and does not replace production telemetry review.
+return data. Attack simulation belongs in an isolated, specifically authorized
+lab and does not replace production telemetry review.
 
 ## 10. Run hunts safely and reproducibly
 
@@ -615,7 +616,7 @@ specifically authorized lab and does not replace production telemetry review.
 
 Before execution, confirm that the approved scope, data, analytic, access,
 limits, handling, stop behavior, and review remain current. The authoritative
-full gate is [checklist 19.1](#191-ready-to-run-gate).
+full gate is [checklist 18.1](#181-ready-to-run-gate).
 
 ### 10.2 Expand progressively
 
@@ -844,711 +845,9 @@ Keep simulation evidence distinct from production observations. A lab pass
 shows that the test path can be observed under test conditions; it does not
 prove coverage of every production asset or adversary variant.
 
-## 14. AdversaryGraph threat-hunting workflow
+## 14. Security, privacy, and operational boundaries
 
-### 14.1 Where the module fits
-
-AdversaryGraph connects CTI, ATT&CK mapping, IOC and CVE context, asset exposure,
-evidence reasoning, detection engineering, and safe validation. The Threat
-Hunting workspace provides a governed place to turn those inputs into a
-hypothesis and record reviewed outcomes.
-
-```text
-Stored report/research -> classify source -> optional governed AI suggestion
-                                                |
-Unified RAG retrieval -> cited IOC/CVE/TTP/actor/report/hunt/asset leads
-                                                |
-Threat Radar / report / IOC / CVE / asset / RAG lead / detection gap / incident
-    -> create hunt
-    -> hypothesis + scope + owner + priority
-    -> ATT&CK v19 techniques and tactics
-    -> telemetry sources + required fields + readiness
-    -> reviewed Sigma or native analytic
-    -> authorized external execution
-    -> manual findings + observables + evidence-reference recording
-    -> review + disposition
-    -> Incident / Evidence Graph / Pipeline / Attack Simulation / recurring hunt
-```
-
-### 14.2 Current workspace boundary
-
-Treat the module as a hunt-management and evidence ledger unless a separately
-configured, documented connector explicitly executes a query. Saving query text
-does **not** prove that a SIEM, EDR, data lake, or cloud platform executed it.
-Record the external job identifier, effective time range, backend, result count,
-errors, and evidence reference in the hunt summary or linked evidence system.
-
-Likewise:
-
-- an ATT&CK mapping is an analyst hypothesis, not local evidence;
-- a template is a starting point, not a production-ready analytic;
-- an IOC is a pivot, not proof of compromise;
-- a `no_matches` disposition is limited to searched, fit-for-purpose data; and
-- AdversaryGraph RetroHunt searches platform intelligence holdings, not the
-  organization's enterprise telemetry.
-
-### 14.3 Create and plan the hunt
-
-1. Choose a platform trigger or create a manual hunt.
-2. Give the hunt a specific title and falsifiable hypothesis.
-3. Verify the server-assigned `source_type` and `source_ref`. These provenance
-   fields are read-only; record analyst-supplied launch context in a context tag,
-   description, or assumptions without presenting it as trusted provenance.
-4. Set owner and priority using local risk, not ATT&CK tactic alone.
-5. Define assets, identities, tenants, time, and exclusions in scope.
-6. Add current ATT&CK technique IDs and v19 tactic relationships.
-7. List telemetry sources and the minimum required fields.
-8. Add expected evidence, benign alternatives, and assumptions.
-9. Store the versioned query text and its language.
-10. Keep status `draft` until readiness and authorization are reviewed; use
-    `planned` when the run is approved and scheduled.
-
-#### 14.3.1 Turn a stored report or research session into a hypothesis
-
-The governed assistant starts from a completed report or research session with
-source text already stored in AdversaryGraph. It does not accept a new URL,
-fetch another source, or search enterprise telemetry as part of generation.
-
-1. Open the stored report or research session. Confirm that analysis is
-   completed and that its source text, publisher, source URL, and ATT&CK domain
-   are the intended source.
-2. Confirm the source report's persisted handling marking before generation.
-   New and legacy reports default conservatively to `TLP:AMBER+STRICT`. A user
-   with `manage_intel` may classify the stored report through the linked-report
-   edit API; every later hypothesis request reads that server-side value. A
-   request may raise the effective marking, but it cannot lower the stored one.
-3. Confirm that the source uses the Enterprise ATT&CK domain. Governed Threat
-   Hunting AI does not currently generate hunts from Mobile, ICS, or ATLAS
-   report domains.
-4. Select the `hypothesis` assistant task. The service sends a bounded portion
-   of the stored source to the selected approved provider and returns a
-   suggestion containing a falsifiable hypothesis, candidate Enterprise ATT&CK
-   techniques, expected evidence, counter-evidence, assumptions, telemetry
-   requirements, and benign alternatives when the source supports them.
-5. Review every citation against the stored report. A citation proves only that
-   the report contains the referenced text; it does not prove that the behavior
-   occurred in the local environment.
-6. Resolve any dropped-citation or truncation warning. The server removes a
-   proposed citation that cannot be matched to an exact stored-source excerpt.
-   If the stored source changes during generation, the service rejects the
-   result as a stale-context conflict; retry against the current source.
-   Regenerate after any later material report edit rather than relying on an
-   older source snapshot.
-7. Edit the suggestion into organization-specific language, define the actual
-   scope and owner, and save it through the normal hunt form. The resulting hunt
-   remains a `draft`; AI generation does not authorize or start it.
-
-The backend writes an append-only AI-assistance record with the optional hunt
-and stored-session IDs, task and stage, `suggested` lifecycle, provider/model,
-prompt version, effective TLP, sanitized source references, citation metadata,
-the recorded remote-processing acknowledgment state, and bounded
-server-validated citation excerpts of at most 300 characters
-each, input and output checksums, validated structured suggestion, warnings, and
-generation actor/time. It does not store the full raw report, raw prompt, raw
-provider response, credentials, or provider exception. The original stored
-report remains the source of record.
-
-#### 14.3.2 Use assistance across the hunt without delegating decisions
-
-The same governed boundary applies to every assistant task:
-
-| Task | The assistant may draft | The analyst must decide and save |
-|---|---|---|
-| `hypothesis` | Falsifiable behavior statement, rationale, candidate Enterprise ATT&CK IDs, supporting and refuting evidence to seek | Whether the source justifies a hunt, final wording, priority, owner, and local scope |
-| `plan` | Telemetry sources, required fields, data-quality checks, pivot sequence, expected evidence, benign alternatives, and stop conditions | Authorized systems, identities, time range, exclusions, readiness, and approval to run |
-| `query` | Implementation-independent logic or a translation for a declared query language, plus assumptions and validation warnings | Destination schema and syntax, cost controls, peer review, query-version save, and external execution |
-| `findings` | A draft organization of analyst-selected finding summaries, contradictions, evidence gaps, and follow-up questions | Evidence references, verdict, confidence, severity, finding status, escalation, and whether events are related |
-| `outcome` | A draft result summary, limitations, telemetry gaps, and possible defensive follow-up | Disposition, completion, incident handoff, detection publication, archive, and every operational decision |
-
-Generation never changes the hunt, creates or reviews a finding, appends a
-query version, chooses a disposition, or advances lifecycle status. An analyst
-must review, edit, and save through the ordinary governed workflow. In
-particular, generated finding or outcome prose is not evidence and cannot
-replace an event reference, reviewed finding, or external query-run record.
-
-In the UI, **Apply safe fields** or **Apply safe suggestions** copies only
-permitted scalar values into blank draft fields and merges permitted list
-values into the unsaved hunt form. Query assistance is intentionally different:
-select **Generate query**, choose **Target query language** (including YARA-L
-2.0 for Google SecOps UDM), generate the suggestion, inspect the proposed
-text and assumptions, then choose **Use … query draft** or **Replace query with
-… draft**. That explicit action copies both query text and language into the
-unsaved editor. It does not save the hunt, execute the query, or mark the
-assistance record accepted. Changing the query-language selector directly also
-changes only the recorded type; it does not translate existing text.
-**Open editable draft** opens the ordinary unsaved finding form; it does not
-create a finding. Review every copied value, then use the normal Save action.
-Query, findings, and outcome assistance require a saved hunt so the server can
-enforce canonical context. An unsaved plan may use the configured local
-provider, or an operator-enabled remote provider when the draft has an explicit
-`TLP:CLEAR`, `TLP:GREEN`, or `TLP:AMBER` marking and the analyst acknowledges
-that specific remote-processing request. Unsaved `TLP:AMBER+STRICT` and
-`TLP:RED` plans remain local-only.
-
-Stage-specific application stays narrow. The explicit query Use/Replace action
-may replace only the unsaved query text and language, fill blank
-evidence/assumption fields, and merge telemetry sources and required fields.
-The backend binds the requested target language into the prompt and removes
-query text when the provider labels it as a different language. A
-findings-stage hunt patch is ignored. An opened AI finding draft is
-forced to status `new`, verdict `inconclusive`, the hunt TLP, evidence type
-`analysis`, and blank evidence reference, event time, observables, and query
-version; the analyst must add canonical evidence. Outcome assistance may fill
-only a blank result summary or assumptions field.
-
-Each suggestion is a snapshot. The server rechecks a stored report or canonical
-hunt after the provider returns and rejects the result with a conflict if that
-context changed during generation. A later edit also makes an earlier
-suggestion stale, but does not rewrite the append-only assistance record;
-regenerate or compare it manually with the current context. A coverage or
-truncation warning identifies report text, query text, query versions, finding
-summaries, or finding notes that were shortened or omitted from the bounded
-request. The assistant cannot make claims about content or records it did not
-receive.
-
-For a saved hunt, the current bounds are 12,000 characters of the canonical
-query; the newest five query versions with up to 6,000 query characters and
-4,000 backend-assumption characters each; and the newest 50 active findings
-with up to 3,000 summary characters and 2,000 note characters each. The
-response and append-only record carry deterministic warnings when one of these
-limits affects a request.
-
-#### 14.3.3 Use cross-source RAG evidence to scope a hunt
-
-The **AI RAG assistant** in Navigator and the stage-specific **Threat Hunting AI
-assistant** have different evidence boundaries:
-
-| Assistant | Grounding boundary | Useful hunting output | What it never does |
-|---|---|---|---|
-| Navigator AI RAG assistant | Allowlisted chunks from the unified IOC, CVE, ATT&CK/ATLAS, actor, campaign, report, Knowledge, Threat Radar, canonical hunt, Evidence Graph, and sanitized asset corpus; optional saved business profile | Cross-source evidence search, cited synthesis, and an expiring ATT&CK/ATLAS proposal | It does not create a hunt, finding, query version, external query run, detection, incident, or response action |
-| Threat Hunting AI assistant | One completed stored report for hypothesis generation, or the bounded canonical context of one saved hunt for later stages | Draft hypothesis, plan, query, finding organization, or outcome for that hunt stage | It does not search the unified corpus or enterprise telemetry, and it never saves or advances the hunt automatically |
-
-Use RAG to find and compare leads; use the hunt assistant only after deciding
-which reviewed lead justifies a specific hunt. Neither assistant searches the
-SIEM, EDR, data lake, or cloud control plane.
-
-Example: scope an Israel technology-company hunt from actor-linked IOCs and
-supported TTPs.
-
-1. In **ATT&CK Navigator → AI RAG assistant**, select a saved business profile
-   containing the reviewed region, sector, technologies, and crown-jewel
-   categories. The profile affects deterministic retrieval/reranking and is not
-   itself evidence that an actor targets the organization.
-2. Select **IOCs**, **Actors**, **TTPs**, and the report sources relevant to the
-   question. Add **Assets** only when local inventory context is necessary; that
-   makes the request legally sensitive and local-provider-only.
-3. Use **Search evidence** first:
-
-   ```text
-   Find recent actor-linked IOCs relevant to this saved profile. Separate the
-   stored actor/sector observation, the IOC relationship, and the business
-   relevance inference. Show freshness and source limitations.
-   ```
-
-4. Open the returned source routes. Verify observation type/value, actor ID,
-   IOC type/value, relationship evidence, confidence, source, TLP, and dates.
-   Reject stale or unsupported links. A shared actor ID is a pivot, not local
-   compromise evidence.
-5. If a behavioral map is useful, use **Generate grounded answer**:
-
-   ```text
-   From only these cited actor, IOC, campaign, report, and CVE records, propose
-   the Enterprise ATT&CK techniques that could guide a local hunt. Explain each
-   mapping and create a Navigator proposal. Do not claim targeting, execution,
-   detection, or compromise.
-   ```
-
-6. Review citations and technique rationales. Preview the proposal, review the
-   Add/Replace diff, explicitly confirm it, and save a named layer separately
-   only if the reviewed map should persist. Confirmation changes the browser's
-   in-memory selection; it does not create a threat hunt.
-7. Create a new hunt from the reviewed technique or through the normal Threat
-   Hunting workflow. Write a falsifiable local hypothesis that names the actual
-   assets, identities, time window, expected telemetry, counter-evidence, and
-   authorization. Record the authoritative RAG source routes/IDs as research
-   context and label the relevance step as an inference.
-8. Use stage-specific Threat Hunting AI only if a draft plan or analytic would
-   help. Recheck every proposed field against the reviewed RAG sources and local
-   schema, then save through the ordinary hunt form. The RAG answer and
-   Navigator proposal are not hunt evidence.
-9. Execute the reviewed query in the authorized external telemetry platform and
-   record its backend job ID, effective range, coverage, errors, result count,
-   and evidence references in the hunt. Only those run records and reviewed
-   events support a local disposition.
-10. After the hunt changes, wait for the next RAG reconciliation or ask a
-    `manage_feeds` user to queue one before expecting the updated canonical hunt
-    to appear in cross-source retrieval.
-
-This flow deliberately prevents an AI feedback loop. Assistance answers and raw
-provider output are not indexed as source documents. If an analyst reviews
-material and saves it into a canonical hunt, the next reconciliation can index
-the allowlisted hunt fields as a legal-sensitive source. Query-version and
-finding tables are not independently collected by the unified corpus, and an
-unsaved draft is never searchable.
-
-### 14.4 Execute and review
-
-1. Change the hunt to `running` only when execution actually starts.
-2. Run the analytic in the authorized data platform using a read-only identity
-   and bounded scope.
-3. Record run provenance, including partial results and errors.
-4. Create a finding for each material evidence cluster rather than every raw
-   row. Link the raw event or evidence package in `evidence_ref`.
-5. Add observables and ATT&CK techniques only when the evidence supports them.
-6. Set confidence and severity independently; explain both in notes.
-7. Move findings through `new`, `reviewed`, `escalated`, and `closed` with an
-   analyst identity and decision rationale.
-8. Set the hunt to `review` when execution is complete but peer review or final
-   disposition remains.
-
-### 14.5 Complete and hand off
-
-1. Write a result summary that covers scope, data fitness, analytic version,
-   results, limitations, and follow-up work.
-2. Select the narrowest supported disposition: `undetermined`, `no_matches`,
-   `benign`, `benign_policy_relevant`, `suspicious`, `confirmed_malicious`,
-   `inconclusive`, `telemetry_gap`, or `query_failure`.
-3. For `suspicious` or `confirmed_malicious` dispositions, open the incident
-   process and manually record its object ID in the result summary or an analyst
-   context tag beside the supporting reviewed findings.
-4. Create reasoning paths in Evidence Graph when claims, techniques, required
-   telemetry, detection candidates, validation, and decisions must remain
-   connected, then manually record the resulting object ID in the result summary
-   or a context tag.
-5. Create durable analytics in Operations, Pipeline, or the local detection
-   lifecycle with review and test evidence, then manually record the destination
-   ID. Pipeline must be opened separately; it is not a Threat Hunting handoff
-   link.
-6. For a `telemetry_gap` disposition, open Operations, create a remediation item
-   for missing or untrustworthy data, and manually record its ID.
-7. Use Attack Simulation only for a safe, authorized, compatible allowlisted lab
-   scenario; record the returned `run-<UUID>` identifier when a run is available.
-8. Mark `completed` after review and follow-up ownership; use `archived` for
-   retained historical records that are no longer active.
-
-### 14.6 Recommended object model for mature deployments
-
-The following separations preserve auditability as the module evolves:
-
-| Object | Purpose |
-|---|---|
-| Threat Hunt | Hypothesis, scope, owner, lifecycle, priority, and disposition |
-| Technique relationship | ATT&CK object/version, tactic context, and mapping rationale |
-| Telemetry requirement | Source/channel/component, fields, coverage, retention, quality, and gap state |
-| Query version | Immutable abstract/native/Sigma content, checksum, mapping, reviewer, and tests |
-| Hunt run | Resolved parameters, connector, effective range, execution metadata, limits, and result state |
-| Evidence | Source reference, integrity, time, handling, and normalized excerpt |
-| Finding | Evidence cluster, observables, interpretation, confidence, severity, status, and analyst |
-| Review | Reviewer, decision, challenges, approval, and timestamp |
-| Schedule | Frequency, lookback, late-data policy, owner, analytic version, and retirement rule |
-| Connector | Backend metadata, secret reference, allowlist, permissions, limits, and health—not raw credentials |
-
-### 14.7 Useful module integrations
-
-- **Unified Intelligence RAG:** search allowlisted platform intelligence with
-  citations and optional business-context reranking, then carry only reviewed
-  sources and explicitly labeled inferences into a hunt.
-- **Threat Radar:** convert a reviewed intelligence signal into a locally scoped
-  hypothesis.
-- **IOC Intelligence:** start a retrospective behavior hunt around a time-bound
-  observable, then pivot to processes, identities, and infrastructure.
-- **CVE Intelligence:** hunt for exploitation prerequisites and post-exploitation
-  behavior on affected assets, not merely the CVE string.
-- **Navigator:** start from a selected technique and review current Detection
-  Strategies and telemetry requirements.
-- **Evidence Graph:** preserve the path from source evidence through claim,
-  behavior, technique, data, analytic, validation, and decision.
-- **Pipeline:** hand off reviewed Sigma or native content to governed detection
-  engineering.
-- **Attack Simulation:** validate expected telemetry and logic in a controlled
-  lab.
-- **RetroHunt:** find related historical intelligence, reports, indicators, and
-  mappings that can refine the enterprise hunt.
-- **Investigation Report:** produce the reviewed handoff without exposing
-  unnecessary raw or personal data.
-
-### 14.8 Ten worked AdversaryGraph use cases
-
-These examples show how an analyst uses the current Threat Hunting workspace,
-not a proposed future connector. Names, object identifiers, event references,
-counts, and time ranges are illustrative. In every example, AdversaryGraph
-preserves the hypothesis, plan, query revisions, evidence references, findings,
-review, and outcome. The analyst runs the copied query in an authorized external
-telemetry platform and records enough provenance to make the result reviewable.
-
-| Use case | AdversaryGraph entry or capability | Demonstrated outcome |
-|---|---|---|
-| Threat Radar signal | Implemented case-to-hunt API/workflow | Reviewed `suspicious` identity hunt with a manual Operations reference |
-| Navigator technique | T1059.001 deep link and context tags | Evidence-led PowerShell escalation |
-| Discover selection | Multi-technique draft | Correlated Linux intrusion sequence |
-| Built-in template | Scheduled-task starting plan | Tuned query and reviewed finding |
-| Query peer review | Append-only query history | Reproducible version-to-finding relationship |
-| External EDR result | Findings and `evidence_ref` ledger | `confirmed_malicious` LSASS outcome without raw-log duplication |
-| Incomplete telemetry | Readiness, assumptions, and disposition | Honest `telemetry_gap` result and remediation reference |
-| Defensive handoff | Operations and Evidence Graph links | Manually recorded destination identifiers |
-| Restricted evidence | TLP raising, JSON export, and archive | Portable, read-only operational history |
-| Detection improvement | Operations, separate Pipeline work, and compatible simulation | Traceable hunt-to-detection validation chain |
-
-#### 14.8.1 Turn a Threat Radar signal into a locally scoped hunt
-
-**Situation.** Threat Radar contains a reviewed case describing a campaign that
-uses valid accounts and adds a second authentication method. The intelligence is
-relevant, but it does not establish that the organization is affected.
-
-**Platform steps.**
-
-1. Invoke the implemented Threat Radar create-hunt API/workflow for the case.
-   AdversaryGraph creates a `queued` hunt and assigns trusted
-   `source_type=threat_radar` provenance plus the source case UUID in
-   `source_ref`; the analyst does not edit those fields. The current Threat
-   Radar page does not render a create-hunt button, so operators using only the
-   UI begin from the queued record after an authorized integration invokes the
-   workflow.
-2. Open the hunt and rewrite the intelligence claim as a local hypothesis: “If
-   the campaign used a workforce identity in tenant `corp-prod`, a successful
-   sign-in from a previously unseen device should be followed within 30 minutes
-   by authentication-method or privilege changes.”
-3. Set priority from local exposure, add T1078 and T1098, and scope the hunt to
-   the production tenant, workforce identities, and the 14 days covered by
-   complete identity and cloud-audit retention. Exclude documented break-glass
-   tests and record the relevant change-ticket prefix.
-4. Add identity-provider sign-ins, MFA events, cloud audit logs, and device
-   inventory as telemetry. Record the required user, source, device, result,
-   target, action, event-time, and ingest-time fields.
-5. Store a generic correlation analytic, its expected evidence, travel/VPN and
-   help-desk alternatives, and the assumption that device identifiers are
-   stable. Move the hunt from `queued` to `planned` only after this readiness
-   information is present.
-6. Copy the query into the approved identity analytics platform. When execution
-   starts, set the hunt to `running`; record the external job ID, query version,
-   effective UTC interval, tenant, result count, and any throttling in the result
-   summary.
-7. For each material identity sequence, create a finding with the external event
-   or case reference, observables, T1078/T1098 mapping, confidence, severity, and
-   the query-version link. Review the findings before setting the hunt to
-   `review` and selecting the final disposition.
-
-**Example outcome.** Two sequences are explained by approved device replacement
-and close as `benign`; one newly registered method lacks a ticket and produces a
-reviewed finding with verdict `supports`. The hunt is completed as `suspicious`,
-and the analyst opens Operations for incident handling and records the resulting
-case ID in the result summary or an analyst context tag. The Radar signal remains
-provenance, not proof of the local finding.
-
-#### 14.8.2 Start with one ATT&CK technique in Navigator
-
-**Situation.** A coverage review in Navigator identifies T1059.001 PowerShell as
-important for a Windows administration tier, but the team wants to test the
-behavioral evidence rather than hunt on the technique label alone.
-
-**Platform steps.**
-
-1. In the Navigator technique panel, choose **Create threat hunt**. The new-hunt
-   route preselects T1059.001 and records analyst launch context in tags such as
-   `context:navigator` and `context-ref:T1059.001`; these tags are context, not
-   server-assigned provenance.
-2. State a falsifiable hypothesis covering encoded arguments, runtime decoding,
-   unusual parent processes, and linked file or network behavior. Add T1027 only
-   if the planned evidence can distinguish actual obfuscation.
-3. Limit scope to managed Windows endpoints in the administration tier for the
-   last seven days. Add process creation, EDR ancestry, and PowerShell Script
-   Block Logging; record hosts without script logging as an explicit limitation.
-4. Select KQL, SPL, EQL, YARA-L 2.0 (Google SecOps UDM), or another language matching the destination. Replace
-   illustrative field names with the organization’s schema, document approved
-   deployment systems as alternatives, and save the hunt as `draft` while it is
-   peer reviewed.
-5. After the scope, telemetry, expected evidence, and false-positive notes pass
-   readiness, save as `planned`. Copy the query to the approved platform, begin
-   the authorized search, and move to `running`.
-6. Record related execution chains as findings rather than copying every hit.
-   Preserve case-safe external event references and note whether decoded content
-   is analyst-derived. Move to `review` for the final decision.
-
-**Example outcome.** The query returns 84 encoded commands. Clustering shows 82
-from a signed deployment agent and two from a spreadsheet process on one finance
-host. A reviewed finding links the rare process chain and outbound connection;
-the hunt completes as `suspicious`. Navigator supplied the starting technique,
-while endpoint evidence supplied the conclusion.
-
-#### 14.8.3 Build a multi-technique hunt from Discover
-
-**Situation.** During research in Discover, an analyst selects T1105 Ingress Tool
-Transfer, T1059.004 Unix Shell, and T1082 System Information Discovery. The goal
-is to test whether the sequence occurred on internet-facing Linux systems.
-
-**Platform steps.**
-
-1. Select the three TTPs in Discover and create a threat hunt. Verify that all
-   intended technique IDs appear in the draft and that the launch context tag is
-   present.
-2. Do not turn the selection into three disconnected keyword searches. Write one
-   sequence hypothesis: an exposed service process downloads a file, a shell
-   executes it, and host-discovery commands follow within a bounded interval.
-3. Scope the hunt to the current internet-facing Linux inventory and the period
-   for which process, file, DNS, and egress telemetry overlap. Record excluded
-   ephemeral workloads and late-ingest behavior.
-4. Add parent/child entity IDs, command line, executable and file hashes, user,
-   container or host identity, destination, event time, and ingest time as
-   required fields. Explain how package managers, bootstrap scripts, and health
-   checks will be distinguished.
-5. Save a first query version that correlates the sequence by host or workload.
-   Execute it externally and record the backend job reference, result count, and
-   time zone. If peer review changes the time window or allowlist, save the
-   modified query; AdversaryGraph creates another append-only revision.
-6. The UI links each new finding to the latest query revision. Create it while
-   the producing revision is latest, or use the findings API with an explicit
-   `query_version_id` for an older run. Document whether all three behaviors,
-   only a partial sequence, or counter-evidence were observed.
-
-**Example outcome.** One chain is an approved image bootstrap and closes
-`benign`; a second begins under a vulnerable web-service account, downloads from
-a first-seen domain, and runs reconnaissance. The reviewed evidence supports a
-`confirmed_malicious` disposition and an Operations handoff. The original
-Discover selection remains visible as reproducible analyst context.
-
-#### 14.8.4 Adapt a built-in template instead of treating it as finished content
-
-**Situation.** The team wants to hunt for scheduled-task persistence. The
-AdversaryGraph dashboard offers the **Unexpected scheduled-task persistence**
-template with T1053.005, starting telemetry requirements, expected evidence, and
-false-positive guidance.
-
-**Platform steps.**
-
-1. Select the template from the dashboard or the new-hunt workspace. Confirm the
-   `template:scheduled-task-persistence` tag and review every populated field.
-2. Replace the generic scope with named Windows device groups, owner, UTC range,
-   retention boundary, and exclusions. Add the organization’s Task Scheduler,
-   process, registry, and EDR sources.
-3. Translate `task.name`, `task.action`, creator, host, hash, and command fields
-   to the actual schema. Add a local baseline for software distribution,
-   patching, inventory, and approved administrator task creation.
-4. Change the generic query to the destination language. Constrain task creation
-   and modification to the covered interval, enrich action paths and creators,
-   and keep rare or hidden tasks for review rather than declaring them malicious.
-5. Save as `draft`, obtain platform-owner review of the syntax and exclusions,
-   then move to `planned`. Copy and execute query version 1 externally.
-6. If the first run is dominated by an approved maintenance product, add a
-   time-bounded, owner-backed exclusion and save query version 2. Do not overwrite
-   or disguise the first revision.
-7. Create findings from the materially distinct task clusters, attach external
-   event references, and record which query version generated each finding.
-
-**Example outcome.** Version 1 produces 1,430 rows; version 2 reduces these to
-four clusters without deleting the audit trail. Three have current change
-records. One launches an unsigned binary from a user-writable directory and is
-reviewed as supporting evidence. The hunt completes `suspicious`, while the
-template remains accurately described as a starting point.
-
-#### 14.8.5 Preserve query peer review with append-only revisions
-
-**Situation.** A DNS-beaconing hunt is technically ready, but a second analyst
-finds that the original query calculates intervals using ingest time rather than
-event time and lacks an asset-class partition.
-
-**Platform steps.**
-
-1. Create the hunt from the periodic DNS/TLS template and tailor its scope,
-   telemetry, and schema mappings. Save the initial analytic as query version 1.
-2. During peer review, record the identified assumptions and limitations. Edit
-   the stored query to use event time, calculate jitter per source/destination,
-   partition workstations from servers, and require a minimum observation count.
-3. Save the hunt. AdversaryGraph appends query version 2 with its checksum,
-   timestamp, language, analyst attribution, and assumptions; version 1 remains
-   available in query history.
-4. Run version 2 in the authorized DNS or network platform. Record the external
-   job ID, lookback, source indexes, effective time range, row limit, and errors.
-5. If a preflight finding must link to version 1, create it through the findings
-   API with that `query_version_id`; the current UI automatically links a new
-   finding to the latest revision. Create findings from the reviewed run while
-   version 2 is latest so later readers do not infer that one analytic generated
-   all evidence.
-6. In the result summary, explain the material effect of the change rather than
-   merely stating “query updated.”
-
-**Example outcome.** Version 1 overstates periodicity because delayed events
-arrive in batches. Version 2 removes those clusters and identifies one persistent
-low-jitter relationship from a workstation to rare infrastructure. The analyst
-can reproduce which logic supported the `suspicious` finding without relying on
-an editable query box or chat history.
-
-#### 14.8.6 Convert external results into reviewed findings
-
-**Situation.** An LSASS-access query has been run in the enterprise EDR. The
-external job returns process-access events, diagnostic software, and two dump
-artifacts. The team needs a compact evidence record without copying sensitive raw
-telemetry into AdversaryGraph.
-
-**Platform steps.**
-
-1. Set the planned hunt to `running` when the EDR job actually starts. In the
-   result summary, record a case-safe job reference, the tenant, UTC interval,
-   query revision, host population, sensor coverage, result count, and any failed
-   shards or inaccessible endpoints.
-2. Cluster results by host, actor process, signer, access pattern, dump path, and
-   follow-on authentication. Do not create one finding per raw row.
-3. For each material cluster, add a finding with title, severity, confidence,
-   status `new`, verdict, event time, observables, T1003.001 when supported,
-   linked query version, evidence reference, TLP marking, and concise notes.
-4. Use `supports`, `refutes`, `inconclusive`, or `benign` as the finding verdict;
-   keep the hunt disposition separate until the population has been reviewed.
-5. A second analyst verifies the EDR evidence, corrects the finding record if
-   needed, and changes its status to `reviewed`, `escalated`, or `closed` as
-   appropriate. Archive superseded or duplicate findings through the finding
-   controls so they remain in the exported audit history.
-6. Move the hunt to `review`. Before completion, resolve or archive every `new`
-   finding and write a result summary covering both supporting and
-   counter-evidence.
-
-**Example outcome.** A signed diagnostic tool with a current change record is
-closed `benign`. An unsigned process and dump artifact on a domain controller are
-reviewed with verdict `supports`, and the external EDR case URI is retained in
-`evidence_ref`. The hunt completes `confirmed_malicious`; AdversaryGraph records
-the decision trail but does not claim custody of the original EDR events.
-
-#### 14.8.7 Record a telemetry gap without manufacturing a clean result
-
-**Situation.** A web-shell hunt is approved for 42 internet-facing servers, but
-11 lack process telemetry and eight have web logs retained for only two of the
-requested seven days.
-
-**Platform steps.**
-
-1. Create the hunt from the web-shell template and list all 42 systems in scope.
-   State the hypothesis around web-service child processes, executable content in
-   served directories, suspicious requests, and outbound connections.
-2. Add web, process, file-integrity, authentication, and network sources with
-   their required fields. Record the expected asset count, retention, sensor
-   health, and ingestion delay in assumptions or scope.
-3. Run coverage preflights in the relevant external systems before the main
-   analytic. Record the job references and measured coverage in the result
-   summary.
-4. Execute the behavioral query only across covered assets and intervals. If no
-   matches occur, describe that bounded result exactly; do not generalize it to
-   the entire fleet or seven-day period.
-5. Create findings only for material evidence clusters. Represent absent
-   telemetry in the hunt outcome and in an externally referenced Operations
-   remediation item, not as fabricated zero-valued events.
-6. Move to `review`, select `telemetry_gap`, name owners for endpoint-sensor and
-   web-log remediation, and include a rerun condition. No supporting finding is
-   required for this disposition, but the result summary is required.
-
-**Example outcome.** The covered subset has no matches, yet only 31 of 42 servers
-have adequate process evidence and complete web-log overlap is lower still. The
-hunt completes `telemetry_gap`, not `no_matches`. The analyst opens Operations,
-creates remediation work, and records its ID plus the planned rerun date in the
-summary.
-
-#### 14.8.8 Complete a suspicious hunt and preserve the defensive handoff
-
-**Situation.** A valid-account hunt produces an unusual successful sign-in,
-privilege change, and access to a sensitive cloud resource. The evidence is
-strong enough for response but not yet sufficient to claim confirmed malicious
-activity.
-
-**Platform steps.**
-
-1. Create one finding for the correlated sequence with verdict `supports`, then
-   add the identity, source network, device ID, target resource, event time,
-   external evidence reference, T1078 mapping, severity, confidence, and query
-   version.
-2. Have an analyst verify the finding and change its status from `new` to
-   `reviewed` or `escalated`. Completion with `suspicious` is blocked until a
-   reviewed supporting finding exists.
-3. Move the hunt from `running` to `review`. Write a summary containing searched
-   scope, effective interval, data fitness, analytic revision, evidence for and
-   against the hypothesis, limitations, and the requested response action.
-4. Select `suspicious` and complete the hunt only after all other new findings
-   have been reviewed or archived.
-5. In **Outcome and handoff**, open Operations. Create the investigation or
-   detection object there, then return and record its object ID in the result
-   summary, an analyst context tag, or the editable finding notes.
-6. If the reasoning chain needs durable representation, open Evidence Graph and
-   create it explicitly. Record that new object’s ID as well; opening the link
-   does not automatically synchronize objects.
-
-**Example outcome.** The hunt is completed `suspicious`, and the summary
-references Operations case `IR-2841` and Evidence Graph object
-`EG-91c2`. Reviewers can follow the handoff without the guide falsely claiming
-automatic incident creation or bidirectional synchronization.
-
-#### 14.8.9 Raise handling restrictions, export, and archive
-
-**Situation.** A hunt begins with ordinary internal operational data at
-`TLP:GREEN`, then a finding references sensitive identity and credential-access
-evidence that requires `TLP:AMBER+STRICT` handling.
-
-**Platform steps.**
-
-1. Raise the hunt marking to `TLP:AMBER+STRICT` before adding the restricted
-   reference. AdversaryGraph propagates the stricter marking to existing
-   findings; it does not permit a later downgrade through the normal update
-   path. This preserves label integrity; it is not recipient-level access
-   control, so enforce authorization in the surrounding deployment.
-2. Keep secrets, raw credentials, tokens, unnecessary personal data, and
-   unrestricted screenshots out of query text, notes, and findings. Use a
-   controlled case or evidence reference instead.
-3. Complete the hunt through the normal review gate. Use **Export JSON** to
-   produce the portable record containing the hunt, archived and active
-   findings, and all query versions.
-4. Read the export boundary statement: the package proves what AdversaryGraph
-   preserved, not that it executed the external query. Transfer and store the
-   export according to its TLP marking and the organization’s retention policy.
-5. When active work and follow-up ownership are complete, archive the hunt. The
-   record becomes read-only operational history; export and destination links
-   remain available.
-
-**Example outcome.** A reviewer receives a portable historical package with
-append-only query versions 1–3, their checksums and attribution, two active
-findings, one archived duplicate, and the final decision. The package contains
-case-safe references rather than restricted raw events, and its higher TLP
-marking makes the handling expectation explicit.
-
-#### 14.8.10 Turn a hunt result into detection and safe validation work
-
-**Situation.** A Unix download-and-execute hunt repeatedly identifies a rare
-sequence that is valuable enough for continuous detection. The team wants to
-validate it without implying that a past hunt result proves future coverage.
-
-**Platform steps.**
-
-1. Finish the hunt review with the supporting findings linked to the exact query
-   revision. In the result summary, state the stable behavioral features, known
-   benign patterns, data dependencies, missed variants, and recommended
-   detection severity.
-2. In **Outcome and handoff**, open Operations for investigation or detection
-   work and record the new object ID back in the hunt. If the organization uses
-   Pipeline for governed detection engineering, navigate to Pipeline separately,
-   create the candidate there, and record its ID; Pipeline is not one of the
-   Threat Hunting handoff links, and the hunt does not deploy content.
-3. Translate the hunt analytic into reviewed Sigma or a destination-native
-   detection. Add field mappings, lookback, grouping, threshold, suppression
-   owner and expiry, test fixtures, and rollback instructions in the destination
-   workflow.
-4. Open Attack Simulation only for an authorized isolated lab. Select a
-   compatible predefined, allowlisted scenario when one is available and verify
-   source, collection, transport, parsing, indexing, query, and alert behavior
-   end to end. If no compatible scenario exists, document the proposed
-   validation instead of implying that an arbitrary command can be executed.
-5. Open Evidence Graph when the team needs a durable chain connecting the CTI or
-   original hypothesis, ATT&CK behaviors, telemetry requirement, query revision,
-   reviewed finding, detection candidate, lab validation, and decision. Record
-   each resulting object ID manually in the hunt.
-6. If validation fails, preserve whether the defect is in telemetry, parsing,
-   analytic logic, or alert routing. Revise and retest; a successful lab run is
-   evidence for that test path, not proof of universal production coverage.
-
-**Example outcome.** The hunt completes `confirmed_malicious`, Operations tracks
-the response, and Pipeline tracks detection candidate `DET-417`. A compatible
-Attack Simulation scenario returns a run ID in the form `run-<UUID>`; if no
-compatible scenario is available, the summary records validation as proposed.
-A parser defect found during the first compatible test is corrected before the
-second passes. The hunt summary stores the available references and limitation,
-providing a defensible chain from hypothesis to maintained defensive work.
-
-## 15. Security, privacy, and operational boundaries
-
-### 15.1 Authorization and least privilege
+### 14.1 Authorization and least privilege
 
 - Query only systems and data explicitly in scope.
 - Use separate read-only hunt identities for telemetry backends.
@@ -1565,7 +864,7 @@ apply the organization's selected controls to the hunt service and its data
 paths. See [NIST SP 800-53r5](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf)
 (accessed 17 July 2026).
 
-### 15.2 Connector and query safety
+### 14.2 Connector and query safety
 
 For any future direct connector:
 
@@ -1582,7 +881,7 @@ For any future direct connector:
   and
 - test parsers and converters against malformed and adversarial input.
 
-### 15.3 Privacy and proportionality
+### 14.3 Privacy and proportionality
 
 Threat telemetry may contain personal, communications, location, or employee
 activity data. Collect and expose only what is necessary for the authorized
@@ -1591,7 +890,7 @@ rules. Use entity tokens or controlled references when broad collaboration does
 not require raw identity. Follow local law, contracts, labor obligations, and
 organizational policy; this guide is not legal advice.
 
-### 15.4 Evidence integrity
+### 14.4 Evidence integrity
 
 - Prefer immutable source identifiers or access-controlled evidence packages.
 - Hash copied exports and record who collected them, when, from where, and how.
@@ -1600,7 +899,7 @@ organizational policy; this guide is not legal advice.
 - Keep incident evidence in the approved case/evidence system when legal hold or
   forensic chain-of-custody requirements apply.
 
-### 15.5 AI boundary
+### 14.5 AI boundary
 
 AI may assist with hypothesis drafts, Enterprise ATT&CK candidates, hunt plans,
 query translation, organization of analyst-selected finding summaries, and
@@ -1673,16 +972,16 @@ credentials, or provider exception. Prompt injection inside a source report
 remains possible model input; the fixed task boundary, structured validation,
 citations, and human review reduce risk but do not make the output authoritative.
 
-### 15.6 Response boundary
+### 14.6 Response boundary
 
 Hunting is read-oriented investigation. Quarantine, account disablement,
 blocking, credential rotation, file deletion, or service changes are response
 actions and require incident authority. A connector built for hunting should
 not inherit response permissions merely for convenience.
 
-## 16. Metrics and maturity
+## 15. Metrics and maturity
 
-### 16.1 Measure defensive improvement
+### 15.1 Measure defensive improvement
 
 Prefer metrics that show quality and risk reduction:
 
@@ -1701,7 +1000,7 @@ Avoid rewarding raw query count, total matches, number of ATT&CK techniques, or
 the percentage of hunts that “found something.” Those measures encourage broad
 queries and confirmation bias.
 
-### 16.2 A five-level maturity model
+### 15.2 A five-level maturity model
 
 | Level | Characteristics | Next improvement |
 |---|---|---|
@@ -1711,7 +1010,7 @@ queries and confirmation bias.
 | 4 — Measured | Coverage and quality metrics, recurring hunts, validation, schema governance | Automate safe readiness checks and feedback loops |
 | 5 — Adaptive | Intelligence, risk, telemetry, detection, incidents, and validation continuously reprioritize hunting | Preserve human accountability while improving assisted analysis |
 
-### 16.3 Common failure modes
+### 15.3 Common failure modes
 
 - starting with a favorite query instead of a hypothesis;
 - mapping an actor name directly to local compromise;
@@ -1726,17 +1025,16 @@ queries and confirmation bias.
 - moving AI-generated content to production without review; and
 - closing a hunt without owners for gaps and follow-up work.
 
-## 17. Twenty worked hunt playbooks
+## 16. Twenty worked hunt playbooks
 
 The following playbooks are starting points. Each must be adapted to the local
 environment and peer reviewed. Field names are illustrative; map them to a
 pinned OCSF, ECS, or native schema. Links point to the current official ATT&CK
 technique pages, which should be checked again when ATT&CK content changes.
-Each playbook ends with a concrete AdversaryGraph recordkeeping example; the
-external job IDs and counts are illustrative and must be replaced with the
-operator's real, case-safe references.
+Platform-specific recordkeeping examples are maintained in the separate
+[AdversaryGraph operator guide](threat-hunting-with-adversarygraph.md).
 
-### 17.1 Encoded or obfuscated PowerShell execution
+### 16.1 Encoded or obfuscated PowerShell execution
 
 **Question and hypothesis.** An adversary may use PowerShell with encoded
 arguments, runtime decoding, or an unusual process chain to execute a payload on
@@ -1801,18 +1099,8 @@ as `telemetry_gap` if content visibility was essential.
 verify process, script, and downstream event correlation. Do not use a live
 payload or bypass controls in production.
 
-**AdversaryGraph example.** Start from **Suspicious encoded PowerShell
-execution**, scope the draft to 620 managed Windows endpoints and a seven-day
-UTC interval, and document deployment-agent and administrator activity as benign
-alternatives. Translate the stored generic analytic to the approved EDR’s KQL,
-save the revision, move `planned` to `running`, and execute the copied query in
-that EDR. If 84 hits reduce to one unusual Office-to-PowerShell chain, add one
-finding with the external case reference, process and host observables,
-T1059.001/T1027, verdict `supports`, and the automatically linked latest query
-version. After review, complete as `suspicious` and manually record the
-Operations case ID.
 
-### 17.2 Access to LSASS memory or credential-dump artifacts
+### 16.2 Access to LSASS memory or credential-dump artifacts
 
 **Question and hypothesis.** An adversary may access LSASS memory or create a
 dump to obtain credentials. If this occurred, process-access, file, process,
@@ -1872,18 +1160,8 @@ access or coverage was absent, use `telemetry_gap` rather than `no_matches`.
 fixture that exercises the sensor without extracting real credentials. Validate
 event fields and analytic logic, not credential theft.
 
-**AdversaryGraph example.** Select **Credential access against LSASS**, limit
-scope to domain controllers with verified process-access coverage, and store the
-tenant-specific EQL translation plus diagnostic-tool assumptions. Copy and run
-it in the EDR; record job `EDR-98411`, the effective interval, 38 covered hosts,
-and two unreachable sensors in the result summary. Cluster signed security-tool
-events separately from an unsigned process and dump-file sequence. Record the
-latter as a high-severity finding with the case-safe EDR reference, host/hash
-observables, T1003.001, high confidence, and verdict `supports`. Once the finding
-is `reviewed` or `escalated`, a verified intrusion can support
-`confirmed_malicious`; the template alone cannot.
 
-### 17.3 Periodic DNS or TLS command-channel behavior
+### 16.3 Periodic DNS or TLS command-channel behavior
 
 **Question and hypothesis.** A compromised host may use repeated low-volume DNS
 or TLS connections to rare infrastructure as a command channel. The data should
@@ -1945,18 +1223,8 @@ software identities rather than permanent domain allowlists.
 domain and verify the expected DNS, TLS, flow, and process evidence. Do not test
 covert channels through production networks.
 
-**AdversaryGraph example.** Use **Periodic DNS or encrypted-channel beaconing**,
-scope it to workstations with complete DNS and EDR overlap, and save an SPL
-revision that measures per-host interval jitter using event time. Execute the
-copied query in the network platform and record its search SID, time range,
-indexes, row limit, and late-data caveat. Suppose monitoring agents explain 57
-clusters but one workstation repeatedly contacts a rare domain from an unsigned
-process. Create a single reviewed finding with domain, IP, host, and process
-observables; map T1071.004 only if DNS carried the behavior. Complete
-`suspicious`, or use `no_matches` only when the bounded search completed with
-fit-for-purpose data and zero evidence.
 
-### 17.4 Valid-account abuse in cloud or identity systems
+### 16.4 Valid-account abuse in cloud or identity systems
 
 **Question and hypothesis.** An adversary may use a valid account from a new
 device or network and perform privilege, credential, persistence, or resource
@@ -2019,17 +1287,8 @@ Record whether location is inferred from IP and its known uncertainty.
 generate a new-device sign-in and benign role-change fixture. Never weaken MFA
 or conditional access in production to test the analytic.
 
-**AdversaryGraph example.** Open **Cloud or identity-provider valid-account
-abuse**, define the production tenant, privileged groups, VPN ranges, emergency
-accounts, and a 72-hour interval, then tailor the template to immutable identity
-and session fields. Run the copied KQL in the identity platform and preserve the
-external job ID. For a new-device sign-in followed by an unapproved role change,
-add one finding with the user, session, device, source network, target role,
-T1078 and T1098, and a case-safe audit reference. Set verdict `supports` and move
-the finding out of `new`. Complete `suspicious` if compromise remains unproven;
-open Operations and manually record the response object ID in the hunt.
 
-### 17.5 Unexpected scheduled-task persistence
+### 16.5 Unexpected scheduled-task persistence
 
 **Question and hypothesis.** An adversary may create or modify a Windows
 scheduled task to persist or execute tooling. Task Scheduler, process, file, and
@@ -2086,18 +1345,8 @@ inventory exists, state that deleted or short-lived tasks may not be visible.
 the approved simulation workflow and verify creation, execution, and cleanup
 telemetry.
 
-**AdversaryGraph example.** Start from **Unexpected scheduled-task
-persistence**, add the managed-server groups and maintenance window, and replace
-the generic fields with the organization’s Task Scheduler and EDR schema. After
-external execution, a task named `InventoryRefresh` may be confirmed by its
-owner and change ticket yet run a script from a user-writable temporary path.
-Create a reviewed finding with verdict `benign`, T1053.005, the task/host/path
-observables, and the ticket reference. Select `benign_policy_relevant`, explain
-the authorized purpose and separate control weakness, then open Operations for
-remediation. Record that item’s ID manually; AdversaryGraph does not create the
-ticket from the handoff link.
 
-### 17.6 Web-shell behavior on an internet-facing server
+### 16.6 Web-shell behavior on an internet-facing server
 
 **Question and hypothesis.** A compromised web application may execute a web
 shell, causing a web service process to spawn a shell/interpreter, write
@@ -2156,18 +1405,8 @@ unsupported assumptions.
 commands designed for telemetry validation. Keep the target unreachable from
 production and follow the platform's simulation boundaries.
 
-**AdversaryGraph example.** Choose **Web-shell behavior on an internet-facing
-server**, list the 42 exposed servers, and require web, process, file-integrity,
-and egress evidence. Coverage preflights in the external systems may show that
-11 servers lack process telemetry and eight retain only two of the requested
-seven days of web logs. Record those job references and execute the analytic
-only across the covered subset. Even if that subset returns no web-service child
-shells, complete the reviewed hunt as `telemetry_gap`, not `no_matches`. State
-the precise covered assets and intervals, open Operations for sensor and
-retention remediation, and manually record the remediation ID and rerun
-condition.
 
-### 17.7 Remote-service lateral movement
+### 16.7 Remote-service lateral movement
 
 **Question and hypothesis.** An adversary with credentials may use RDP, SMB,
 SSH, WinRM, or another remote service to move from one managed system to
@@ -2229,18 +1468,8 @@ session but not what occurred within it; record that limitation.
 one approved remote session, then verify source, network, target, and process
 correlation. Do not scan or authenticate broadly in production.
 
-**AdversaryGraph example.** From Navigator, create a manual draft for the
-relevant T1021 sub-technique and retain `context:navigator` as analyst context,
-not trusted provenance. Scope the hunt to a server administration zone, named
-jump hosts, and four hours around an alert. Store an SPL sequence correlating
-source authentication, remote-service network activity, target logon, and child
-processes; execute it in approved identity and endpoint tools and record both job
-IDs. A connection from a workstation followed by a service-account logon and
-rare command shell becomes one `supports` finding with source, target, account,
-session, and process observables. Review it before selecting `suspicious` and
-opening Operations.
 
-### 17.8 Cloud account manipulation and added privileges
+### 16.8 Cloud account manipulation and added privileges
 
 **Question and hypothesis.** An adversary may modify a cloud identity by adding
 credentials, roles, group membership, federation, device registration, or other
@@ -2306,19 +1535,8 @@ looks normal.
 tenant. Verify audit, authentication, and analytic correlation, then remove the
 fixture through the approved administrative process.
 
-**AdversaryGraph example.** Create a manual T1098 hunt for one cloud tenant,
-privileged identities, and the audit-retention window. Record approved
-role-management workflows and emergency access as alternatives, then store a
-KQL correlation for role membership, credential addition, policy change, and
-subsequent resource use. Execute it in the cloud audit platform and cite the
-external job and evidence package. If an inactive service principal receives a
-new credential and administrator role before accessing secrets, create a
-critical `supports` finding with immutable principal, actor, credential, role,
-and session observables. After incident verification and finding review, complete
-`confirmed_malicious`; use Evidence Graph only by creating the reasoning object
-there and recording its ID.
 
-### 17.9 Ingress tool transfer followed by execution
+### 16.9 Ingress tool transfer followed by execution
 
 **Question and hypothesis.** An adversary may transfer a tool or payload to a
 host and execute it shortly afterward. Network, proxy, file, process, and
@@ -2376,18 +1594,8 @@ origin.
 verify URL/process/file/hash/execution correlation. Do not retrieve a known
 malicious sample into production.
 
-**AdversaryGraph example.** Use Discover to select T1105 plus the supported
-execution technique and create a manual draft. Bound it to internet-facing Linux
-hosts, verify process/file/DNS/egress overlap, and store an EQL sequence linking
-download utility, destination, file hash, and execution by host. After the
-external search, record the job reference and add one finding for a web-service
-child process that retrieves an executable from a first-seen domain and launches
-it. The finding should carry URL, domain, host, path, hash, and process
-observables, verdict `supports`, and the automatically linked query revision.
-Review it, choose `suspicious` or `confirmed_malicious` only as evidence permits,
-and preserve the incident ID manually.
 
-### 17.10 Burst of host, account, and network discovery
+### 16.10 Burst of host, account, and network discovery
 
 **Question and hypothesis.** After gaining execution, an adversary may rapidly
 enumerate system, account, domain, and neighboring host information. Process,
@@ -2445,17 +1653,8 @@ through APIs, scripts, or remote services.
 non-invasive inventory commands on lab systems. Do not enumerate production
 networks merely to test the rule.
 
-**AdversaryGraph example.** Create a manual hunt for T1082, T1087, and T1018,
-with a ten-minute grouping window and scope limited to managed endpoints around
-a known initial-access alert. Store the destination-native sequence and copy it
-to the EDR. Record the job ID, host count, interval, and sensor gaps. Broad
-inventory activity from a signed management agent can become a reviewed
-`benign` finding when ownership and schedule are verified. A rare browser child
-that runs multiple discovery commands on one executive endpoint becomes a
-separate `supports` finding. Do not merge the clusters: close the first and use
-the second to support a `suspicious` hunt outcome and Operations handoff.
 
-### 17.11 Security-tool disablement or configuration impairment
+### 16.11 Security-tool disablement or configuration impairment
 
 **Question and hypothesis.** An adversary may disable, reconfigure, exclude,
 uninstall, or tamper with defensive tooling to reduce visibility. Control-plane,
@@ -2520,18 +1719,8 @@ Record central-log gaps as high-value remediation items.
 sensor. Never disable production defenses or add real exclusions to prove the
 analytic.
 
-**AdversaryGraph example.** Create a `P1 High` manual hunt for T1685, naming the
-affected endpoint group and heartbeat-loss interval. Add security control-plane
-audit, service/process activity, policy changes, identity events, network
-reachability, and change records. Execute the copied correlation in external
-systems and preserve each job reference. If missing heartbeats are confirmed
-but neither a deliberate control change nor a platform outage can be established,
-create a reviewed finding with verdict `inconclusive`, affected assets, time
-window, and health-event references. Complete the hunt `inconclusive` and state
-what evidence is absent. Do not report ATT&CK behavior as observed merely because
-the sensor stopped reporting.
 
-### 17.12 Recovery inhibition and ransomware-impact sequence
+### 16.12 Recovery inhibition and ransomware-impact sequence
 
 **Question and hypothesis.** Before or during ransomware impact, an adversary
 may inhibit recovery and then cause widespread file encryption or destructive
@@ -2588,18 +1777,8 @@ visibility cannot prove cloud or appliance backup state.
 **Safe validation.** Use synthetic file-event fixtures and a disposable lab
 snapshot. Do not delete production backups or encrypt production data.
 
-**AdversaryGraph example.** Create a `P0 Emergency` hunt with T1490 and T1486,
-scope it to the backup tenant and critical systems, and store a sequence linking
-recovery changes to high-rate file impact. Start `running` when authorized
-external searches begin, then preserve their job IDs and raw-evidence package
-references. A privileged snapshot deletion followed by mass rewrites becomes a
-critical `supports` finding with actor, session, host, storage object, and process
-observables. Escalate through Operations immediately; administrative hunt
-completion must not delay response. After reviewers verify malicious recovery
-inhibition and impact, move to `review`, complete `confirmed_malicious`, and
-manually record the incident and Evidence Graph object IDs.
 
-### 17.13 Archive creation and data staging
+### 16.13 Archive creation and data staging
 
 **Question and hypothesis.** An adversary may collect and archive data into a
 staging location before exfiltration. Process, file, object-access, and storage
@@ -2655,18 +1834,8 @@ archive event is clear.
 process, file, size, and transfer correlation without using real organizational
 data.
 
-**AdversaryGraph example.** Create a manual T1560.001 hunt for high-value file
-servers and endpoint groups, recording approved backup, build, and support
-archives as alternatives. Store a query that correlates archive-tool execution,
-source-file access, output path, size, account, and subsequent transfer, then run
-the copied revision in endpoint and storage platforms. An approved release build
-with a current pipeline record can be captured as a reviewed `benign` finding.
-An unscheduled multi-gigabyte archive under a hidden user directory, followed by
-network transfer, should be a separate `supports` finding with paths, hash,
-account, host, and destination. Review it before completing `suspicious` and
-recording the Operations case ID.
 
-### 17.14 Exfiltration to personal or rare cloud storage
+### 16.14 Exfiltration to personal or rare cloud storage
 
 **Question and hypothesis.** An adversary or malicious insider may upload
 sensitive data to a personal or unusual cloud-storage service. Proxy, CASB/SSE,
@@ -2724,18 +1893,8 @@ service was observed but personal ownership was not established.
 tenant under DLP/CASB policy. Never upload real sensitive data to a personal
 service for validation.
 
-**AdversaryGraph example.** Create a manual T1567.002 hunt, scope it to sanctioned
-egress controls and sensitive-data repositories, and document approved business
-tenants and backup flows. Store an SPL or KQL correlation using immutable user,
-device, application, destination tenant, bytes, object label, and event time.
-Run it in the approved proxy/CASB/DLP platform and record the external search
-identifier. A large upload to a rare personal tenant following archive staging
-becomes one high-severity `supports` finding with user, device, tenant, domain,
-object reference, and volume observables. After review, complete `suspicious` or
-`confirmed_malicious` only with sufficient intent evidence; keep sensitive file
-contents in their governed repository.
 
-### 17.15 Suspicious OAuth application consent or token use
+### 16.15 Suspicious OAuth application consent or token use
 
 **Question and hypothesis.** An adversary may obtain application consent, add an
 application credential or role, steal an application token, or use a token from
@@ -2799,18 +1958,8 @@ resource audit can make use of a credential unobservable.
 tenant, approved synthetic resources, and a short-lived test credential. Remove
 it through normal governance after verifying events.
 
-**AdversaryGraph example.** Create a manual OAuth hunt for the production tenant
-and a 30-day interval, mapping T1098 first and adding T1528 or T1550.001 only
-when token evidence supports it. Require consent, directory, service-principal,
-credential, sign-in, and resource-access audit, then execute the copied analytic
-externally. If only seven days of consent history exist, record the successful
-job and uncovered 23 days and complete `telemetry_gap`; do not call the result
-clean. If a risky consent and credential addition lead to unauthorized access,
-create and review a `supports` finding before selecting `suspicious` or
-`confirmed_malicious`. Open Operations and manually record the identity-response
-object ID.
 
-### 17.16 Unexpected Windows service creation or modification
+### 16.16 Unexpected Windows service creation or modification
 
 **Question and hypothesis.** An adversary may create or modify a Windows service
 to gain execution, persistence, or elevated context. Service Control Manager,
@@ -2868,18 +2017,8 @@ Registry-only coverage without creator context limits attribution.
 **Safe validation.** Install and start an inert lab service through an approved
 fixture, then confirm creator, configuration, process, and network event fields.
 
-**AdversaryGraph example.** From Navigator, create a T1543.003 draft and add
-T1569.002 only if service execution is part of the hypothesis. Scope it to
-Windows servers, translate the analytic to the actual service-control, registry,
-process, file, and network schemas, and preserve authorized installer and
-management-agent baselines. Execute the copied query externally and cluster by
-service name, binary path, creator, signer, host, and change record. An approved
-service whose binary resides in a user-writable path can be a reviewed `benign`
-finding followed by hunt disposition `benign_policy_relevant`. An unknown service
-launching outbound traffic should be a separate `supports` finding that may
-justify `suspicious` and an Operations handoff.
 
-### 17.17 Multi-factor authentication request generation and fatigue
+### 16.17 Multi-factor authentication request generation and fatigue
 
 **Question and hypothesis.** An adversary with a password may repeatedly trigger
 MFA requests to pressure a user into approving one, then use the resulting
@@ -2937,18 +2076,8 @@ detail, record the resulting uncertainty.
 **Safe validation.** Use a designated test identity and provider-supported
 simulation. Avoid sending repeated production pushes to a real user.
 
-**AdversaryGraph example.** Create a manual T1621 hunt for workforce identities,
-exclude provider tests, and define a short correlation window spanning failed
-sign-ins, MFA requests, user responses, successful authentication, device, and
-resource access. Store a KQL revision and execute the copied query in the
-identity platform; record its job ID and tenant. For 19 denied pushes followed
-by one approval from a new device and mailbox-rule creation, add a high-severity
-`supports` finding with immutable identity, session, device, source, and target
-observables. Review or escalate it, complete `suspicious` unless incident evidence
-supports a stronger conclusion, and manually record the Operations case ID.
-Repeated requests alone are not proof of maliciousness.
 
-### 17.18 Credentials accessed from web-browser stores
+### 16.18 Credentials accessed from web-browser stores
 
 **Question and hypothesis.** An adversary may access browser credential,
 cookie, or profile databases to obtain stored authentication material. Endpoint
@@ -3006,18 +2135,8 @@ access.
 disposable lab and replay or generate approved access events. Never use a real
 employee profile as a fixture.
 
-**AdversaryGraph example.** Create a manual T1555.003 hunt scoped to endpoints
-with verified file/process telemetry. Store an EQL sequence for access to browser
-credential or cookie databases by a non-browser process followed by archive,
-network, or authentication activity. Execute it in the EDR and record the search
-reference, exclusions, and uncovered hosts. An approved backup agent with stable
-history may be a reviewed `benign` finding; an unsigned user process copying the
-database and contacting rare infrastructure becomes a `supports` finding with
-host, user, process, path, hash, and destination observables. Once incident
-review verifies credential theft or use, complete `confirmed_malicious` and
-retain raw artifacts outside AdversaryGraph.
 
-### 17.19 Unexpected container-administration command
+### 16.19 Unexpected container-administration command
 
 **Question and hypothesis.** An adversary with orchestrator access may execute a
 command inside a running container to inspect, modify, or pivot through a
@@ -3079,18 +2198,8 @@ telemetry, the API event may prove command access but not the command's effect.
 prints a fixed test marker. Do not access secrets, privileged pods, host mounts,
 or production workloads.
 
-**AdversaryGraph example.** Create a manual T1609 hunt for production clusters,
-privileged namespaces, orchestrator identities, and a 24-hour interval. Require
-Kubernetes audit, identity, admission, workload, and network data and store a
-query that enriches `exec`, `attach`, or equivalent actions with actor, source,
-pod, namespace, container, command, decision, and ticket. Execute it in the
-approved audit platform. A support engineer’s ticketed diagnostic command can
-produce a reviewed `benign` finding or `benign_policy_relevant` outcome if the
-target violated policy. A rare identity executing in a privileged pod and then
-accessing secrets becomes a reviewed `supports` finding and may justify
-`suspicious` plus an Operations handoff.
 
-### 17.20 Unix shell download-and-execute chain
+### 16.20 Unix shell download-and-execute chain
 
 **Question and hypothesis.** An adversary may use a Unix shell on a Linux host
 to retrieve content into a writable location and execute it or pipe it to an
@@ -3154,24 +2263,13 @@ must narrow the conclusion.
 Linux lab, using a controlled destination. Do not pipe unreviewed remote content
 to a shell or test against production.
 
-**AdversaryGraph example.** Use Discover to create a manual hunt with T1059.004
-and T1105, then scope it to internet-facing Linux assets and the overlap of
-process, file, DNS, and egress retention. Store an EQL sequence for a shell or
-service process downloading a file and executing it, save assumptions, and run
-the copied revision in the approved telemetry platform. For a web-service account
-that retrieves an unknown file, changes permissions, executes it, and performs
-discovery, add one `supports` finding with host, account, URL, domain, path, hash,
-and process observables; put the external job reference in `evidence_ref` or the
-result summary. Review it and choose the evidence-supported final disposition.
-Use Attack Simulation only for a separate compatible, allowlisted lab scenario,
-then manually record the returned `run-<UUID>` identifier.
 
-## 18. Reusable templates
+## 17. Reusable templates
 
 Copy these templates into the appropriate governed system. Replace every
 placeholder; do not leave “TBD” fields in a hunt marked ready.
 
-### 18.1 Hunt charter
+### 17.1 Hunt charter
 
 ```markdown
 # Hunt: [specific behavior and scope]
@@ -3223,7 +2321,7 @@ evidence] in [telemetry]. The hypothesis is weakened by [counter-evidence].
 - Review and completion criteria:
 ```
 
-### 18.2 Telemetry requirement matrix
+### 17.2 Telemetry requirement matrix
 
 | Requirement ID | Behavioral evidence | ATT&CK Data Component / channel | Local source/index | Required fields | Coverage | Retention | Time/parse quality | Readiness | Gap effect | Owner |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -3232,7 +2330,7 @@ evidence] in [telemetry]. The hypothesis is weakened by [counter-evidence].
 For `partial`, `unverified`, `missing`, or `failed`, add a gap record and state
 which part of the hypothesis can no longer be assessed.
 
-### 18.3 Query or analytic version record
+### 17.3 Query or analytic version record
 
 ```yaml
 analytic_id: HUNT-0000-A1
@@ -3271,7 +2369,7 @@ Store the query body beside this metadata in version control or an immutable
 query-version object. Do not put credentials or sensitive lookup contents in the
 record.
 
-### 18.4 Hunt run record
+### 17.4 Hunt run record
 
 ```yaml
 run_id: [immutable ID]
@@ -3298,7 +2396,7 @@ result_integrity_hash: [value if exported]
 reviewed_by: [identity]
 ```
 
-### 18.5 Finding and evidence record
+### 17.5 Finding and evidence record
 
 ```markdown
 ## Finding: [evidence-based title]
@@ -3325,7 +2423,7 @@ reviewed_by: [identity]
 - Decision and next action:
 ```
 
-### 18.6 Final hunt report
+### 17.6 Final hunt report
 
 ```markdown
 # Final report: [hunt title]
@@ -3373,7 +2471,7 @@ confirmed_malicious | inconclusive | telemetry_gap | query_failure
 - Completion time:
 ```
 
-### 18.7 Detection handoff
+### 17.7 Detection handoff
 
 ```markdown
 - Detection candidate ID:
@@ -3391,7 +2489,7 @@ confirmed_malicious | inconclusive | telemetry_gap | query_failure
 - Retirement conditions:
 ```
 
-### 18.8 Recurring-hunt schedule
+### 17.8 Recurring-hunt schedule
 
 ```yaml
 schedule_id: [ID]
@@ -3413,9 +2511,9 @@ next_formal_review: [date]
 conversion_or_retirement_condition: [value]
 ```
 
-## 19. Operational checklists
+## 18. Operational checklists
 
-### 19.1 Ready-to-run gate
+### 18.1 Ready-to-run gate
 
 - [ ] The hypothesis is behavior-specific, falsifiable, and locally relevant.
 - [ ] Trigger, source reference, publication/observation time, and relevance are recorded.
@@ -3430,7 +2528,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Sensitive-output handling, retention, evidence storage, and redaction are defined.
 - [ ] Incident thresholds, stop conditions, cancellation and timeout behavior, and contacts are ready.
 
-### 19.2 Per-run execution
+### 18.2 Per-run execution
 
 - [ ] Record hunt, analytic version/checksum, connector/backend, mapping version, and analyst.
 - [ ] Record requested and effective time range and resolved scope.
@@ -3443,7 +2541,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Preserve source job/audit ID and access-controlled result reference.
 - [ ] Hash exported evidence where policy requires integrity verification.
 
-### 19.3 Finding triage
+### 18.3 Finding triage
 
 - [ ] Verify parse quality, event time, and source provenance.
 - [ ] Resolve asset, identity, session, process, workload, and network attribution.
@@ -3456,7 +2554,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Minimize sensitive data and link raw evidence rather than copying it.
 - [ ] Escalate when the incident threshold is met; do not take unauthorized response action.
 
-### 19.4 Hunt closeout
+### 18.4 Hunt closeout
 
 - [ ] Every run has completeness and error status.
 - [ ] Material evidence clusters have reviewed findings and references.
@@ -3472,7 +2570,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Recurring searches have schedule, lookback overlap, owner, and retirement rule.
 - [ ] Peer review and final completion time are recorded.
 
-### 19.5 Telemetry-gap acceptance
+### 18.5 Telemetry-gap acceptance
 
 - [ ] The missing source, field, asset set, period, or parser behavior is specific.
 - [ ] Affected hypotheses and business risk are named.
@@ -3483,7 +2581,7 @@ conversion_or_retirement_condition: [value]
 - [ ] A verification query or event fixture defines “fixed.”
 - [ ] The hunt will be rerun or its conclusion amended after validation.
 
-### 19.6 Connector security review
+### 18.6 Connector security review
 
 - [ ] Connector purpose, data owner, tenant, endpoint, and protocol are approved.
 - [ ] Endpoint allowlist, DNS behavior, proxy path, TLS validation, and certificate policy are enforced.
@@ -3498,7 +2596,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Retention, redaction, residency, and deletion meet organizational policy.
 - [ ] Credential compromise and connector-disable runbooks are tested.
 
-### 19.7 Monthly program review
+### 18.7 Monthly program review
 
 - [ ] Reprioritize backlog from current intelligence, exposure, incidents, and gaps.
 - [ ] Review overdue hunts, unreviewed runs, stale suppressions, and orphaned schedules.
@@ -3511,7 +2609,7 @@ conversion_or_retirement_condition: [value]
 - [ ] Review access, audit, secret rotation, exports, and privacy exceptions.
 - [ ] Report risk reduction and remaining uncertainty, not only activity counts.
 
-### 19.8 Governed AI assistance review
+### 18.8 Governed AI assistance review
 
 - [ ] The source is a stored report/research session or canonical saved-hunt
       context; the assistant did not fetch a new source or telemetry.
@@ -3557,7 +2655,7 @@ conversion_or_retirement_condition: [value]
 - [ ] The hunt record distinguishes RAG research sources from the later external
       telemetry run and evidence that support the local disposition.
 
-## 20. Primary references
+## 19. Primary references
 
 This guide uses first-party standards, frameworks, and public-sector operational
 guidance. Product-specific implementation details should use the corresponding

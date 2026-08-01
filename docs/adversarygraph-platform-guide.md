@@ -251,10 +251,13 @@ parser status, tags, platforms, and direct ATT&CK links. Analysts can create a
 hunt draft from a result or build a deterministic Sigma, YARA-L, YARA, KQL,
 SPL, EQL, Lucene, SQL, osquery, or generic query from supplied IOCs.
 
-See the comprehensive
+See
+[`Threat Hunting with AdversaryGraph`](threat-hunting-with-adversarygraph.md)
+for the complete platform workflow, AI and RAG boundaries, query handoff,
+findings, dispositions, integrations, and worked use cases. The companion
 [`Threat Hunting: From Hypothesis to Defensible Detection`](threat-hunting-guide.md)
-guide for program design, telemetry engineering, execution controls, templates,
-checklists, and twenty worked playbooks.
+guide covers vendor-neutral program design, telemetry engineering, execution
+controls, templates, checklists, and twenty worked playbooks.
 Query Library operation, search syntax, feed indexing, IOC drafting, and the
 production review checklist are documented in
 [Threat Hunting Query Library](query-library.md).
