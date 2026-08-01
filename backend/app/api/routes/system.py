@@ -34,7 +34,7 @@ from app.services.auth import TeamUser, audit, require_permission
 from app.services import asset_scanner_mcp
 from app.services import rag as rag_service
 from app.services.cve_intel import ensure_cve_sources
-from app.services.data_integrity import ioc_cve_integrity_snapshot
+from app.services.data_integrity import database_inventory_snapshot, ioc_cve_integrity_snapshot
 from app.services.startup_status import startup_status
 from app.services.taxonomy_migration import (
     normalize_existing_taxonomy,
@@ -248,6 +248,17 @@ def _data_integrity_check(summary: dict[str, Any]) -> SelfTestCheck:
             f"{structural_tags} canonical tag integrity error(s)."
         )
     return _check_status("ioc_cve_dedup_integrity", status, message, summary)
+
+
+def _data_inventory_check(snapshot: dict[str, Any]) -> SelfTestCheck:
+    totals = snapshot.get("totals") or {}
+    message = (
+        f"{totals.get('ioc_total', 0):,} IOCs, {totals.get('cve_total', 0):,} CVEs "
+        f"({totals.get('cve_known_exploited', 0):,} known exploited), "
+        f"{totals.get('technique_total', 0):,} techniques, {totals.get('group_total', 0):,} groups, "
+        f"{totals.get('tag_total', 0):,} tags."
+    )
+    return _check_status("data_inventory", "ok", message, snapshot)
 
 
 def _api_key_check() -> SelfTestCheck:
@@ -1251,6 +1262,7 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                 )
             )
             checks.append(_data_integrity_check(ioc_cve_integrity_snapshot()))
+            checks.append(_data_inventory_check(await database_inventory_snapshot(session)))
             checks.append(
                 _taxonomy_normalization_check(
                     await taxonomy_normalization_status(session)
