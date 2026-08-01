@@ -25,6 +25,11 @@ async def main() -> None:
                         union all select 'ioc_type:' || lower(trim(i.indicator_type))
                         union all select 'ttp:' || value
                             from jsonb_array_elements_text(coalesce(i.technique_ids, '[]'::jsonb)) value
+                        union all select 'malware:' || lower(trim(i.malware_family)) where i.malware_family <> ''
+                        union all select 'campaign:' || lower(trim(i.campaign)) where i.campaign <> ''
+                        union all select 'actor:' || link.actor_attack_id
+                            from ioc_actor_links link
+                            where link.indicator_id = i.id and link.actor_attack_id <> ''
                     ) values
                     where tag <> ''
                 ) unique_values
@@ -43,10 +48,22 @@ async def main() -> None:
                             from jsonb_array_elements_text(coalesce(c.cwe_ids, '[]'::jsonb)) value
                         union all select 'tag:known-exploited' where c.known_exploited
                         union all select 'risk:critical' where c.known_exploited
+                        union all select 'actor:' || link.actor_attack_id
+                            from cve_actor_links link
+                            where link.cve_id = c.cve_id and link.actor_attack_id <> ''
                     ) values
                     where tag <> ''
                 ) unique_values
             )
+        """))
+        # Seed the full ATT&CK group catalog as canonical actor: tags so every
+        # known group is a valid, discoverable tag regardless of current linkage.
+        await db.execute(text("""
+            insert into intelligence_tags (namespace, value, canonical)
+            select distinct 'actor', attack_id, 'actor:' || attack_id
+            from apt_groups
+            where attack_id <> ''
+            on conflict (namespace, value) do nothing
         """))
         await db.execute(text("""
             update report_intake
