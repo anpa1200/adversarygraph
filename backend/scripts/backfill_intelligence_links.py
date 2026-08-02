@@ -102,9 +102,10 @@ async def main() -> None:
                 ) unique_values
             )
         """))
-        # Seed the full ATT&CK group and tactic catalogs as canonical tags so
-        # every known group/tactic is a valid, discoverable tag regardless of
-        # current linkage.
+        # Seed the full ATT&CK group/tactic/technique catalogs as canonical
+        # tags so every known one is a valid, discoverable tag regardless of
+        # current linkage. app.services.attck.ingestor now does this on every
+        # future sync; this covers data already ingested before that existed.
         await db.execute(text("""
             insert into intelligence_tags (namespace, value, canonical)
             select distinct 'actor', attack_id, 'actor:' || attack_id
@@ -116,6 +117,13 @@ async def main() -> None:
             insert into intelligence_tags (namespace, value, canonical)
             select distinct 'tactic', attack_id, 'tactic:' || attack_id
             from tactics
+            where attack_id <> ''
+            on conflict (namespace, value) do nothing
+        """))
+        await db.execute(text("""
+            insert into intelligence_tags (namespace, value, canonical)
+            select distinct 'ttp', attack_id, 'ttp:' || attack_id
+            from techniques
             where attack_id <> ''
             on conflict (namespace, value) do nothing
         """))

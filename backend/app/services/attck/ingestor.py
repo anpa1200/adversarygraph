@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -629,6 +629,26 @@ def ingest_domain(domain: str, bundle_path: Path, version: str) -> None:
             camp_group_count += 1
 
         logger.info("  Ingested %d campaign-group attribution links", camp_group_count)
+
+        # ── Tag catalog ──────────────────────────────────────────────────────
+        # Every known group/tactic/technique becomes a discoverable actor:/
+        # tactic:/ttp: tag regardless of whether anything currently
+        # references it, so the catalog stays complete as ATT&CK data grows
+        # instead of only reflecting whatever happens to be linked today.
+        for namespace, source_table in (("actor", "apt_groups"), ("tactic", "tactics"), ("ttp", "techniques")):
+            session.execute(
+                text(
+                    f"""
+                    insert into intelligence_tags (namespace, value, canonical)
+                    select distinct :namespace, attack_id, :namespace || ':' || attack_id
+                    from {source_table}
+                    where attack_id <> ''
+                    on conflict (namespace, value) do nothing
+                    """
+                ),
+                {"namespace": namespace},
+            )
+        logger.info("  Seeded actor/tactic/ttp tag catalog")
         session.commit()
 
     logger.info("Finished ingesting %s v%s", domain, version)
