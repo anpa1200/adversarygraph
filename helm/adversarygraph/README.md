@@ -1,8 +1,8 @@
 # AdversaryGraph Helm Chart
 
-This v6.5 chart is a deployment scaffold for a controlled, single-workspace
+This v7 chart is a deployment scaffold for a controlled, single-workspace
 Kubernetes installation. Production use requires the image digests and manifest
-produced by the successful v6.5.0 tag workflow; source metadata or human-readable
+produced by the successful v7.0.0 tag workflow; source metadata or human-readable
 tags alone are not release evidence. It is not a managed-SaaS or multi-tenant
 isolation boundary.
 
@@ -229,7 +229,7 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 
 ## Unified RAG Configuration
 
-The v6.5 chart templates enable RAG configuration and scheduled reconciliation
+The v7 chart templates enable RAG configuration and scheduled reconciliation
 by default, while semantic embeddings remain disabled. Use revision-matched
 backend and frontend application images; worker and Beat use the backend image.
 The digest-pinned
@@ -309,7 +309,7 @@ MCP HTTP/SSE listener to the chart. See
 - Review and extend the chart's baseline ingress NetworkPolicies; supply
   deployment-specific egress/DNS policy, Pod Security admission, image-signing
   policy, monitoring, backup automation, and secret rotation.
-- The chart has no Alembic migration Job; v6 still uses additive startup schema
+- The chart has no Alembic migration Job; v7 still uses additive startup schema
   compatibility, so upgrades require a verified logical backup.
 - The chart does not deploy the attack-lab web or endpoint fixtures. Keep those
   fixtures in a separate authorized lab environment.
@@ -317,7 +317,7 @@ MCP HTTP/SSE listener to the chart. See
   explicitly approves an isolated disposable runtime.
 
 See [`SECURITY.md`](../../SECURITY.md),
-[`docs/release-readiness-v6.md`](../../docs/release-readiness-v6.md), and
+[`docs/release-readiness-v7.md`](../../docs/release-readiness-v7.md), and
 [`docs/backup-restore.md`](../../docs/backup-restore.md).
 
 ## Scanner findings that require deployment context

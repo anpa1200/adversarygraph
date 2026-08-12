@@ -81,6 +81,7 @@ run_step "Scanner MCP lint (ruff)" bash -lc 'cd scanner_mcp && ruff check scanne
 scanner_step bandit "Scanner MCP SAST (bandit)" bash -lc 'cd scanner_mcp && bandit -q -r scanner_mcp -x tests --severity-level medium --confidence-level medium'
 scanner_step pip-audit "Scanner MCP dependency audit (pip-audit)" bash -lc 'cd scanner_mcp && pip-audit -r requirements.txt'
 run_step "Frontend dependency audit (npm audit)" bash -lc 'cd frontend && npm audit --audit-level=high'
+run_step "Anomaly docs image parser boundary" bash -lc 'cd anomaly_detection/docs-site && npm run test:image-size-boundary'
 run_step "Anomaly docs dependency audit (npm audit)" bash -lc 'cd anomaly_detection/docs-site && npm audit --audit-level=high'
 run_step "Anomaly docs production build" bash -lc 'cd anomaly_detection/docs-site && npm run build'
 scanner_step gitleaks "Secret scan (gitleaks)" gitleaks detect --source . --no-banner --redact

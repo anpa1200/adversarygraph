@@ -1,8 +1,8 @@
 # AdversaryGraph Platform Guide
 
-> The checked-out source is the v6.5.0 release candidate. The latest published
-> immutable tag remains v6.0.0 until the v6.5 tag workflow succeeds; verify the
-> checked-out tag or commit before using it as release evidence. AdversaryGraph
+> The checked-out source is the v7.0.0 release candidate. Immutable v7
+> artifacts exist only after the matching protected tag workflow succeeds;
+> verify the checked-out tag or commit before using it as release evidence. AdversaryGraph
 > is an analyst-assistance system: AI
 > mappings, similarity scores, IOC enrichment, malware-analysis output, and
 > generated detections require human validation before operational use.

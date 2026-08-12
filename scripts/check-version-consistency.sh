@@ -49,6 +49,7 @@ checks = [
     ("helm/adversarygraph/values.yaml image.tag", yaml_scalar(helm_values, ("image", "tag"))),
     ("helm/adversarygraph/values.yaml frontend.image.tag", yaml_scalar(helm_values, ("frontend", "image", "tag"))),
     ("helm/adversarygraph/values.yaml malwaregraph.image.tag", yaml_scalar(helm_values, ("malwaregraph", "image", "tag"))),
+    ("helm/adversarygraph/values.yaml scannerMcp.image.tag", yaml_scalar(helm_values, ("scannerMcp", "image", "tag"))),
     ("backend/app/core/version.py", re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', (root / "backend/app/core/version.py").read_text(), re.M).group(1)),
 ]
 failed = False
@@ -104,6 +105,13 @@ if [[ "$expected" == 6.* ]]; then
     docs/case-studies-v6.md
     docs/assets/adversarygraph-v6/manifest.md
     docs/assets/adversarygraph-v6/sha256sums.txt
+  )
+fi
+
+if [[ "$expected" == 7.* ]]; then
+  required_files+=(
+    docs/release-readiness-v7.md
+    docs/presentations/adversarygraph-v7-presentation-guide.md
   )
 fi
 

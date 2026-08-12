@@ -8,7 +8,8 @@ Current public documentation bundle:
 - Detailed module workflows and case studies: [`module-reference.md`](module-reference.md)
 - v5 Attack Simulation screenshots: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
-- v6 production acceptance gate: [`release-readiness-v6.md`](release-readiness-v6.md)
+- v7 presentation and demonstration guide: [`presentations/adversarygraph-v7-presentation-guide.md`](presentations/adversarygraph-v7-presentation-guide.md)
+- v7 production acceptance gate: [`release-readiness-v7.md`](release-readiness-v7.md)
 - Platform screenshots: [`assets/adversarygraph-v4-platform/manifest.md`](assets/adversarygraph-v4-platform/manifest.md)
 - Malware screenshots: [`assets/malware-analysis-v4/manifest.md`](assets/malware-analysis-v4/manifest.md)
 - Published article mirror: <https://1200km.com/articles/adversarygraph-v2-self-hosted-ai-cti-platform.html>

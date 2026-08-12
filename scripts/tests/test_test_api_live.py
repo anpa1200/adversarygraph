@@ -18,7 +18,7 @@ class LoadOpenApiSchemaTests(unittest.TestCase):
     def test_retries_transient_proxy_failure(self) -> None:
         responses = [
             (502, b"Bad Gateway", "text/html"),
-            (200, b'{"info": {"version": "6.5.0"}, "paths": {}}', "application/json"),
+            (200, b'{"info": {"version": "7.0.0"}, "paths": {}}', "application/json"),
         ]
 
         with (
@@ -33,7 +33,7 @@ class LoadOpenApiSchemaTests(unittest.TestCase):
                 retry_delay=0.25,
             )
 
-        self.assertEqual(schema["info"]["version"], "6.5.0")
+        self.assertEqual(schema["info"]["version"], "7.0.0")
         self.assertEqual(request.call_count, 2)
         sleep.assert_called_once_with(0.25)
 

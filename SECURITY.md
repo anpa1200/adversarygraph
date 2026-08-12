@@ -2,15 +2,15 @@
 
 ## Supported Versions
 
-AdversaryGraph **v6.5.0** is the current source release for controlled
+AdversaryGraph **v7.0.0** is the current source release for controlled
 self-hosted deployments.
 The project is a self-hosted/internal analyst workbench, not a hardened multi-tenant SaaS.
 Security fixes are applied to the latest `main` branch and the latest tagged release.
 
 | Version | Supported |
 |---|---|
-| latest `main` (`v6.5.0`) | Yes |
-| latest tagged release (`v6.0.0`) | Yes |
+| latest `main` (`v7.0.0`) | Yes |
+| latest successfully published release | Yes |
 | older tags (`v4.x` and below) | Best effort |
 
 ## Reporting a Vulnerability

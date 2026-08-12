@@ -1,15 +1,15 @@
 # Production Readiness
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
-controlled deployments. The latest reviewed release tag is `v6.0.0`; the
-checked-out source is the `v6.5.0` release candidate described in
+controlled deployments. The checked-out source is the `v7.0.0` release
+candidate described in
 [the changelog](../CHANGELOG.md). This document tracks the checked-out
 repository, so every production review must record the exact tag or commit and
 must not transfer evidence from a different revision.
 
 ## Current Status
 
-The reviewed AdversaryGraph v6.0.0 tag is suitable for:
+The AdversaryGraph v7 source is suitable for:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
@@ -19,12 +19,9 @@ The reviewed AdversaryGraph v6.0.0 tag is suitable for:
   build, scan, configuration, backup, restore, and acceptance evidence for the
   exact deployed artifacts
 
-The public `v6.0.0` GitHub release predates the current immutable seven-image
-manifest and has no attached `adversarygraph-images.env`. It therefore cannot
-be claimed to have passed the strengthened v6.5 artifact gate documented in
-this checkout. The v6.5 source is a release candidate until the protected
-`v6.5.0` tag workflow succeeds; it must not be represented as the existing
-`v6.0.0` artifact or as an immutable v6.5 artifact before that point.
+Historical release evidence does not validate this source. The v7 source is a
+release candidate until the protected `v7.0.0` tag workflow publishes and
+verifies the eight-image family and attached `adversarygraph-images.env`.
 
 AdversaryGraph is not a managed public SaaS. The default deployment is suitable
 for controlled self-hosted use; public internet exposure still requires a
@@ -67,15 +64,17 @@ handling policy.
 | Sizing guide | Implemented | `docs/deployment-sizing.md` |
 | Backup/restore scripts | Implemented | checksummed, archive-validated backup and writer-stopped restore in `scripts/backup.sh`, `scripts/restore.sh` |
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
-| Fresh image scan/publish path | Current development after v6.5.0; tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow loads and scans eight versioned images before pushing those same local images |
-| Immutable Compose deployment | Current development after v6.5.0 | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Current development after v6.5.0; operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
+| Fresh image scan/publish path | Implemented in v7 source; tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow loads and scans eight versioned images before pushing those same local images |
+| Immutable Compose deployment | Implemented in v7 source | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
+| Helm image digests | Implemented in v7 source; operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 | PostgreSQL full-text and pgvector | Implemented in v6.5 source | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
 | Unified RAG corpus | Implemented in v6.5 source | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
 | Governed Navigator assistant | Implemented in v6.5 source | business profiles, exact/FTS/optional vector retrieval, source-bound structured output, TLP/legal gates, verified citations, temporary preview, and explicit non-mutating Add/Replace confirmation; advisory/audit records are persisted but no layer is saved |
 | Local MCP integration | Implemented in v6.5 source | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
-| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v6.5 candidate lockfiles; the client frontend has two documented moderate React Router v6 advisories, while the available Router 7 path currently introduces a high RSC advisory and a breaking migration |
+| Scanner MCP isolation | Implemented in v7 source | exact stored-target authorization, allowlisted assessment plans, dedicated bearer capability, non-root private service, bounded results, and returned-target/tool-trace verification |
+| Intelligence taxonomy and catalogs | Implemented in v7 source | closed namespace vocabulary, actor/campaign/malware backfill, ATT&CK group seed, maintained actor/tactic/TTP catalogs, and self-test inventory breakdowns |
+| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v7 candidate lockfiles; the MalwareGraph high-severity dependency path is remediated; the client frontend retains the separately documented moderate React Router v6 advisories |
 
 ## Remaining Production Blockers
 
@@ -168,7 +167,7 @@ the absence of an externally managed Secret.
 
 ## Container Release Integrity
 
-In the v6.5 source, strict local and CI container scans are configured to pull
+In the v7 source, strict local and CI container scans are configured to pull
 base images and bypass cached layers. Runtime Dockerfiles apply distribution
 updates available during the build, and fixable high/critical Trivy findings
 fail the strict gate. The current `ignore-unfixed` policy filters findings that
@@ -194,7 +193,7 @@ trusted. Mismatches and ambiguous registry or GitHub release lookups stop
 publication and require explicit partial-version cleanup after review.
 The workflow rechecks release state immediately before publishing the draft.
 A successful run for the exact tag is required evidence; the workflow in the
-v6.5 source is not evidence for the historical `v6.0.0` artifact.
+v7 source is not evidence for a historical artifact.
 
 For Helm deployments, operators supply reviewed registry digests for the
 PostgreSQL, backend, frontend, and MalwareGraph release images. Redis and an
