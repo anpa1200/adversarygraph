@@ -87,7 +87,14 @@ def main() -> int:
         if not _matches_ref(ruleset, ref_name):
             continue
         bypass_actors = ruleset.get("bypass_actors")
-        if not isinstance(bypass_actors, list) or bypass_actors:
+        if isinstance(bypass_actors, list):
+            if bypass_actors:
+                continue
+        elif ruleset.get("current_user_can_bypass") != "never":
+            # GitHub omits the administration-only bypass list from the
+            # built-in Actions token response. Accept that redacted response
+            # only when GitHub explicitly attests that the release principal
+            # can never bypass the active ruleset.
             continue
 
         rule_types = {
@@ -103,7 +110,7 @@ def main() -> int:
     missing = sorted(required - enforced)
     if missing:
         print(
-            f"No active no-bypass ruleset coverage protects {ref_name} from: "
+            f"No active non-bypassable ruleset coverage protects {ref_name} from: "
             f"{', '.join(missing)}.",
             file=sys.stderr,
         )

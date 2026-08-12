@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "verify-release-tag-rulesets.py"
@@ -46,6 +49,66 @@ class RulesetConditionTests(unittest.TestCase):
             "conditions": {"ref_name": {"include": ["refs/*"], "exclude": []}}
         }
         self.assertFalse(MODULE._matches_ref(ruleset, "refs/tags/v6.0.0"))
+
+
+class RulesetVerificationTests(unittest.TestCase):
+    def _run(self, ruleset: dict[str, object]) -> int:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ruleset_path = Path(temp_dir) / "ruleset.json"
+            ruleset_path.write_text(json.dumps(ruleset), encoding="utf-8")
+            with patch.object(
+                MODULE.sys,
+                "argv",
+                [
+                    "verify-release-tag-rulesets.py",
+                    "refs/tags/v7.0.0",
+                    str(ruleset_path),
+                ],
+            ):
+                return MODULE.main()
+
+    @staticmethod
+    def _ruleset(**extra: object) -> dict[str, object]:
+        ruleset: dict[str, object] = {
+            "id": 20758501,
+            "name": "Immutable release tags",
+            "target": "tag",
+            "enforcement": "active",
+            "conditions": {
+                "ref_name": {"include": ["refs/tags/v*"], "exclude": []}
+            },
+            "rules": [{"type": "deletion"}, {"type": "update"}],
+        }
+        ruleset.update(extra)
+        return ruleset
+
+    def test_accepts_explicit_empty_bypass_list(self) -> None:
+        self.assertEqual(self._run(self._ruleset(bypass_actors=[])), 0)
+
+    def test_accepts_redacted_list_when_principal_can_never_bypass(self) -> None:
+        self.assertEqual(
+            self._run(self._ruleset(current_user_can_bypass="never")),
+            0,
+        )
+
+    def test_rejects_redacted_list_without_never_attestation(self) -> None:
+        self.assertEqual(self._run(self._ruleset()), 1)
+
+    def test_rejects_any_explicit_bypass_actor(self) -> None:
+        self.assertEqual(
+            self._run(
+                self._ruleset(
+                    bypass_actors=[
+                        {
+                            "actor_id": 5,
+                            "actor_type": "RepositoryRole",
+                            "bypass_mode": "always",
+                        }
+                    ]
+                )
+            ),
+            1,
+        )
 
     def test_matching_exclusion_wins(self) -> None:
         ruleset = {
