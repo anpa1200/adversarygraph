@@ -5,36 +5,52 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v6.5.0-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v7.0.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v6.5.0**. This release consolidates the complete post-v6
-development line: hypothesis-driven Threat Hunting, multi-provider governed AI,
-the Sigma/YARA-L Query Library, unified RAG and MCP, searchable saved-asset
-intelligence and authorized exposure assessment, persistent SOC access groups,
-module-level API/UI authorization across 31 workspaces, complete API contracts,
-and hardened release/deployment controls. See the
-[v6.5 release notes](docs/release-notes/v6.5.0.md),
-[release summary](docs/release-summary-v6.5.0.md),
-[release readiness guide](docs/release-readiness-v6.md),
+Current release: **v7.0.0**. This release adds an isolated scanner MCP trust
+boundary, database-backed RAG readiness, stronger intelligence relationships,
+closed taxonomies, self-maintaining catalogs, data-inventory evidence, and an
+eight-image release path while retaining the governed hunting and
+evidence-to-detection workflows prepared in v6.5. See the
+[v7 release notes](docs/release-notes/v7.0.0.md),
+[release summary](docs/release-summary-v7.0.0.md),
+[release readiness guide](docs/release-readiness-v7.md),
+[presentation guide](docs/presentations/adversarygraph-v7-presentation-guide.md),
 [case studies](docs/case-studies-v6.md), and
 [screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
 
-Current development after v6.5.0 moves all active asset-assessment tooling into
-an authenticated, non-root `scanner-mcp` container. The API authorizes an exact
-inventory target, invokes one allowlisted MCP assessment plan, verifies the
-returned target and tool trace, and passes that bounded evidence to the
-deterministic or governed LLM assistant. This current-development boundary is
-not part of an older published image unless its attached image manifest
-includes `ADVERSARYGRAPH_SCANNER_MCP_IMAGE`.
+The `v7.0.0` source metadata defines the release candidate. Its immutable
+artifacts exist only after the protected tag workflow builds, scans, publishes,
+and verifies the complete family and attaches `adversarygraph-images.env`.
+Historical screenshots remain illustrative and are not presented as v7 runtime
+evidence.
 
-The `v6.5.0` source metadata is the release candidate until the immutable tag
-workflow builds, scans, publishes, and verifies its artifacts. The existing
-`v6.0.0` tag remains the latest published historical release until that
-workflow succeeds; its screenshots and artifact limitations apply only to that
-tag and are not presented as v6.5 evidence.
+### MalwareGraph dependency security notice
+
+On 2026-08-08, development builds exposed a high-severity denial-of-service
+advisory in `nanoid` (`GHSA-2v37-7h3g-55p8`) and an affected PostCSS pin
+(`GHSA-fxqj-rqcc-2cmp`). Pull request
+[#30](https://github.com/anpa1200/adversarygraph/pull/30), included in v7,
+updates `nanoid` to 3.3.18 and PostCSS to 8.5.26 while retaining
+`npm audit --audit-level=high` as a blocking image-build check.
+
+Older source Dockerfiles resolve MalwareGraph from a moving upstream branch,
+so tag history alone cannot prove the dependency contents of a locally rebuilt
+image. Current-source operators should pull the release commit, rebuild
+MalwareGraph without cache, and retain the successful audit output:
+
+```bash
+git pull --ff-only origin main
+docker compose build --no-cache malwaregraph
+docker compose up -d malwaregraph
+```
+
+Upstream moderate React Router findings may still be reported; they are
+separate from the remediated high-severity dependency paths and are documented
+in [Security Policy](SECURITY.md#known-security-limitations).
 
 ## What It Does
 
@@ -240,13 +256,14 @@ for dedicated-account and client configuration.
 | Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
 | Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
-| v6.5 release notes | [docs/release-notes/v6.5.0.md](docs/release-notes/v6.5.0.md) |
-| v6.5 release summary | [docs/release-summary-v6.5.0.md](docs/release-summary-v6.5.0.md) |
+| v7 release notes | [docs/release-notes/v7.0.0.md](docs/release-notes/v7.0.0.md) |
+| v7 release summary | [docs/release-summary-v7.0.0.md](docs/release-summary-v7.0.0.md) |
+| v7 presentation guide | [docs/presentations/adversarygraph-v7-presentation-guide.md](docs/presentations/adversarygraph-v7-presentation-guide.md) |
 | Detailed module reference, examples, and case studies | [docs/module-reference.md](docs/module-reference.md) |
 | Complete generated API reference | [docs/api-reference.md](docs/api-reference.md) |
 | Version history | [docs/version-matrix.md](docs/version-matrix.md) |
 | Complete v5 overview | [docs/v5-overview.md](docs/v5-overview.md) |
-| v6 release readiness | [docs/release-readiness-v6.md](docs/release-readiness-v6.md) |
+| v7 release readiness | [docs/release-readiness-v7.md](docs/release-readiness-v7.md) |
 | v6 case studies | [docs/case-studies-v6.md](docs/case-studies-v6.md) |
 | v6 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](docs/assets/adversarygraph-v6/manifest.md) |
 | ATT&CK/STIX data model | [docs/attack-data-model.md](docs/attack-data-model.md) |

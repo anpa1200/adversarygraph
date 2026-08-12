@@ -7,19 +7,30 @@
     "start": "docusaurus start",
     "build": "docusaurus build",
     "serve": "docusaurus serve",
-    "clear": "docusaurus clear"
+    "clear": "docusaurus clear",
+    "test:image-size-boundary": "node vendor/image-size/test.cjs"
   },
   "dependencies": {
     "@docusaurus/core": "latest",
     "@docusaurus/preset-classic": "latest",
     "@mdx-js/react": "latest",
     "clsx": "latest",
+    "ip-address": "10.3.1",
     "prism-react-renderer": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "image-size": "file:vendor/image-size"
   },
   "overrides": {
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
+    "fast-uri": "4.1.2",
+    "gray-matter": {
+      "js-yaml": "3.15.1"
+    },
+    "image-size": "$image-size",
+    "ip-address": "$ip-address",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.18",
     "serialize-javascript": "^7.0.7",
     "uuid": "11.1.1"
   },

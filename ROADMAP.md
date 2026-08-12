@@ -1,12 +1,33 @@
 # Roadmap
 
-Current release: **v6.5.0** — Governed intelligence, hunting, exposure assessment, and SOC operations (2026-07-25)
+Current release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
 
-For the full history from v0.2.0 through v6.5.0 see [CHANGELOG.md](CHANGELOG.md).
+For the full history from v0.2.0 through v7.0.0 see [CHANGELOG.md](CHANGELOG.md).
 
 ## Unreleased
 
-- [ ] Record future work here after the v6.5.0 release boundary.
+- [ ] Record future work here after the v7.0.0 release boundary.
+
+## v7.0 — Isolated Assessment, Governed Intelligence, and Data Quality
+
+- [x] Isolate active asset assessment in an authenticated, non-root scanner MCP
+  service with exact inventory-target and allowlisted-plan enforcement
+- [x] Verify returned targets and tool traces before persisting scanner evidence
+  or passing bounded results to governed AI review
+- [x] Add database-backed RAG readiness, concurrency-safe reconciliation, and
+  production startup/self-test evidence
+- [x] Strengthen provenance-preserving relationships across actors, campaigns,
+  malware, IOCs, CVEs, reports, and ATT&CK context
+- [x] Enforce a closed intelligence taxonomy and maintain actor, tactic, and TTP
+  catalogs from authoritative data
+- [x] Add IOC-type and authoritative-data inventory breakdowns
+- [x] Include scanner MCP in the eight-image build, strict scan, publication,
+  verification, Compose, Helm, and digest-manifest path
+- [x] Remediate the MalwareGraph `nanoid` and PostCSS dependency advisories
+- [x] Publish the v7 presentation guide, release notes, summary, readiness
+  baseline, and aligned source/package/deployment metadata
+- [ ] Publish immutable `v7.0.0` artifacts only after protected-branch CI and the
+  complete local release gate pass
 
 ## v6.5 — Governed Intelligence, Hunting, Asset Assessment, and SOC Operations
 
@@ -41,8 +62,8 @@ For the full history from v0.2.0 through v6.5.0 see [CHANGELOG.md](CHANGELOG.md)
   response suppression, safe external links, route-level permissions, error
   handling, persistence, deep links, and route code splitting
 - [x] Harden Compose, Helm, container users and filesystems, production preflight,
-  CI action pinning, tag-only publication, backup/restore, seven-image release
-  publication, and ten-image stack scanning
+  CI action pinning, tag-only publication, backup/restore, eight-image release
+  publication, and eleven-image stack scanning
 - [x] Add persistent SOC groups, named-user administration, grant ceilings, and
   consistent module-level API/UI authorization across 31 workspaces
 - [x] Add a searchable saved-asset registry, evidence-labelled asset detail,

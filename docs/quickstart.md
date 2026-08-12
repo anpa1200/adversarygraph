@@ -316,7 +316,7 @@ curl http://localhost:3000/api/rag/status
 Expected health response:
 
 ```json
-{"status":"ok","version":"6.5.0"}
+{"status":"ok","version":"7.0.0"}
 ```
 
 The readiness response is `200` with `status: "ready"` when the database can

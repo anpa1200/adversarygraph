@@ -2,7 +2,42 @@
 
 ## Unreleased
 
-No changes are recorded after the v6.5.0 release boundary.
+No changes are recorded after the v7.0.0 release boundary.
+
+## v7.0.0 - 2026-08-12
+
+- Moved active asset assessment into a private, authenticated, non-root
+  scanner MCP service with exact inventory-target authorization, allowlisted
+  plans, bounded tool output, returned-target verification, and an auditable
+  execution trace.
+- Added database-backed RAG readiness, concurrency-safe reconciliation,
+  production startup ordering, bounded maintenance history, and the governed
+  local OpenAI-compatible adapter used by RAG, MCP, report analysis, and Threat
+  Hunting.
+- Strengthened normalized intelligence relationships and provenance across
+  actors, campaigns, malware, IOCs, CVEs, reports, and ATT&CK context.
+- Enforced a closed intelligence taxonomy, backfilled actor/campaign/malware
+  tags, seeded the ATT&CK group catalog, and added self-maintaining actor,
+  tactic, and TTP catalogs.
+- Added IOC-type and authoritative-data inventory breakdowns to statistics and
+  self-test surfaces so operators can distinguish live, empty, stale, and
+  partially loaded corpora.
+- Expanded the immutable release family to eight custom images by including
+  scanner MCP in build, test, strict scan, publication, registry verification,
+  Compose, Helm, and digest-manifest workflows.
+- Remediated the MalwareGraph UI `nanoid` and PostCSS dependency advisories
+  while keeping high-severity npm audit findings fail-closed during image
+  builds.
+- Removed the unfixed general-purpose image metadata parser from the Anomaly
+  documentation dependency graph and replaced it with a tested SVG-only build
+  boundary; the docs image also replaces npm's bundled vulnerable `ip-address`
+  copy with 10.3.1, and high-severity audits remain fail-closed.
+- Updated `aiohttp` to 3.14.3 to remediate the current Python advisory set.
+- Rebuilt the pinned Nuclei scanner with remediated `go-git` and `x/text`
+  transitive versions after strict image scanning identified two fixed HIGH
+  advisories in the upstream module graph.
+- Published a v7 presentation and demonstration guide, release notes, release
+  summary, readiness baseline, and updated reviewer/operator documentation.
 
 ## v6.5.0 - 2026-07-25
 

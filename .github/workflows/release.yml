@@ -70,6 +70,7 @@ jobs:
         working-directory: anomaly_detection/docs-site
         run: |
           npm ci
+          npm run test:image-size-boundary
           npm audit --audit-level=high
           npm run build
 

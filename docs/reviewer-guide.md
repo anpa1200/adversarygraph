@@ -10,9 +10,10 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
 | Module-by-module examples and case studies | [docs/module-reference.md](module-reference.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
-| v6.5 release notes | [docs/release-notes/v6.5.0.md](release-notes/v6.5.0.md) |
-| v6.5 release summary | [docs/release-summary-v6.5.0.md](release-summary-v6.5.0.md) |
-| v6 release readiness | [docs/release-readiness-v6.md](release-readiness-v6.md) |
+| v7 release notes | [docs/release-notes/v7.0.0.md](release-notes/v7.0.0.md) |
+| v7 release summary | [docs/release-summary-v7.0.0.md](release-summary-v7.0.0.md) |
+| v7 presentation guide | [docs/presentations/adversarygraph-v7-presentation-guide.md](presentations/adversarygraph-v7-presentation-guide.md) |
+| v7 release readiness | [docs/release-readiness-v7.md](release-readiness-v7.md) |
 | Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
 | Tagged v6.0.0 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |

@@ -4,11 +4,10 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares version `6.5.0`. Until its tag workflow
-successfully publishes and verifies immutable artifacts, `v6.0.0` remains the
-latest published historical tag. Verify the checked-out tag or commit and the
-corresponding release evidence before using this document as acceptance
-evidence.
+The checked-out source declares version `7.0.0`. Immutable artifacts and their
+digest manifest exist only after the matching protected tag workflow succeeds.
+Verify the checked-out tag or commit and corresponding release evidence before
+using this document as acceptance evidence.
 
 The examples and case studies below are reproducible workflows or clearly
 labelled illustrative scenarios. They are not customer testimonials, adoption

@@ -1,0 +1,19 @@
+{
+  "name": "image-size",
+  "version": "2.0.3-adversarygraph.1",
+  "private": true,
+  "description": "AdversaryGraph documentation-only SVG dimension reader",
+  "license": "MIT",
+  "main": "index.cjs",
+  "module": "index.mjs",
+  "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    },
+    "./fromFile": {
+      "import": "./fromFile.mjs",
+      "require": "./fromFile.cjs"
+    }
+  }
+}

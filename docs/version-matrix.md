@@ -6,32 +6,31 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v6.5.0 |
-| Release date | 2026-07-25 |
-| Theme | Governed intelligence, hunting, exposure assessment, and SOC operations |
+| Version | v7.0.0 |
+| Release date | 2026-08-12 |
+| Theme | Isolated assessment, governed intelligence, and data quality |
 | Status | Source release prepared; immutable tag and artifacts require the successful tag workflow |
 
-The source release is v6.5.0. The latest previously published immutable tag is
-v6.0.0 until the v6.5.0 tag workflow completes. Historical v6.0 screenshots and
-artifact limitations remain scoped to that tag.
+The source release is v7.0.0. Immutable v7 artifacts and their digest manifest
+exist only after the protected tag workflow succeeds. Historical screenshots
+remain scoped to their recorded source commit and are not v7 runtime evidence.
 
-### v6.5 Capability Promotion
+### v7 Capability Promotion
 
-v6.5.0 promotes the complete development line after v6.0.0: governed Threat
-Hunting and Query Library workflows, multi-provider AI, unified hybrid RAG,
-the Navigator intelligence assistant, local stdio MCP, saved-asset
-intelligence, inventory-bound exposure assessment, persistent SOC access
-groups, module-level authorization across 31 workspaces, complete API
-contracts, and the hardened seven-image release path. They are documented in
-[Unified Intelligence RAG and MCP](unified-rag-and-mcp.md), the
-[v6.5.0 release notes](release-notes/v6.5.0.md), and the changelog. They are not
-retroactively attributed to the immutable v6.0.0 tag. The earlier v6.1.0 source
-milestone was not published as a stable tag and is superseded by v6.5.0.
+v7.0.0 promotes the complete development line after v6.5.0: isolated scanner
+MCP assessment, database-backed RAG readiness, the governed local AI adapter,
+stronger relationship provenance, closed taxonomies, self-maintaining actor,
+tactic, and TTP catalogs, data-inventory evidence, and the hardened eight-image
+release path. It retains the governed Threat Hunting, Query Library, Navigator,
+analyst MCP, exposure review, RBAC, and complete API-contract work prepared in
+v6.5. See [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md), the
+[v7.0.0 release notes](release-notes/v7.0.0.md), and the changelog.
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v7.0.0 | Isolated Assessment, Governed Intelligence, and Data Quality | Private scanner MCP boundary, verified assessment traces, production RAG/MCP readiness, governed local AI adapter, stronger intelligence relationships, closed taxonomy, self-maintaining catalogs, self-test data inventory, and eight-image release publication |
 | v6.5.0 | Governed Intelligence, Hunting, Exposure Assessment, and SOC Operations | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization across 31 workspaces, complete API contracts, and post-v6 platform hardening |
 | v6.0.0 | Operational Evidence and Production Readiness | Reproducible release gate, corrected v5 history, tagged screenshot evidence, local case studies, deployment go/no-go criteria, version-derived UI metadata, and reviewer handoff material |
 | v5.9.1 | JA3/JA4+ Network Fingerprint IOC Workflows | JA3/JA3S/JA4/JA4S/JA4H/JA4L/JA4LS/JA4X/JA4SSH/JA4T IOC types, report-text extraction, normalized import tagging, IOC Library filtering, IOC Detail context, IOC node detail support, and IOC Investigation pivots |
@@ -55,7 +54,7 @@ milestone was not published as a stable tag and is superseded by v6.5.0.
 
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
 For a consolidated account of every v5 release, see the [v5 overview](v5-overview.md).
-For the current release narrative, see [v6.5.0 release notes](release-notes/v6.5.0.md).
+For the current release narrative, see [v7.0.0 release notes](release-notes/v7.0.0.md).
 
 ## Feature Gate Legend
 
