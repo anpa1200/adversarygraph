@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "dateSemantics": "last source change calendar date",
+  "routes": {
+    "/anomaly-detection-atlas/": {
+      "source": "src/pages/index.js",
+      "lastModified": "2026-08-14",
+      "sourceSha256": "8a9c015f0e4077ffd81a3ed117d2ae7d9fea6946447c8d715bbee79df645beaa"
+    },
+    "/anomaly-detection-atlas/adversarygraph-integration/": {
+      "source": "docs/adversarygraph-integration.md",
+      "lastModified": "2026-07-19",
+      "sourceSha256": "80b7e31739230a129c13507d8b37f25fbbb4cbba105b9e92946922e0f683e4ca"
+    },
+    "/anomaly-detection-atlas/attack-activity-log-source-catalog/": {
+      "source": "docs/attack-activity-log-source-catalog.md",
+      "lastModified": "2026-06-09",
+      "sourceSha256": "ea85351efad53e85f8b71694a11b4bae5a3559a456d63e81c62861aa63840703"
+    },
+    "/anomaly-detection-atlas/attack-basic-detection-rule-catalog/": {
+      "source": "docs/attack-basic-detection-rule-catalog.md",
+      "lastModified": "2026-06-09",
+      "sourceSha256": "1932fda1249873c6c335c29394eea8bc3ec1d6591c2eecbf7e768b25f5d8a7fb"
+    },
+    "/anomaly-detection-atlas/attack-statistical-anomaly-mapping/": {
+      "source": "docs/attack-statistical-anomaly-mapping.md",
+      "lastModified": "2026-06-09",
+      "sourceSha256": "7a1377e851b825196ff8c02a35255e4c4a5cc27c495aed0cb0907f8a407631ed"
+    },
+    "/anomaly-detection-atlas/security-log-source-taxonomy/": {
+      "source": "docs/security-log-source-taxonomy.md",
+      "lastModified": "2026-06-09",
+      "sourceSha256": "5a775e58a8bb4ea76e3a239e50528d078d46ef173d4124edd8d9b85800800118"
+    },
+    "/anomaly-detection-atlas/statistical-anomaly-taxonomy/": {
+      "source": "docs/statistical-anomaly-taxonomy.md",
+      "lastModified": "2026-06-09",
+      "sourceSha256": "cfb79dacfb2ce2050b604014787f935ac64c07ebe5b9ce9b4bb52a3c746a15d1"
+    }
+  }
+}

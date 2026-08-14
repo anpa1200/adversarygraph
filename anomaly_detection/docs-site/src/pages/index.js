@@ -1,6 +1,10 @@
 import React from 'react';
+import Head from '@docusaurus/Head';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
+
+const PAGE_TITLE = 'Anomaly Detection Atlas';
+const PAGE_DESCRIPTION = 'Connect ATT&CK activity, deterministic rules, statistical anomaly types, and 175 security telemetry sources through a vendor-neutral reference atlas.';
 
 const anomalyDimensions = [
   ['Observation', 'Point, contextual, collective, conditional, and residual deviations.'],
@@ -18,12 +22,26 @@ const telemetryDomains = [
   'Security controls and observability',
 ];
 
+const breadcrumbStructuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {'@type': 'ListItem', position: 1, name: '1200km', item: 'https://1200km.com/'},
+    {'@type': 'ListItem', position: 2, name: 'Anomaly Detection Atlas', item: 'https://1200km.com/anomaly-detection-atlas/'},
+  ],
+};
+
 export default function Home() {
   return (
     <Layout
-      title="Anomaly Detection Atlas"
-      description="A vendor-neutral reference for statistical anomaly types and security log sources."
+      title={PAGE_TITLE}
+      description={PAGE_DESCRIPTION}
     >
+      <Head>
+        <meta name="twitter:title" content={`${PAGE_TITLE} | 1200km`} />
+        <meta name="twitter:description" content={PAGE_DESCRIPTION} />
+        <script type="application/ld+json">{JSON.stringify(breadcrumbStructuredData)}</script>
+      </Head>
       <header className="atlas-hero">
         <div className="container atlas-hero__content">
           <div className="atlas-eyebrow">Detection Engineering Reference</div>

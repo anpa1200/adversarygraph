@@ -1,0 +1,12 @@
+{
+  "subsiteName": "Anomaly Detection Atlas",
+  "descriptions": {
+    "/anomaly-detection-atlas/": "Connect ATT&CK activity, deterministic rules, statistical anomaly types, and 175 security telemetry sources through a vendor-neutral reference atlas.",
+    "/anomaly-detection-atlas/adversarygraph-integration/": "Use the Docker-served reference book with exact technique links into activity, rule, anomaly, and telemetry sections from the AdversaryGraph matrix.",
+    "/anomaly-detection-atlas/attack-activity-log-source-catalog/": "Map suspicious and malicious behavior across Enterprise tactics to vendor-neutral logs that can provide evidence, while preserving observability limits.",
+    "/anomaly-detection-atlas/attack-basic-detection-rule-catalog/": "Build technique-level controls with exact matches, fixed thresholds, allowlists, state changes, and bounded correlations linked to required telemetry.",
+    "/anomaly-detection-atlas/attack-statistical-anomaly-mapping/": "Explain ATT&CK-aligned behavior as measurable deviation from explicit baselines, with linked anomaly concepts, evidence sources, and CTI records.",
+    "/anomaly-detection-atlas/security-log-source-taxonomy/": "Explore 175 vendor-neutral telemetry types, what each records, and which security activity each can report without assuming a product or analytic method.",
+    "/anomaly-detection-atlas/statistical-anomaly-taxonomy/": "Use 118 definitions spanning point, temporal, distributional, graph, process, model, data-quality, and adversarial deviations with academic grounding."
+  }
+}

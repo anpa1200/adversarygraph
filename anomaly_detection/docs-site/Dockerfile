@@ -23,7 +23,7 @@ COPY scripts/apply-adversarygraph-docs-overlay.mjs /usr/local/bin/apply-adversar
 COPY anomaly_detection/docs-overlay/ /seed-overlay/
 COPY anomaly_detection/docker/sync-and-build.sh /usr/local/bin/sync-and-build
 
-RUN npm run build && rm -rf build
+RUN npm run test:seo-dates && npm run build && rm -rf build
 RUN chmod +x /usr/local/bin/sync-anomaly-atlas /usr/local/bin/sync-and-build
 
 RUN addgroup -S atlas && adduser -S -G atlas -h /seed atlas && \

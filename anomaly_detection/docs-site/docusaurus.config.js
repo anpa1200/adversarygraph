@@ -1,6 +1,10 @@
 // @ts-check
+const {loadDateManifest} = require('./seo/date-manifest.cjs');
+
+const seoDateManifest = loadDateManifest(__dirname);
+
 const config = {
-  title: 'Anomaly Detection Atlas',
+  title: '1200km',
   tagline: 'A vendor-neutral reference for statistical anomalies and observable security telemetry.',
   favicon: 'img/favicon.svg',
 
@@ -43,6 +47,8 @@ const config = {
     locales: ['en'],
   },
 
+  plugins: ['./seo-metadata-plugin.cjs'],
+
   presets: [
     [
       'classic',
@@ -52,8 +58,21 @@ const config = {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
           rehypePlugins: [[require('./src/rehype/explicitAnchors'), {}]],
+          showLastUpdateTime: true,
         },
         blog: false,
+        sitemap: {
+          lastmod: 'date',
+          createSitemapItems: async ({defaultCreateSitemapItems, ...params}) => {
+            const items = await defaultCreateSitemapItems(params);
+            return items.map((item) => {
+              const pathname = new URL(item.url).pathname;
+              const dateRecord = seoDateManifest.routes[pathname];
+              if (!dateRecord) throw new Error(`Missing sitemap date for ${pathname}`);
+              return {...item, lastmod: dateRecord.lastModified};
+            });
+          },
+        },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
@@ -64,6 +83,10 @@ const config = {
   themeConfig: {
     image: 'img/social-card.svg',
     metadata: [
+      {
+        property: 'og:site_name',
+        content: '1200km — Andrey Pautov Security Research',
+      },
       {
         name: 'keywords',
         content:
