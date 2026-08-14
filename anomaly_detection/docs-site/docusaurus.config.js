@@ -58,11 +58,10 @@ const config = {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
           rehypePlugins: [[require('./src/rehype/explicitAnchors'), {}]],
-          showLastUpdateTime: true,
         },
         blog: false,
         sitemap: {
-          lastmod: 'date',
+          lastmod: null,
           createSitemapItems: async ({defaultCreateSitemapItems, ...params}) => {
             const items = await defaultCreateSitemapItems(params);
             return items.map((item) => {
