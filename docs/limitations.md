@@ -149,7 +149,10 @@ and governed its routing, access control, TLS, logging, and retention that way.
   alias directly.
 - Public IOCs may be stale, sinkholed, re-used, or weakly attributed.
 - Actor-linked IOCs should be presented with source, freshness, and confidence.
-- Uploaded report IOC extraction is best-effort and requires analyst review.
+- Uploaded report IOC extraction is best-effort and preview-only. It creates no
+  global IOC or actor link; ingest the report through Reports / Research, review
+  its source-bound claims, and promote it before accepted IOCs become globally
+  authoritative.
 
 ## Deployment
 

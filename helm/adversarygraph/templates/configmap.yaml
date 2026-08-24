@@ -29,7 +29,7 @@
   {{- if and .Values.scannerMcp.enabled (empty .Values.scannerMcp.image.digest) -}}
     {{- fail "productionMode requires a reviewed scanner MCP image digest when scanner MCP is enabled" -}}
   {{- end -}}
-  {{- if or (empty .Values.postgresql.image.digest) (not (contains "adversarygraph-postgres" .Values.postgresql.image.repository)) -}}
+  {{- if and .Values.postgresql.enabled (or (empty .Values.postgresql.image.digest) (not (contains "adversarygraph-postgres" .Values.postgresql.image.repository))) -}}
     {{- fail "productionMode requires the remediated adversarygraph-postgres repository and reviewed digest" -}}
   {{- end -}}
   {{- if empty .Values.redis.imageDigest -}}
@@ -98,5 +98,5 @@ data:
   LOG_DIR: /app/logs
   MALWAREGRAPH_URL: http://{{ include "adversarygraph.fullname" . }}-malwaregraph:8100
   MALWAREGRAPH_STORAGE_DIR: /malwaregraph-storage
-  DB_HOST: {{ include "adversarygraph.fullname" . }}-postgres
-  DB_PORT: "5432"
+  DB_HOST: {{ include "adversarygraph.databaseHost" . | quote }}
+  DB_PORT: {{ include "adversarygraph.databasePort" . | quote }}

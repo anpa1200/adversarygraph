@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { operationsApi, type DetectionCandidate, type IntakeRecord, type Investigation } from '@/api/client';
+import {
+  operationsApi,
+  type DetectionCandidate,
+  type IntakeBody,
+  type IntakeRecord,
+  type IntakeStatus,
+  type Investigation,
+} from '@/api/client';
 import { Header } from '@/components/Layout/Header';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
@@ -8,6 +15,7 @@ import { useAppStore } from '@/store';
 
 type Tab = 'investigations' | 'intake' | 'detections' | 'tracking';
 const input = 'w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 outline-none focus:border-mitre-accent';
+const intakeStatuses: IntakeStatus[] = ['pending', 'stored', 'analyzed', 'under_review', 'reviewed', 'rejected', 'revoked'];
 
 export function Operations() {
   const [tab, setTab] = useState<Tab>('investigations');
@@ -40,10 +48,81 @@ function Investigations() {
 
 function Intake() {
   const canManage = useHasPermission('manage_intel');
-  const qc = useQueryClient(); const { data = [] } = useQuery({ queryKey: ['operations-intake'], queryFn: operationsApi.intake }); const [title,setTitle]=useState(''); const [url,setUrl]=useState('');
-  const create = useMutation({ mutationFn: () => operationsApi.createIntake({ title,url,publisher:'',status:'pending',summary:'',source_reliability:'unknown',actor_ids:[],technique_ids:[],indicators:[],analyst_notes:'' }), onSuccess: () => { setTitle(''); setUrl(''); qc.invalidateQueries({queryKey:['operations-intake']}); } });
-  const update = useMutation({ mutationFn: (row: IntakeRecord) => operationsApi.updateIntake(row.id, strip(row)), onSuccess: () => qc.invalidateQueries({queryKey:['operations-intake']}) });
-  return <div className="max-w-6xl mx-auto space-y-4"><Panel title="Report Intake And Analyst Review">{canManage ? <div className="grid md:grid-cols-[1fr_1fr_auto] gap-2 p-3"><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Report title" className={input}/><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="Source URL" className={input}/><button onClick={()=>create.mutate()} disabled={!title.trim()} className="primary">Add</button></div> : <div className="p-3"><PermissionNotice permission="manage_intel" action="add or review report intake records" compact /></div>}</Panel><div className="grid lg:grid-cols-2 gap-3">{data.map(row => <Panel key={row.id} title={row.title}><p className="text-xs text-gray-500 px-3">{row.url || 'No URL'} · {row.publisher || 'Publisher pending'}</p><div className="flex gap-2 p-3"><select disabled={!canManage} value={row.status} onChange={e=>update.mutate({...row,status:e.target.value})} className={input}>{['pending','reviewing','promoted','rejected'].map(v=><option key={v}>{v}</option>)}</select><select disabled={!canManage} value={row.source_reliability} onChange={e=>update.mutate({...row,source_reliability:e.target.value})} className={input}>{['unknown','A1','B1','B2','C2','D3'].map(v=><option key={v}>{v}</option>)}</select></div></Panel>)}</div></div>;
+  const qc = useQueryClient();
+  const { data = [] } = useQuery({ queryKey: ['operations-intake'], queryFn: operationsApi.intake });
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const create = useMutation({
+    mutationFn: () => operationsApi.createIntake({ title, url, publisher: '', status: 'pending', summary: '', source_reliability: 'unknown', actor_ids: [], technique_ids: [], indicators: [], analyst_notes: '' }),
+    onSuccess: () => {
+      setTitle('');
+      setUrl('');
+      void qc.invalidateQueries({ queryKey: ['operations-intake'] });
+    },
+  });
+  const update = useMutation({
+    mutationFn: ({ row, body }: { row: IntakeRecord; body: IntakeBody }) => {
+      if (row.analysis_session_id) throw new Error('Linked report intake records are read-only in Operations.');
+      return operationsApi.updateIntake(row.id, body);
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['operations-intake'] }),
+  });
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4">
+      <Panel title="Report Intake And Analyst Review">
+        {canManage ? (
+          <div className="grid gap-2 p-3 md:grid-cols-[1fr_1fr_auto]">
+            <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Report title" className={input} />
+            <input value={url} onChange={event => setUrl(event.target.value)} placeholder="Source URL" className={input} />
+            <button onClick={() => create.mutate()} disabled={!title.trim()} className="primary">Add</button>
+          </div>
+        ) : (
+          <div className="p-3"><PermissionNotice permission="manage_intel" action="add or review report intake records" compact /></div>
+        )}
+      </Panel>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {data.map(row => {
+          const linkedToAnalysis = Boolean(row.analysis_session_id);
+          return (
+            <Panel key={row.id} title={row.title}>
+              <p className="px-3 text-xs text-gray-500">{row.url || 'No URL'} · {row.publisher || 'Publisher pending'}</p>
+              {linkedToAnalysis ? (
+                <div className="m-3 rounded border border-cyan-900/70 bg-cyan-950/20 p-3 text-xs text-cyan-100">
+                  <div className="font-semibold">Linked analysis intake · {humanizeIntakeStatus(row.status)}</div>
+                  <p className="mt-1 leading-5 text-cyan-100/70">This record is owned by Reports / Research and its Review Gate. It cannot be edited or deleted from Operations.</p>
+                  <a href={`/analyze/${row.analysis_session_id}/report`} className="mt-2 inline-block text-mitre-accent hover:underline">Open linked report</a>
+                </div>
+              ) : (
+                <div className="flex gap-2 p-3">
+                  <Field label="Status">
+                    <select
+                      disabled={!canManage || update.isPending}
+                      value={isIntakeStatus(row.status) ? row.status : 'pending'}
+                      onChange={event => update.mutate({ row, body: { ...intakeBody(row), status: event.target.value as IntakeStatus } })}
+                      className={input}
+                    >
+                      {intakeStatuses.map(value => <option key={value} value={value}>{humanizeIntakeStatus(value)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Source reliability">
+                    <select
+                      disabled={!canManage || update.isPending}
+                      value={row.source_reliability}
+                      onChange={event => update.mutate({ row, body: { ...intakeBody(row), source_reliability: event.target.value } })}
+                      className={input}
+                    >
+                      {['unknown', 'A1', 'B1', 'B2', 'C2', 'D3'].map(value => <option key={value}>{value}</option>)}
+                    </select>
+                  </Field>
+                </div>
+              )}
+            </Panel>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function Detections() {
@@ -62,6 +141,22 @@ function Tracking() {
 }
 
 function strip<T extends {id:string;created_at:string;updated_at:string}>(row:T): Omit<T,'id'|'created_at'|'updated_at'>{const {id:_id,created_at:_created,updated_at:_updated,...rest}=row;return rest;}
+function isIntakeStatus(value: string): value is IntakeStatus { return intakeStatuses.includes(value as IntakeStatus); }
+function humanizeIntakeStatus(value: string): string { return value.replace(/_/g, ' '); }
+function intakeBody(row: IntakeRecord): IntakeBody {
+  return {
+    title: row.title,
+    url: row.url,
+    publisher: row.publisher,
+    status: isIntakeStatus(row.status) ? row.status : 'pending',
+    summary: row.summary,
+    source_reliability: row.source_reliability,
+    actor_ids: row.actor_ids,
+    technique_ids: row.technique_ids,
+    indicators: row.indicators,
+    analyst_notes: row.analyst_notes,
+  };
+}
 function Panel({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-lg border border-gray-800 bg-gray-900/60 overflow-hidden"><h2 className="text-sm font-semibold text-white px-3 py-3 border-b border-gray-800">{title}</h2>{children}</section>}
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="text-[10px] uppercase tracking-wide text-gray-500">{label}<div className="mt-1">{children}</div></label>}
 function Csv({value,onChange}:{value:string[];onChange:(v:string[])=>void}){return <input value={value.join(', ')} onChange={e=>onChange(e.target.value.split(',').map(v=>v.trim()).filter(Boolean))} className={input}/>}

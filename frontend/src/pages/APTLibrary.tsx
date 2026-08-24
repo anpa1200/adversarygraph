@@ -629,6 +629,8 @@ function ActorIOCs({
     extracted: number;
     imported: {source: string; days: null; inserted: number; updated: number; actor_links: number};
     preview: import('@/api/client').IOCItem[];
+    candidate_only: true;
+    review_path: string;
   } | null;
   reportError: string;
   onSync: () => void;
@@ -740,13 +742,14 @@ function ActorIOCs({
       </div>
 
       <div className="rounded border border-gray-800 bg-gray-900/50 p-4">
-        <h3 className="text-sm font-semibold text-white">Extract IOCs From Report</h3>
+        <h3 className="text-sm font-semibold text-white">Preview IOCs From Report</h3>
         <p className="mt-2 text-xs text-gray-500">
-          Upload PDF, DOCX, or TXT. AdversaryGraph extracts common IOCs and maps them to {actorName}.
+          Upload PDF, DOCX, or TXT for a local candidate preview. Nothing is added to the IOC Library until the
+          report is reviewed and promoted from Reports / Research.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <label className="secondary-action cursor-pointer">
-            {uploadingReport ? 'Importing...' : 'Upload report'}
+            {uploadingReport ? 'Extracting...' : 'Preview report'}
             <input
               type="file"
               accept=".pdf,.docx,.txt,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -761,7 +764,8 @@ function ActorIOCs({
           </label>
           {reportResult && (
             <span className="text-xs text-green-300">
-              Extracted {reportResult.extracted}; imported {reportResult.imported.inserted} new, {reportResult.imported.updated} updated, {reportResult.imported.actor_links} links.
+              Extracted {reportResult.extracted} candidates; no global indicators or actor links were created.
+              {' '}Review the report in <a className="underline" href={reportResult.review_path}>Reports / Research</a> before promotion.
             </span>
           )}
         </div>

@@ -26,6 +26,8 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        {{- include "adversarygraph.schemaAuthorityInitContainer" . | nindent 8 }}
       containers:
         - name: api
           image: {{ include "adversarygraph.componentImage" .Values.image | quote }}

@@ -69,6 +69,8 @@ def generate_analysis_report(data: dict[str, Any]) -> bytes:
 
     _cover(pdf, data)
     _summary(pdf, data)
+    if data.get("review"):
+        _review_gate(pdf, data["review"])
 
     techniques = data.get("techniques", [])
     if techniques:
@@ -149,10 +151,24 @@ def _cover(pdf: _Report, data: dict) -> None:
         ("Model",     "model"),
         ("Domain",    "domain"),
         ("Session ID","session_id"),
+        ("Review state", "review_state"),
         ("Generated", None),
     ]:
         val = _now() if key is None else str(data.get(key, "—"))
         _meta_row(pdf, label, val)
+
+    if data.get("authoritative") is not True:
+        pdf.ln(3)
+        pdf.set_fill_color(255, 247, 237)
+        pdf.set_text_color(146, 64, 14)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(
+            0,
+            6,
+            "DRAFT ASSESSMENT - This report revision is not promoted and must not be treated as authoritative intelligence.",
+            fill=True,
+        )
+        pdf.set_text_color(0, 0, 0)
 
     # Stats
     pdf.ln(6)
@@ -166,7 +182,7 @@ def _cover(pdf: _Report, data: dict) -> None:
     pdf.ln(3)
 
     _stat_box(pdf, str(len(techniques)),
-              "Techniques\nextracted")
+              "Techniques\naccepted")
     _stat_box(pdf, str(len(apt_matches)),
               "Group similarity\nleads")
     top_sim = f"{apt_matches[0]['similarity']*100:.0f}%" if apt_matches else "N/A"
@@ -192,6 +208,58 @@ def _summary(pdf: _Report, data: dict) -> None:
         _heading2(pdf, "Mentioned Threat Actors")
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 6, ", ".join(hints), ln=True)
+
+
+def _review_gate(pdf: _Report, review: dict[str, Any]) -> None:
+    """Render the deterministic report-level assessment and promotion status."""
+
+    pdf.add_page()
+    _heading(pdf, "Review Gate Assessment")
+    _meta_row(pdf, "State", str(review.get("state") or "unreviewed"))
+    _meta_row(pdf, "Profile", str(review.get("profile") or "-"))
+    _meta_row(pdf, "Revision", str(review.get("revision") or "-"))
+    _meta_row(pdf, "Policy", str(review.get("policy_version") or "-"))
+    _meta_row(
+        pdf,
+        "Coverage",
+        f"{int(review.get('analyzed_char_count') or 0)} / {int(review.get('source_char_count') or 0)} characters",
+    )
+    readiness = review.get("readiness") if isinstance(review.get("readiness"), dict) else {}
+    _meta_row(pdf, "Promotion ready", "Yes" if readiness.get("ready") else "No")
+    pdf.ln(4)
+
+    gates = review.get("gates") if isinstance(review.get("gates"), list) else []
+    rows = [["#", "Gate", "Machine", "Analyst", "Reason"]]
+    for ordinal, gate in enumerate(gates[:5], start=1):
+        if not isinstance(gate, dict):
+            continue
+        rows.append([
+            str(gate.get("ordinal") or ordinal),
+            str(gate.get("title") or gate.get("gate_key") or "")[:34],
+            str(gate.get("machine_verdict") or "not_run")[:14],
+            str(gate.get("analyst_verdict") or "pending")[:16],
+            str(gate.get("reason_code") or "")[:30],
+        ])
+    if len(rows) > 1:
+        _table(pdf, rows, col_widths=[9, 58, 27, 30, 54])
+
+    blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+    if blockers:
+        pdf.ln(5)
+        _heading2(pdf, "Promotion blockers")
+        pdf.set_font("Helvetica", "", 9)
+        for blocker in blockers[:20]:
+            pdf.multi_cell(0, 5, f"- {str(blocker)[:300]}")
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(*_GRAY)
+    pdf.multi_cell(
+        0,
+        5,
+        "Machine and AI findings are advisory. Only authenticated analyst gate decisions and accepted, source-bound claims determine promotion readiness.",
+    )
+    pdf.set_text_color(0, 0, 0)
 
 
 def _techniques_table(pdf: _Report, techniques: list[dict]) -> None:

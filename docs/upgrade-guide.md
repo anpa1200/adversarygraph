@@ -5,12 +5,66 @@ procedure for moving from v5 releases to v6.0.0 and later releases.
 
 ## Current Migration Model
 
-AdversaryGraph currently uses SQLAlchemy `create_all` plus additive startup SQL
-for compatibility fields. It does **not** yet ship a formal Alembic migration
-chain. That means production upgrades must be protected by logical backups and
-post-upgrade validation.
+AdversaryGraph now uses Alembic for new research/workflow authority tables.
+Legacy tables still use SQLAlchemy `create_all` plus additive startup SQL while
+they are moved into the formal chain in later expand/backfill/contract releases.
+The application deliberately excludes migration-owned tables from `create_all`
+and refuses to start unless both the expected Alembic revision and the critical
+physical tables, constraints, indexes, and authority triggers are present. This
+prevents a missed, stamped-only, or manually drifted migration from silently
+creating an unversioned authority schema.
 
-Formal Alembic migrations are a planned production-readiness improvement.
+Docker Compose runs the one-shot `migrate` service and requires it to complete
+before the API or workers start. For a direct backend deployment, run this from
+the exact reviewed application artifact before starting any process:
+
+```bash
+cd backend
+python -m alembic upgrade head
+python -m alembic current
+```
+
+Always take and verify a logical backup first. Do not use `alembic stamp` to
+skip an unapplied revision: stamping changes the ledger without applying or
+validating the schema. Revision `20260823_0001` creates the research-project
+authority tables. Revision `20260823_0002` adds durable workflow, stage, and
+fenced attempt records and the project-revision immutability/lineage trigger.
+Revision `20260823_0003` expands that authority with the transactional outbox,
+delivery attempts, and broker-receipt lineage. Revision `20260824_0004` is the
+contract step: it requires current v1 workflow plans to have an exact child
+set, binds running attempts to delivered receipt evidence, serializes
+workflow/stage/message insertion through the canonical parent locks, and
+enforces terminal workflow consistency across stages, attempts, messages, and
+deliveries. It also persists an exact cancellation request identity so an
+administrative replay cannot change actor or reason. These revisions do not
+claim that unrelated legacy tables have already been migrated.
+
+The `0004` preflight is deliberately fail-closed. Before upgrading a database
+that already used the expand-only workflow tables, drain workers and inspect
+any active workflow with a non-v1 schema, any running attempt without an exact
+delivered outbox receipt, and any workflow whose stored stage rows do not
+exactly match its plan. Repair from retained broker/audit evidence or quarantine
+the affected workflow under an operator-reviewed procedure; do not stamp past
+the contract migration. A failed preflight leaves the entire migration rolled
+back.
+
+## Review Gate Legacy Inventory
+
+Installations that previously used report upload, report pipeline, or
+report-bearing IOC import paths may already contain global IOC, Observable,
+Evidence Graph, or RAG projections derived before the Review Gate became the
+only report-promotion authority. Before rollout, review records whose
+provenance includes `manual-report-import` or another report-ingestion source.
+
+Do not bulk-delete these rows automatically: the same provenance labels may
+also occur on legitimate standalone IOC imports, so provenance alone cannot
+prove that a row bypassed review. Take a verified backup, correlate each legacy
+projection with its source report, ingest that report into Reports/Research,
+and review and promote only the accepted claims. An operator may then archive
+or remove superseded projections using the retained audit evidence and the
+organization's retention policy. Reconcile the Evidence Graph and rerun RAG
+indexing after that decision so derived search state reflects only current
+promotion authority.
 
 The v6.5 unified RAG schema adds the PostgreSQL `vector` extension, derived
 document/chunk tables, a generated full-text column, GIN/HNSW indexes, index-run
@@ -302,8 +356,7 @@ the normal backup/restore discipline.
 
 Before claiming strict enterprise upgrade guarantees, add:
 
-- Alembic migration baseline;
-- migration tests in CI;
+- an Alembic baseline for every remaining legacy table;
+- disposable PostgreSQL migration, rollback, and drift tests in required CI;
 - backup/restore test job;
-- explicit schema version table;
-- downgrade/rollback policy.
+- a release-level downgrade/rollback compatibility policy.

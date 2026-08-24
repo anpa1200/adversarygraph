@@ -44,8 +44,6 @@ async def tag_entity(
             .on_conflict_do_update(
                 constraint="uq_intelligence_entity_tag",
                 set_={
-                    "source_type": str(source_type or "")[:40],
-                    "source_id": str(source_id or "")[:500],
                     "confidence": max(0, min(100, confidence)),
                     "evidence": evidence,
                 },

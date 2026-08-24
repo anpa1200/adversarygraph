@@ -418,6 +418,24 @@ services:
           nocopy: true
     restart: "no"
 
+  migrate:
+    image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
+    pull_policy: never
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    command: python -m alembic upgrade head
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-adversarygraph}
+      DB_USER: ${DB_USER:-ag_user}
+      DB_PASS: ${DB_PASS:?DB_PASS is required; set a strong value in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     image: ${ADVERSARYGRAPH_BACKEND_IMAGE:-adversarygraph-backend:local-scan}
     pull_policy: never
@@ -560,6 +578,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       scanner-mcp:
@@ -678,6 +698,8 @@ services:
         condition: service_started
       postgres:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
       attck-data-permissions:
         condition: service_completed_successfully
     healthcheck:
@@ -768,6 +790,8 @@ services:
         condition: service_started
       postgres:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
       attck-data-permissions:
         condition: service_completed_successfully
     healthcheck:

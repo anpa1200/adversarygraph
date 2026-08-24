@@ -1,0 +1,111 @@
+{{- $externalInstall := and .Release.IsInstall (not .Values.postgresql.enabled) -}}
+{{- if and $externalInstall (empty .Values.secrets.existingSecret) -}}
+{{- fail "external PostgreSQL installs require an out-of-band secrets.existingSecret before the pre-install migration hook can run" -}}
+{{- end -}}
+{{- $hooked := or .Release.IsUpgrade $externalInstall -}}
+{{- $component := "migration" -}}
+{{- if .Release.IsUpgrade -}}
+  {{- /* The installed v7 ingress policy already authorizes worker-labelled
+         clients. Keep that compatibility identity until this upgrade has
+         installed the new migration-aware PostgreSQL policy. */ -}}
+  {{- $component = "worker" -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-{{ ternary "migrate" "migrate-install" $hooked }}
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/role: migration
+  {{- if $hooked }}
+  annotations:
+    helm.sh/hook: {{ ternary "pre-upgrade" "pre-install" .Release.IsUpgrade | quote }}
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migration.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+        app.kubernetes.io/role: migration
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: database-ready
+          image: {{ include "adversarygraph.componentImage" .Values.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import asyncio
+
+              from sqlalchemy import text
+
+              from app.core.database import engine
+
+
+              async def wait_for_database() -> None:
+                  try:
+                      for _attempt in range(150):
+                          try:
+                              async with engine.connect() as connection:
+                                  await connection.execute(text("SELECT 1"))
+                              return
+                          except Exception:
+                              await asyncio.sleep(2)
+                      raise RuntimeError("database did not become ready")
+                  finally:
+                      await engine.dispose()
+
+
+              try:
+                  asyncio.run(wait_for_database())
+              except Exception:
+                  raise SystemExit("database is not ready for migration") from None
+          env:
+            {{- include "adversarygraph.databaseEnvironment" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.migration.gateResources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: migrate
+          image: {{ include "adversarygraph.componentImage" .Values.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            {{- include "adversarygraph.databaseEnvironment" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}

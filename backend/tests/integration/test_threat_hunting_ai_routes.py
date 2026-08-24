@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -12,6 +13,7 @@ from app.core.rate_limit import _windows
 from app.models.analysis import AnalysisSession
 from app.models.pipeline import AuditEvent
 from app.models.threat_radar import ThreatHuntRequest
+from app.api.routes import threat_hunting_ai as hunt_routes
 from app.services import threat_hunting_ai as hunt_ai
 from app.services.auth import TeamUser, current_user
 from tests import conftest
@@ -165,6 +167,27 @@ async def _store_research(client: AsyncClient, *, domain: str = "enterprise-atta
     )
     assert response.status_code == 200, response.text
     return response.json()["session_id"]
+
+
+def _authorize_hunting_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+    session_id: str,
+) -> None:
+    active = SimpleNamespace(
+        review=SimpleNamespace(id=uuid4(), revision=1),
+        promotion=SimpleNamespace(
+            id=uuid4(),
+            session_id=UUID(session_id),
+            targets=["hunting"],
+            manifest_checksum="a" * 64,
+        ),
+    )
+
+    async def get_active(_db, presented_session_id):
+        assert UUID(str(presented_session_id)) == UUID(session_id)
+        return active
+
+    monkeypatch.setattr(hunt_routes, "get_active_report_promotion", get_active)
 
 
 async def test_provider_catalog_and_unsaved_plan_assistance_are_safe(
@@ -655,6 +678,7 @@ async def test_hypotheses_use_stored_source_and_bind_exact_evidence(
 ):
     _fake_provider(monkeypatch, HYPOTHESIS_OUTPUT)
     session_id = await _store_research(client)
+    _authorize_hunting_promotion(monkeypatch, session_id)
     stored_source = conftest._mock_session._objects[(AnalysisSession, UUID(session_id))]
     stored_source.source_text = f"  \n{stored_source.source_text}\n  "
 
@@ -690,6 +714,7 @@ async def test_stored_report_tlp_cannot_be_lowered_at_cloud_egress(
     monkeypatch.setattr(settings, "openai_api_key", "configured-test-key")
     _fake_provider(monkeypatch, HYPOTHESIS_OUTPUT)
     session_id = await _store_research(client)
+    _authorize_hunting_promotion(monkeypatch, session_id)
 
     blocked = await client.post("/api/threat-hunting/ai/hypotheses", json={
         "provider": "openai",
@@ -880,6 +905,7 @@ async def test_hypothesis_generation_rejects_source_metadata_changed_during_prov
     monkeypatch: pytest.MonkeyPatch,
 ):
     session_id = await _store_research(client)
+    _authorize_hunting_promotion(monkeypatch, session_id)
     stored = conftest._mock_session._objects[(AnalysisSession, UUID(session_id))]
 
     class _MutatingSourceAdapter(_FakeAdapter):

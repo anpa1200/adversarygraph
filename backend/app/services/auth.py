@@ -34,6 +34,8 @@ PBKDF2_ITERATIONS = 260_000
 ALL_PERMISSIONS = {
     "read",
     "run_analysis",
+    "review_reports",
+    "promote_reports",
     "manage_intel",
     "manage_detections",
     "run_attack_simulation",
@@ -82,12 +84,12 @@ ALL_MODULES = set(MODULE_CATALOG)
 ROLE_PERMISSIONS = {
     "viewer": {"read"},
     "auditor": {"read", "view_audit", "export_data"},
-    "analyst": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
-    "threat_intel": {"read", "run_analysis", "manage_intel", "manage_feeds", "upload_files", "export_data"},
+    "analyst": {"read", "run_analysis", "review_reports", "manage_intel", "upload_files", "export_data"},
+    "threat_intel": {"read", "run_analysis", "review_reports", "promote_reports", "manage_intel", "manage_feeds", "upload_files", "export_data"},
     "detection_engineer": {"read", "run_analysis", "manage_detections", "run_attack_simulation", "forward_siem", "export_data"},
-    "incident_responder": {"read", "run_analysis", "manage_intel", "run_attack_simulation", "forward_siem", "upload_files", "export_data"},
+    "incident_responder": {"read", "run_analysis", "review_reports", "manage_intel", "run_attack_simulation", "forward_siem", "upload_files", "export_data"},
     "service_account": {"read", "run_analysis", "manage_feeds", "forward_siem", "export_data"},
-    "security_admin": {"read", "run_analysis", "manage_intel", "manage_detections", "run_attack_simulation", "manage_feeds", "forward_siem", "upload_files", "export_data", "manage_auth", "view_audit"},
+    "security_admin": {"read", "run_analysis", "review_reports", "promote_reports", "manage_intel", "manage_detections", "run_attack_simulation", "manage_feeds", "forward_siem", "upload_files", "export_data", "manage_auth", "view_audit"},
     "admin": set(ALL_PERMISSIONS),
 }
 
@@ -124,7 +126,7 @@ DEFAULT_ACCESS_GROUPS = {
         "permissions": {
             "read", "run_analysis", "manage_intel", "manage_detections",
             "run_attack_simulation", "forward_siem", "upload_files",
-            "export_data", "view_audit",
+            "export_data", "view_audit", "review_reports", "promote_reports",
         },
         "modules": ALL_MODULES - {"feeds", "admin"},
     },
@@ -141,7 +143,7 @@ DEFAULT_ACCESS_GROUPS = {
     "soc-tier-2": {
         "name": "SOC Tier 2 — Investigation",
         "description": "Expanded investigation and correlation access for escalated alerts, assets, vulnerabilities, actors, and evidence.",
-        "permissions": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
+        "permissions": {"read", "run_analysis", "review_reports", "manage_intel", "upload_files", "export_data"},
         "modules": {
             "discover", "threat_radar", "reports_research", "apt_library",
             "sector_intel", "knowledge", "ioc_library", "cve_library", "retrohunt",
@@ -157,13 +159,14 @@ DEFAULT_ACCESS_GROUPS = {
         "permissions": {
             "read", "run_analysis", "manage_intel", "manage_detections",
             "run_attack_simulation", "forward_siem", "upload_files", "export_data",
+            "review_reports",
         },
         "modules": ALL_MODULES - {"feeds", "admin", "observability"},
     },
     "threat-intelligence": {
         "name": "Threat Intelligence",
         "description": "Curates reports, actors, sectors, IOCs, vulnerabilities, ATT&CK mappings, and evidence.",
-        "permissions": {"read", "run_analysis", "manage_intel", "upload_files", "export_data"},
+        "permissions": {"read", "run_analysis", "review_reports", "promote_reports", "manage_intel", "upload_files", "export_data"},
         "modules": {
             "discover", "threat_radar", "reports_research", "apt_library",
             "sector_intel", "knowledge", "ioc_library", "cve_library", "retrohunt",
@@ -204,7 +207,7 @@ DEFAULT_ACCESS_GROUPS = {
         "description": "Investigates IOCs and malware, preserves evidence, coordinates response, and produces incident reports.",
         "permissions": {
             "read", "run_analysis", "manage_intel", "run_attack_simulation",
-            "forward_siem", "upload_files", "export_data",
+            "forward_siem", "upload_files", "export_data", "review_reports",
         },
         "modules": {
             "discover", "threat_radar", "reports_research", "knowledge",

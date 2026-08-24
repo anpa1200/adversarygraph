@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.models.analysis import AnalysisResult, AnalysisSession
+from app.models.report_review import ReportPromotion
 from app.services.stix_export import build_analysis_stix_bundle
 
 
@@ -42,6 +43,55 @@ def test_analysis_stix_export_models_ttp_report_not_iocs():
         summary="Observed phishing-to-loader activity.",
         raw_response="{}",
     )
+    promotion = ReportPromotion(
+        id=uuid.uuid4(),
+        review_id=uuid.uuid4(),
+        session_id=session_id,
+        review_revision=1,
+        policy_version="report-review-policy-v1.0",
+        source_checksum="a" * 64,
+        analysis_checksum="b" * 64,
+        targets=["canonical_intelligence", "exports"],
+        manifest={
+            "accepted_claims": [
+                {
+                    "claim_key": "procedure-1",
+                    "claim_type": "procedure",
+                    "object": "Spearphishing Link",
+                    "statement": "The report documents delivery through a phishing link.",
+                    "attack_id": "T1566.002",
+                    "actor_id": "",
+                    "evidence_refs": [{"excerpt": "phishing email leading to loader"}],
+                    "metadata": {"tactic": "initial-access", "confidence": 0.9},
+                },
+                {
+                    "claim_key": "actor-1",
+                    "claim_type": "actor",
+                    "subject": "Magic Hound",
+                    "statement": "The source explicitly attributes the activity to Magic Hound.",
+                    "attack_id": "",
+                    "actor_id": "G0059",
+                    "evidence_refs": [{"excerpt": "attributed to Magic Hound"}],
+                    "metadata": {"attribution_basis": "explicit"},
+                },
+                {
+                    "claim_key": "actor-2",
+                    "claim_type": "actor",
+                    "subject": "report",
+                    "object": "Blue Lantern",
+                    "statement": "The source explicitly attributes the activity to Blue Lantern.",
+                    "attack_id": "",
+                    "actor_id": "Blue Lantern",
+                    "evidence_refs": [{"excerpt": "attributed to Blue Lantern"}],
+                    "metadata": {"attribution_basis": "source_reported"},
+                },
+            ]
+        },
+        manifest_checksum="c" * 64,
+        idempotency_key="d" * 64,
+        promoted_by="reviewer",
+        promoted_at=datetime(2026, 6, 17, tzinfo=timezone.utc),
+    )
 
     bundle = build_analysis_stix_bundle(
         session,
@@ -62,6 +112,7 @@ def test_analysis_stix_export_models_ttp_report_not_iocs():
                 "url": "https://attack.mitre.org/groups/G0059/",
             }
         },
+        promotion=promotion,
     )
 
     assert bundle["type"] == "bundle"
@@ -80,6 +131,20 @@ def test_analysis_stix_export_models_ttp_report_not_iocs():
     assert attack_pattern["x_mitre_id"] == "T1566.002"
     assert attack_pattern["x_adversarygraph_review_status"] == "accepted"
 
-    intrusion_set = next(item for item in bundle["objects"] if item["type"] == "intrusion-set")
+    intrusion_set = next(
+        item
+        for item in bundle["objects"]
+        if item["type"] == "intrusion-set" and item.get("x_mitre_id") == "G0059"
+    )
     assert intrusion_set["id"] == "intrusion-set--22222222-2222-4222-8222-222222222222"
-    assert intrusion_set["x_adversarygraph_similarity"] == 0.31
+    assert "x_adversarygraph_similarity" not in intrusion_set
+    assert intrusion_set["x_adversarygraph_review_status"] == "accepted"
+
+    source_reported = next(
+        item
+        for item in bundle["objects"]
+        if item["type"] == "intrusion-set" and item.get("name") == "Blue Lantern"
+    )
+    assert "x_mitre_id" not in source_reported
+    assert "external_references" not in source_reported
+    assert source_reported["x_adversarygraph_source_reported_name"] is True

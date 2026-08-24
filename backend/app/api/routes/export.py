@@ -18,6 +18,13 @@ from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, Technique
 from app.services.auth import TeamUser, require_permission
+from app.services.report_promotion import (
+    accepted_claims,
+    accepted_actor_ids,
+    accepted_technique_ids,
+    get_active_report_promotion,
+    promotion_allows,
+)
 
 router = APIRouter(prefix="/export", tags=["Export"])
 export_data = require_permission("export_data")
@@ -60,6 +67,9 @@ _STIX_RESPONSE = {
         },
     },
     202: _PDF_RESPONSE[202],
+    409: {
+        "description": "The report does not have an active Review Gate promotion.",
+    },
 }
 
 
@@ -121,6 +131,55 @@ async def export_analysis_pdf(
     if not res:
         raise HTTPException(404, "No result found for session")
 
+    from app.services.report_review import ReviewNotFoundError, assessment
+
+    try:
+        review = await assessment(db, sid)
+    except ReviewNotFoundError:
+        review = {
+            "state": "unreviewed",
+            "profile": "",
+            "revision": None,
+            "policy_version": "",
+            "source_char_count": len(db_session.source_text or ""),
+            "analyzed_char_count": 0,
+            "gates": [],
+            "claims": [],
+            "readiness": {"ready": False, "blockers": ["review_not_started"]},
+        }
+    active = await get_active_report_promotion(db, sid)
+    export_authorized = (
+        active is not None and promotion_allows(active.promotion, "exports")
+    )
+    promoted_claims = accepted_claims(active.promotion) if export_authorized else []
+    promoted_techniques = [
+        {
+            "attack_id": str(claim.get("attack_id") or "").upper(),
+            "name": str(claim.get("object") or claim.get("attack_id") or ""),
+            "tactic": str((claim.get("metadata") or {}).get("tactic") or "")
+            if isinstance(claim.get("metadata"), dict)
+            else "",
+            "confidence": (
+                (claim.get("metadata") or {}).get("confidence")
+                if isinstance(claim.get("metadata"), dict)
+                else None
+            ) or 0,
+            "evidence": str(
+                next(
+                    (
+                        ref.get("excerpt") or ref.get("value") or ""
+                        for ref in claim.get("evidence_refs", [])
+                        if isinstance(ref, dict)
+                    ),
+                    "",
+                )
+            ),
+            "review_status": "accepted",
+        }
+        for claim in promoted_claims
+        if claim.get("claim_type") == "procedure" and claim.get("attack_id")
+    ]
+
     from app.services.report_generator import generate_analysis_report
 
     data = {
@@ -128,18 +187,35 @@ async def export_analysis_pdf(
         "provider":   db_session.llm_provider,
         "model":      db_session.model,
         "domain":     db_session.domain,
-        "summary":    res.summary,
-        "techniques": res.extracted_techniques,
-        "apt_matches":res.apt_matches,
+        "summary":    "\n".join(
+            str(claim.get("statement") or "").strip()
+            for claim in promoted_claims
+            if str(claim.get("statement") or "").strip()
+        ) or res.summary,
+        "techniques": promoted_techniques if export_authorized else [
+            item for item in (res.extracted_techniques or [])
+            if item.get("review_status") == "accepted"
+            and item.get("evidence_source") in {"source-text", "analyst-source-text"}
+        ],
+        # Similarity is an investigation lead and cannot be promoted as actor
+        # attribution in an analyst export.
+        "apt_matches": [],
         "apt_hints":  [],
+        "review_state": review["state"],
+        "review": review,
+        "authoritative": export_authorized,
     }
 
     pdf_bytes = generate_analysis_report(data)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={**_PDF_HEADERS,
-                 "Content-Disposition": f'attachment; filename="analysis-{session_id[:8]}.pdf"'},
+        headers={
+            **_PDF_HEADERS,
+            "Content-Disposition": f'attachment; filename="analysis-{session_id[:8]}.pdf"',
+            "X-AdversaryGraph-Review-State": str(review["state"]),
+            "X-AdversaryGraph-Authoritative": "true" if export_authorized else "false",
+        },
     )
 
 
@@ -175,16 +251,20 @@ async def export_analysis_stix(
     if not res:
         raise HTTPException(404, "No result found for session")
 
-    attack_ids = {
-        str(item.get("attack_id", "")).upper()
-        for item in (res.extracted_techniques or [])
-        if item.get("attack_id")
-    }
-    group_ids = {
-        str(item.get("group_attack_id", "")).upper()
-        for item in (res.apt_matches or [])
-        if item.get("group_attack_id")
-    }
+    active_promotion = await get_active_report_promotion(db, sid)
+    if active_promotion is None:
+        raise HTTPException(
+            409,
+            "STIX export requires an active Review Gate promotion",
+        )
+    if not promotion_allows(active_promotion.promotion, "exports"):
+        raise HTTPException(
+            409,
+            "The active Review Gate promotion does not authorize trusted exports",
+        )
+
+    attack_ids = set(accepted_technique_ids(active_promotion.promotion))
+    group_ids = set(accepted_actor_ids(active_promotion.promotion))
     from app.api.routes.attack import _resolve_version_id
 
     version_id = (
@@ -229,6 +309,7 @@ async def export_analysis_stix(
         res,
         technique_lookup=technique_lookup,
         group_lookup=group_lookup,
+        promotion=active_promotion.promotion,
     )
     import json
     payload = json.dumps(bundle, indent=2).encode("utf-8")

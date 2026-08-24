@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analysis import AnalysisResult
+from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.asset_surface import AssetIntelMatch, AssetRegistryItem, AssetSurfaceCase
 from app.models.cve import CVERecord
 from app.models.evidence_graph import EvidenceGraphNode
@@ -13,6 +13,7 @@ from app.models.ioc import IOCIndicator
 from app.models.knowledge import KnowledgeArticle
 from app.models.pipeline import Observable
 from app.models.retrohunt import RetroHuntSignal
+from app.models.report_review import ReportPromotion, ReportReview
 from app.models.sector import ActorIntelObservation, ClientProfile
 from app.models.threat_radar import ThreatCase, ThreatEntity, ThreatProductMapping, ThreatSignal
 from app.services.taxonomy import (
@@ -82,8 +83,45 @@ async def taxonomy_normalization_status(session: AsyncSession) -> dict[str, Any]
 
 async def _normalize_analysis_results(session: AsyncSession, stats: dict[str, Any]) -> None:
     changed = 0
-    rows = list((await session.execute(select(AnalysisResult))).scalars().all())
+    skipped_protected = 0
+    candidates = list(
+        (
+            await session.execute(
+                select(AnalysisResult).order_by(AnalysisResult.session_id)
+            )
+        ).scalars().all()
+    )
+    session_ids = list(
+        dict.fromkeys(row.session_id for row in candidates if row.session_id is not None)
+    )
+    protected_session_ids: set[Any] = set()
+    rows: list[AnalysisResult] = []
+    if session_ids:
+        # Review mutations lock AnalysisSession first. Use the same lock as a
+        # writer barrier, then lock and reload the child result rows. This lock
+        # order also matches the OpenCTI writer and avoids session/result
+        # deadlocks when the two maintenance jobs overlap.
+        await session.execute(
+            select(AnalysisSession.id)
+            .where(AnalysisSession.id.in_(session_ids))
+            .order_by(AnalysisSession.id)
+            .with_for_update()
+        )
+        rows = list(
+            (
+                await session.execute(
+                    select(AnalysisResult)
+                    .where(AnalysisResult.session_id.in_(session_ids))
+                    .order_by(AnalysisResult.session_id)
+                    .with_for_update()
+                )
+            ).scalars().all()
+        )
+        protected_session_ids = await _review_protected_session_ids(session, session_ids)
     for row in rows:
+        if row.session_id in protected_session_ids or _has_legacy_analyst_review(row):
+            skipped_protected += 1
+            continue
         techniques = []
         for item in row.extracted_techniques or []:
             if not isinstance(item, dict):
@@ -105,13 +143,69 @@ async def _normalize_analysis_results(session: AsyncSession, stats: dict[str, An
             row.extracted_techniques = techniques
             row.apt_matches = apt_matches
             changed += 1
-    _record(stats, "analysis_results", len(rows), changed)
+    _record(
+        stats,
+        "analysis_results",
+        len(rows),
+        changed,
+        skipped_protected=skipped_protected,
+    )
+
+
+async def _review_protected_session_ids(
+    session: AsyncSession,
+    session_ids: list[Any],
+) -> set[Any]:
+    """Return analyses owned by review/promotion history.
+
+    Any review revision is treated as protected. This is intentionally more
+    conservative than checking only the current state: rejected, stale, and
+    revoked revisions still preserve analyst decisions and immutable history.
+    """
+
+    reviewed = await session.execute(
+        select(ReportReview.session_id).where(ReportReview.session_id.in_(session_ids))
+    )
+    promoted = await session.execute(
+        select(ReportPromotion.session_id).where(ReportPromotion.session_id.in_(session_ids))
+    )
+    return {
+        *reviewed.scalars().all(),
+        *promoted.scalars().all(),
+    }
+
+
+def _has_legacy_analyst_review(result: AnalysisResult) -> bool:
+    """Protect pre-Review-Gate per-technique analyst decisions."""
+
+    for item in result.extracted_techniques or []:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("review_status") or "suggested").strip().lower().replace("_", "-")
+        if status not in {"", "suggested"}:
+            return True
+    return False
 
 
 async def _normalize_iocs(session: AsyncSession, stats: dict[str, Any]) -> None:
     changed = 0
-    rows = list((await session.execute(select(IOCIndicator))).scalars().all())
+    skipped_protected = 0
+    rows = list(
+        (
+            await session.execute(
+                select(IOCIndicator)
+                .order_by(IOCIndicator.id)
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
     for row in rows:
+        # These rows are immutable projections of an approved promotion
+        # manifest.  Rewriting even their taxonomy fields would make the live
+        # projection diverge from the evidence-bound promotion artifact.
+        if str(row.source_id or "").casefold().startswith("report-promotion-"):
+            skipped_protected += 1
+            continue
         tags = normalize_freeform_tags(row.tags or [])
         technique_ids = canonical_values("ttp", row.technique_ids or [])
         raw = dict(row.raw or {})
@@ -122,7 +216,13 @@ async def _normalize_iocs(session: AsyncSession, stats: dict[str, Any]) -> None:
             row.technique_ids = technique_ids
             row.raw = raw
             changed += 1
-    _record(stats, "ioc_indicators", len(rows), changed)
+    _record(
+        stats,
+        "ioc_indicators",
+        len(rows),
+        changed,
+        skipped_protected=skipped_protected,
+    )
 
 
 async def _normalize_cves(session: AsyncSession, stats: dict[str, Any]) -> None:
@@ -477,6 +577,17 @@ def _observation_value(kind: str, value: Any) -> str:
     return canonical_value("tag", value)
 
 
-def _record(stats: dict[str, Any], table: str, scanned: int, changed: int) -> None:
-    stats["tables"][table] = {"scanned": scanned, "changed": changed}
+def _record(
+    stats: dict[str, Any],
+    table: str,
+    scanned: int,
+    changed: int,
+    *,
+    skipped_protected: int = 0,
+) -> None:
+    stats["tables"][table] = {
+        "scanned": scanned,
+        "changed": changed,
+        "skipped_protected": skipped_protected,
+    }
     stats["rows_changed"] += changed

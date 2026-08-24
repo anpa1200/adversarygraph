@@ -3,10 +3,12 @@ import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Layout/Header';
-import { analyzeApi, reportsApi, type LinkedAnalysisReport, type LinkedReportEntity, type ReportTlp } from '@/api/client';
+import { analyzeApi, reportsApi, type LinkedAnalysisReport, type LinkedReportEntity, type ReportReviewAssessment, type ReportTlp } from '@/api/client';
 import { safeHref, safeInternalHref } from '@/utils/url';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
+import { ReportReviewGate } from '@/components/ReportReview/ReportReviewGate';
+import { isReportReviewAssessment } from '@/components/ReportReview/reviewState';
 
 type InlineMatch = {
   start: number;
@@ -32,6 +34,8 @@ export function LinkedReport() {
   const canManageIntel = useHasPermission('manage_intel');
   const canRunAnalysis = useHasPermission('run_analysis');
   const canExport = useHasPermission('export_data');
+  const canReviewReports = useHasPermission('review_reports');
+  const canPromoteReports = useHasPermission('promote_reports');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [provider, setProvider] = useState('claude');
@@ -49,6 +53,12 @@ export function LinkedReport() {
     queryFn: () => analyzeApi.linkedReport(sessionId),
     enabled: Boolean(sessionId),
   });
+  const reviewSummaryQuery = useQuery({
+    queryKey: ['report-review', sessionId],
+    queryFn: () => analyzeApi.reportReview(sessionId),
+    enabled: Boolean(sessionId),
+    retry: false,
+  });
 
   const report = query.data ?? null;
   const grouped = useMemo(() => groupEntities(report?.entities ?? []), [report?.entities]);
@@ -61,6 +71,8 @@ export function LinkedReport() {
       queryClient.invalidateQueries({ queryKey: ['linked-report', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['report-review', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['report-review-history', sessionId] });
     },
   });
   const editMutation = useMutation({
@@ -77,6 +89,8 @@ export function LinkedReport() {
       queryClient.invalidateQueries({ queryKey: ['linked-report', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['report-research-collection'] });
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['report-review', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['report-review-history', sessionId] });
     },
   });
   const deleteMutation = useMutation({
@@ -99,6 +113,16 @@ export function LinkedReport() {
       tlp: report.tlp,
     });
     setEditOpen(true);
+  };
+  const reviewAssessment = isReportReviewAssessment(reviewSummaryQuery.data) ? reviewSummaryQuery.data : undefined;
+  const reviewState = reviewAssessment?.state;
+  const reparseWithWarning = () => {
+    if ((reviewState === 'approved' || reviewState === 'promoted') && !window.confirm('Reparsing changes the analysis fingerprint, withdraws any active promotion, and starts a fresh draft review revision. Continue?')) return;
+    reparseMutation.mutate();
+  };
+  const saveEditWithWarning = () => {
+    if ((reviewState === 'approved' || reviewState === 'promoted') && !window.confirm('Editing source-bound fields withdraws any active promotion and starts a fresh draft review revision. Continue?')) return;
+    editMutation.mutate();
   };
 
   return (
@@ -136,7 +160,7 @@ export function LinkedReport() {
                     <div className="flex flex-wrap gap-2">
                       {canRunAnalysis && <Link to="/analyze" className="secondary-action">Back to analysis</Link>}
                       <Link to="/reports-research" className="secondary-action">Reports collection</Link>
-                      {canRunAnalysis && report.source_text_available && report.domain === 'enterprise-attack' && (
+                      {canRunAnalysis && reviewState === 'promoted' && report.source_text_available && report.domain === 'enterprise-attack' && (
                         <Link to={huntHypothesisUrl(report.session_id)} className="secondary-action border-cyan-800 text-cyan-100">Create AI hunt hypothesis</Link>
                       )}
                       <Link to="/navigator" className="secondary-action">Open Navigator</Link>
@@ -153,11 +177,11 @@ export function LinkedReport() {
                         <option value="minimax">MiniMax</option>
                         <option value="local">Local LLM</option>
                       </select>}
-                      {canManageIntel && <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
+                      {canManageIntel && <button type="button" onClick={reparseWithWarning} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
                         {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
                       </button>}
                       {canExport && <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-raw.txt`, report.source_text || '', 'text/plain;charset=utf-8')} className="secondary-action">Download raw</button>}
-                      {canExport && <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-parsed.json`, JSON.stringify(buildParsedExport(report), null, 2), 'application/json;charset=utf-8')} className="secondary-action">Download parsed</button>}
+                      {canExport && <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-parsed.json`, JSON.stringify(buildParsedExport(report, reviewAssessment), null, 2), 'application/json;charset=utf-8')} className="secondary-action">Download candidate JSON</button>}
                       {canManageIntel && <button
                         type="button"
                         onClick={() => {
@@ -191,6 +215,8 @@ export function LinkedReport() {
                   </div>
                 </Panel>
               </section>
+
+              <ReportReviewGate sessionId={report.session_id} sourceText={report.source_text} canReview={canReviewReports} canPromote={canPromoteReports} />
 
               {editOpen && canManageIntel && (
                 <Panel title="Edit report">
@@ -227,8 +253,13 @@ export function LinkedReport() {
                       <span className="font-semibold uppercase tracking-wide text-gray-500">Raw report text</span>
                       <textarea value={editForm.source_text} onChange={event => setEditForm({ ...editForm, source_text: event.target.value })} className="field h-96 w-full resize-y font-mono text-xs" />
                     </label>
+                    {(reviewState === 'approved' || reviewState === 'promoted') && (
+                      <div className="rounded border border-amber-800/60 bg-amber-950/20 p-3 text-xs leading-5 text-amber-100 xl:col-span-2">
+                        Saving source-bound changes withdraws the current promotion and starts a fresh draft review revision with new fingerprints.
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 xl:col-span-2">
-                      <button type="button" onClick={() => editMutation.mutate()} disabled={editMutation.isPending} className="primary-action disabled:opacity-40">
+                      <button type="button" onClick={saveEditWithWarning} disabled={editMutation.isPending} className="primary-action disabled:opacity-40">
                         {editMutation.isPending ? 'Saving...' : 'Save changes'}
                       </button>
                       <button type="button" onClick={() => setEditOpen(false)} className="secondary-action">Cancel</button>
@@ -435,8 +466,15 @@ function entityTone(type: string) {
   return 'text-mitre-accent';
 }
 
-function buildParsedExport(report: LinkedAnalysisReport) {
+function buildParsedExport(report: LinkedAnalysisReport, review?: ReportReviewAssessment) {
+  const promoted = review?.state === 'promoted';
   return {
+    authoritative: false,
+    export_kind: 'candidate_analysis',
+    trusted_intelligence_available: promoted,
+    export_notice: promoted
+      ? 'This mixed candidate-analysis file is not an authoritative projection. Only accepted claims in the embedded promoted review manifest are authoritative.'
+      : 'Draft candidate export. Do not treat parsed entities, mappings, or similarity leads as reviewed intelligence.',
     session_id: report.session_id,
     name: report.name,
     provider: report.provider,
@@ -450,6 +488,17 @@ function buildParsedExport(report: LinkedAnalysisReport) {
     entities: report.entities,
     report_images: report.report_images,
     report_intake: report.report_intake,
+    review: review ? {
+      id: review.id,
+      state: review.state,
+      revision: review.revision,
+      version: review.version,
+      policy_version: review.policy_version,
+      source_checksum: review.source_checksum,
+      analysis_checksum: review.analysis_checksum,
+      accepted_claims: review.claims.filter(claim => claim.status === 'accepted'),
+      promotion: review.active_promotion,
+    } : null,
   };
 }
 

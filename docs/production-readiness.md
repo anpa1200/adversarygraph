@@ -74,7 +74,7 @@ handling policy.
 | Local MCP integration | Implemented in v6.5 source | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
 | Scanner MCP isolation | Implemented in v7 source | exact stored-target authorization, allowlisted assessment plans, dedicated bearer capability, non-root private service, bounded results, and returned-target/tool-trace verification |
 | Intelligence taxonomy and catalogs | Implemented in v7 source | closed namespace vocabulary, actor/campaign/malware backfill, ATT&CK group seed, maintained actor/tactic/TTP catalogs, and self-test inventory breakdowns |
-| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v7 candidate lockfiles; the MalwareGraph high-severity dependency path is remediated; the client frontend retains the separately documented moderate React Router v6 advisories |
+| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v7 candidate lockfiles; the MalwareGraph high-severity dependency path is remediated; the client uses React Router 7 and its reviewed lockfile passes the required npm audit, which remains point-in-time evidence |
 
 ## Remaining Production Blockers
 
@@ -106,17 +106,19 @@ deployment with documented compensating controls:
 - Add signature verification for commit-pinned MalwareGraph and optional Atlas
   source updates; current defaults are immutable reviewed SHAs but the upstream
   commits are not signature-verified by the build.
-- Add formal Alembic migration chain and migration tests.
+- Move the remaining legacy tables from additive startup compatibility into
+  reviewed Alembic expand/backfill/contract revisions. Research/workflow and
+  outbox authority already have a tested formal chain, exact-head startup gate,
+  and catalog-derived physical fingerprint.
 - Before enabling semantic retrieval in a production environment, retain an
   end-to-end smoke test against the exact approved private embedding and chat
   endpoint/model pair. Unit/integration protocol tests do not prove that a
   deployment-specific model returns the configured dimensions, obeys latency
   limits, or meets local data-handling policy.
-- Reassess the two moderate React Router v6 advisories against the exact
-  frontend deployment and the current Router 7 advisory set before the release
-  tag. AdversaryGraph does not use Router SSR, and API-controlled external URLs
-  pass through the safe-URL guard, but this is a documented residual risk rather
-  than a claim of a finding-free frontend dependency tree.
+- Continue auditing the exact React Router 7 lock graph before each release
+  tag. The v6 advisory-bearing dependency has been removed and the current
+  lockfile passes the required high-severity npm audit, but that is point-in-time
+  evidence rather than a permanent finding-free claim.
 
 ## Deployment Position
 

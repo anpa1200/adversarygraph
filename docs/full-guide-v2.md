@@ -648,6 +648,13 @@ GET  /api/ioc/actors/G0049/export.csv?days=180&active_only=true
 POST /api/ioc/investigate
 ```
 
+`POST /api/ioc/report` is a candidate-preview endpoint. It does not create
+global IOC or actor-link records; persist the report through Reports / Research,
+complete the Review Gate, and promote accepted indicator claims instead.
+The generic IOC STIX/TAXII endpoints likewise reject collections containing a
+STIX `report`; import those through the report-intake pipeline so their object
+references remain review-bound.
+
 ## 16. IOC Investigation
 
 IOC Investigation is the v3.0 Tier 1 / Tier 2 / Tier 3 pivot workflow for one

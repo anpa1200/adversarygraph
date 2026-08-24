@@ -8,12 +8,14 @@ POST /api/analyze/chat     — single-turn LLM chat about a specific technique o
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
 import uuid
 import ipaddress
 from dataclasses import asdict
 from datetime import datetime, timezone
+from html import unescape
 from html.parser import HTMLParser
 from typing import Annotated, Any, AsyncIterator
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
@@ -32,12 +34,25 @@ from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
 from app.models.ioc import IOCIndicator
 from app.models.operations import ReportIntake
+from app.models.report_review import ReportPromotion
 from app.services.ai.base import ExtractionResult, bind_evidence_spans, technique_to_record
 from app.services.ai.factory import get_adapter
 from app.services.auth import TeamUser, audit, current_user, has_permission, require_permission
-from app.services.asset_intel import retrohunt_assets
 from app.services.file_parser import extract_text
 from app.services.ioc_extractor import extract_iocs_from_text
+from app.services.report_promotion import promotion_allows
+from app.services.report_promotion_effects import withdraw_report_promotion
+from app.services.report_review import (
+    ReviewActor,
+    ReviewNotFoundError,
+    active_promotion,
+    collection_summaries,
+    invalidate_review,
+    load_review_context,
+    lock_review_source,
+    run_preflight,
+    start_review,
+)
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS, normalize_freeform_tags
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
@@ -64,14 +79,171 @@ def _require_upload_permission(user: TeamUser, file: UploadFile | None) -> None:
         raise HTTPException(403, "Permission required: upload_files")
 
 
-async def _retrohunt_assets_after_report_ingest(session: AsyncSession, *, source: str) -> dict[str, Any] | None:
+def _review_actor(user: TeamUser) -> ReviewActor:
+    return ReviewActor(
+        name=user.name,
+        actor_id=user.user_id or f"{user.auth_source}:{user.name}",
+    )
+
+
+def _supersede_intake_retrieval(intake: ReportIntake, *, reason: str) -> None:
+    provenance = dict(intake.provenance or {})
+    receipt = provenance.get("retrieval")
+    source_kind = str(provenance.get("source_kind") or "")
+    if not isinstance(receipt, dict) and source_kind != "url-report":
+        return
+    previous = dict(receipt or {})
+    history = [
+        item
+        for item in list(provenance.get("retrieval_history") or [])[-4:]
+        if isinstance(item, dict)
+    ]
+    if previous:
+        history.append(previous)
+    provenance["retrieval_history"] = history[-5:]
+    provenance["retrieval"] = {
+        "superseded": True,
+        "superseded_at": datetime.now(timezone.utc).isoformat(),
+        "superseded_reason": reason[:120],
+    }
+    intake.provenance = provenance
+
+
+def _new_source_provenance(
+    source_text: str,
+    *,
+    source_kind: str,
+    filename: str | None = None,
+    content_sha256: str = "",
+    content_size_bytes: int | None = None,
+) -> dict[str, Any]:
+    """Create the immutable acquisition receipt used by deterministic review."""
+
+    acquisition: dict[str, Any] = {
+        "schema_version": "source-acquisition-v1",
+        "source_kind": source_kind,
+        "filename": filename or "",
+        "acquired_at": datetime.now(timezone.utc).isoformat(),
+        "extracted_text_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        "extracted_text_chars": len(source_text),
+        "superseded": False,
+    }
+    if content_sha256:
+        acquisition["content_sha256"] = content_sha256
+    if content_size_bytes is not None:
+        acquisition["content_size_bytes"] = max(0, int(content_size_bytes))
+    return {
+        "schema_version": "analysis-source-provenance-v1",
+        "source_kind": source_kind,
+        "acquisition": acquisition,
+    }
+
+
+def _supersede_session_acquisition(
+    session: AnalysisSession,
+    *,
+    reason: str,
+) -> None:
+    """Invalidate the point-in-time receipt without rewriting its history."""
+
+    provenance = dict(session.source_provenance or {})
+    current = provenance.get("acquisition")
+    previous = dict(current) if isinstance(current, dict) else {}
+    history = [
+        item
+        for item in list(provenance.get("acquisition_history") or [])[-4:]
+        if isinstance(item, dict)
+    ]
+    if previous:
+        history.append(previous)
+    provenance["acquisition_history"] = history[-5:]
+    provenance["acquisition"] = {
+        "schema_version": "source-acquisition-v1",
+        "source_kind": provenance.get("source_kind") or session.input_type,
+        "superseded": True,
+        "superseded_at": datetime.now(timezone.utc).isoformat(),
+        "superseded_reason": reason[:120],
+    }
+    session.source_provenance = provenance
+
+
+async def _start_review_with_preflight(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    user: TeamUser,
+    *,
+    profile: str = "external_cti",
+) -> None:
+    review = await start_review(db, session_id, _review_actor(user), profile=profile)
+    await run_preflight(
+        db,
+        session_id,
+        _review_actor(user),
+        expected_version=review.version,
+    )
+
+
+async def _restart_review_after_change(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    user: TeamUser,
+    *,
+    reason: str,
+) -> bool:
+    # Cleanup intentionally looks up the latest unrevoked promotion without
+    # fingerprint validation: callers have already mutated the source/result,
+    # so the strict consumer helper must now fail closed while cleanup still
+    # needs the old promotion id and targets.
+    promotion = await active_promotion(db, session_id, verify_current=False)
+    refresh_rag = False
+    if promotion is not None:
+        refresh_rag = promotion_allows(promotion, "rag")
+        await withdraw_report_promotion(db, promotion)
+        from app.services.asset_intel import retrohunt_assets
+
+        await retrohunt_assets(db)
+    previous = await invalidate_review(
+        db,
+        session_id,
+        _review_actor(user),
+        reason=reason,
+    )
+    await _start_review_with_preflight(
+        db,
+        session_id,
+        user,
+        profile=previous.profile if previous is not None else "external_cti",
+    )
+    intake = await db.scalar(
+        select(ReportIntake)
+        .where(ReportIntake.analysis_session_id == session_id)
+        .order_by(ReportIntake.updated_at.desc(), ReportIntake.id.desc())
+        .limit(1)
+    )
+    if intake is not None:
+        intake.status = "draft"
+    return refresh_rag
+
+
+async def _queue_report_review_rag_refresh(
+    db: AsyncSession,
+    *,
+    required: bool,
+    user: TeamUser,
+) -> None:
+    if not required:
+        return
     try:
-        summary = await retrohunt_assets(session)
-        logger.info("Asset retrohunt after %s: %s", source, summary)
-        return summary
-    except Exception as exc:
-        logger.warning("Asset retrohunt after %s failed (%s)", source, type(exc).__name__)
-        return None
+        from app.services.rag_queue import queue_rag_after_ingest
+
+        await queue_rag_after_ingest(
+            db,
+            ["analysis_report", "ioc"],
+            created_by=f"report-review:{user.user_id or user.name}",
+        )
+    except Exception:
+        await db.rollback()
+        logger.exception("Immediate RAG cleanup after report review invalidation failed")
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -86,7 +258,10 @@ class TechniqueHit(BaseModel):
     evidence_start: int | None = None
     evidence_end: int | None = None
     evidence_source: str = "llm"
-    llm_verified: bool = True
+    llm_verified: bool = False
+    review_note: str | None = None
+    reviewer: str | None = None
+    reviewed_at: str | None = None
 
 
 class AptMatch(BaseModel):
@@ -169,6 +344,8 @@ class ReportCollectionItem(BaseModel):
     source_text_available: bool
     counts: dict[str, int]
     tags: dict[str, list[ReportCollectionTag]]
+    review_summary: dict[str, Any] | None = None
+    review_state: str = "unreviewed"
 
 
 class ReportCollectionOut(BaseModel):
@@ -228,10 +405,11 @@ class ChatRequest(BaseModel):
 
 
 class TechniqueReviewUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     review_status: str = Field(pattern="^(suggested|accepted|rejected|needs-evidence)$")
     evidence: str | None = Field(default=None, max_length=500)
     review_note: str | None = Field(default=None, max_length=1000)
-    reviewer: str | None = Field(default=None, max_length=120)
 
 
 class ReportEditRequest(BaseModel):
@@ -288,8 +466,9 @@ async def analyze(
     user:     TeamUser = Depends(run_analysis),
 ):
     _require_upload_permission(user, file)
-    body, filename = await _read_input(text, file)
+    body, filename, acquisition = await _read_input(text, file)
     adapter = _get_adapter(provider, model)
+    stored_source_text = body[:_MAX_STORED_REPORT_TEXT]
 
     # Store session record
     db_session = AnalysisSession(
@@ -301,7 +480,14 @@ async def analyze(
         model=adapter.model,
         domain=domain,
         tlp="TLP:AMBER+STRICT",
-        source_text=body[:_MAX_STORED_REPORT_TEXT],
+        source_text=stored_source_text,
+        source_provenance=_new_source_provenance(
+            stored_source_text,
+            source_kind=acquisition["source_kind"],
+            filename=filename,
+            content_sha256=str(acquisition.get("content_sha256") or ""),
+            content_size_bytes=acquisition.get("content_size_bytes"),
+        ),
     )
     session.add(db_session)
     await session.flush()
@@ -312,6 +498,7 @@ async def analyze(
         await _validate_technique_ids(result, domain, session)
         apt_matches = await _rank_apt_groups(result, domain, session)
         await _store_result(db_session, result, apt_matches, session)
+        await _start_review_with_preflight(session, db_session.id, user)
         await audit(session, user, "analyze.create_session", "analysis_session", session_id, {"provider": provider, "domain": domain, "technique_count": len(result.techniques)})
         await session.commit()
     except Exception as exc:
@@ -344,8 +531,9 @@ async def analyze_stream(
       data: {"type":"error","message":"..."}
     """
     _require_upload_permission(user, file)
-    body, filename = await _read_input(text, file)
+    body, filename, acquisition = await _read_input(text, file)
     adapter = _get_adapter(provider, model)
+    stored_source_text = body[:_MAX_STORED_REPORT_TEXT]
 
     db_session = AnalysisSession(
         status="processing",
@@ -356,7 +544,14 @@ async def analyze_stream(
         model=adapter.model,
         domain=domain,
         tlp="TLP:AMBER+STRICT",
-        source_text=body[:_MAX_STORED_REPORT_TEXT],
+        source_text=stored_source_text,
+        source_provenance=_new_source_provenance(
+            stored_source_text,
+            source_kind=acquisition["source_kind"],
+            filename=filename,
+            content_sha256=str(acquisition.get("content_sha256") or ""),
+            content_size_bytes=acquisition.get("content_size_bytes"),
+        ),
     )
 
     session.add(db_session)
@@ -384,6 +579,7 @@ async def analyze_stream(
                         await _validate_technique_ids(result, domain, fresh)
                         apt_matches = await _rank_apt_groups(result, domain, fresh)
                         await _store_result(db_s, result, apt_matches, fresh)
+                        await _start_review_with_preflight(fresh, db_s.id, user)
                         await audit(fresh, user, "analyze.create_session", "analysis_session", session_id, {"provider": provider, "domain": domain, "technique_count": len(result.techniques)})
                         await fresh.commit()
                     except Exception as store_exc:
@@ -485,7 +681,7 @@ async def store_research(
     page while making it explicit that no ATT&CK extraction has been performed.
     """
     _require_upload_permission(user, file)
-    body, filename = await _read_input(text, file)
+    body, filename, acquisition = await _read_input(text, file)
     title = (name or filename or "Unparsed research").strip()[:255]
     source_text = body[:_MAX_STORED_REPORT_TEXT]
     summary = _research_storage_summary(body, filename)
@@ -500,6 +696,13 @@ async def store_research(
         domain=domain,
         tlp="TLP:AMBER+STRICT",
         source_text=source_text,
+        source_provenance=_new_source_provenance(
+            source_text,
+            source_kind=acquisition["source_kind"],
+            filename=filename,
+            content_sha256=str(acquisition.get("content_sha256") or ""),
+            content_size_bytes=acquisition.get("content_size_bytes"),
+        ),
     )
     session.add(db_session)
     await session.flush()
@@ -511,6 +714,7 @@ async def store_research(
         summary=summary,
         raw_response="Research stored without AI parsing. Use Parse with AI to extract ATT&CK mappings.",
     ))
+    await _start_review_with_preflight(session, db_session.id, user)
     await audit(session, user, "analyze.store_research", "analysis_session", str(db_session.id), {
         "domain": domain,
         "filename": filename,
@@ -553,6 +757,12 @@ async def ingest_research_url(
     source_text = fetched.source_text[:_MAX_STORED_REPORT_TEXT]
     if not source_text.strip():
         raise HTTPException(400, "Report URL did not contain extractable text")
+    retrieval_metadata = {
+        **fetched.metadata,
+        # Bind the receipt to the exact normalized/truncated text that is
+        # stored and reviewed, not merely to the fetched response bytes.
+        "extracted_text_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+    }
 
     adapter = _get_adapter(provider, model) if parse_with_ai else None
     db_session = AnalysisSession(
@@ -565,6 +775,13 @@ async def ingest_research_url(
         domain=domain,
         tlp="TLP:AMBER+STRICT",
         source_text=source_text,
+        source_provenance=_new_source_provenance(
+            source_text,
+            source_kind="url-report",
+            filename=source_url,
+            content_sha256=str(retrieval_metadata.get("content_sha256") or ""),
+            content_size_bytes=len(fetched.source_text.encode("utf-8")),
+        ),
     )
     session.add(db_session)
     await session.flush()
@@ -592,7 +809,7 @@ async def ingest_research_url(
             "source_url": source_url,
             "content_type": fetched.content_type,
             "report_images": [image.model_dump() for image in report_images],
-            "metadata": fetched.metadata,
+            "metadata": retrieval_metadata,
         }
         extracted_iocs = extract_iocs_from_text(
             fetched.source_text,
@@ -613,10 +830,13 @@ async def ingest_research_url(
             *([f"ttp:{tech.attack_id}" for tech in result.techniques] if adapter else []),
         ])
         report = ReportIntake(
+            analysis_session_id=db_session.id,
             title=title,
             url=source_url,
             publisher=_publisher_from_url(source_url),
-            status="analyzed" if parse_with_ai else "stored",
+            # Extraction output is report-local candidate intelligence until a
+            # version-matched Review Gate promotion materializes it.
+            status="draft",
             summary=summary[:5000],
             source_reliability="unknown",
             actor_ids=[],
@@ -627,51 +847,23 @@ async def ingest_research_url(
                 "source_kind": "url-report",
                 "source_url": source_url,
                 "analysis_session_id": str(db_session.id),
+                "retrieval": retrieval_metadata,
             },
             analyst_notes=json.dumps(notes, ensure_ascii=False),
         )
         session.add(report)
         await session.flush()
-        from app.services.intelligence_graph import link_entities, link_tagged_entities
-        from app.services.ioc_intel import import_iocs
-        await link_tagged_entities(
-            session,
-            entity_type="analysis_report",
-            entity_id=report.id,
-            tags=report_tags,
-            provenance_type="report_url",
-            provenance_id=source_url,
-            confidence=70,
-            evidence=source_url,
-        )
-        imported = await import_iocs(session, extracted_iocs, commit=False, queue_rag=False)
-        for indicator_id in imported.get("indicator_ids", []):
-            await link_entities(
-                session,
-                source_type="analysis_report",
-                source_id=report.id,
-                relationship_type="contains-indicator",
-                target_type="ioc",
-                target_id=indicator_id,
-                provenance_type="report_url",
-                provenance_id=source_url,
-                confidence=70,
-                evidence=source_url,
-            )
-        await _retrohunt_assets_after_report_ingest(session, source="url-report")
+        await _start_review_with_preflight(session, db_session.id, user)
         await audit(session, user, "analyze.ingest_research_url", "analysis_session", str(db_session.id), {
             "domain": domain,
             "source_url": source_url,
             "parse_with_ai": parse_with_ai,
             "image_count": len(report_images),
+            "review_state": "draft",
+            "candidate_ioc_count": len(extracted_iocs),
+            "candidate_technique_count": len(report.technique_ids or []),
         })
         await session.commit()
-        from app.services.rag_queue import queue_rag_after_ingest
-        await queue_rag_after_ingest(
-            session,
-            ["analysis_report", "ioc"],
-            created_by="report-ingestion",
-        )
     except Exception as exc:
         db_session.status = "failed"
         db_session.error = _URL_INGEST_FAILURE
@@ -760,6 +952,7 @@ async def report_collection(
         .offset(offset)
     )
     pairs = rows.all()
+    review_summaries = await collection_summaries(db, [sess.id for sess, _ in pairs])
     items: list[ReportCollectionItem] = []
     for sess, res in pairs:
         intake = await _find_report_intake_for_session(db, str(sess.id))
@@ -772,6 +965,7 @@ async def report_collection(
         entities = await _linked_report_entities(db, sess, res, intake, source_text, techniques, apt_matches)
         tags = _report_collection_tags(sess, res, intake, source_text, entities)
         safe_filename = _redact_url_secrets(sess.filename or "", limit=500) if sess.input_type == "url" else (sess.filename or "")
+        review_summary = review_summaries.get(str(sess.id))
         items.append(ReportCollectionItem(
             session_id=str(sess.id),
             title=sess.name or safe_filename or (intake.title if intake else "") or f"Analysis {str(sess.id)[:8]}",
@@ -788,6 +982,8 @@ async def report_collection(
             source_text_available=source_text_available,
             counts={key: len(value) for key, value in tags.items()},
             tags=tags,
+            review_summary=review_summary,
+            review_state=str((review_summary or {}).get("state") or "unreviewed"),
         ))
 
     return ReportCollectionOut(total=total, limit=limit, offset=offset, items=items)
@@ -910,25 +1106,31 @@ async def edit_linked_report(
     except ValueError:
         raise HTTPException(400, "Invalid session ID")
 
-    row = await db.execute(
-        select(AnalysisSession, AnalysisResult)
-        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
-        .where(AnalysisSession.id == sid, AnalysisSession.status == "completed")
-    )
-    pair = row.first()
-    if not pair:
+    try:
+        sess = await lock_review_source(db, sid)
+    except ReviewNotFoundError:
         raise HTTPException(404, "Completed session not found")
-    sess, res = pair
+    if sess.status != "completed":
+        raise HTTPException(404, "Completed session not found")
+    res = await db.scalar(
+        select(AnalysisResult)
+        .where(AnalysisResult.session_id == sid)
+        .with_for_update()
+    )
     if not res:
         raise HTTPException(404, "Result not found")
 
     intake = await _find_report_intake_for_session(db, session_id)
+    source_text_changed = False
+    source_url_changed = False
     if body.name is not None:
         sess.name = body.name.strip()[:255] or sess.name
         if intake:
             intake.title = sess.name or intake.title
     if body.source_text is not None:
-        sess.source_text = body.source_text.strip()[:_MAX_STORED_REPORT_TEXT]
+        replacement_text = body.source_text.strip()[:_MAX_STORED_REPORT_TEXT]
+        source_text_changed = replacement_text != (sess.source_text or "")
+        sess.source_text = replacement_text
     if body.summary is not None:
         res.summary = body.summary.strip()
         if intake:
@@ -938,6 +1140,9 @@ async def edit_linked_report(
         if source_url and not _is_public_http_url(source_url):
             raise HTTPException(400, "Source URL must be public http/https")
         safe_source_url = _redact_url_secrets(source_url)
+        source_url_changed = bool(
+            safe_source_url and safe_source_url != (intake.url if intake else sess.filename or "")
+        )
         sess.filename = safe_source_url[:500] or sess.filename
         if intake:
             intake.url = safe_source_url
@@ -945,11 +1150,39 @@ async def edit_linked_report(
         intake.publisher = body.publisher.strip()[:255]
     if body.tlp is not None:
         sess.tlp = body.tlp
+    if source_text_changed or source_url_changed:
+        changed_fields = ",".join(
+            name
+            for name, changed in (
+                ("source_text", source_text_changed),
+                ("source_url", source_url_changed),
+            )
+            if changed
+        )
+        _supersede_session_acquisition(
+            sess,
+            reason=f"analyst_edit:{changed_fields}",
+        )
+    if intake and (source_text_changed or source_url_changed):
+        _supersede_intake_retrieval(
+            intake,
+            reason=f"analyst_edit:{changed_fields}",
+        )
+
+    refresh_rag = False
+    if body.model_fields_set:
+        refresh_rag = await _restart_review_after_change(
+            db,
+            sid,
+            user,
+            reason="stored_report_edited",
+        )
 
     await audit(db, user, "analyze.edit_linked_report", "analysis_session", session_id, {
         "tlp": sess.tlp,
     })
     await db.commit()
+    await _queue_report_review_rag_refresh(db, required=refresh_rag, user=user)
     return await linked_report(session_id, db, user)
 
 
@@ -966,15 +1199,14 @@ async def reparse_linked_report(
     except ValueError:
         raise HTTPException(400, "Invalid session ID")
 
-    row = await db.execute(
-        select(AnalysisSession, AnalysisResult)
-        .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
-        .where(AnalysisSession.id == sid, AnalysisSession.status == "completed")
-    )
-    pair = row.first()
-    if not pair:
+    try:
+        initial_context = await load_review_context(db, sid)
+    except ReviewNotFoundError:
         raise HTTPException(404, "Completed session not found")
-    sess, res = pair
+    sess = initial_context.session
+    res = initial_context.result
+    if sess.status != "completed":
+        raise HTTPException(404, "Completed session not found")
     if not res:
         raise HTTPException(404, "Result not found")
 
@@ -982,11 +1214,33 @@ async def reparse_linked_report(
     if not source_text:
         raise HTTPException(400, "No stored raw report text is available to reparse")
 
+    initial_source_checksum = initial_context.source_checksum
+    initial_analysis_checksum = initial_context.analysis_checksum
+    domain = sess.domain
+    await db.rollback()
+
     adapter = _get_adapter(body.provider, body.model)
     try:
-        result = await adapter.extract(source_text, sess.domain)
-        await _validate_technique_ids(result, sess.domain, db)
-        apt_matches = await _rank_apt_groups(result, sess.domain, db)
+        result = await adapter.extract(source_text, domain)
+        await _validate_technique_ids(result, domain, db)
+        apt_matches = await _rank_apt_groups(result, domain, db)
+        await db.rollback()
+
+        await lock_review_source(db, sid)
+        res = await db.scalar(
+            select(AnalysisResult)
+            .where(AnalysisResult.session_id == sid)
+            .with_for_update()
+        )
+        locked_context = await load_review_context(db, sid)
+        sess = locked_context.session
+        if res is None or sess.status != "completed":
+            raise HTTPException(409, "Stored report changed while reparse was running")
+        if (
+            locked_context.source_checksum != initial_source_checksum
+            or locked_context.analysis_checksum != initial_analysis_checksum
+        ):
+            raise HTTPException(409, "Stored report changed while reparse was running; retry against the latest revision")
         sess.llm_provider = adapter.provider
         sess.model = adapter.model
         res.extracted_techniques = [technique_to_record(t) for t in result.techniques]
@@ -996,13 +1250,20 @@ async def reparse_linked_report(
         flag_modified(res, "extracted_techniques")
         flag_modified(res, "apt_matches")
         intake = await _find_report_intake_for_session(db, session_id)
+        refresh_rag = await _restart_review_after_change(
+            db,
+            sid,
+            user,
+            reason="report_reparsed",
+        )
         if intake:
             intake.summary = result.summary[:5000]
-            intake.status = "analyzed"
+            intake.status = "draft"
             intake.technique_ids = [tech.attack_id for tech in result.techniques]
             flag_modified(intake, "technique_ids")
         await audit(db, user, "analyze.reparse_linked_report", "analysis_session", session_id, {"provider": adapter.provider, "technique_count": len(result.techniques)})
         await db.commit()
+        await _queue_report_review_rag_refresh(db, required=refresh_rag, user=user)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1029,6 +1290,14 @@ async def delete_session(
     exists = await db.execute(select(AnalysisSession.id).where(AnalysisSession.id == sid))
     if not exists.scalar_one_or_none():
         raise HTTPException(404, "Session not found")
+    promotion_id = await db.scalar(
+        select(ReportPromotion.id).where(ReportPromotion.session_id == sid).limit(1)
+    )
+    if promotion_id is not None:
+        raise HTTPException(
+            409,
+            "A report with promotion history cannot be deleted; revoke its active promotion and retain the audit record",
+        )
     intake = await _find_report_intake_for_session(db, session_id)
     if intake:
         await db.delete(intake)
@@ -1052,10 +1321,15 @@ async def update_technique_review(
     except ValueError:
         raise HTTPException(400, "Invalid session ID")
 
-    row = await db.execute(
-        select(AnalysisResult).where(AnalysisResult.session_id == sid)
+    try:
+        source_session = await lock_review_source(db, sid)
+    except ReviewNotFoundError:
+        raise HTTPException(404, "Session not found")
+    result = await db.scalar(
+        select(AnalysisResult)
+        .where(AnalysisResult.session_id == sid)
+        .with_for_update()
     )
-    result = row.scalar_one_or_none()
     if not result:
         raise HTTPException(404, "Result not found")
 
@@ -1065,14 +1339,30 @@ async def update_technique_review(
         review_status=body.review_status,
         evidence=body.evidence,
         review_note=body.review_note,
-        reviewer=body.reviewer,
+        reviewer=user.name,
+        reviewed_at=datetime.now(timezone.utc).isoformat(),
+        source_text=source_session.source_text,
     )
     if not updated:
         raise HTTPException(404, "Technique not found")
+    if body.review_status == "accepted":
+        if not str(updated.get("evidence") or "").strip():
+            raise HTTPException(422, "Accepted techniques require source evidence")
+        if updated.get("evidence_source") not in {"source-text", "analyst-source-text"}:
+            raise HTTPException(422, "Accepted techniques require evidence bound to the stored source text")
+        if not bool(updated.get("llm_verified", True)):
+            raise HTTPException(422, "Accepted techniques must exist in the locally loaded ATT&CK/ATLAS catalog")
 
     flag_modified(result, "extracted_techniques")
+    refresh_rag = await _restart_review_after_change(
+        db,
+        sid,
+        user,
+        reason=f"technique_review_changed:{attack_id.upper()}",
+    )
     await audit(db, user, "analyze.review_technique", "analysis_session", session_id, {"attack_id": attack_id, "review_status": body.review_status})
     await db.commit()
+    await _queue_report_review_rag_refresh(db, required=refresh_rag, user=user)
     return TechniqueHit(**updated)
 
 
@@ -1162,10 +1452,24 @@ async def chat(req: ChatRequest, _: TeamUser = Depends(run_analysis)):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _find_report_intake_for_session(db: AsyncSession, session_id: str) -> ReportIntake | None:
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        return None
+    direct = await db.scalar(
+        select(ReportIntake)
+        .where(ReportIntake.analysis_session_id == session_uuid)
+        .order_by(ReportIntake.updated_at.desc(), ReportIntake.id.desc())
+        .limit(1)
+    )
+    if direct is not None:
+        return direct
+    # Compatibility fallback for rows created before the normalized foreign
+    # key existed. New writes never rely on substring matching.
     rows = await db.execute(
         select(ReportIntake)
         .where(ReportIntake.analyst_notes.ilike(f"%{session_id}%"))
-        .order_by(ReportIntake.updated_at.desc())
+        .order_by(ReportIntake.updated_at.desc(), ReportIntake.id.desc())
         .limit(1)
     )
     return rows.scalar_one_or_none()
@@ -1251,6 +1555,13 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
     raw_final_url = str(response.url) if str(response.url) else source_url
     final_url = _redact_url_secrets(raw_final_url)
     filename = urlparse(raw_final_url).path.rsplit("/", 1)[-1] or "remote-report"
+    fetch_metadata = {
+        "requested_url": _redact_url_secrets(source_url),
+        "retrieved_url": final_url,
+        "http_status": response.status_code,
+        "content_sha256": hashlib.sha256(content).hexdigest(),
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+    }
 
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
         text = extract_text(content, filename if filename.lower().endswith(".pdf") else "remote-report.pdf")
@@ -1260,7 +1571,12 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
             content_type=content_type or "application/pdf",
             source_text=text,
             report_images=[],
-            metadata={"parser": "pdf-text", "publisher": _publisher_from_url(final_url)},
+            metadata={
+                "parser": "pdf-text",
+                "publisher": _publisher_from_url(final_url),
+                **fetch_metadata,
+                "extracted_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            },
         )
 
     if content_type in {"text/html", "application/xhtml+xml", ""} or filename.lower().endswith((".html", ".htm", "/")):
@@ -1272,7 +1588,17 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
             content_type=content_type or "text/html",
             source_text=parsed["text"],
             report_images=parsed["images"],
-            metadata={"parser": "html-text-images", "publisher": _publisher_from_url(final_url), "description": parsed["description"]},
+            metadata={
+                "parser": "html-text-images",
+                "publisher": _publisher_from_url(final_url),
+                "description": parsed["description"],
+                "canonical_url": parsed["canonical_url"],
+                "publication_date_candidates": parsed["publication_date_candidates"],
+                **fetch_metadata,
+                "extracted_text_sha256": hashlib.sha256(
+                    parsed["text"].encode("utf-8")
+                ).hexdigest(),
+            },
         )
 
     text = extract_text(content, filename or "remote-report.txt")
@@ -1282,7 +1608,12 @@ async def _fetch_report_url(url: str) -> UrlReportFetch:
         content_type=content_type or "application/octet-stream",
         source_text=text,
         report_images=[],
-        metadata={"parser": "plain-text", "publisher": _publisher_from_url(final_url)},
+        metadata={
+            "parser": "plain-text",
+            "publisher": _publisher_from_url(final_url),
+            **fetch_metadata,
+            "extracted_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        },
     )
 
 
@@ -1314,6 +1645,8 @@ class _ReportHTMLParser(HTMLParser):
         self.content_images: list[LinkedReportImage] = []
         self.title_parts: list[str] = []
         self.description = ""
+        self.canonical_url = ""
+        self.publication_date_candidates: list[dict[str, str]] = []
         self._skip_depth = 0
         self._content_depth = 0
         self._content_stack: list[bool] = []
@@ -1337,9 +1670,21 @@ class _ReportHTMLParser(HTMLParser):
         if tag == "title":
             self._in_title = True
         if tag == "meta":
-            name = (attr.get("name") or attr.get("property") or "").lower()
+            name = (attr.get("name") or attr.get("property") or attr.get("itemprop") or "").lower()
             if name in {"description", "og:description", "twitter:description"} and not self.description:
                 self.description = attr.get("content", "").strip()[:1000]
+            if name in {
+                "article:published_time", "date", "datepublished", "dc.date",
+                "dc.date.issued", "publish-date", "publication_date",
+                "parsely-pub-date", "sailthru.date",
+            }:
+                self._add_publication_date(attr.get("content", ""), f"meta:{name}")
+        if tag == "link" and "canonical" in attr.get("rel", "").lower().split():
+            candidate = urljoin(self.base_url, attr.get("href", "").strip())
+            if _is_public_http_url(candidate):
+                self.canonical_url = _redact_url_secrets(candidate)
+        if tag == "time":
+            self._add_publication_date(attr.get("datetime", ""), "time:datetime")
         if tag == "img":
             self._add_image(attr)
         if tag in self._BLOCK_TAGS:
@@ -1415,6 +1760,51 @@ class _ReportHTMLParser(HTMLParser):
         height = _safe_int(attr.get("height", ""))
         return (width is not None and width <= 4) or (height is not None and height <= 4)
 
+    def _add_publication_date(self, value: str, source: str) -> None:
+        clean = re.sub(r"[\x00-\x1f\x7f]", "", value).strip()[:100]
+        if clean and not any(item["value"] == clean for item in self.publication_date_candidates):
+            self.publication_date_candidates.append({"value": clean, "source": source})
+
+
+def _json_ld_source_metadata(html: str, base_url: str) -> dict[str, Any]:
+    """Extract bounded publication metadata from JSON-LD without executing it."""
+    dates: list[dict[str, str]] = []
+    canonical_url = ""
+    scripts = re.findall(
+        r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script\s*>",
+        html[:5_000_000],
+        flags=re.IGNORECASE | re.DOTALL,
+    )[:20]
+
+    def visit(value: Any, depth: int = 0) -> None:
+        nonlocal canonical_url
+        if depth > 8:
+            return
+        if isinstance(value, list):
+            for item in value[:100]:
+                visit(item, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+        for key, item in list(value.items())[:200]:
+            normalized = str(key).casefold()
+            if normalized in {"datepublished", "datecreated"} and isinstance(item, str):
+                clean = re.sub(r"[\x00-\x1f\x7f]", "", item).strip()[:100]
+                if clean and not any(row["value"] == clean for row in dates):
+                    dates.append({"value": clean, "source": f"json-ld:{key}"})
+            elif normalized in {"url", "mainentityofpage"} and isinstance(item, str) and not canonical_url:
+                candidate = urljoin(base_url, item.strip())
+                if _is_public_http_url(candidate):
+                    canonical_url = _redact_url_secrets(candidate)
+            visit(item, depth + 1)
+
+    for raw in scripts:
+        try:
+            visit(json.loads(unescape(raw).strip()))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return {"publication_date_candidates": dates[:20], "canonical_url": canonical_url}
+
 
 def _extract_html_report(html: str, base_url: str) -> dict[str, Any]:
     parser = _ReportHTMLParser(base_url)
@@ -1426,7 +1816,20 @@ def _extract_html_report(html: str, base_url: str) -> dict[str, Any]:
     if parser.description and parser.description not in text[:2000]:
         text = f"{parser.description}\n\n{text}".strip()
     images = parser.content_images if content_text and parser.content_images else parser.images
-    return {"title": title, "description": parser.description, "text": text[:_MAX_STORED_REPORT_TEXT], "images": images[:80]}
+    json_ld = _json_ld_source_metadata(html, base_url)
+    date_candidates = [*parser.publication_date_candidates, *json_ld["publication_date_candidates"]]
+    deduped_dates: list[dict[str, str]] = []
+    for item in date_candidates:
+        if not any(row["value"] == item["value"] for row in deduped_dates):
+            deduped_dates.append(item)
+    return {
+        "title": title,
+        "description": parser.description,
+        "text": text[:_MAX_STORED_REPORT_TEXT],
+        "images": images[:80],
+        "canonical_url": parser.canonical_url or json_ld["canonical_url"] or _redact_url_secrets(base_url),
+        "publication_date_candidates": deduped_dates[:20],
+    }
 
 
 def _clean_html_text(text: str) -> str:
@@ -1943,7 +2346,7 @@ def _dedupe_entities(entities: list[LinkedReportEntity], limit: int) -> list[Lin
 
 async def _read_input(
     text: str | None, file: UploadFile | None
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, dict[str, Any]]:
     if file:
         # Reject early using Content-Length if the header is present
         if file.size is not None and file.size > MAX_UPLOAD_BYTES:
@@ -1960,12 +2363,23 @@ async def _read_input(
                 raise HTTPException(413, "File exceeds 50 MB limit")
             chunks.append(chunk)
         raw = b"".join(chunks)
-        return extract_text(raw, file.filename or "upload"), file.filename
+        return (
+            extract_text(raw, file.filename or "upload"),
+            file.filename,
+            {
+                "source_kind": "file",
+                "content_sha256": hashlib.sha256(raw).hexdigest(),
+                "content_size_bytes": total,
+            },
+        )
     if text and text.strip():
         clean_text = text.strip()
         if len(clean_text.encode("utf-8")) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Text input exceeds 50 MB limit")
-        return clean_text, None
+        return clean_text, None, {
+            "source_kind": "text",
+            "content_size_bytes": len(clean_text.encode("utf-8")),
+        }
     raise HTTPException(400, "Provide either 'text' or 'file'")
 
 
@@ -2138,6 +2552,12 @@ async def _validate_technique_ids(
     )
     ver_id = ver_row.scalar_one_or_none()
     if not ver_id:
+        for tech in result.techniques:
+            tech.llm_verified = False
+        logger.warning(
+            "No active ATT&CK/ATLAS catalog for domain %s; all generated mappings remain unverified",
+            domain,
+        )
         return
 
     rows = await session.execute(
@@ -2271,6 +2691,8 @@ def update_extracted_technique_review(
     evidence: str | None = None,
     review_note: str | None = None,
     reviewer: str | None = None,
+    reviewed_at: str | None = None,
+    source_text: str | None = None,
 ) -> dict | None:
     """Update a stored JSONB technique record with analyst review metadata."""
     normalized_id = attack_id.upper()
@@ -2280,13 +2702,22 @@ def update_extracted_technique_review(
 
         technique["review_status"] = review_status
         if evidence is not None:
-            technique["evidence"] = evidence
-            technique["evidence_source"] = "analyst"
-            technique["evidence_start"] = None
-            technique["evidence_end"] = None
+            clean_evidence = evidence.strip()
+            technique["evidence"] = clean_evidence
+            start = (source_text or "").lower().find(clean_evidence.lower()) if clean_evidence else -1
+            if start >= 0:
+                technique["evidence_source"] = "analyst-source-text"
+                technique["evidence_start"] = start
+                technique["evidence_end"] = start + len(clean_evidence)
+            else:
+                technique["evidence_source"] = "analyst" if source_text is None else "analyst-unbound"
+                technique["evidence_start"] = None
+                technique["evidence_end"] = None
         if review_note is not None:
             technique["review_note"] = review_note
         if reviewer is not None:
             technique["reviewer"] = reviewer
+        if reviewed_at is not None:
+            technique["reviewed_at"] = reviewed_at
         return technique
     return None

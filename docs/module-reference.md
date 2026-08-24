@@ -199,12 +199,17 @@ results.
 1. Record title, publisher, date, source, and handling marking.
 2. Store or upload the source in an environment appropriate for its sensitivity.
 3. Run deterministic parsing and, if approved, AI-assisted extraction.
-4. Review every candidate IOC, actor, technique, and claim against the source.
-5. Save the reviewed session and link it to hunts, evidence, or reports.
+4. Run the deterministic Review Gate preflight and resolve source provenance,
+   publication date, procedure relevance, procedure claims, and actor basis.
+5. Accept, reject, or request evidence for every source-bound claim.
+6. Submit for independent approval and promote only the current fingerprinted
+   revision.
 
 **Outputs and handoff.** Stored research sessions, source excerpts, reviewed
-ATT&CK candidates, observables, citations, summaries, and links into AI
-Analysis, Threat Hunting, Navigator, or Evidence Graph.
+ATT&CK candidates, observables, citations, complete gate assessments, immutable
+promotion manifests, and controlled links into AI Analysis, Threat Hunting,
+Navigator, RAG, or Evidence Graph. See
+[`report-review-gate.md`](report-review-gate.md).
 
 **Worked example.** Use
 [`docs/demo-dataset/public-report-excerpt.md`](demo-dataset/public-report-excerpt.md),
@@ -217,8 +222,10 @@ defensive recommendation. The model proposes `T1059.001`, but no adversary
 behavior excerpt supports it. The analyst rejects the mapping and records the
 reason. Acceptance is evidence fidelity, not the number of extracted TTPs.
 
-**Limits.** A stored report is not proof that its claims apply to the local
-environment. AI summaries and mappings remain suggestions until reviewed.
+**Limits.** A stored or approved report is not proof that its claims apply to
+the local environment. AI summaries and mappings remain suggestions. Only
+accepted claims from an active promoted revision enter trusted downstream
+projections.
 
 <!-- module:apt_library -->
 ### ATT&CK Group Library
@@ -451,10 +458,13 @@ candidates.
 2. Select a provider allowed by operator policy and source sensitivity.
 3. Run analysis against the stored source.
 4. Review candidate mappings against exact evidence excerpts.
-5. Accept, reject, or edit results and preserve unresolved gaps.
+5. Use optional Review Gate AI assistance only as source-bound advisory input.
+6. Complete the five deterministic gates and claim adjudication before
+   submission, approval, and promotion.
 
 **Outputs and handoff.** Reviewable TTP and IOC candidates, source citations,
-summary, assumptions, confidence, and saved report session.
+summary, assumptions, confidence, a revisioned Review Gate assessment, and—only
+after approval—an accepted-claim promotion manifest.
 
 **Worked example.** Analyze the public demo report excerpt, reject mappings
 without behavioral evidence, and compare accepted IDs with the expected mapping
@@ -465,8 +475,9 @@ unrelated paragraph. The analyst rejects it despite plausible narrative. The
 case passes when every accepted mapping has a supporting excerpt and human
 decision.
 
-**Limits.** AI output is not evidence. Provider availability shown in Self-test
-does not replace the module’s policy, connectivity, and model-access check.
+**Limits.** AI output is not evidence and cannot set analyst verdicts or promote
+a report. Provider availability shown in Self-test does not replace the
+module’s policy, connectivity, model-access, TLP, and cloud-egress checks.
 
 <!-- module:navigator -->
 ### Navigator

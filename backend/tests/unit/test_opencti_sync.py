@@ -1,12 +1,17 @@
+import inspect
+import uuid
 from datetime import datetime, timezone
 
+from app.models.analysis import AnalysisSession
 from app.models.ioc import IOCIndicator
 from app.services.opencti_sync import (
     _connect_url,
     _guess_ioc_type,
     _indicator_node_to_import_item,
     _indicator_to_opencti_input,
+    _new_opencti_report_intake,
     _observable_node_to_import_item,
+    pull_from_opencti,
 )
 
 
@@ -67,6 +72,44 @@ def test_opencti_observable_node_maps_object_label_and_file_hash():
     assert item.value == "b" * 64
     assert item.indicator_type == "sha256"
     assert "malware" in item.tags
+
+
+def test_opencti_report_objects_remain_review_linked_candidates():
+    session = AnalysisSession(
+        id=uuid.uuid4(),
+        status="completed",
+        name="Candidate report",
+        input_type="file",
+        filename="opencti:report--candidate",
+        llm_provider="opencti",
+        model="opencti-sync",
+        source_text="Report names evil.example as infrastructure.",
+    )
+    intake = _new_opencti_report_intake(
+        session,
+        {
+            "id": "report--candidate",
+            "name": "Candidate report",
+            "objects": {
+                "edges": [
+                    {
+                        "node": {
+                            "id": "indicator--candidate",
+                            "entity_type": "Indicator",
+                            "pattern": "[domain-name:value = 'evil.example']",
+                        }
+                    }
+                ]
+            },
+        },
+        source_text=session.source_text,
+        summary="Candidate report",
+        technique_ids=[],
+    )
+
+    assert intake.status == "draft"
+    assert [(item["indicator_type"], item["value"]) for item in intake.indicators] == [("domain", "evil.example")]
+    assert "items.extend(_report_indicator_items(report))" not in inspect.getsource(pull_from_opencti)
 
 
 def test_opencti_push_indicator_input_uses_stix_pattern():

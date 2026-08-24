@@ -341,7 +341,8 @@ claim:
 
 - managed public SaaS and tenant isolation;
 - zero-downtime or downgrade-safe schema guarantees;
-- formal Alembic migration-chain guarantees;
+- complete Alembic ownership of unrelated legacy tables; research/workflow and
+  outbox authority are covered by the formal chain and physical fingerprint;
 - automatic truth or attribution from AI output;
 - semantic-search readiness without a deployment-specific private model and
   first-index smoke test;

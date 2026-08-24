@@ -26,7 +26,14 @@ class IntelligenceTag(Base):
 class IntelligenceEntityTag(Base):
     __tablename__ = "intelligence_entity_tags"
     __table_args__ = (
-        UniqueConstraint("entity_type", "entity_id", "tag", name="uq_intelligence_entity_tag"),
+        UniqueConstraint(
+            "entity_type",
+            "entity_id",
+            "tag",
+            "source_type",
+            "source_id",
+            name="uq_intelligence_entity_tag",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

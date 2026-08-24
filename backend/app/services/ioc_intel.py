@@ -34,6 +34,7 @@ THREATFOX_SOURCE_ID = "abusech-threatfox"
 OTX_SOURCE_ID = "alienvault-otx"
 MALPEDIA_SOURCE_ID = "malpedia"
 MANUAL_SOURCE_ID = "manual-report-import"
+REPORT_PROMOTION_SOURCE_PREFIX = "report-promotion-"
 CUSTOM_FEED_KINDS = {"custom-json", "custom-csv", "custom-txt"}
 _SQL_IN_BATCH_SIZE = 10_000
 OTX_TRANSIENT_HTTP_STATUS_CODES = {429, 502, 503, 504}
@@ -230,6 +231,42 @@ async def list_ioc_library(
         base = base.where(*filters)
         count_stmt = count_stmt.where(*filters)
 
+    # Promotion-derived IOC rows are a materialized projection, not authority
+    # by themselves.  Resolve all matching promotion candidates against the
+    # current immutable manifest before they can appear in library reads.
+    promotion_candidates_stmt = select(IOCIndicator).where(
+        IOCIndicator.source_id.ilike(f"{REPORT_PROMOTION_SOURCE_PREFIX}%")
+    )
+    if actor_terms:
+        promotion_candidates_stmt = promotion_candidates_stmt.join(
+            IOCActorLink,
+            IOCActorLink.indicator_id == IOCIndicator.id,
+        )
+    if filters:
+        promotion_candidates_stmt = promotion_candidates_stmt.where(*filters)
+    promotion_candidates = list(
+        (
+            await session.execute(promotion_candidates_stmt)
+        ).unique().scalars().all()
+    )
+    from app.services.report_promotion import authorized_report_promotion_indicator_ids
+
+    authorized_promotion_ids = await authorized_report_promotion_indicator_ids(
+        session,
+        promotion_candidates,
+        target="canonical_intelligence",
+    )
+    promotion_authority_filter = ~IOCIndicator.source_id.ilike(
+        f"{REPORT_PROMOTION_SOURCE_PREFIX}%"
+    )
+    if authorized_promotion_ids:
+        promotion_authority_filter = or_(
+            promotion_authority_filter,
+            IOCIndicator.id.in_(authorized_promotion_ids),
+        )
+    base = base.where(promotion_authority_filter)
+    count_stmt = count_stmt.where(promotion_authority_filter)
+
     sort_map: dict[str, Any] = {
         "last_seen_asc": IOCIndicator.last_seen.asc().nulls_last(),
         "first_seen_desc": IOCIndicator.first_seen.desc().nulls_last(),
@@ -279,6 +316,18 @@ async def get_ioc_detail(session: AsyncSession, indicator_id: int, domain: str =
     indicator = row.scalar_one_or_none()
     if indicator is None:
         return None
+    if str(indicator.source_id or "").casefold().startswith(
+        REPORT_PROMOTION_SOURCE_PREFIX
+    ):
+        from app.services.report_promotion import authorized_report_promotion_indicator_ids
+
+        authorized = await authorized_report_promotion_indicator_ids(
+            session,
+            [indicator],
+            target="canonical_intelligence",
+        )
+        if int(indicator.id) not in authorized:
+            return None
 
     source_row = await session.execute(select(IOCSource).where(IOCSource.source_id == indicator.source_id))
     source = source_row.scalar_one_or_none()
@@ -340,10 +389,12 @@ async def create_ioc_source(
     kind: str = "custom-json",
     source_id: str | None = None,
 ) -> IOCSource:
-    await ensure_ioc_sources(session)
     if kind not in CUSTOM_FEED_KINDS:
         raise ValueError(f"Unsupported custom feed kind: {kind}")
     source_id = source_id or f"custom-{_slugify(label or url)}"
+    if source_id.casefold().startswith(REPORT_PROMOTION_SOURCE_PREFIX):
+        raise ValueError("The report-promotion source namespace is reserved")
+    await ensure_ioc_sources(session)
     stmt = (
         insert(IOCSource)
         .values(
@@ -380,6 +431,8 @@ async def update_ioc_source(
     url: str,
     kind: str,
 ) -> IOCSource:
+    if source_id.casefold().startswith(REPORT_PROMOTION_SOURCE_PREFIX):
+        raise ValueError("The report-promotion source namespace is reserved")
     await ensure_ioc_sources(session)
     source = await session.get(IOCSource, source_id)
     if not source:
@@ -399,6 +452,8 @@ async def update_ioc_source(
 
 
 async def delete_ioc_source(session: AsyncSession, source_id: str) -> None:
+    if source_id.casefold().startswith(REPORT_PROMOTION_SOURCE_PREFIX):
+        raise ValueError("The report-promotion source namespace is reserved")
     await ensure_ioc_sources(session)
     source = await session.get(IOCSource, source_id)
     if not source:
@@ -416,6 +471,8 @@ async def sync_custom_source(
     ai_enrich: bool = False,
     ai_provider: str = "local",
 ) -> dict[str, int | str | None]:
+    if source_id.casefold().startswith(REPORT_PROMOTION_SOURCE_PREFIX):
+        raise ValueError("The report-promotion source namespace is reserved")
     await ensure_ioc_sources(session)
     source = await session.get(IOCSource, source_id)
     if not source:
@@ -1027,6 +1084,16 @@ async def enrich_ioc_ttp_mappings(
             stmt = stmt.where(IOCIndicator.source_id.in_(source_ids))
         rows = await session.execute(stmt)
         indicators = list(rows.scalars().all())
+    # Promotion IOC rows are immutable projections of accepted claims. Generic
+    # normalization or AI enrichment must never rewrite their value, type,
+    # mappings, tags, description, confidence, or provenance payload.
+    indicators = [
+        indicator
+        for indicator in indicators
+        if not str(indicator.source_id or "").casefold().startswith(
+            REPORT_PROMOTION_SOURCE_PREFIX
+        )
+    ]
     updated = 0
     normalized_types = 0
     ai_attempted = 0
@@ -2051,7 +2118,17 @@ def _dedupe_tags(values: list[str]) -> list[str]:
     return normalize_freeform_tags(values, limit=80)
 
 
-async def _upsert_indicator(session: AsyncSession, item: IOCImportItem) -> tuple[int, bool]:
+async def _upsert_indicator(
+    session: AsyncSession,
+    item: IOCImportItem,
+    *,
+    allow_report_promotion_source: bool = False,
+) -> tuple[int, bool]:
+    if (
+        str(item.source or "").casefold().startswith(REPORT_PROMOTION_SOURCE_PREFIX)
+        and not allow_report_promotion_source
+    ):
+        raise ValueError("The report-promotion source namespace is reserved")
     item.indicator_type = _normalize_ioc_type(item.indicator_type, item.value)
     item.value = item.value.strip()
     if _is_network_fingerprint_type(item.indicator_type):

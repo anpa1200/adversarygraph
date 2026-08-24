@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from unittest.mock import AsyncMock
 
 
 @pytest.mark.asyncio
@@ -68,10 +69,21 @@ async def test_ioc_import_requires_indicators(client: AsyncClient):
 async def test_report_ioc_upload_extracts_iocs(client: AsyncClient, monkeypatch):
     from app.api.routes import ioc as ioc_route
 
+    calls: list[tuple[str, object]] = []
+
     async def fake_import_iocs(session, items):
-        return {"source": "manual-report-import", "inserted": len(items), "updated": 0, "actor_links": len(items)}
+        raise AssertionError("report candidates must not bypass the Review Gate")
+
+    async def fake_audit(session, user, action, object_type, *args, **kwargs):
+        calls.append(("audit", (action, object_type, kwargs.get("details"))))
+
+        async def tracked_commit():
+            calls.append(("commit", None))
+
+        monkeypatch.setattr(session, "commit", tracked_commit)
 
     monkeypatch.setattr(ioc_route, "import_iocs", fake_import_iocs)
+    monkeypatch.setattr(ioc_route, "audit", fake_audit)
     content = b"IOC list: 8.8.8.8, evil-example.com, https://c2.example.net/a, d41d8cd98f00b204e9800998ecf8427e"
     resp = await client.post(
         "/api/ioc/report",
@@ -82,6 +94,32 @@ async def test_report_ioc_upload_extracts_iocs(client: AsyncClient, monkeypatch)
     body = resp.json()
     assert body["extracted"] >= 3
     assert isinstance(body["preview"], list)
+    assert body["candidate_only"] is True
+    assert body["review_path"] == "/reports-research"
+    assert body["imported"] == {
+        "source": "report-review-candidate",
+        "days": None,
+        "inserted": 0,
+        "updated": 0,
+        "actor_links": 0,
+        "ttp_enriched": 0,
+    }
+    assert calls == [
+        (
+            "audit",
+            (
+                "ioc.preview_report_candidates",
+                "report_candidate",
+                {
+                    "filename": "report.txt",
+                    "extracted": body["extracted"],
+                    "candidate_only": True,
+                    "review_path": "/reports-research",
+                },
+            ),
+        ),
+        ("commit", None),
+    ]
 
 
 @pytest.mark.asyncio
@@ -159,9 +197,19 @@ async def test_ioc_investigation_route_shape(client: AsyncClient, monkeypatch):
             "verdict": "suspicious",
             "summary": "Test investigation summary.",
             "kill_chain": [{"phase": "command-and-control", "techniques": 1}],
-            "techniques": [{"attack_id": "T1071", "name": "Application Layer Protocol", "tactics": ["command-and-control"], "url": "", "evidence_sources": []}],
+            "techniques": [
+                {
+                    "attack_id": "T1071",
+                    "name": "Application Layer Protocol",
+                    "tactics": ["command-and-control"],
+                    "url": "",
+                    "evidence_sources": [],
+                }
+            ],
             "actors": [],
-            "sources": [{"source": "local-db", "status": "ok", "summary": "ok", "relationships": [], "technique_ids": [], "actors": [], "raw": {}}],
+            "sources": [
+                {"source": "local-db", "status": "ok", "summary": "ok", "relationships": [], "technique_ids": [], "actors": [], "raw": {}}
+            ],
             "tier2_sources": [],
             "relationships": {"nodes": [], "edges": []},
             "ai_input": {},
@@ -243,3 +291,73 @@ async def test_ioc_stix_import_route_shape(client: AsyncClient, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["items_seen"] == 1
+
+
+@pytest.mark.asyncio
+async def test_report_bearing_stix_is_rejected_before_global_ioc_import(
+    client: AsyncClient,
+):
+    report_id = "report--22222222-2222-4222-8222-222222222222"
+    indicator_id = "indicator--11111111-1111-4111-8111-111111111111"
+    resp = await client.post(
+        "/api/ioc/import/stix",
+        json={
+            "type": "bundle",
+            "objects": [
+                {
+                    "type": "report",
+                    "id": report_id,
+                    "name": "Unreviewed report",
+                    "object_refs": [indicator_id],
+                },
+                {
+                    "type": "indicator",
+                    "id": indicator_id,
+                    "pattern": "[domain-name:value = 'unreviewed.example']",
+                    "pattern_type": "stix",
+                },
+            ],
+        },
+    )
+
+    assert resp.status_code == 409
+    assert "candidate evidence" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_opencti_routes_commit_their_post_operation_audit(monkeypatch):
+    from app.api.routes import ioc as ioc_route
+
+    cases = [
+        (
+            ioc_route.opencti_pull_route,
+            "pull_from_opencti",
+            {"limit": 25, "domain": "enterprise-attack"},
+        ),
+        (
+            ioc_route.opencti_push_route,
+            "push_to_opencti",
+            {"limit": 25, "source_id": "", "include_reports": True},
+        ),
+        (
+            ioc_route.opencti_sync_route,
+            "sync_opencti",
+            {
+                "limit": 25,
+                "domain": "enterprise-attack",
+                "include_reports": True,
+            },
+        ),
+    ]
+
+    for route, service_name, kwargs in cases:
+        service = AsyncMock(return_value={"source": "opencti"})
+        audit_event = AsyncMock()
+        session = type("Session", (), {"commit": AsyncMock()})()
+        monkeypatch.setattr(ioc_route, service_name, service)
+        monkeypatch.setattr(ioc_route, "audit", audit_event)
+
+        assert await route(session=session, user=object(), **kwargs) == {"source": "opencti"}
+        service.assert_awaited_once()
+        audit_event.assert_awaited_once()
+        session.commit.assert_awaited_once()

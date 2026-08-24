@@ -7,15 +7,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.safe_http import async_safe_get
+from app.models.ioc import IOCIndicator
 from app.services.ioc_intel import IOCImportItem, create_ioc_source, import_iocs, list_ioc_library
+from app.services.report_promotion import authorized_report_promotion_indicator_ids
 
 STIX_NAMESPACE = uuid.UUID("8b5f5359-613e-4ca0-b6f6-7d526b01f2d5")
 STIX_IMPORT_SOURCE_ID = "custom-stix-import"
 TAXII_IMPORT_SOURCE_ID = "custom-taxii-import"
 NETWORK_FINGERPRINT_TYPES = {"ja3", "ja3s", "ja4", "ja4s", "ja4h", "ja4l", "ja4ls", "ja4x", "ja4ssh", "ja4t"}
+
+
+class ReportBearingSTIXError(ValueError):
+    """Raised when a global IOC import is presented as report evidence."""
 
 
 async def export_ioc_stix_bundle(
@@ -38,6 +45,26 @@ async def export_ioc_stix_bundle(
         limit=limit,
         offset=0,
     )
+    promotion_item_ids = {
+        int(item.get("id"))
+        for item in library.get("items", [])
+        if isinstance(item, dict) and str(item.get("source") or "").startswith("report-promotion-") and isinstance(item.get("id"), int)
+    }
+    promotion_indicators = (
+        list((await session.execute(select(IOCIndicator).where(IOCIndicator.id.in_(promotion_item_ids)))).scalars().all())
+        if promotion_item_ids
+        else []
+    )
+    authorized_promotion_indicators = await authorized_report_promotion_indicator_ids(
+        session,
+        promotion_indicators,
+        target="exports",
+    )
+    library["items"] = [
+        item
+        for item in library.get("items", [])
+        if not str(item.get("source") or "").startswith("report-promotion-") or item.get("id") in authorized_promotion_indicators
+    ]
     now = _stix_time(datetime.now(timezone.utc))
     identity_id = _stix_id("identity", "adversarygraph")
     objects: list[dict[str, Any]] = [
@@ -98,8 +125,21 @@ async def import_ioc_stix_bundle(
     source_label: str = "STIX IOC Import",
     source_url: str = "",
 ) -> dict[str, Any]:
-    await create_ioc_source(session, label=source_label, url=source_url or "local-stix-import", kind="custom-json", source_id=source_id)
     objects = [obj for obj in bundle.get("objects", []) if isinstance(obj, dict)]
+    if any(str(obj.get("type") or "").strip().lower() == "report" for obj in objects):
+        # A STIX report binds its referenced objects into report evidence. The
+        # generic IOC importer must not discard that context and materialize
+        # the referenced indicators globally. Report-bearing bundles belong in
+        # the candidate-only pipeline and may cross this boundary only through
+        # an active Report Review promotion.
+        raise ReportBearingSTIXError("Report-bearing STIX must enter Reports / Research before IOC promotion")
+    await create_ioc_source(
+        session,
+        label=source_label,
+        url=source_url or "local-stix-import",
+        kind="custom-json",
+        source_id=source_id,
+    )
     by_id: dict[str, dict[str, Any]] = {}
     for obj in objects:
         object_id = obj.get("id")
@@ -218,7 +258,9 @@ def _observed_data_to_import_items(
     return rows
 
 
-def _relationship_context(source_object_id: str, by_id: dict[str, dict[str, Any]], relationships: list[dict[str, Any]]) -> tuple[dict[str, str], dict[str, str]]:
+def _relationship_context(
+    source_object_id: str, by_id: dict[str, dict[str, Any]], relationships: list[dict[str, Any]]
+) -> tuple[dict[str, str], dict[str, str]]:
     actor: dict[str, str] = {}
     malware: dict[str, str] = {}
     for rel in relationships:

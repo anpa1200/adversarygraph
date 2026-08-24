@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from app.core.config import settings
@@ -9,8 +11,12 @@ from app.services.auth import TeamUser, current_user
 @pytest.fixture(autouse=True)
 def _auth_disabled_by_default(monkeypatch, app):
     monkeypatch.setattr(settings, "auth_enabled", False)
+
     async def test_user():
-        return TeamUser(name="test-analyst", roles=["admin", "analyst", "viewer"], permissions=["read", "run_analysis", "export_data", "manage_auth"])
+        return TeamUser(
+            name="test-analyst", roles=["admin", "analyst", "viewer"], permissions=["read", "run_analysis", "export_data", "manage_auth"]
+        )
+
     app.dependency_overrides[current_user] = test_user
     yield
     app.dependency_overrides.pop(current_user, None)
@@ -27,22 +33,30 @@ def _auth_headers(role: str = "admin") -> dict[str, str]:
 
 
 async def _node(client, node_type: str, title: str, **extra):
-    response = await client.post("/api/evidence-graph/nodes", json={
-        "node_type": node_type,
-        "title": title,
-        **extra,
-    }, headers=_auth_headers())
+    response = await client.post(
+        "/api/evidence-graph/nodes",
+        json={
+            "node_type": node_type,
+            "title": title,
+            **extra,
+        },
+        headers=_auth_headers(),
+    )
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def _edge(client, source: str, target: str, edge_type: str):
-    response = await client.post("/api/evidence-graph/edges", json={
-        "source_node_id": source,
-        "target_node_id": target,
-        "edge_type": edge_type,
-        "rationale": "test edge",
-    }, headers=_auth_headers())
+    response = await client.post(
+        "/api/evidence-graph/edges",
+        json={
+            "source_node_id": source,
+            "target_node_id": target,
+            "edge_type": edge_type,
+            "rationale": "test edge",
+        },
+        headers=_auth_headers(),
+    )
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -86,7 +100,13 @@ async def test_evidence_graph_full_path_gaps_and_score(client):
     claim = await _node(client, "claim", "Encoded command claim", review_status="analyst_reviewed")
     behavior = await _node(client, "behavior", "Command execution behavior", review_status="analyst_reviewed")
     technique = await _node(client, "attack_technique", "T1059.001 PowerShell", technique_id="T1059.001", review_status="analyst_reviewed")
-    telemetry = await _node(client, "required_telemetry", "PowerShell telemetry", availability_status="available", required_fields=["EventID", "ScriptBlockText"])
+    telemetry = await _node(
+        client,
+        "required_telemetry",
+        "PowerShell telemetry",
+        availability_status="available",
+        required_fields=["EventID", "ScriptBlockText"],
+    )
     candidate = await _node(client, "detection_candidate", "PowerShell encoded command detection", status="testable")
     rule = await _node(client, "detection_rule", "Sigma PowerShell encoded command", rule_format="sigma", rule_body="title: test")
     scenario = await _node(client, "validation_scenario", "Replay PowerShell event", scenario_type="replay")
@@ -150,9 +170,17 @@ async def test_evidence_graph_gap_detection_and_export_redaction(client):
 
 @pytest.mark.asyncio
 async def test_evidence_graph_generation_from_report_and_simulation(client):
-    report = await client.post("/api/evidence-graph/from-report/report-demo-1", headers=_auth_headers())
-    assert report.status_code == 200, report.text
-    assert report.json()["nodes_created"] >= 1
+    malformed_report = await client.post(
+        "/api/evidence-graph/from-report/report-demo-1",
+        headers=_auth_headers(),
+    )
+    assert malformed_report.status_code == 422
+
+    unknown_report = await client.post(
+        f"/api/evidence-graph/from-report/{uuid4()}",
+        headers=_auth_headers(),
+    )
+    assert unknown_report.status_code == 404
 
     simulation = await client.post(
         "/api/evidence-graph/from-simulation/run-sim-t1059-001-demo",

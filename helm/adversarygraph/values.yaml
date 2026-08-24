@@ -58,8 +58,34 @@ beat:
       cpu: 500m
       memory: 512Mi
 
+migration:
+  # The reviewed backend image owns the Alembic chain. Upgrades run this as a
+  # blocking pre-upgrade hook; a bundled-PostgreSQL first install runs it as a
+  # normal Job while API/worker/Beat init containers wait for exact authority.
+  activeDeadlineSeconds: 600
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  gateResources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 postgresql:
   enabled: true
+  # Used when postgresql.enabled=false. The external Secret still supplies
+  # DB_NAME, DB_USER, and DB_PASS; do not put credentials in values.
+  externalHost: ""
+  externalPort: "5432"
   image:
     # Development-compatible upstream pgvector image. Production mode rejects
     # this fallback and requires the release's reviewed adversarygraph-postgres

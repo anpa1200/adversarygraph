@@ -99,6 +99,17 @@ services:
           memory: ${API_MEMORY_RESERVATION:-1g}
           cpus: '${API_CPU_RESERVATION:-0.5}'
 
+  migrate:
+    pull_policy: missing
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+
   worker:
     pull_policy: missing
     restart: always

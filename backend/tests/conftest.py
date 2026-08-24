@@ -48,6 +48,9 @@ class _MockScalarResult:
         m.all.return_value = self._rows
         return m
 
+    def unique(self):
+        return self
+
     def all(self):
         return self._rows
 

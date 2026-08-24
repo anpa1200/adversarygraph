@@ -759,15 +759,12 @@ function ResultsView({
     mutationFn: ({
       attackId,
       reviewStatus,
-      evidence,
     }: {
       attackId: string;
       reviewStatus: NonNullable<AnalysisResult['techniques'][number]['review_status']>;
-      evidence: string;
     }) =>
       analyzeApi.updateTechniqueReview(result.session_id, attackId, {
         review_status: reviewStatus,
-        evidence,
       }),
     onSuccess: updated => {
       setDisplayResult(current => ({
@@ -781,7 +778,7 @@ function ResultsView({
 
   const acceptedTechniqueIds = () =>
     displayResult.techniques
-      .filter(t => t.review_status !== 'rejected')
+      .filter(t => t.review_status === 'accepted')
       .map(t => t.attack_id);
 
   const injectAsMyTtps = () => {
@@ -1012,7 +1009,6 @@ function ResultsView({
                             reviewMutation.mutate({
                               attackId: t.attack_id,
                               reviewStatus,
-                              evidence: t.evidence,
                             })
                           }
                         />

@@ -42,7 +42,12 @@ from app.services.ioc_intel import (
 )
 from app.services.virustotal import classify_indicator, lookup_virustotal_ioc
 from app.services.ioc_investigation import InvestigationOptions, investigate_ioc as run_ioc_investigation
-from app.services.ioc_stix import export_ioc_stix_bundle, import_ioc_stix_bundle, import_taxii_collection
+from app.services.ioc_stix import (
+    ReportBearingSTIXError,
+    export_ioc_stix_bundle,
+    import_ioc_stix_bundle,
+    import_taxii_collection,
+)
 from app.services.opencti_sync import (
     OpenCTISyncError,
     opencti_status,
@@ -259,6 +264,8 @@ class ReportIOCImportOut(BaseModel):
     extracted: int
     imported: SyncOut
     preview: list[ReportIOCPreviewOut]
+    candidate_only: bool = True
+    review_path: str = "/reports-research"
 
 
 class IOCCountsOut(BaseModel):
@@ -426,7 +433,9 @@ async def sources(session: AsyncSession = Depends(get_session), _: TeamUser = De
 
 
 @router.post("/virustotal/lookup", response_model=VirusTotalLookupOut)
-async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(investigate_ioc_permission)):
+async def virustotal_lookup(
+    payload: VirusTotalLookupIn, session: AsyncSession = Depends(get_session), _: TeamUser = Depends(investigate_ioc_permission)
+):
     try:
         return await lookup_virustotal_ioc(session, payload.indicator, domain=payload.domain)
     except ValueError as exc:
@@ -453,7 +462,9 @@ async def virustotal_lookup(payload: VirusTotalLookupIn, session: AsyncSession =
 
 
 @router.post("/investigate", response_model=IOCInvestigationOut)
-async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)):
+async def investigate_ioc_route(
+    payload: IOCInvestigationIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)
+):
     try:
         result = await run_ioc_investigation(
             session,
@@ -479,7 +490,14 @@ async def investigate_ioc_route(payload: IOCInvestigationIn, session: AsyncSessi
         )
         session.add(saved)
         await session.flush()
-        await audit(session, user, "ioc.investigate", "ioc_investigation", str(saved.id), {"artifact": result["artifact"], "verdict": result["verdict"]})
+        await audit(
+            session,
+            user,
+            "ioc.investigate",
+            "ioc_investigation",
+            str(saved.id),
+            {"artifact": result["artifact"], "verdict": result["verdict"]},
+        )
         await session.commit()
         result["session_id"] = str(saved.id)
         return result
@@ -499,27 +517,26 @@ async def list_ioc_investigations(
     _: TeamUser = Depends(current_user),
 ):
     rows = await session.execute(
-        select(IOCInvestigationSession)
-        .order_by(desc(IOCInvestigationSession.created_at))
-        .offset(offset)
-        .limit(limit)
+        select(IOCInvestigationSession).order_by(desc(IOCInvestigationSession.created_at)).offset(offset).limit(limit)
     )
     output: list[IOCInvestigationHistoryOut] = []
     for item in rows.scalars().all():
         result = item.result or {}
-        output.append(IOCInvestigationHistoryOut(
-            session_id=str(item.id),
-            artifact=item.artifact,
-            artifact_type=item.artifact_type,
-            verdict=item.verdict,
-            suspicion_score=item.suspicion_score,
-            depth=item.depth,
-            ai_summarize=item.ai_summarize,
-            ai_provider=item.ai_provider,
-            created_at=item.created_at.isoformat() if item.created_at else "",
-            technique_count=len(result.get("techniques") or []),
-            actor_count=len(result.get("actors") or []),
-        ))
+        output.append(
+            IOCInvestigationHistoryOut(
+                session_id=str(item.id),
+                artifact=item.artifact,
+                artifact_type=item.artifact_type,
+                verdict=item.verdict,
+                suspicion_score=item.suspicion_score,
+                depth=item.depth,
+                ai_summarize=item.ai_summarize,
+                ai_provider=item.ai_provider,
+                created_at=item.created_at.isoformat() if item.created_at else "",
+                technique_count=len(result.get("techniques") or []),
+                actor_count=len(result.get("actors") or []),
+            )
+        )
     return output
 
 
@@ -539,7 +556,9 @@ async def get_ioc_investigation(session_id: str, session: AsyncSession = Depends
 
 
 @router.delete("/investigations/{session_id}", status_code=204)
-async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)):
+async def delete_ioc_investigation(
+    session_id: str, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(investigate_ioc_permission)
+):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
@@ -552,7 +571,9 @@ async def delete_ioc_investigation(session_id: str, session: AsyncSession = Depe
 
 
 @router.post("/sources", response_model=IOCSourceOut)
-async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)):
+async def create_source(
+    payload: IOCSourceCreateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)
+):
     try:
         result = await create_ioc_source(
             session,
@@ -569,7 +590,9 @@ async def create_source(payload: IOCSourceCreateIn, session: AsyncSession = Depe
 
 
 @router.patch("/sources/{source_id}", response_model=IOCSourceOut)
-async def update_source(source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)):
+async def update_source(
+    source_id: str, payload: IOCSourceUpdateIn, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_feeds)
+):
     try:
         result = await update_ioc_source(
             session,
@@ -683,6 +706,11 @@ async def import_ioc_stix_route(
         result = await import_ioc_stix_bundle(session, bundle, source_label=source_label, source_url=source_url)
         await audit(session, user, "ioc.import_stix", "ioc_source", details={"source_label": source_label})
         return result
+    except ReportBearingSTIXError as exc:
+        raise HTTPException(
+            409,
+            "Report-bearing STIX is candidate evidence; ingest it through Reports / Research and promote accepted claims.",
+        ) from exc
     except Exception as exc:
         logger.error("STIX IOC import failed: %s", exc, exc_info=True)
         raise HTTPException(400, "Operation failed. See server logs.") from exc
@@ -705,6 +733,11 @@ async def import_ioc_taxii_route(
         )
         await audit(session, user, "ioc.import_taxii", "ioc_source", details={"source_label": payload.source_label})
         return result
+    except ReportBearingSTIXError as exc:
+        raise HTTPException(
+            409,
+            "Report-bearing TAXII content is candidate evidence; ingest it through Reports / Research and promote accepted claims.",
+        ) from exc
     except Exception as exc:
         logger.error("TAXII IOC import failed: %s", exc, exc_info=True)
         raise HTTPException(400, "Operation failed. See server logs.") from exc
@@ -732,6 +765,7 @@ async def opencti_pull_route(
     try:
         result = await pull_from_opencti(session, limit=limit, domain=domain)
         await audit(session, user, "ioc.opencti_pull", "ioc_source", details={"domain": domain, "limit": limit})
+        await session.commit()
         return result
     except OpenCTISyncError as exc:
         logger.warning("OpenCTI pull sync error: %s", exc)
@@ -752,6 +786,7 @@ async def opencti_push_route(
     try:
         result = await push_to_opencti(session, limit=limit, source_id=source_id, include_reports=include_reports)
         await audit(session, user, "ioc.opencti_push", "ioc_source", details={"limit": limit, "source_id": source_id})
+        await session.commit()
         return result
     except OpenCTISyncError as exc:
         logger.warning("OpenCTI push sync error: %s", exc)
@@ -772,6 +807,7 @@ async def opencti_sync_route(
     try:
         result = await sync_opencti(session, limit=limit, domain=domain, include_reports=include_reports)
         await audit(session, user, "ioc.opencti_sync", "ioc_source", details={"domain": domain, "limit": limit})
+        await session.commit()
         return result
     except OpenCTISyncError as exc:
         logger.warning("OpenCTI sync error: %s", exc)
@@ -925,7 +961,12 @@ async def enrich_ioc_ttps_route(
 
 
 @router.post("/import", response_model=SyncOut)
-async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_ioc_intel), _body=Depends(_limit_10mb)):
+async def import_ioc_route(
+    payload: IOCImportRequest,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(manage_ioc_intel),
+    _body=Depends(_limit_10mb),
+):
     items = [
         IOCImportItem(
             value=item.value,
@@ -948,12 +989,18 @@ async def import_ioc_route(payload: IOCImportRequest, session: AsyncSession = De
         for item in payload.indicators
     ]
     result = await import_iocs(session, items)
-    await audit(session, user, "ioc.import", "ioc_source", details={"count": len(items), "inserted": result.get("inserted", 0), "updated": result.get("updated", 0)})
+    await audit(
+        session,
+        user,
+        "ioc.import",
+        "ioc_source",
+        details={"count": len(items), "inserted": result.get("inserted", 0), "updated": result.get("updated", 0)},
+    )
     return {**result, "days": None}
 
 
 @router.post("/report", response_model=ReportIOCImportOut)
-async def import_iocs_from_report(
+async def preview_iocs_from_report(
     actor_attack_id: str | None = Form(default=None),
     actor_name: str | None = Form(default=None),
     source_url: str | None = Form(default=None),
@@ -978,8 +1025,30 @@ async def import_iocs_from_report(
         )
         for item in items:
             item.technique_ids = report_techniques
-        result = await import_iocs(session, items) if items else {"source": "manual-report-import", "inserted": 0, "updated": 0, "actor_links": 0}
-        await audit(session, user, "ioc.import_report", "ioc_source", details={"filename": file.filename, "extracted": len(items), "inserted": result.get("inserted", 0)})
+            item.source = "report-review-candidate"
+        # Uploaded report extraction is deliberately preview-only. Persisting
+        # these candidates directly would bypass the versioned Report Review
+        # Gate; analysts must ingest the report through Reports / Research and
+        # promote accepted, source-bound indicator claims from there.
+        result = {
+            "source": "report-review-candidate",
+            "inserted": 0,
+            "updated": 0,
+            "actor_links": 0,
+        }
+        await audit(
+            session,
+            user,
+            "ioc.preview_report_candidates",
+            "report_candidate",
+            details={
+                "filename": file.filename,
+                "extracted": len(items),
+                "candidate_only": True,
+                "review_path": "/reports-research",
+            },
+        )
+        await session.commit()
         preview = [
             {
                 "value": item.value,
@@ -1000,7 +1069,14 @@ async def import_iocs_from_report(
             }
             for item in items[:25]
         ]
-        return {"filename": file.filename or "", "extracted": len(items), "imported": {**result, "days": None}, "preview": preview}
+        return {
+            "filename": file.filename or "",
+            "extracted": len(items),
+            "imported": {**result, "days": None},
+            "preview": preview,
+            "candidate_only": True,
+            "review_path": "/reports-research",
+        }
     except Exception as exc:
         logger.error("Report IOC extraction failed: %s", exc, exc_info=True)
         raise HTTPException(400, "Operation failed. See server logs.") from exc
@@ -1096,11 +1172,13 @@ async def actor_ioc_csv_route(
     )
     writer.writeheader()
     for row in rows:
-        writer.writerow({
-            **row,
-            "technique_ids": ",".join(row.get("technique_ids") or []),
-            "tags": ",".join(row.get("tags") or []),
-        })
+        writer.writerow(
+            {
+                **row,
+                "technique_ids": ",".join(row.get("technique_ids") or []),
+                "tags": ",".join(row.get("tags") or []),
+            }
+        )
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),

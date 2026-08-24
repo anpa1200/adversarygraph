@@ -14,12 +14,14 @@ from fastapi import HTTPException
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analysis import AnalysisResult, AnalysisSession
+from app.models.analysis import AnalysisSession
 from app.models.asset_surface import AssetSurfaceCase
 from app.models.evidence_graph import EvidenceGraphEdge, EvidenceGraphNode
 from app.models.ioc import IOCIndicator, IOCInvestigationSession
 from app.models.operations import ReportIntake
 from app.models.attack import AttackVersion, Technique
+from app.services.report_promotion import accepted_claims, promotion_allows
+from app.services.report_review import active_promotion
 
 
 NODE_TYPES = {
@@ -75,6 +77,10 @@ ORDERED_PATH_TYPES = [
     "analyst_decision",
 ]
 
+REPORT_GRAPH_ORIGIN = "from-report"
+REPORT_GRAPH_SOURCE_TYPE = "uploaded_report"
+REPORT_GRAPH_AUTHORITY_ERROR = "Evidence-graph report import requires an active current Review Gate promotion"
+
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -99,8 +105,30 @@ def clamp_confidence(value: Any) -> int:
         return 50
 
 
-def validate_node_payload(payload: dict[str, Any], partial: bool = False) -> dict[str, Any]:
+def _payload_claims_report_origin(payload: dict[str, Any]) -> bool:
+    metadata = payload.get("metadata_json")
+    return str(payload.get("source_type") or "").strip().casefold() == REPORT_GRAPH_SOURCE_TYPE or (
+        isinstance(metadata, dict) and str(metadata.get("origin") or "").strip().casefold() == REPORT_GRAPH_ORIGIN
+    )
+
+
+def _row_claims_report_origin(row: EvidenceGraphNode | EvidenceGraphEdge) -> bool:
+    metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+    return (
+        str(getattr(row, "source_type", "") or "").strip().casefold() == REPORT_GRAPH_SOURCE_TYPE
+        or str(metadata.get("origin") or "").strip().casefold() == REPORT_GRAPH_ORIGIN
+    )
+
+
+def validate_node_payload(
+    payload: dict[str, Any],
+    partial: bool = False,
+    *,
+    allow_report_origin: bool = False,
+) -> dict[str, Any]:
     cleaned = dict(payload)
+    if _payload_claims_report_origin(cleaned) and not allow_report_origin:
+        raise HTTPException(409, "Report-derived graph provenance is reserved")
     if not partial or "node_type" in cleaned:
         node_type = str(cleaned.get("node_type", "")).strip().lower()
         if node_type not in NODE_TYPES:
@@ -122,8 +150,15 @@ def validate_node_payload(payload: dict[str, Any], partial: bool = False) -> dic
     return cleaned
 
 
-def validate_edge_payload(payload: dict[str, Any], partial: bool = False) -> dict[str, Any]:
+def validate_edge_payload(
+    payload: dict[str, Any],
+    partial: bool = False,
+    *,
+    allow_report_origin: bool = False,
+) -> dict[str, Any]:
     cleaned = dict(payload)
+    if _payload_claims_report_origin(cleaned) and not allow_report_origin:
+        raise HTTPException(409, "Report-derived graph provenance is reserved")
     if not partial or "edge_type" in cleaned:
         edge_type = str(cleaned.get("edge_type", "")).strip().upper()
         if edge_type not in EDGE_TYPES:
@@ -138,8 +173,14 @@ def validate_edge_payload(payload: dict[str, Any], partial: bool = False) -> dic
     return cleaned
 
 
-async def create_node(db: AsyncSession, payload: dict[str, Any], actor: str) -> EvidenceGraphNode:
-    cleaned = validate_node_payload(payload)
+async def create_node(
+    db: AsyncSession,
+    payload: dict[str, Any],
+    actor: str,
+    *,
+    allow_report_origin: bool = False,
+) -> EvidenceGraphNode:
+    cleaned = validate_node_payload(payload, allow_report_origin=allow_report_origin)
     cleaned.setdefault("created_by", actor)
     row = EvidenceGraphNode(**_node_columns(cleaned))
     db.add(row)
@@ -149,6 +190,8 @@ async def create_node(db: AsyncSession, payload: dict[str, Any], actor: str) -> 
 
 async def update_node(db: AsyncSession, node_id: str, payload: dict[str, Any]) -> EvidenceGraphNode:
     row = await get_node(db, node_id)
+    if _row_claims_report_origin(row):
+        raise HTTPException(409, "Promotion-derived graph nodes are immutable")
     cleaned = validate_node_payload(payload, partial=True)
     for key, value in _node_columns(cleaned).items():
         setattr(row, key, value)
@@ -175,8 +218,14 @@ async def get_node(db: AsyncSession, node_id: str) -> EvidenceGraphNode:
     return row
 
 
-async def create_edge(db: AsyncSession, payload: dict[str, Any], actor: str) -> EvidenceGraphEdge:
-    cleaned = validate_edge_payload(payload)
+async def create_edge(
+    db: AsyncSession,
+    payload: dict[str, Any],
+    actor: str,
+    *,
+    allow_report_origin: bool = False,
+) -> EvidenceGraphEdge:
+    cleaned = validate_edge_payload(payload, allow_report_origin=allow_report_origin)
     source = await get_node(db, cleaned.get("source_node_id", ""))
     target = await get_node(db, cleaned.get("target_node_id", ""))
     cleaned["source_node_id"] = source.id
@@ -190,6 +239,8 @@ async def create_edge(db: AsyncSession, payload: dict[str, Any], actor: str) -> 
 
 async def update_edge(db: AsyncSession, edge_id: str, payload: dict[str, Any]) -> EvidenceGraphEdge:
     row = await get_edge(db, edge_id)
+    if _row_claims_report_origin(row):
+        raise HTTPException(409, "Promotion-derived graph edges are immutable")
     cleaned = validate_edge_payload(payload, partial=True)
     if "source_node_id" in cleaned:
         cleaned["source_node_id"] = (
@@ -255,7 +306,13 @@ async def query_graph(
             EvidenceGraphNode.technique_id.ilike(pattern),
         ))
     rows = await db.execute(stmt.order_by(EvidenceGraphNode.updated_at.desc()).limit(limit))
-    nodes = list(rows.scalars().all())
+    candidate_nodes = list(rows.scalars().all())
+    authorized_ids = await authorized_report_graph_node_ids(
+        db,
+        candidate_nodes,
+        target="canonical_intelligence",
+    )
+    nodes = [node for node in candidate_nodes if node.id in authorized_ids]
     node_ids = [row.id for row in nodes]
     edge_rows = []
     if node_ids:
@@ -263,7 +320,13 @@ async def query_graph(
             EvidenceGraphEdge.source_node_id.in_(node_ids),
             EvidenceGraphEdge.target_node_id.in_(node_ids),
         ).limit(1500))
-        edge_rows = list(result.scalars().all())
+        candidate_edges = list(result.scalars().all())
+        authorized_edge_ids = await authorized_report_graph_edge_ids(
+            db,
+            candidate_edges,
+            target="canonical_intelligence",
+        )
+        edge_rows = [edge for edge in candidate_edges if edge.id in authorized_edge_ids]
     grouped_paths = build_grouped_paths(nodes, edge_rows)
     warnings = []
     if len(nodes) == limit:
@@ -455,105 +518,285 @@ async def export_graph(db: AsyncSession, fmt: str = "json") -> tuple[str, str, b
     raise HTTPException(422, "format must be one of: json, markdown, csv, evidence-pack")
 
 
-async def graph_from_report(db: AsyncSession, report_id: str, actor: str) -> dict[str, Any]:
-    title = "Report evidence"
-    summary = ""
-    techniques: list[dict[str, Any]] = []
-    source_ref = report_id
+def _normalized_uuid(value: Any) -> uuid.UUID | None:
     try:
-        uid = uuid.UUID(report_id)
-    except ValueError:
-        uid = None
-    if uid:
-        session = await db.get(AnalysisSession, uid)
-        result = await db.scalar(select(AnalysisResult).where(AnalysisResult.session_id == uid))
-        if session and result:
-            title = session.name or session.filename or "AI analysis report"
-            summary = result.summary or ""
-            techniques = result.extracted_techniques or []
-        intake = await db.get(ReportIntake, uid)
-        if intake:
-            title = intake.title
-            summary = intake.summary or intake.analyst_notes or ""
-            techniques = [{"attack_id": item, "name": item, "confidence": 60, "evidence": summary[:500]} for item in (intake.technique_ids or [])]
-    evidence = await create_node(db, {
-        "node_type": "evidence",
-        "title": title,
-        "description": "Source report or report-analysis artifact.",
-        "source_type": "uploaded_report",
-        "source_ref": source_ref,
-        "raw_excerpt": summary[:4000],
-        "normalized_summary": summary[:2000],
-        "confidence": 70,
-        "review_status": "draft",
-        "ai_generated": True,
-        "metadata_json": {"origin": "from-report", "report_id": report_id},
-    }, actor)
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _resolve_report_session_id(
+    db: AsyncSession,
+    report_id: uuid.UUID | str,
+) -> uuid.UUID:
+    requested_id = _normalized_uuid(report_id)
+    if requested_id is None:
+        raise HTTPException(422, "report_id must be a UUID")
+
+    direct_session = await db.get(AnalysisSession, requested_id)
+    intake = await db.get(ReportIntake, requested_id)
+    if direct_session is not None:
+        if intake is None:
+            return requested_id
+        linked_id = _normalized_uuid(intake.analysis_session_id)
+        if linked_id == requested_id:
+            return requested_id
+        raise HTTPException(409, "Report identifier is ambiguous or unlinked")
+
+    if intake is None:
+        raise HTTPException(404, "Report not found")
+    linked_id = _normalized_uuid(intake.analysis_session_id)
+    if linked_id is None:
+        raise HTTPException(409, "Report identifier is ambiguous or unlinked")
+    linked_session = await db.get(AnalysisSession, linked_id)
+    if linked_session is None:
+        raise HTTPException(409, "Report identifier is ambiguous or unlinked")
+    return linked_id
+
+
+def _claim_text(claim: dict[str, Any], key: str, limit: int) -> str:
+    return str(claim.get(key) or "").strip()[:limit]
+
+
+def _report_graph_provenance(
+    session_id: uuid.UUID,
+    promotion: Any,
+    *,
+    claim_key: str = "",
+) -> dict[str, Any]:
+    metadata = {
+        "origin": REPORT_GRAPH_ORIGIN,
+        "report_id": str(session_id),
+        "analysis_session_id": str(session_id),
+        "promotion_id": str(promotion.id),
+        "review_id": str(promotion.review_id),
+        "review_revision": promotion.review_revision,
+        "promotion_manifest_checksum": promotion.manifest_checksum,
+    }
+    if claim_key:
+        metadata["accepted_claim_key"] = claim_key
+    return metadata
+
+
+def report_graph_provenance_matches(
+    metadata: Any,
+    promotion: Any,
+) -> bool:
+    """Bind a stored report-origin projection to its exact live promotion."""
+
+    if not isinstance(metadata, dict):
+        return False
+    session_id = metadata.get("analysis_session_id") or metadata.get("report_id")
+    return (
+        str(metadata.get("origin") or "").strip().casefold() == REPORT_GRAPH_ORIGIN
+        and str(session_id or "") == str(promotion.session_id)
+        and str(metadata.get("promotion_id") or "") == str(promotion.id)
+        and str(metadata.get("review_id") or "") == str(promotion.review_id)
+        and str(metadata.get("review_revision") or "") == str(promotion.review_revision)
+        and str(metadata.get("promotion_manifest_checksum") or "") == str(promotion.manifest_checksum)
+    )
+
+
+async def _authorized_report_graph_row_ids(
+    db: AsyncSession,
+    rows: list[EvidenceGraphNode] | list[EvidenceGraphEdge],
+    *,
+    target: str,
+) -> set[uuid.UUID]:
+    """Return non-report rows plus exact current authorized report projections."""
+
+    report_session_ids = {
+        _normalized_uuid((row.metadata_json or {}).get("analysis_session_id") or (row.metadata_json or {}).get("report_id"))
+        for row in rows
+        if _row_claims_report_origin(row)
+    }
+    promotions: dict[uuid.UUID, Any] = {}
+    for session_id in sorted(
+        (value for value in report_session_ids if value is not None),
+        key=str,
+    ):
+        promotion = await active_promotion(db, session_id)
+        if promotion is not None and promotion_allows(promotion, target):
+            promotions[session_id] = promotion
+
+    authorized: set[uuid.UUID] = set()
+    for row in rows:
+        if not _row_claims_report_origin(row):
+            authorized.add(row.id)
+            continue
+        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+        session_id = _normalized_uuid(metadata.get("analysis_session_id") or metadata.get("report_id"))
+        promotion = promotions.get(session_id) if session_id is not None else None
+        if promotion is not None and report_graph_provenance_matches(
+            metadata,
+            promotion,
+        ):
+            authorized.add(row.id)
+    return authorized
+
+
+async def authorized_report_graph_node_ids(
+    db: AsyncSession,
+    nodes: list[EvidenceGraphNode],
+    *,
+    target: str,
+) -> set[uuid.UUID]:
+    return await _authorized_report_graph_row_ids(db, nodes, target=target)
+
+
+async def authorized_report_graph_edge_ids(
+    db: AsyncSession,
+    edges: list[EvidenceGraphEdge],
+    *,
+    target: str,
+) -> set[uuid.UUID]:
+    return await _authorized_report_graph_row_ids(db, edges, target=target)
+
+
+async def graph_from_report(
+    db: AsyncSession,
+    report_id: uuid.UUID | str,
+    actor: str,
+) -> dict[str, Any]:
+    session_id = await _resolve_report_session_id(db, report_id)
+    promotion = await active_promotion(db, session_id)
+    if promotion is None or not promotion_allows(
+        promotion,
+        "canonical_intelligence",
+    ):
+        raise HTTPException(409, REPORT_GRAPH_AUTHORITY_ERROR)
+
+    accepted = accepted_claims(promotion)
+    statements = [_claim_text(claim, "statement", 4_000) or _claim_text(claim, "evidence_text", 2_000) for claim in accepted]
+    summary = "\n".join(statement for statement in statements if statement)[:100_000]
+    procedures = [claim for claim in accepted if str(claim.get("claim_type") or "") == "procedure" and _claim_text(claim, "attack_id", 40)][
+        :25
+    ]
+    authority = _report_graph_provenance(session_id, promotion)
+    evidence = await create_node(
+        db,
+        {
+            "node_type": "evidence",
+            "title": f"Promoted report evidence {session_id}",
+            "description": "Accepted-claim projection from a Review Gate promotion.",
+            "source_type": REPORT_GRAPH_SOURCE_TYPE,
+            "source_ref": str(session_id),
+            "raw_excerpt": summary[:4_000],
+            "normalized_summary": summary[:2_000],
+            "confidence": 70,
+            "review_status": "analyst_reviewed",
+            "ai_generated": True,
+            "metadata_json": authority,
+        },
+        actor,
+        allow_report_origin=True,
+    )
     created = [evidence]
     created_edges: list[EvidenceGraphEdge] = []
-    for item in techniques[:25]:
-        technique_id = item.get("attack_id") or item.get("technique_id") or ""
-        technique_name = item.get("name") or technique_id or "Technique mapping"
-        excerpt = item.get("evidence") or summary[:500]
-        claim = await create_node(db, {
-            "node_type": "claim",
-            "title": f"Claim: {technique_name}",
-            "statement": excerpt or f"Report suggests {technique_id}.",
-            "claim_type": "ai_suggested_claim",
-            "confidence": item.get("confidence", 50),
-            "review_status": "draft",
-            "ai_generated": True,
-            "metadata_json": {"origin": "from-report", "report_id": report_id},
-        }, actor)
-        behavior = await create_node(db, {
-            "node_type": "behavior",
-            "title": f"Behavior for {technique_id or technique_name}",
-            "behavior_description": excerpt or f"Behavior mapped to {technique_id}.",
-            "confidence": item.get("confidence", 50),
-            "review_status": "draft",
-            "ai_generated": True,
-            "metadata_json": {"origin": "from-report", "report_id": report_id},
-        }, actor)
-        attack = await create_node(db, {
-            "node_type": "attack_technique",
-            "title": f"{technique_id} {technique_name}".strip(),
-            "framework": "attack_enterprise",
-            "technique_id": technique_id,
-            "technique_name": technique_name,
-            "mapping_rationale": excerpt,
-            "confidence": item.get("confidence", 50),
-            "review_status": "draft",
-            "ai_generated": True,
-            "metadata_json": {"origin": "from-report", "report_id": report_id},
-        }, actor)
-        created.extend([claim, behavior, attack])
-        for edge_payload in [
-            (evidence.id, claim.id, "SUPPORTS", "Report excerpt supports draft claim."),
-            (claim.id, behavior.id, "DESCRIBES", "Claim describes normalized behavior."),
-            (behavior.id, attack.id, "MAPS_TO", "Behavior is mapped to ATT&CK as analyst-review draft."),
-        ]:
-            edge = await create_edge(db, {
-                "source_node_id": str(edge_payload[0]),
-                "target_node_id": str(edge_payload[1]),
-                "edge_type": edge_payload[2],
-                "rationale": edge_payload[3],
-                "confidence": item.get("confidence", 50),
-                "review_status": "draft",
+    for claim_item in procedures:
+        technique_id = _claim_text(claim_item, "attack_id", 40).upper()
+        technique_name = _claim_text(claim_item, "object", 255) or technique_id
+        statement = _claim_text(claim_item, "statement", 4_000) or _claim_text(claim_item, "evidence_text", 2_000)
+        claim_metadata = claim_item.get("metadata") if isinstance(claim_item.get("metadata"), dict) else {}
+        confidence = claim_metadata.get("confidence", 70)
+        claim_key = _claim_text(claim_item, "claim_key", 128)
+        provenance = _report_graph_provenance(
+            session_id,
+            promotion,
+            claim_key=claim_key,
+        )
+        claim = await create_node(
+            db,
+            {
+                "node_type": "claim",
+                "title": f"Accepted claim: {technique_name}",
+                "statement": statement,
+                "claim_type": "accepted_procedure_claim",
+                "confidence": confidence,
+                "review_status": "analyst_reviewed",
                 "ai_generated": True,
-            }, actor)
-            created_edges.append(edge)
-        telemetry = await telemetry_from_attack(db, technique_id, technique_name, actor)
-        if telemetry:
-            created.append(telemetry)
-            created_edges.append(await create_edge(db, {
-                "source_node_id": str(attack.id),
-                "target_node_id": str(telemetry.id),
-                "edge_type": "REQUIRES_TELEMETRY",
-                "rationale": "Technique requires telemetry before detection can be validated.",
-                "review_status": "draft",
-                "ai_generated": False,
-            }, actor))
-    return {"nodes_created": len(created), "edges_created": len(created_edges), "nodes": [row_to_dict(n) for n in created], "edges": [row_to_dict(e) for e in created_edges]}
+                "metadata_json": provenance,
+            },
+            actor,
+            allow_report_origin=True,
+        )
+        behavior = await create_node(
+            db,
+            {
+                "node_type": "behavior",
+                "title": f"Accepted behavior for {technique_id}",
+                "behavior_description": statement,
+                "tactic_hint": str(claim_metadata.get("tactic") or "")[:120],
+                "confidence": confidence,
+                "review_status": "analyst_reviewed",
+                "ai_generated": True,
+                "metadata_json": provenance,
+            },
+            actor,
+            allow_report_origin=True,
+        )
+        attack = await create_node(
+            db,
+            {
+                "node_type": "attack_technique",
+                "title": f"{technique_id} {technique_name}".strip(),
+                "framework": "attack_enterprise",
+                "technique_id": technique_id,
+                "technique_name": technique_name,
+                "tactic": str(claim_metadata.get("tactic") or "")[:120],
+                "mapping_rationale": statement,
+                "confidence": confidence,
+                "review_status": "analyst_reviewed",
+                "ai_generated": True,
+                "metadata_json": provenance,
+            },
+            actor,
+            allow_report_origin=True,
+        )
+        created.extend([claim, behavior, attack])
+        for source_id, target_id, edge_type, rationale in [
+            (
+                evidence.id,
+                claim.id,
+                "SUPPORTS",
+                "Promoted report projection supports this accepted claim.",
+            ),
+            (
+                claim.id,
+                behavior.id,
+                "DESCRIBES",
+                "Accepted claim describes this reviewed behavior.",
+            ),
+            (
+                behavior.id,
+                attack.id,
+                "MAPS_TO",
+                "Accepted procedure claim maps this behavior to ATT&CK.",
+            ),
+        ]:
+            created_edges.append(
+                await create_edge(
+                    db,
+                    {
+                        "source_node_id": str(source_id),
+                        "target_node_id": str(target_id),
+                        "edge_type": edge_type,
+                        "rationale": rationale,
+                        "confidence": confidence,
+                        "review_status": "analyst_reviewed",
+                        "ai_generated": True,
+                        "metadata_json": provenance,
+                    },
+                    actor,
+                    allow_report_origin=True,
+                )
+            )
+    return {
+        "nodes_created": len(created),
+        "edges_created": len(created_edges),
+        "nodes": [row_to_dict(node) for node in created],
+        "edges": [row_to_dict(edge) for edge in created_edges],
+    }
 
 
 async def graph_from_simulation(db: AsyncSession, simulation_run_id: str, actor: str) -> dict[str, Any]:

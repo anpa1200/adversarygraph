@@ -13,14 +13,13 @@ from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVETechniqueLink
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
+from app.models.report_review import ReportPromotion, ReportReview
 from app.models.sector import ActorIntelObservation
 from app.models.threat_radar import ThreatCompanySpace, ThreatSpaceAsset
 from app.services import rag
 
 
-def _record(
-    *, body: str = "PowerShell execution was observed.", source_id: str = "T1059.001"
-) -> rag.SourceRecord:
+def _record(*, body: str = "PowerShell execution was observed.", source_id: str = "T1059.001") -> rag.SourceRecord:
     return rag.SourceRecord(
         source_type="attack_technique",
         source_id=source_id,
@@ -357,9 +356,7 @@ def test_business_context_rerank_matches_region_sector_technology_and_crown_jewe
         "The campaign targets technology companies in Israel using Microsoft Azure and Kubernetes to reach source code.",
         context,
     )
-    unrelated = rag.business_relevance_score(
-        "Retail organizations in Brazil using point-of-sale systems.", context
-    )
+    unrelated = rag.business_relevance_score("Retail organizations in Brazil using point-of-sale systems.", context)
 
     assert relevant == 1.0
     assert unrelated == 0.0
@@ -429,9 +426,7 @@ async def test_company_space_context_is_derived_from_live_inventory():
 
 
 def test_search_filters_require_explicit_scope_for_private_space_documents():
-    unscoped = str(
-        select(RAGDocument).where(*rag._search_filters(["asset"], "enterprise-attack"))
-    )
+    unscoped = str(select(RAGDocument).where(*rag._search_filters(["asset"], "enterprise-attack")))
     scoped = str(
         select(RAGDocument).where(
             *rag._search_filters(
@@ -448,9 +443,7 @@ def test_search_filters_require_explicit_scope_for_private_space_documents():
 
 
 def test_natural_language_fallback_drops_generic_words_and_keeps_scope():
-    query = rag._lexical_fallback_query(
-        "Find me IOCs relevant for my business: Israel technology company"
-    )
+    query = rag._lexical_fallback_query("Find me IOCs relevant for my business: Israel technology company")
 
     assert '"Israel"' in query
     assert '"technology"' in query
@@ -461,12 +454,8 @@ def test_natural_language_fallback_drops_generic_words_and_keeps_scope():
 def test_relationship_target_detection_is_explicit_and_respects_source_filters():
     selected = ("actor_intel", "ioc", "cve", "attack_technique")
 
-    assert rag._relationship_target_types(
-        "Find IOCs relevant to our business", selected
-    ) == ("ioc",)
-    assert rag._relationship_target_types(
-        "Paste all relevant TTPs on Navigator", selected
-    ) == ("attack_technique",)
+    assert rag._relationship_target_types("Find IOCs relevant to our business", selected) == ("ioc",)
+    assert rag._relationship_target_types("Paste all relevant TTPs on Navigator", selected) == ("attack_technique",)
     assert rag._relationship_target_types("Summarize the evidence", selected) == ()
 
 
@@ -498,9 +487,7 @@ def test_relationship_query_uses_only_allowlisted_reviewed_metadata():
         token_count=4,
     )
 
-    query = rag._relationship_search_query(
-        [rag._Candidate(chunk=chunk, document=document)]
-    )
+    query = rag._relationship_search_query([rag._Candidate(chunk=chunk, document=document)])
 
     assert '"G0123"' in query
     assert '"Example Actor"' in query
@@ -570,9 +557,7 @@ async def test_hybrid_search_expands_business_actor_evidence_to_linked_iocs(
                     signals={"relationship"},
                 )
             ]
-        return [
-            rag._Candidate(chunk=actor_chunk, document=actor_document, signals={"fts"})
-        ]
+        return [rag._Candidate(chunk=actor_chunk, document=actor_document, signals={"fts"})]
 
     monkeypatch.setattr(settings, "rag_embedding_enabled", False)
     monkeypatch.setattr(rag, "_exact_candidates", exact)
@@ -589,15 +574,12 @@ async def test_hybrid_search_expands_business_actor_evidence_to_linked_iocs(
     linked_ioc = next(item for item in response.items if item.source_type == "ioc")
     assert "relationship" in linked_ioc.retrieval_signals
     assert "relationship" in response.retrieval_mode
-    assert any(
-        "relationship expansion" in warning.lower() for warning in response.warnings
-    )
+    assert any("relationship expansion" in warning.lower() for warning in response.warnings)
 
 
 def test_exact_identifier_extraction_is_ordered_validated_and_deduplicated():
     identifiers = rag.extract_exact_identifiers(
-        "Check cve-2025-12345 with T1566.001 on 203.0.113.7 and evil.example; "
-        "ignore 999.999.999.999 and repeat CVE-2025-12345."
+        "Check cve-2025-12345 with T1566.001 on 203.0.113.7 and evil.example; ignore 999.999.999.999 and repeat CVE-2025-12345."
     )
 
     assert identifiers == ["CVE-2025-12345", "T1566.001", "203.0.113.7", "evil.example"]
@@ -622,12 +604,10 @@ async def test_exact_lookup_uses_indexed_equality_without_chunk_substring_scan()
 
 
 def test_source_reference_removes_credentials_queries_fragments_and_local_paths():
-    assert rag._safe_source_reference(
-        "https://user:secret@example.test:8443/report?token=secret#part"
-    ) == ("https://example.test:8443/report")
-    assert (
-        rag._safe_source_reference("/home/analyst/private/report.txt") == "report.txt"
+    assert rag._safe_source_reference("https://user:secret@example.test:8443/report?token=secret#part") == (
+        "https://example.test:8443/report"
     )
+    assert rag._safe_source_reference("/home/analyst/private/report.txt") == "report.txt"
     assert rag._safe_source_reference("evidence-record-17") == "evidence-record-17"
 
 
@@ -662,9 +642,7 @@ async def test_embedding_adapter_rejects_invalid_vectors(vector):
         provider="local",
         model="test-embed",
         dimensions=3,
-        client=SimpleNamespace(
-            embeddings=_FakeEmbeddings([SimpleNamespace(index=0, embedding=vector)])
-        ),
+        client=SimpleNamespace(embeddings=_FakeEmbeddings([SimpleNamespace(index=0, embedding=vector)])),
     )
 
     with pytest.raises(rag.EmbeddingValidationError):
@@ -799,6 +777,40 @@ async def test_ioc_collector_uses_allowlist_and_never_copies_raw_json():
     assert records[0].logical_key == "203.0.113.8"
     assert "must-not-be-indexed" not in corpus_text
     assert "raw" not in records[0].metadata
+
+
+@pytest.mark.asyncio
+async def test_ioc_collector_enforces_live_report_promotion_rag_authority(monkeypatch):
+    canonical_only = IOCIndicator(
+        id=70,
+        value="203.0.113.70",
+        indicator_type="ipv4",
+        source_id="report-promotion-canonical",
+        tlp="amber",
+        raw={"promotion_targets": ["canonical_intelligence"]},
+    )
+    rag_authorized = IOCIndicator(
+        id=71,
+        value="203.0.113.71",
+        indicator_type="ipv4",
+        source_id="report-promotion-rag",
+        tlp="amber",
+        raw={"promotion_targets": ["canonical_intelligence", "rag"]},
+    )
+
+    async def authorized(_db, indicators, *, target):
+        assert {indicator.id for indicator in indicators} == {70, 71}
+        assert target == "rag"
+        return {71}
+
+    monkeypatch.setattr(rag, "authorized_report_promotion_indicator_ids", authorized)
+
+    records = await rag.collect_source_records(
+        _ExecuteDB([canonical_only, rag_authorized]),
+        ["ioc"],
+    )
+
+    assert [record.logical_key for record in records] == ["203.0.113.71"]
 
 
 @pytest.mark.asyncio
@@ -958,9 +970,7 @@ async def test_actor_intel_collector_indexes_business_context_and_fails_closed()
         raw={"api_key": "must-not-be-indexed"},
     )
 
-    records = await rag.collect_source_records(
-        _ExecuteDB([observation]), ["actor_intel"]
-    )
+    records = await rag.collect_source_records(_ExecuteDB([observation]), ["actor_intel"])
     serialized = records[0].rendered_text + json.dumps(records[0].metadata)
 
     assert records[0].tlp == "TLP:AMBER+STRICT"
@@ -1010,12 +1020,74 @@ async def test_report_collector_omits_raw_provider_response():
         summary="Endpoint execution report.",
         raw_response="provider-secret-response",
     )
-
-    records = await rag.collect_source_records(
-        _ExecuteDB([(session, result)]), ["analysis_report"]
+    from app.services.report_review import (
+        _source_metadata,
+        analysis_fingerprint,
+        promotion_manifest_checksum,
+        source_fingerprint,
     )
+
+    review_id = uuid4()
+    source_metadata = _source_metadata(session, None)
+    source_checksum = source_fingerprint(session.source_text, source_metadata)
+    analysis_checksum = analysis_fingerprint(result, session.status)
+    review = ReportReview(
+        id=review_id,
+        session_id=report_id,
+        revision=1,
+        version=1,
+        policy_version="report-review-policy-v1.0",
+        profile="external_cti",
+        state="promoted",
+        source_checksum=source_checksum,
+        analysis_checksum=analysis_checksum,
+        source_char_count=len(session.source_text),
+        analyzed_char_count=len(session.source_text),
+        coverage_complete=True,
+        created_by="analyst",
+    )
+    targets = ["canonical_intelligence", "rag"]
+    manifest = {
+        "schema_version": "report-promotion-manifest-v1",
+        "session_id": str(report_id),
+        "review_id": str(review_id),
+        "review_revision": 1,
+        "policy_version": "report-review-policy-v1.0",
+        "profile": review.profile,
+        "source_checksum": source_checksum,
+        "analysis_checksum": analysis_checksum,
+        "targets": targets,
+        "accepted_claims": [
+            {
+                "claim_key": "procedure-1",
+                "claim_type": "procedure",
+                "statement": "PowerShell was observed on the endpoint.",
+                "attack_id": "T1059.001",
+                "actor_id": "",
+                "metadata": {"tactic": "execution"},
+            }
+        ],
+    }
+    promotion = ReportPromotion(
+        id=uuid4(),
+        review_id=review_id,
+        session_id=report_id,
+        review_revision=1,
+        policy_version="report-review-policy-v1.0",
+        source_checksum=source_checksum,
+        analysis_checksum=analysis_checksum,
+        targets=targets,
+        manifest=manifest,
+        manifest_checksum=promotion_manifest_checksum(manifest, targets),
+        idempotency_key="d" * 64,
+        promoted_by="reviewer",
+    )
+
+    db = _ExecuteDB([(session, result, promotion, review, None)])
+    records = await rag.collect_source_records(db, ["analysis_report"])
     serialized = records[0].rendered_text + json.dumps(records[0].metadata)
 
+    assert "max(report_reviews.revision)" in str(db.last_statement).lower()
     assert records[0].metadata["filename"] == "report.txt"
     assert records[0].metadata["technique_ids"] == ["T1059.001"]
     assert "provider-secret-response" not in serialized
@@ -1041,15 +1113,11 @@ async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(
     monkeypatch.setattr(rag, "_load_existing_documents", load)
     monkeypatch.setattr(settings, "rag_embedding_enabled", False)
 
-    first = await rag.reconcile_corpus(
-        db, run, ["attack_technique"], include_embeddings=False
-    )
+    first = await rag.reconcile_corpus(db, run, ["attack_technique"], include_embeddings=False)
     document = next(value for value in db.added if isinstance(value, RAGDocument))
     original_chunks = tuple(document.chunks)
     existing.append(document)
-    second = await rag.reconcile_corpus(
-        db, run, ["attack_technique"], include_embeddings=False
-    )
+    second = await rag.reconcile_corpus(db, run, ["attack_technique"], include_embeddings=False)
 
     assert first.documents_created == 1
     assert first.chunks_created == len(original_chunks) > 0

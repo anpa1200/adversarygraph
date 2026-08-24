@@ -48,9 +48,9 @@ docker compose build --no-cache malwaregraph
 docker compose up -d malwaregraph
 ```
 
-Upstream moderate React Router findings may still be reported; they are
-separate from the remediated high-severity dependency paths and are documented
-in [Security Policy](SECURITY.md#known-security-limitations).
+The client now uses React Router 7, and the reviewed lockfile passes the
+required npm audit. Treat that as point-in-time release evidence and repeat the
+audit for every candidate; see [Security Policy](SECURITY.md#known-security-limitations).
 
 ## What It Does
 
@@ -270,6 +270,7 @@ for dedicated-account and client configuration.
 | Threat Radar | [docs/threat-radar.md](docs/threat-radar.md) |
 | Threat Hunting operational guide | [docs/threat-hunting-guide.md](docs/threat-hunting-guide.md) |
 | Threat Hunting Query Library | [docs/query-library.md](docs/query-library.md) |
+| Durable research workflows | [docs/research-workflows.md](docs/research-workflows.md) |
 | Unified intelligence RAG and MCP | [docs/unified-rag-and-mcp.md](docs/unified-rag-and-mcp.md) |
 | MCP server configuration | [docs/mcp-server.md](docs/mcp-server.md) |
 | EMB3D embedded threat modeling | [docs/emb3d.md](docs/emb3d.md) |

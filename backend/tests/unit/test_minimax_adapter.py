@@ -20,9 +20,7 @@ class _Stream:
             content = next(self._content)
         except StopIteration as exc:
             raise StopAsyncIteration from exc
-        return types.SimpleNamespace(
-            choices=[types.SimpleNamespace(delta=types.SimpleNamespace(content=content))]
-        )
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=types.SimpleNamespace(content=content))])
 
 
 @pytest.mark.asyncio
@@ -38,10 +36,14 @@ async def test_minimax_adapter_uses_reasoning_split_and_bounded_transport(monkey
             if kwargs.get("stream"):
                 return _Stream([None, '{"status":', '"ok"}'])
             return types.SimpleNamespace(
-                choices=[types.SimpleNamespace(message=types.SimpleNamespace(
-                    content='{"status":"ok"}',
-                    reasoning_details="PRIVATE_REASONING_MUST_NOT_REACH_JSON",
-                ))]
+                choices=[
+                    types.SimpleNamespace(
+                        message=types.SimpleNamespace(
+                            content='{"status":"ok"}',
+                            reasoning_details="PRIVATE_REASONING_MUST_NOT_REACH_JSON",
+                        )
+                    )
+                ]
             )
 
     class _AsyncOpenAI:
@@ -62,6 +64,9 @@ async def test_minimax_adapter_uses_reasoning_split_and_bounded_transport(monkey
     adapter = MiniMaxAdapter()
     assert adapter.provider == "minimax"
     assert adapter.model == "MiniMax-M2.7"
+    assert "client_kwargs" not in created
+
+    completed = await adapter._raw_complete("system", "user")
     assert created["client_kwargs"] == {
         "api_key": "demo-key",
         "base_url": "https://api.minimax.io/v1",
@@ -69,7 +74,6 @@ async def test_minimax_adapter_uses_reasoning_split_and_bounded_transport(monkey
         "max_retries": 1,
     }
 
-    completed = await adapter._raw_complete("system", "user")
     assert completed == '{"status":"ok"}'
     assert "PRIVATE_REASONING" not in completed
     assert [part async for part in adapter._stream_complete("system", "user")] == [
@@ -92,3 +96,15 @@ async def test_minimax_adapter_uses_reasoning_split_and_bounded_transport(monkey
     }
     assert calls[0] == expected
     assert calls[1] == {**expected, "stream": True}
+
+
+@pytest.mark.asyncio
+async def test_minimax_adapter_requires_key_only_when_used(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.minimax_api_key", "")
+
+    from app.services.ai.minimax import MiniMaxAdapter
+
+    adapter = MiniMaxAdapter()
+    assert adapter.provider == "minimax"
+    with pytest.raises(RuntimeError, match="MiniMax API key is not configured"):
+        await adapter._raw_complete("system", "user")

@@ -30,6 +30,10 @@ class AnalysisSession(Base):
         String(20), default="TLP:AMBER+STRICT", nullable=False
     )
     source_text: Mapped[str] = mapped_column(Text, default="")
+    # Point-in-time acquisition facts are kept separate from mutable report
+    # fields.  Review preflight uses these digests to detect source replacement
+    # instead of trusting a checksum recomputed from the current text.
+    source_provenance: Mapped[dict] = mapped_column(JSONB, default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
