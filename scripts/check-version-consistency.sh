@@ -3,10 +3,18 @@ set -euo pipefail
 
 expected="$(tr -d '[:space:]' < VERSION)"
 version="$expected"
+semver_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9][0-9]*)?$'
 
-if [[ ! "$expected" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "VERSION must be semantic X.Y.Z, got '$expected'" >&2
+if [[ ! "$expected" =~ $semver_pattern ]]; then
+  echo "VERSION must be semantic X.Y.Z or X.Y.Z-beta.N, got '$expected'" >&2
   exit 1
+fi
+
+base_version="${expected%%-*}"
+release_major="${base_version%%.*}"
+is_prerelease=false
+if [[ "$expected" == *-beta.* ]]; then
+  is_prerelease=true
 fi
 
 python - "$expected" <<'PY'
@@ -115,6 +123,10 @@ if [[ "$expected" == 7.* ]]; then
   )
 fi
 
+if [[ "$release_major" == "8" ]]; then
+  required_files+=(docs/release-readiness-v8.md)
+fi
+
 atlas_expected_ref="$(awk -F= '$1 == "ATLAS_REPOSITORY_REF" {print $2; exit}' .env.example)"
 atlas_snapshot_ref="$(tr -d '[:space:]' < anomaly_detection/docs-site/.atlas-source-ref)"
 if [[ ! "$atlas_expected_ref" =~ ^[a-f0-9]{40}$ ]]; then
@@ -136,14 +148,17 @@ done
 
 escaped_expected="${expected//./\\.}"
 
-if ! grep -Eq "Current release: \\*\\*v${escaped_expected}\\*\\*" README.md; then
-  echo "README.md must state the current release as v${expected}." >&2
-  exit 1
+if [[ "$is_prerelease" == "true" ]]; then
+  version_label="Current source candidate"
+else
+  version_label="Current release"
 fi
 
-if ! grep -Eq "Current release: \\*\\*v${escaped_expected}\\*\\*" ROADMAP.md; then
-  echo "ROADMAP.md must state the current release as v${expected}." >&2
-  exit 1
-fi
+for metadata_file in README.md ROADMAP.md; do
+  if ! grep -Eq "${version_label}: \\*\\*v${escaped_expected}\\*\\*" "$metadata_file"; then
+    echo "$metadata_file must state '${version_label}: **v${expected}**'." >&2
+    exit 1
+  fi
+done
 
-echo "Version consistency OK: v$expected"
+echo "Version consistency OK: v$expected (prerelease=$is_prerelease)"

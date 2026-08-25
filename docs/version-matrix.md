@@ -2,34 +2,46 @@
 
 This file is the canonical reference for AdversaryGraph release history and feature gates.
 
-## Current Release
+## Current Pre-release
+
+| Field | Value |
+|---|---|
+| Version | v8.0.0-beta.1 |
+| Release date | 2026-08-25 |
+| Theme | Governed report promotion and durable workflow authority |
+| Status | Manual-testing pre-release; automated and deployment-specific acceptance evidence remains required |
+
+Immutable beta artifacts and their digest manifest exist only after the
+protected `v8.0.0-beta.1` tag workflow succeeds. Historical screenshots and v7
+test records are not beta runtime evidence. The beta must not be represented as
+stable or manually accepted while the v8 readiness matrices remain pending.
+
+### v8 Beta Capability Evaluation
+
+v8.0.0-beta.1 adds the five-gate Report Review Gate, source-bound claims,
+two-person approval, promotion/revocation authority, durable research projects,
+transactional workflow/outbox processing, Alembic revisions 0001-0004, blocking
+Compose/Helm migration gates, React Router 7, and the new Operation Desert Hydra
+AdversaryGraph workflow draft. See the
+[beta release notes](release-notes/v8.0.0-beta.1.md) and
+[v8 readiness matrix](release-readiness-v8.md).
+
+## Latest Stable Release
 
 | Field | Value |
 |---|---|
 | Version | v7.0.0 |
 | Release date | 2026-08-12 |
 | Theme | Isolated assessment, governed intelligence, and data quality |
-| Status | Source release prepared; immutable tag and artifacts require the successful tag workflow |
 
-The source release is v7.0.0. Immutable v7 artifacts and their digest manifest
-exist only after the protected tag workflow succeeds. Historical screenshots
-remain scoped to their recorded source commit and are not v7 runtime evidence.
-
-### v7 Capability Promotion
-
-v7.0.0 promotes the complete development line after v6.5.0: isolated scanner
-MCP assessment, database-backed RAG readiness, the governed local AI adapter,
-stronger relationship provenance, closed taxonomies, self-maintaining actor,
-tactic, and TTP catalogs, data-inventory evidence, and the hardened eight-image
-release path. It retains the governed Threat Hunting, Query Library, Navigator,
-analyst MCP, exposure review, RBAC, and complete API-contract work prepared in
-v6.5. See [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md), the
-[v7.0.0 release notes](release-notes/v7.0.0.md), and the changelog.
+v7.0.0 remains the latest stable release. Its release notes and historical
+readiness record are not rewritten to describe v8 behavior.
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v8.0.0-beta.1 | Governed Report Promotion and Durable Workflow Authority | Manual-testing pre-release: five-gate Review Gate, two-person promotion, downstream evidence authority, research workflow runtime, transactional outbox, Alembic 0001-0004, Compose/Helm migration gates, React Router 7, and Desert Hydra workflow draft |
 | v7.0.0 | Isolated Assessment, Governed Intelligence, and Data Quality | Private scanner MCP boundary, verified assessment traces, production RAG/MCP readiness, governed local AI adapter, stronger intelligence relationships, closed taxonomy, self-maintaining catalogs, self-test data inventory, and eight-image release publication |
 | v6.5.0 | Governed Intelligence, Hunting, Exposure Assessment, and SOC Operations | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization across 31 workspaces, complete API contracts, and post-v6 platform hardening |
 | v6.0.0 | Operational Evidence and Production Readiness | Reproducible release gate, corrected v5 history, tagged screenshot evidence, local case studies, deployment go/no-go criteria, version-derived UI metadata, and reviewer handoff material |
@@ -54,13 +66,16 @@ v6.5. See [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md), the
 
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
 For a consolidated account of every v5 release, see the [v5 overview](v5-overview.md).
-For the current release narrative, see [v7.0.0 release notes](release-notes/v7.0.0.md).
+For the current pre-release narrative, see
+[v8.0.0-beta.1 release notes](release-notes/v8.0.0-beta.1.md). For the latest
+stable narrative, see [v7.0.0 release notes](release-notes/v7.0.0.md).
 
 ## Feature Gate Legend
 
 | Label | Meaning |
 |---|---|
-| **Implemented** | Shipped and available in the current release |
+| **Beta** | Pre-release functionality awaiting complete manual and deployment-specific acceptance |
+| **Implemented** | Present in the checked-out source; beta items still require their documented acceptance evidence |
 | **Implemented (partial)** | Core logic shipped; some UI controls or edge cases remain pending |
 | **Planned** | On the roadmap but not yet started |
 | **Gated** | Available only in specific deployment configurations |

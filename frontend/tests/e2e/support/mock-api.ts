@@ -159,6 +159,15 @@ export async function mockApi(page: Page) {
     source_text_available: true,
     counts: { reports: 1, ttps: 2, iocs: 0, cves: 0, threat_actors: 1, sectors: 1, infrastructure: 0 },
     tags: {},
+    review_summary: {
+      state: 'promoted',
+      ready: true,
+      reviewed_gate_count: 5,
+      required_gate_count: 5,
+      accepted_claim_count: 1,
+      blocker_count: 0,
+      blockers: [],
+    },
   };
   const ineligibleReportItem = {
     ...reportCollectionItem,
@@ -370,6 +379,12 @@ export async function mockApi(page: Page) {
         report_images: [],
         report_intake: { url: reportCollectionItem.source_url, publisher: reportCollectionItem.publisher },
       });
+    }
+    if (path === `/analyze/sessions/${reportSessionId}/review`) {
+      return json(promotedReportReview(reportSessionId));
+    }
+    if (path === `/analyze/sessions/${reportSessionId}/review/history`) {
+      return json([]);
     }
     if (path === '/threat-hunting/ai/providers' && route.request().method() === 'GET') {
       return json([
@@ -717,4 +732,69 @@ export async function mockApi(page: Page) {
     }
     return json({});
   });
+}
+
+function promotedReportReview(sessionId: string) {
+  const gateKeys = [
+    'source_provenance',
+    'publication_date',
+    'procedure_relevance',
+    'procedure_level_claim',
+    'actor_identification',
+  ];
+  return {
+    id: 'review-promoted-1',
+    session_id: sessionId,
+    profile: 'external_cti',
+    state: 'promoted',
+    revision: 1,
+    version: 9,
+    policy_version: 'report-review-v1',
+    source_checksum: 'a'.repeat(64),
+    analysis_checksum: 'b'.repeat(64),
+    source_char_count: 78,
+    analyzed_char_count: 78,
+    coverage_complete: true,
+    gates: gateKeys.map((gate_key, index) => ({
+      id: `gate-promoted-${index + 1}`,
+      gate_key,
+      ordinal: index + 1,
+      title: gate_key.replaceAll('_', ' '),
+      question: `${gate_key.replaceAll('_', ' ')} review question`,
+      required: true,
+      allowed_reason_codes: ['verified'],
+      machine_verdict: 'pass',
+      machine_summary: 'Deterministic evidence check completed.',
+      machine_evidence: [],
+      analyst_verdict: 'pass',
+      reason_code: 'verified',
+      rationale: 'Verified against the stored report evidence.',
+      evidence_refs: [],
+    })),
+    claims: [{
+      id: 'claim-promoted-1',
+      claim_type: 'procedure',
+      statement: 'The actor modified federation trust settings.',
+      subject: 'actor',
+      action: 'modified',
+      object: 'federation trust settings',
+      status: 'accepted',
+      rationale: 'The stored source directly supports this procedure.',
+      evidence_refs: [],
+    }],
+    readiness: {
+      ready: true,
+      blockers: [],
+      accepted_claim_count: 1,
+      required_gate_count: 5,
+      reviewed_gate_count: 5,
+    },
+    active_promotion: {
+      id: 'promotion-1',
+      status: 'active',
+      targets: ['canonical_intelligence', 'hunting'],
+      promoted_by: 'reviewer@example.test',
+      promoted_at: '2026-07-16T08:00:00Z',
+    },
+  };
 }

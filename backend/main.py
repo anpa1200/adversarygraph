@@ -25,7 +25,9 @@ import app.models.threat_hunting as _threat_hunting_models  # noqa: F401 — reg
 import app.models.rag as _rag_models  # noqa: F401 — register Base metadata
 import app.models.intelligence as _intelligence_models  # noqa: F401 — register Base metadata
 import app.models.query_library as _query_library_models  # noqa: F401 — register Base metadata
-from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, query_library, rag, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
+import app.models.report_review as _report_review_models  # noqa: F401 — register Base metadata
+import app.models.research_workflow as _research_workflow_models  # noqa: F401 — register Base metadata
+from app.api.routes import asset_surface, attack, apt, analyze, auth, sync, export, ioc, cve, emb3d, evidence_graph, layers, malwaregraph, observability, operations, pipeline, query_library, rag, report_review, research, retrohunt, sector, simulation, statistics, system, knowledge, troubleshooting, threat_hunting, threat_hunting_ai, threat_radar
 from app.api.openapi import OPENAPI_TAGS
 from app.core.config import settings
 from app.core.database import async_session_factory, create_tables
@@ -291,6 +293,8 @@ app.include_router(
     ),
 )
 app.include_router(analyze.router, prefix="/api", dependencies=_one_module_required("ai_analysis", "reports_research", "investigation"))
+app.include_router(report_review.router, prefix="/api", dependencies=_one_module_required("ai_analysis", "reports_research", "investigation"))
+app.include_router(research.router, prefix="/api", dependencies=_module_required("reports_research"))
 app.include_router(asset_surface.router, prefix="/api", dependencies=_module_required("asset_surface"))
 app.include_router(sync.router,    prefix="/api", dependencies=_auth_required)
 app.include_router(export.router,  prefix="/api", dependencies=_auth_required)

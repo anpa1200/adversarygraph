@@ -4,10 +4,11 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares version `7.0.0`. Immutable artifacts and their
+The checked-out source declares the `8.0.0-beta.1` manual-testing pre-release;
+`7.0.0` remains the latest stable release. Immutable beta artifacts and their
 digest manifest exist only after the matching protected tag workflow succeeds.
-Verify the checked-out tag or commit and corresponding release evidence before
-using this document as acceptance evidence.
+Verify the exact tag or commit, corresponding release evidence, and pending v8
+manual acceptance before using this document as acceptance evidence.
 
 The examples and case studies below are reproducible workflows or clearly
 labelled illustrative scenarios. They are not customer testimonials, adoption
@@ -46,7 +47,10 @@ Module visibility and action authority are separate controls. A user needs the
 module in an enabled access group. Mutating or sensitive actions additionally
 require permissions such as `run_analysis`, `manage_intel`,
 `run_attack_simulation`, `manage_feeds`, `view_audit`, or `manage_users`. The
-API enforces the same boundary as the frontend. See
+Report Review Gate decisions additionally require `review_reports`; approval,
+promotion, and revocation require `promote_reports`, and approval must be by a
+different authenticated human from the submitter. The API enforces the same
+boundary as the frontend. See
 [Authentication and User Management](authentication-and-users.md).
 
 External enrichment is conditional. A provider appearing in the interface does
@@ -193,18 +197,25 @@ results.
 - A defensible TLP and source URL or internal evidence reference.
 - `upload_files` for file intake; provider-backed extraction additionally
   requires a ready and permitted AI provider.
+- Named-user authentication for four-eyes testing: the submitter needs
+  `review_reports`, and a different approver needs `promote_reports`.
 
 **Workflow.**
 
 1. Record title, publisher, date, source, and handling marking.
 2. Store or upload the source in an environment appropriate for its sensitivity.
 3. Run deterministic parsing and, if approved, AI-assisted extraction.
-4. Review every candidate IOC, actor, technique, and claim against the source.
-5. Save the reviewed session and link it to hunts, evidence, or reports.
+4. Run the deterministic Review Gate preflight and resolve source provenance,
+   publication date, procedure relevance, procedure claims, and actor basis.
+5. Accept, reject, or request evidence for every source-bound claim.
+6. Submit for independent approval and promote only the current fingerprinted
+   revision.
 
 **Outputs and handoff.** Stored research sessions, source excerpts, reviewed
-ATT&CK candidates, observables, citations, summaries, and links into AI
-Analysis, Threat Hunting, Navigator, or Evidence Graph.
+ATT&CK candidates, observables, citations, complete gate assessments, immutable
+promotion manifests, and controlled links into AI Analysis, Threat Hunting,
+Navigator, RAG, or Evidence Graph. See
+[`report-review-gate.md`](report-review-gate.md).
 
 **Worked example.** Use
 [`docs/demo-dataset/public-report-excerpt.md`](demo-dataset/public-report-excerpt.md),
@@ -217,8 +228,10 @@ defensive recommendation. The model proposes `T1059.001`, but no adversary
 behavior excerpt supports it. The analyst rejects the mapping and records the
 reason. Acceptance is evidence fidelity, not the number of extracted TTPs.
 
-**Limits.** A stored report is not proof that its claims apply to the local
-environment. AI summaries and mappings remain suggestions until reviewed.
+**Limits.** A stored or approved report is not proof that its claims apply to
+the local environment. AI summaries and mappings remain suggestions. Only
+accepted claims from an active promoted revision enter trusted downstream
+projections.
 
 <!-- module:apt_library -->
 ### ATT&CK Group Library
@@ -451,10 +464,13 @@ candidates.
 2. Select a provider allowed by operator policy and source sensitivity.
 3. Run analysis against the stored source.
 4. Review candidate mappings against exact evidence excerpts.
-5. Accept, reject, or edit results and preserve unresolved gaps.
+5. Use optional Review Gate AI assistance only as source-bound advisory input.
+6. Complete the five deterministic gates and claim adjudication before
+   submission, approval, and promotion.
 
 **Outputs and handoff.** Reviewable TTP and IOC candidates, source citations,
-summary, assumptions, confidence, and saved report session.
+summary, assumptions, confidence, a revisioned Review Gate assessment, and—only
+after approval—an accepted-claim promotion manifest.
 
 **Worked example.** Analyze the public demo report excerpt, reject mappings
 without behavioral evidence, and compare accepted IDs with the expected mapping
@@ -465,8 +481,9 @@ unrelated paragraph. The analyst rejects it despite plausible narrative. The
 case passes when every accepted mapping has a supporting excerpt and human
 decision.
 
-**Limits.** AI output is not evidence. Provider availability shown in Self-test
-does not replace the module’s policy, connectivity, and model-access check.
+**Limits.** AI output is not evidence and cannot set analyst verdicts or promote
+a report. Provider availability shown in Self-test does not replace the
+module’s policy, connectivity, model-access, TLP, and cloud-egress checks.
 
 <!-- module:navigator -->
 ### Navigator
@@ -979,6 +996,11 @@ single validation plan. Acceptance is deduplicated work without lost evidence.
 **Limits.** Operations is a local workflow manager, not a replacement for an
 enterprise ticketing, SOAR, or case-management platform unless explicitly
 integrated.
+
+The beta research API also persists immutable project revisions and registered
+workflow state through a transactional outbox. That runtime accepts only
+registered, replay-safe stage handlers and does not make Operations an
+arbitrary-job executor. See [Durable Research Workflows](research-workflows.md).
 
 <!-- module:pipeline -->
 ### Pipeline

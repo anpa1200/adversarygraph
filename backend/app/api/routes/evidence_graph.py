@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field, model_validator
@@ -321,9 +322,9 @@ async def gaps(
 
 
 @router.post("/from-report/{report_id}")
-async def from_report(report_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
+async def from_report(report_id: UUID, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_evidence)):
     result = await graph.graph_from_report(db, report_id, user.name)
-    await audit(db, user, "evidence_graph.from_report", "report", report_id, result)
+    await audit(db, user, "evidence_graph.from_report", "report", str(report_id), result)
     await db.commit()
     return result
 

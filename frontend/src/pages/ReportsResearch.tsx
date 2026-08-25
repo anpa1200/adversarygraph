@@ -8,6 +8,8 @@ import { useAppStore } from '@/store';
 import { safeHref } from '@/utils/url';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
+import { ReviewStateBadge } from '@/components/ReportReview/ReviewStateBadge';
+import { reportReviewSummary } from '@/components/ReportReview/reviewState';
 
 const TAG_BUCKETS = [
   ['reports', 'Reports'],
@@ -29,6 +31,7 @@ export function ReportsResearch() {
   const canUploadFiles = useHasPermission('upload_files');
   const [queryText, setQueryText] = useState('');
   const [activeBucket, setActiveBucket] = useState<string>('all');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'promoted' | 'accepted_claims' | 'needs_review' | 'blocked'>('all');
   const [researchTitle, setResearchTitle] = useState('');
   const [researchFile, setResearchFile] = useState<File | null>(null);
   const [researchUrl, setResearchUrl] = useState('');
@@ -94,8 +97,9 @@ export function ReportsResearch() {
     () => collection.data?.pages.flatMap(page => page.items) ?? [],
     [collection.data?.pages],
   );
-  const filtered = useMemo(() => filterReports(items, queryText, activeBucket), [items, queryText, activeBucket]);
+  const filtered = useMemo(() => filterReports(items, queryText, activeBucket, reviewFilter), [items, queryText, activeBucket, reviewFilter]);
   const totals = useMemo(() => collectionTotals(items), [items]);
+  const promotedReports = useMemo(() => items.filter(item => reportReviewSummary(item).state === 'promoted').length, [items]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -106,8 +110,8 @@ export function ReportsResearch() {
             <Panel title="Analyzed report collection">
               <div className="space-y-4 p-4">
                 <p className="text-sm leading-6 text-gray-400">
-                  Browse analyzed CTI reports and research notes as tagged intelligence objects. Each report is tagged with mapped TTPs,
-                  IOCs, CVEs, threat actors, target sectors, and infrastructure indicators, then linked back into the platform.
+                  Browse CTI and IR reports as reviewable intelligence candidates. AI parsing and deterministic extraction create candidate tags;
+                  only source-bound claims that pass all analyst gates and are promoted may feed trusted intelligence workflows.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <Metric label="Reports loaded" value={String(items.length)} />
@@ -116,6 +120,7 @@ export function ReportsResearch() {
                   <Metric label="CVE tags" value={String(totals.cves)} />
                   <Metric label="Actor tags" value={String(totals.threat_actors)} />
                   <Metric label="Infrastructure tags" value={String(totals.infrastructure)} />
+                  <Metric label="Promoted reports" value={String(promotedReports)} />
                 </div>
               </div>
             </Panel>
@@ -149,7 +154,7 @@ export function ReportsResearch() {
                       />
                       <span>
                         <span className="block font-semibold text-white">Parse URL with AI</span>
-                        Fetch the report, extract text and original image references, then map TTPs, CVEs, IOCs, actors, sectors, and infrastructure.
+                        Fetch the report, extract text and original image references, then suggest candidate TTPs, CVEs, IOCs, actors, sectors, and infrastructure. AI never promotes them.
                       </span>
                     </label>
                     {urlParseWithAi && (
@@ -207,7 +212,7 @@ export function ReportsResearch() {
                   />
                   <span>
                     <span className="block font-semibold text-white">Parse with AI</span>
-                    Extract TTPs, CVEs, IOCs, actors, sectors, and infrastructure tags immediately. Unchecked stores the source as unparsed research.
+                    Suggest candidate TTPs, CVEs, IOCs, actors, sectors, and infrastructure tags. Unchecked stores the source as unparsed research. Both paths require Review Gate promotion.
                   </span>
                 </label>
                 {parseWithAi && (
@@ -259,8 +264,15 @@ export function ReportsResearch() {
                   <option value="all">All tag buckets</option>
                   {TAG_BUCKETS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
+                <select aria-label="Review state filter" value={reviewFilter} onChange={event => setReviewFilter(event.target.value as typeof reviewFilter)} className="field w-full">
+                  <option value="all">All review states</option>
+                  <option value="promoted">Promoted intelligence only</option>
+                  <option value="accepted_claims">Has accepted claims</option>
+                  <option value="needs_review">Needs analyst review</option>
+                  <option value="blocked">Blocked, stale, or revoked</option>
+                </select>
                 <div className="rounded border border-blue-500/30 bg-blue-950/20 p-3 text-xs leading-relaxed text-blue-100">
-                  Tagging is deterministic from stored analysis, report intake metadata, CVE/IOC extraction, and conservative sector/infrastructure keyword matching.
+                  Candidate tagging is deterministic from stored analysis and extraction. A visible tag is not authoritative until its source-bound claim is accepted and its review revision is promoted.
                 </div>
                 <p className="text-xs leading-5 text-gray-500">
                   {items.length} report{items.length === 1 ? '' : 's'} loaded. Filters and metrics cover loaded pages; load older reports to expand the collection.
@@ -269,8 +281,8 @@ export function ReportsResearch() {
             </Panel>
             <Panel title="Research workflow">
               <div className="space-y-3 p-4 text-sm leading-6 text-gray-400">
-                <p>Upload research with AI parsing when you want immediate ATT&CK, CVE, IOC, actor, sector, and infrastructure tagging.</p>
-                <p>Store without AI when you only need the source available in the collection before analyst review.</p>
+                <p>Upload with AI when advisory suggestions help triage the report; deterministic preflight and analyst verdicts remain separate.</p>
+                <p>Open a report, complete all five gates, accept source-bound claims, submit for independent approval, then promote the immutable claim manifest.</p>
               </div>
             </Panel>
           </section>
@@ -305,6 +317,7 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
   const canManageIntel = useHasPermission('manage_intel');
   const canRunAnalysis = useHasPermission('run_analysis');
   const canExport = useHasPermission('export_data');
+  const review = reportReviewSummary(item);
   const sourceHref = safeHref(item.source_url);
   const reparseMutation = useMutation({
     mutationFn: () => analyzeApi.reparseLinkedReport(item.session_id, { provider }),
@@ -326,7 +339,11 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
       downloadText(`${slug(item.title)}-raw.txt`, report.source_text || '', 'text/plain;charset=utf-8');
       return;
     }
-    downloadText(`${slug(item.title)}-parsed.json`, JSON.stringify(buildParsedExport(report), null, 2), 'application/json;charset=utf-8');
+    downloadText(`${slug(item.title)}-parsed.json`, JSON.stringify(buildParsedExport(report, review), null, 2), 'application/json;charset=utf-8');
+  };
+  const reparseWithWarning = () => {
+    if ((review.state === 'approved' || review.state === 'promoted') && !window.confirm('Reparsing changes the analysis fingerprint, withdraws any active promotion, and starts a fresh draft review revision. Continue?')) return;
+    reparseMutation.mutate();
   };
   return (
     <article className="overflow-hidden rounded border border-gray-800 bg-gray-900/50">
@@ -339,22 +356,23 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
             <span className={item.source_text_available ? 'text-green-300' : 'text-amber-300'}>
               {item.source_text_available ? 'source text stored' : 'summary fallback'}
             </span>
+            <ReviewStateBadge state={review.state} compact />
           </div>
           <h2 className="break-words text-lg font-semibold text-white">{item.title}</h2>
           <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-400">{item.summary || 'No summary stored.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link to={`/analyze/${item.session_id}/report`} className="primary-action">Open linked report</Link>
-            {canRunAnalysis && item.status === 'completed' && item.source_text_available && item.domain === 'enterprise-attack' && (
+            {canRunAnalysis && review.state === 'promoted' && item.source_text_available && item.domain === 'enterprise-attack' && (
               <Link to={huntHypothesisUrl(item.session_id)} className="secondary-action border-cyan-800 text-cyan-100">Create AI hunt hypothesis</Link>
             )}
             {canRunAnalysis && <Link to="/analyze" className="secondary-action">AI Analysis</Link>}
             {canRunAnalysis && <Link to="/operations" className="secondary-action">Report intake</Link>}
             {sourceHref && <a href={sourceHref} target="_blank" rel="noreferrer" className="secondary-action">Source</a>}
-            {canManageIntel && <button type="button" onClick={() => reparseMutation.mutate()} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
+            {canManageIntel && <button type="button" onClick={reparseWithWarning} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
               {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
             </button>}
             {canExport && <button type="button" onClick={() => downloadReport('raw')} className="secondary-action">Download raw</button>}
-            {canExport && <button type="button" onClick={() => downloadReport('parsed')} className="secondary-action">Download parsed</button>}
+            {canExport && <button type="button" onClick={() => downloadReport('parsed')} className="secondary-action">Download candidate JSON</button>}
             {canManageIntel && <button
               type="button"
               onClick={() => {
@@ -372,6 +390,11 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
               {(reparseMutation.error instanceof Error && reparseMutation.error.message) || (deleteMutation.error instanceof Error && deleteMutation.error.message) || 'Report action failed.'}
             </div>
           )}
+          <div className={`mt-3 rounded border p-2 text-xs leading-5 ${review.state === 'promoted' ? 'border-emerald-900/70 bg-emerald-950/20 text-emerald-100' : 'border-gray-800 bg-gray-950/60 text-gray-500'}`}>
+            {review.state === 'promoted'
+              ? `${review.accepted_claim_count} accepted claim${review.accepted_claim_count === 1 ? '' : 's'} in the promoted manifest.`
+              : `${review.reviewed_gate_count}/${review.required_gate_count} gates reviewed · ${review.accepted_claim_count} accepted claim${review.accepted_claim_count === 1 ? '' : 's'} · ${review.blocker_count} blocker${review.blocker_count === 1 ? '' : 's'}. Tags below remain candidates.`}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-2 text-xs">
           {TAG_BUCKETS.map(([key, label]) => (
@@ -383,6 +406,9 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
         </div>
       </div>
       <div className="space-y-4 p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+          {review.state === 'promoted' ? 'Extracted tags · consult promoted claim manifest for authority' : 'Candidate tags · not promoted intelligence'}
+        </div>
         {TAG_BUCKETS.map(([key, label]) => (
           <TagBucket key={key} title={label} tags={item.tags[key] ?? []} empty={`No ${label.toLowerCase()} tags found.`} />
         ))}
@@ -391,8 +417,14 @@ function ReportCard({ item, provider }: { item: ReportCollectionItem; provider: 
   );
 }
 
-function buildParsedExport(report: LinkedAnalysisReport) {
+function buildParsedExport(report: LinkedAnalysisReport, review: ReturnType<typeof reportReviewSummary>) {
   return {
+    authoritative: false,
+    export_kind: 'candidate_analysis',
+    trusted_intelligence_available: review.state === 'promoted',
+    export_notice: review.state === 'promoted'
+      ? 'This mixed candidate-analysis file is not authoritative. Consult the immutable accepted-claim manifest for trusted intelligence.'
+      : 'Draft candidate export. Extracted tags and mappings have not been promoted.',
     session_id: report.session_id,
     name: report.name,
     provider: report.provider,
@@ -406,6 +438,7 @@ function buildParsedExport(report: LinkedAnalysisReport) {
     entities: report.entities,
     report_images: report.report_images,
     report_intake: report.report_intake,
+    review_summary: review,
   };
 }
 
@@ -470,9 +503,14 @@ function TagBucket({ title, tags, empty }: { title: string; tags: ReportCollecti
   );
 }
 
-function filterReports(items: ReportCollectionItem[], queryText: string, activeBucket: string) {
+function filterReports(items: ReportCollectionItem[], queryText: string, activeBucket: string, reviewFilter: 'all' | 'promoted' | 'accepted_claims' | 'needs_review' | 'blocked') {
   const q = queryText.trim().toLowerCase();
   return items.filter(item => {
+    const review = reportReviewSummary(item);
+    if (reviewFilter === 'promoted' && review.state !== 'promoted') return false;
+    if (reviewFilter === 'accepted_claims' && review.accepted_claim_count === 0) return false;
+    if (reviewFilter === 'needs_review' && !['unreviewed', 'draft', 'changes_requested', 'in_review'].includes(review.state)) return false;
+    if (reviewFilter === 'blocked' && !['changes_requested', 'stale', 'rejected', 'revoked'].includes(review.state)) return false;
     if (activeBucket !== 'all' && (item.tags[activeBucket] ?? []).length === 0) return false;
     if (!q) return true;
     const tagText = Object.values(item.tags).flat().map(tag => `${tag.label} ${tag.value}`).join(' ');

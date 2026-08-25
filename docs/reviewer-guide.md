@@ -10,10 +10,15 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
 | Module-by-module examples and case studies | [docs/module-reference.md](module-reference.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
-| v7 release notes | [docs/release-notes/v7.0.0.md](release-notes/v7.0.0.md) |
-| v7 release summary | [docs/release-summary-v7.0.0.md](release-summary-v7.0.0.md) |
+| v8 beta release notes | [docs/release-notes/v8.0.0-beta.1.md](release-notes/v8.0.0-beta.1.md) |
+| v8 beta release summary | [docs/release-summary-v8.0.0-beta.1.md](release-summary-v8.0.0-beta.1.md) |
+| v8 beta manual readiness | [docs/release-readiness-v8.md](release-readiness-v8.md) |
+| Report Review Gate | [docs/report-review-gate.md](report-review-gate.md) |
+| Durable Research Workflows | [docs/research-workflows.md](research-workflows.md) |
+| Latest stable v7 release notes | [docs/release-notes/v7.0.0.md](release-notes/v7.0.0.md) |
+| Latest stable v7 release summary | [docs/release-summary-v7.0.0.md](release-summary-v7.0.0.md) |
 | v7 presentation guide | [docs/presentations/adversarygraph-v7-presentation-guide.md](presentations/adversarygraph-v7-presentation-guide.md) |
-| v7 release readiness | [docs/release-readiness-v7.md](release-readiness-v7.md) |
+| Historical v7 release readiness | [docs/release-readiness-v7.md](release-readiness-v7.md) |
 | Local case studies | [docs/case-studies-v6.md](case-studies-v6.md) |
 | Tagged v6.0.0 screenshot evidence | [docs/assets/adversarygraph-v6/manifest.md](assets/adversarygraph-v6/manifest.md) |
 | Evidence-to-Detection Graph | [docs/evidence-to-detection-graph.md](evidence-to-detection-graph.md) |
@@ -32,9 +37,18 @@ This guide is for security researchers, package curators, and tool evaluators wh
 
 ## What this tool is
 
+The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release.
+v7.0.0 remains the latest stable release; do not describe the beta as stable or
+fully manually validated while its readiness matrix remains pending.
+
 AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 
 - Uploading threat reports and extracting ATT&CK-mapped techniques with AI assistance
+- Governing report-derived intelligence through five source/evidence gates,
+  source-bound claim decisions, independent named-user approval, target-scoped
+  promotion, staleness, and revocation
+- Executing registered research-project stages through durable workflow,
+  attempt, transactional-outbox, broker-receipt, retry, and recovery authority
 - Building governed threat-hunt hypotheses, query revisions, findings, and
   outcomes with optional multi-provider AI suggestions and mandatory review
 - Searching reviewed/community Sigma and YARA-L material and generating typed,
@@ -81,6 +95,11 @@ AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
   documented in their manifests.
 - API keys are passed via environment variables, not embedded in code
 - LLM outputs are treated as untrusted and require analyst review
+- Report AI/preflight output remains candidate material; only source-bound
+  accepted claims from a current two-person promotion may authorize report
+  projections, and same-user approval is rejected
+- API, worker, and Beat startup require the exact migration head and physical
+  research/workflow/outbox authority fingerprint
 - RAG indexes only allowlisted normalized fields; vector similarity and
   one-hop relationship expansion are labeled retrieval signals, not evidence
   confidence
@@ -109,6 +128,9 @@ See [SECURITY.md](../SECURITY.md) for the full policy and known limitations.
 | Frontend build | ✅ GitHub Actions |
 | OpenAPI/frontend contract consistency | ✅ GitHub Actions |
 | 31-module documentation coverage | ✅ GitHub Actions |
+| Alembic head/schema fingerprint and PostgreSQL authority tests | ✅ GitHub Actions |
+| Transactional outbox and workflow reservation/recovery tests | ✅ GitHub Actions |
+| Report Review Gate unit/integration/browser tests | ✅ GitHub Actions |
 | Frontend dependency audit (npm audit) | ✅ GitHub Actions |
 | Anomaly documentation build and dependency audit | ✅ GitHub Actions |
 | Docker Compose validation | ✅ GitHub Actions |
@@ -123,15 +145,17 @@ More than 60 backend test files plus browser-spec coverage for:
 - Unit tests: ATT&CK mapping, report parsing, export formats, LLM provider
   selection, safe HTTP, rate limiting, observability, archive handling, Threat
   Hunting AI, RAG retrieval/generation/retention/worker behavior, MCP input and
-  output boundaries, IOC extraction, and YARA scanning.
+  output boundaries, IOC extraction, YARA scanning, Report Review Gate,
+  research workflows, workflow coordinators, and transactional outbox runtime.
 - Integration tests: route authorization, database operations, user/session/MFA
   lifecycle, uploads, analysis, collection, simulation, MalwareGraph, Threat
   Radar, Threat Hunting, RAG profile/search/assistant/proposal/reindex APIs, and
-  endpoint orchestration.
+  endpoint orchestration, report-promotion authority, and real-PostgreSQL
+  workflow/outbox/migration constraints and recovery.
 - Playwright tests: authentication startup, main navigation and deep links,
   permissions, administrator user creation and password-policy validation,
   safe link handling, Threat Hunting, RAG source deep links, and deterministic
-  release screenshot flows.
+  release screenshot flows, report review/approval, and operational intake.
 
 ## Demo dataset
 

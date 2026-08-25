@@ -1,15 +1,19 @@
 import pytest
 
+from app.models.ioc import IOCIndicator
 from app.services.ioc_intel import (
     IOCImportItem,
     _SQL_IN_BATCH_SIZE,
     enrich_ioc_ttp_mappings,
+    get_ioc_detail,
     _otx_get_json,
     _otx_subscribed_pulses,
     _item_technique_ids,
     _malpedia_family_to_import_item,
     _mapping_evidence_from_item,
     _normalize_ioc_type,
+    _upsert_indicator,
+    create_ioc_source,
 )
 
 
@@ -72,6 +76,65 @@ def test_ioc_ttp_mapping_evidence_preserves_priority():
     assert by_id["T1566"] == "enrichment-platform"
 
 
+@pytest.mark.asyncio
+async def test_report_promotion_ioc_source_namespace_is_reserved():
+    source_id = "report-promotion-11111111-1111-4111-8111-111111111111"
+    item = IOCImportItem(
+        value="evil.example",
+        indicator_type="domain",
+        source=source_id,
+    )
+
+    with pytest.raises(ValueError, match="namespace is reserved"):
+        await _upsert_indicator(None, item)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="namespace is reserved"):
+        await create_ioc_source(
+            None,  # type: ignore[arg-type]
+            label="Injected source",
+            url="https://example.test/feed",
+            source_id=source_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_ioc_detail_hides_promotion_projection_without_live_authority(
+    monkeypatch,
+):
+    from app.services import ioc_intel, report_promotion
+
+    indicator = IOCIndicator(
+        id=41,
+        value="evil.example",
+        indicator_type="domain",
+        source_id="report-promotion-11111111-1111-4111-8111-111111111111",
+        raw={},
+    )
+
+    class Result:
+        def scalar_one_or_none(self):
+            return indicator
+
+    class FakeSession:
+        async def execute(self, _statement):
+            return Result()
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def no_authority(*_args, **_kwargs):
+        return set()
+
+    monkeypatch.setattr(ioc_intel, "ensure_ioc_sources", no_op)
+    monkeypatch.setattr(
+        report_promotion,
+        "authorized_report_promotion_indicator_ids",
+        no_authority,
+    )
+
+    assert await get_ioc_detail(FakeSession(), indicator.id) is None
+
+
 async def test_enrich_ioc_ttp_mappings_batches_large_indicator_id_lists():
     class EmptyRows:
         class EmptyScalars:
@@ -127,6 +190,12 @@ async def test_otx_get_json_retries_transient_timeout(monkeypatch):
     monkeypatch.setattr(settings, "otx_read_timeout_seconds", 30)
     monkeypatch.setattr(settings, "otx_retries", 1)
     monkeypatch.setattr(ioc_intel.requests, "get", fake_get)
+
+    async def direct_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(ioc_intel.asyncio, "to_thread", direct_to_thread)
+
     async def fake_sleep(*_args, **_kwargs):
         return None
 
@@ -176,6 +245,11 @@ async def test_otx_get_json_retries_transient_http_error(monkeypatch):
     monkeypatch.setattr(settings, "otx_retries", 1)
     monkeypatch.setattr(ioc_intel.requests, "get", fake_get)
 
+    async def direct_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(ioc_intel.asyncio, "to_thread", direct_to_thread)
+
     async def fake_sleep(*_args, **_kwargs):
         return None
 
@@ -211,6 +285,11 @@ async def test_otx_get_json_raises_transient_error_after_http_retries(monkeypatc
     monkeypatch.setattr(settings, "otx_retries", 1)
     monkeypatch.setattr(ioc_intel.requests, "get", fake_get)
 
+    async def direct_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(ioc_intel.asyncio, "to_thread", direct_to_thread)
+
     async def fake_sleep(*_args, **_kwargs):
         return None
 
@@ -245,6 +324,11 @@ async def test_otx_subscribed_pulses_clamps_limit_and_uses_configured_timeout(mo
     monkeypatch.setattr(settings, "otx_read_timeout_seconds", 45)
     monkeypatch.setattr(settings, "otx_retries", 0)
     monkeypatch.setattr(ioc_intel.requests, "get", fake_get)
+
+    async def direct_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(ioc_intel.asyncio, "to_thread", direct_to_thread)
 
     pulses = await _otx_subscribed_pulses(limit=999)
 

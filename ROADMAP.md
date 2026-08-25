@@ -1,12 +1,34 @@
 # Roadmap
 
-Current release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
+Latest stable release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
 
-For the full history from v0.2.0 through v7.0.0 see [CHANGELOG.md](CHANGELOG.md).
+Current source candidate: **v8.0.0-beta.1** — Reviewed intelligence and durable workflow authority (2026-08-25)
+
+For the full history through the current beta see [CHANGELOG.md](CHANGELOG.md).
 
 ## Unreleased
 
-- [ ] Record future work here after the v7.0.0 release boundary.
+- [ ] Record manual beta findings and resolve accepted blockers before v8.0.0.
+
+## v8.0 beta — Reviewed Intelligence and Durable Workflow Authority
+
+- [x] Require deterministic source, claim, five-gate, four-eyes, and promotion
+  authority before report-derived intelligence reaches global consumers
+- [x] Add durable research projects, revisions, workflow plans, stage attempts,
+  receipt-bound execution, recovery, cancellation, and transactional outbox
+- [x] Add exact Alembic-head and physical-schema fingerprint gates through
+  migration `20260824_0004`
+- [x] Add commit-owning publisher, worker, recovery, cancellation, and Celery
+  integration with immutable result/authority checks
+- [x] Gate Evidence Graph, RAG, IOC, STIX/TAXII, OpenCTI, asset, and export paths
+  on current promoted authority
+- [x] Add Helm and Compose migration/startup ordering and release-tag PostgreSQL
+  schema-authority validation
+- [x] Upgrade the client to React Router 7 and retain zero high-severity npm
+  audit findings at the reviewed lockfile
+- [x] Publish the Operation Desert Hydra AdversaryGraph 31-step adaptation draft
+- [ ] Complete manual beta acceptance and record every finding
+- [ ] Cut `v8.0.0` only from a new commit after all accepted beta blockers close
 
 ## v7.0 — Isolated Assessment, Governed Intelligence, and Data Quality
 
@@ -26,8 +48,7 @@ For the full history from v0.2.0 through v7.0.0 see [CHANGELOG.md](CHANGELOG.md)
 - [x] Remediate the MalwareGraph `nanoid` and PostCSS dependency advisories
 - [x] Publish the v7 presentation guide, release notes, summary, readiness
   baseline, and aligned source/package/deployment metadata
-- [ ] Publish immutable `v7.0.0` artifacts only after protected-branch CI and the
-  complete local release gate pass
+- [x] Publish immutable `v7.0.0` artifacts through the protected tag workflow
 
 ## v6.5 — Governed Intelligence, Hunting, Asset Assessment, and SOC Operations
 

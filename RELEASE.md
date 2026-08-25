@@ -9,8 +9,8 @@ Use this checklist for reviewer-friendly AdversaryGraph releases.
 - Update backend API version in `backend/app/core/version.py`.
 - Update Helm chart/app versions and default application image tags.
 - Move `CHANGELOG.md` entries from unreleased work into a dated version.
-- Add `docs/release-notes/vX.Y.Z.md`.
-- Add `docs/release-summary-vX.Y.Z.md` and update
+- Add `docs/release-notes/vX.Y.Z[-beta.N].md`.
+- Add `docs/release-summary-vX.Y.Z[-beta.N].md` and update
   `docs/version-matrix.md`, `ROADMAP.md`, `SECURITY.md`, and current guides.
 - Regenerate `docs/api-reference.md` with
   `./scripts/check-api-contracts.py --write-docs`.
@@ -41,7 +41,7 @@ Use this checklist for reviewer-friendly AdversaryGraph releases.
 ./scripts/release-readiness.sh --full
 ```
 
-- Review `docs/release-readiness-v7.md` and record every deployment go/no-go
+- Review the current major-version release-readiness guide and record every deployment go/no-go
   decision.
 - If a new v7 screenshot set is approved, capture it from the exact v7
   candidate and add a versioned script and checksum manifest. Do not relabel or
@@ -82,13 +82,17 @@ retrieval smoke test. In a staging environment that matches production:
 
 ## Tag And Publish
 
-1. Commit the release changes.
-2. Create tag `vX.Y.Z`.
+1. Commit the release changes and merge the passing candidate into `main`.
+2. Create an annotated tag `vX.Y.Z` for a stable release or
+   `vX.Y.Z-beta.N` for a numbered beta. Tags are immutable: promote a beta by
+   creating a new stable commit and `vX.Y.Z` tag, never by moving or renaming
+   the beta tag.
 3. Push `main` and the tag.
 4. Wait for the tag workflow to build and scan the image family, publish the
-   semantic-version tags, and record their immutable digests. Do not create the
+   exact version tags, and record their immutable digests. A beta is published
+   as a GitHub prerelease and does not replace the latest stable release. Do not create the
    GitHub release manually: the workflow creates it from
-   `docs/release-notes/vX.Y.Z.md`. The workflow never modifies a published
+   matching versioned release-notes file. The workflow never modifies a published
    release. It resumes an existing draft only when its title, notes, and sole
    manifest asset exactly match the regenerated release; otherwise it stops for
    explicit review and draft cleanup.

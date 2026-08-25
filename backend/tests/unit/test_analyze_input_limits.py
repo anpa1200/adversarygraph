@@ -22,10 +22,13 @@ async def test_pasted_text_uses_utf8_byte_limit(monkeypatch, reader):
 async def test_pasted_text_at_utf8_byte_limit_is_allowed(monkeypatch, reader):
     monkeypatch.setattr(analyze, "MAX_UPLOAD_BYTES", 6)
 
-    content, filename = await reader("ééé", None)
+    result = await reader("ééé", None)
+    content, filename = result[:2]
 
     assert content == "ééé"
     assert filename is None
+    if reader is analyze._read_input:
+        assert result[2] == {"source_kind": "text", "content_size_bytes": 6}
 
 
 def test_adapter_configuration_error_does_not_expose_factory_details(monkeypatch):

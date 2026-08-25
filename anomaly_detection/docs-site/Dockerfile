@@ -5,16 +5,19 @@ RUN npm install -g npm@11.18.0
 
 WORKDIR /seed
 COPY anomaly_detection/docs-site/package.json anomaly_detection/docs-site/package-lock.json ./
-# npm 11.18.0 bundles brace-expansion 5.0.7. Replace that copy with the
-# lockfile-verified 5.0.9 patch used by the docs tree, then fail closed if the
-# expected package was not installed.
+# Replace vulnerable packages bundled by npm 11.18.0 with the lockfile-verified
+# patches used by the docs tree, then fail closed if any expected package was
+# not installed.
 RUN npm ci && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     cp -R node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/ip-address && \
     cp -R node_modules/ip-address /usr/local/lib/node_modules/npm/node_modules/ip-address && \
+    rm -rf /usr/local/lib/node_modules/npm/node_modules/tar && \
+    cp -R node_modules/tar /usr/local/lib/node_modules/npm/node_modules/tar && \
     node -e "const p=require('/usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json'); if (p.version !== '5.0.9') process.exit(1)" && \
-    node -e "const p=require('/usr/local/lib/node_modules/npm/node_modules/ip-address/package.json'); if (p.version !== '10.3.1') process.exit(1)"
+    node -e "const p=require('/usr/local/lib/node_modules/npm/node_modules/ip-address/package.json'); if (p.version !== '10.3.1') process.exit(1)" && \
+    node -e "const p=require('/usr/local/lib/node_modules/npm/node_modules/tar/package.json'); if (p.version !== '7.5.22') process.exit(1)"
 
 COPY anomaly_detection/docs-site/ /seed/
 COPY scripts/sync-anomaly-atlas.sh /usr/local/bin/sync-anomaly-atlas

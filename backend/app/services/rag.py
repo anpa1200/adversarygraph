@@ -43,6 +43,7 @@ from app.models.ioc import IOCIndicator
 from app.models.knowledge import KnowledgeArticle
 from app.models.operations import ReportIntake
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
+from app.models.report_review import ReportPromotion, ReportPromotionRevocation, ReportReview
 from app.models.sector import ActorIntelObservation, ClientProfile
 from app.models.threat_radar import (
     ThreatCompanySpace,
@@ -50,6 +51,22 @@ from app.models.threat_radar import (
     ThreatSignal,
     ThreatSpaceAsset,
 )
+from app.services.evidence_graph import (
+    REPORT_GRAPH_ORIGIN,
+    authorized_report_graph_node_ids,
+)
+from app.services.report_promotion import (
+    accepted_actor_ids,
+    accepted_claims,
+    accepted_technique_ids,
+    authorized_report_promotions,
+    authorized_report_promotion_indicator_ids,
+    promotion_allows,
+    promotion_matches_context,
+)
+from app.services.report_intake import latest_report_intake_id_subquery
+from app.services.report_review import _normalize_indicator_type, _source_metadata
+from app.services.taxonomy import normalize_freeform_tags
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +401,181 @@ class _Candidate:
     mode_scores: dict[str, float] = field(default_factory=dict)
     fused_score: float = 0.0
     profile_score: float = 0.0
+
+
+async def _authorized_candidate_document_ids(
+    db: AsyncSession,
+    candidates: Sequence[_Candidate],
+) -> set[str]:
+    """Fail closed for cached report projections whose authority changed."""
+
+    return await _authorized_document_ids(
+        db,
+        [candidate.document for candidate in candidates],
+    )
+
+
+async def _authorized_document_ids(
+    db: AsyncSession,
+    candidate_documents: Sequence[RAGDocument],
+) -> set[str]:
+    documents = {str(document.id): document for document in candidate_documents}
+    report_session_ids = {
+        str(document.source_id)
+        for document in documents.values()
+        if document.source_type == "analysis_report"
+    }
+    promotion_ioc_document_ids: set[int] = set()
+    evidence_node_document_ids: set[UUID] = set()
+    for document in documents.values():
+        metadata = document.metadata_ if isinstance(document.metadata_, dict) else {}
+        if document.source_type == "evidence_node":
+            try:
+                evidence_node_document_ids.add(UUID(str(document.source_id)))
+            except (TypeError, ValueError):
+                continue
+        if document.source_type != "ioc" or not str(
+            metadata.get("source_id") or ""
+        ).startswith("report-promotion-"):
+            continue
+        try:
+            promotion_ioc_document_ids.add(int(document.source_id))
+        except (TypeError, ValueError):
+            continue
+    authorized_reports = await authorized_report_promotions(
+        db,
+        report_session_ids,
+        target="rag",
+    )
+    promotion_ioc_rows = (
+        list(
+            (
+                await db.execute(
+                    select(IOCIndicator).where(
+                        IOCIndicator.id.in_(promotion_ioc_document_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if promotion_ioc_document_ids
+        else []
+    )
+    promotion_iocs = {
+        int(indicator.id): indicator for indicator in promotion_ioc_rows
+    }
+    authorized_ioc_ids = await authorized_report_promotion_indicator_ids(
+        db,
+        promotion_ioc_rows,
+        target="rag",
+    )
+    evidence_node_rows = (
+        list(
+            (
+                await db.execute(
+                    select(EvidenceGraphNode).where(
+                        EvidenceGraphNode.id.in_(evidence_node_document_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if evidence_node_document_ids
+        else []
+    )
+    evidence_nodes = {str(node.id): node for node in evidence_node_rows}
+    authorized_evidence_node_ids = await authorized_report_graph_node_ids(
+        db,
+        evidence_node_rows,
+        target="rag",
+    )
+
+    allowed: set[str] = set()
+    for document_id, document in documents.items():
+        metadata = document.metadata_ if isinstance(document.metadata_, dict) else {}
+        if document.source_type == "analysis_report":
+            promotion = authorized_reports.get(str(document.source_id))
+            if promotion is None:
+                continue
+            if (
+                str(metadata.get("promotion_id") or "") != str(promotion.id)
+                or str(metadata.get("promotion_manifest_checksum") or "")
+                != promotion.manifest_checksum
+                or str(document.source_version or "")
+                != promotion.manifest_checksum
+            ):
+                continue
+        elif document.source_type == "ioc":
+            promotion_source = str(metadata.get("source_id") or "")
+            if promotion_source.startswith("report-promotion-"):
+                try:
+                    indicator_id = int(document.source_id)
+                except (TypeError, ValueError):
+                    continue
+                indicator = promotion_iocs.get(indicator_id)
+                raw = (
+                    indicator.raw
+                    if indicator is not None and isinstance(indicator.raw, dict)
+                    else {}
+                )
+                if (
+                    indicator_id not in authorized_ioc_ids
+                    or str(metadata.get("indicator_value") or "")
+                    != str(indicator.value or "")
+                    or _normalize_indicator_type(metadata.get("indicator_type"))
+                    != _normalize_indicator_type(indicator.indicator_type)
+                    or str(metadata.get("promotion_id") or "")
+                    != str(raw.get("promotion_id") or "")
+                    or str(metadata.get("promotion_manifest_checksum") or "")
+                    != str(raw.get("manifest_checksum") or "")
+                    or str(metadata.get("promotion_claim_key") or "")
+                    != str(raw.get("claim_key") or "")
+                ):
+                    continue
+        elif document.source_type == "evidence_node":
+            node = evidence_nodes.get(str(document.source_id))
+            if node is None or node.id not in authorized_evidence_node_ids:
+                continue
+            node_metadata = (
+                node.metadata_json if isinstance(node.metadata_json, dict) else {}
+            )
+            if (
+                str(node_metadata.get("origin") or "").strip().casefold()
+                == REPORT_GRAPH_ORIGIN
+            ):
+                provenance_fields = (
+                    "origin",
+                    "analysis_session_id",
+                    "promotion_id",
+                    "review_id",
+                    "review_revision",
+                    "promotion_manifest_checksum",
+                    "accepted_claim_key",
+                )
+                if any(
+                    str(metadata.get(field) or "")
+                    != str(node_metadata.get(field) or "")
+                    for field in provenance_fields
+                ):
+                    continue
+        allowed.add(document_id)
+    return allowed
+
+
+async def _filter_authoritative_candidates(
+    db: AsyncSession,
+    candidates: Sequence[_Candidate],
+) -> list[_Candidate]:
+    if not candidates:
+        return []
+    allowed_ids = await _authorized_candidate_document_ids(db, candidates)
+    return [
+        candidate
+        for candidate in candidates
+        if str(candidate.document.id) in allowed_ids
+    ]
 
 
 def normalize_tlp(value: Any, default: str = "TLP:AMBER+STRICT") -> str:
@@ -1025,6 +1217,26 @@ async def hybrid_search(
         )
         modes.append("vector")
 
+    authorized_document_ids = await _authorized_candidate_document_ids(
+        db,
+        [*exact, *lexical, *vector],
+    )
+    exact = [
+        candidate
+        for candidate in exact
+        if str(candidate.document.id) in authorized_document_ids
+    ]
+    lexical = [
+        candidate
+        for candidate in lexical
+        if str(candidate.document.id) in authorized_document_ids
+    ]
+    vector = [
+        candidate
+        for candidate in vector
+        if str(candidate.document.id) in authorized_document_ids
+    ]
+
     ranking_candidates = {"exact": exact, "fts": lexical, "vector": vector}
     rankings = {
         mode: _unique_document_ids(rows)
@@ -1052,6 +1264,10 @@ async def hybrid_search(
                 natural_language_fallback=False,
                 space_id=company_space_id,
             )
+            context_seeds = await _filter_authoritative_candidates(
+                db,
+                context_seeds,
+            )
             existing_seed_ids = {str(seed.document.id) for seed in seeds}
             seeds.extend(
                 seed
@@ -1069,6 +1285,10 @@ async def hybrid_search(
                 signal="relationship",
                 natural_language_fallback=False,
                 space_id=company_space_id,
+            )
+            relationship = await _filter_authoritative_candidates(
+                db,
+                relationship,
             )
             if relationship:
                 ranking_candidates["relationship"] = relationship
@@ -1247,6 +1467,8 @@ async def get_indexed_entity(
         .limit(1)
     )
     if document is None:
+        return None
+    if str(document.id) not in await _authorized_document_ids(db, [document]):
         return None
     return {
         "document_id": str(document.id),
@@ -1630,8 +1852,23 @@ async def _collect_iocs(db: AsyncSession) -> list[SourceRecord]:
         .scalars()
         .all()
     )
+    report_promotion_rows = [
+        indicator
+        for indicator in rows
+        if str(indicator.source_id or "").startswith("report-promotion-")
+    ]
+    authorized_report_indicator_ids = await authorized_report_promotion_indicator_ids(
+        db,
+        report_promotion_rows,
+        target="rag",
+    )
     records: list[SourceRecord] = []
     for indicator in rows:
+        promotion_source = str(indicator.source_id or "").startswith(
+            "report-promotion-"
+        )
+        if promotion_source and int(indicator.id) not in authorized_report_indicator_ids:
+            continue
         if not str(indicator.value or "").strip():
             continue
         actor_ids = _safe_values(
@@ -1696,6 +1933,17 @@ async def _collect_iocs(db: AsyncSession) -> list[SourceRecord]:
                     "tags": _safe_values(indicator.tags),
                     "first_seen": indicator.first_seen or "",
                     "last_seen": indicator.last_seen or "",
+                    **(
+                        {
+                            "promotion_id": str((indicator.raw or {}).get("promotion_id") or ""),
+                            "promotion_manifest_checksum": str(
+                                (indicator.raw or {}).get("manifest_checksum") or ""
+                            ),
+                            "promotion_claim_key": str((indicator.raw or {}).get("claim_key") or ""),
+                        }
+                        if promotion_source
+                        else {}
+                    ),
                 },
             )
         )
@@ -1841,56 +2089,73 @@ async def _collect_cves(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
-    intake_rows = list((await db.execute(select(ReportIntake))).scalars().all())
-    intakes_by_session: dict[str, ReportIntake] = {}
-    for intake in intake_rows:
-        if not isinstance(intake, ReportIntake):
-            continue
-        session_id = str((intake.provenance or {}).get("analysis_session_id") or "")
-        if not session_id and intake.analyst_notes:
-            try:
-                notes = json.loads(intake.analyst_notes)
-                session_id = str(notes.get("analysis_session_id") or "")
-            except (TypeError, ValueError, json.JSONDecodeError):
-                session_id = ""
-        if session_id:
-            intakes_by_session[session_id] = intake
+    latest_review_revision = (
+        select(func.max(ReportReview.revision))
+        .where(ReportReview.session_id == AnalysisSession.id)
+        .correlate(AnalysisSession)
+        .scalar_subquery()
+    )
     rows = (
         await db.execute(
-            select(AnalysisSession, AnalysisResult)
-            .outerjoin(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
-            .where(AnalysisSession.status == "completed")
+            select(
+                AnalysisSession,
+                AnalysisResult,
+                ReportPromotion,
+                ReportReview,
+                ReportIntake,
+            )
+            .join(AnalysisResult, AnalysisResult.session_id == AnalysisSession.id)
+            .join(ReportPromotion, ReportPromotion.session_id == AnalysisSession.id)
+            .join(ReportReview, ReportReview.id == ReportPromotion.review_id)
+            .outerjoin(
+                ReportPromotionRevocation,
+                ReportPromotionRevocation.promotion_id == ReportPromotion.id,
+            )
+            .outerjoin(
+                ReportIntake,
+                ReportIntake.id == latest_report_intake_id_subquery(AnalysisSession.id),
+            )
+            .where(
+                AnalysisSession.status == "completed",
+                ReportReview.state == "promoted",
+                ReportReview.revision == latest_review_revision,
+                ReportPromotionRevocation.id.is_(None),
+            )
             .order_by(AnalysisSession.created_at, AnalysisSession.id)
         )
     ).all()
     records: list[SourceRecord] = []
-    for report, result in rows:
-        intake = intakes_by_session.get(str(report.id))
-        technique_ids = _extract_named_values(
-            result.extracted_techniques if result else [], ("attack_id", "technique_id")
+    for report, result, promotion, review, intake in rows:
+        if not promotion_allows(promotion, "rag") or not promotion_matches_context(
+            promotion,
+            review,
+            report,
+            result,
+            _source_metadata(report, intake),
+        ):
+            continue
+        claims = accepted_claims(promotion)
+        technique_ids = accepted_technique_ids(promotion)
+        actor_ids = accepted_actor_ids(promotion)
+        claim_statements = _safe_values(
+            [str(item.get("statement") or "").strip() for item in claims if str(item.get("statement") or "").strip()]
         )
-        actor_ids = _extract_named_values(
-            result.apt_matches if result else [],
-            ("group_attack_id", "attack_id", "name"),
+        promoted_tags = normalize_freeform_tags(
+            [
+                "report",
+                "review:promoted",
+                *[f"ttp:{value}" for value in technique_ids],
+                *[f"actor:{value}" for value in actor_ids],
+            ]
         )
-        title = str(
-            report.name or report.filename or f"Analysis report {report.id}"
-        ).strip()
+        title = str(report.name or report.filename or f"Analysis report {report.id}").strip()
         body = _compose_sections(
             (
-                ("Summary", result.summary if result else ""),
+                ("Accepted claims", claim_statements),
                 ("Source report", report.source_text),
                 ("ATT&CK techniques", technique_ids),
-                ("Actor matches", actor_ids),
-                ("Normalized tags", _safe_values(intake.tags if intake else [])),
-                (
-                    "Extracted indicators",
-                    _safe_values([
-                        f"{item.get('indicator_type') or item.get('type')}: {item.get('value')}"
-                        for item in (intake.indicators if intake else [])
-                        if isinstance(item, dict) and item.get("value")
-                    ]),
-                ),
+                ("Explicit actor claims", actor_ids),
+                ("Normalized tags", promoted_tags),
             )
         )
         if not body:
@@ -1899,20 +2164,25 @@ async def _collect_analysis_reports(db: AsyncSession) -> list[SourceRecord]:
             SourceRecord(
                 source_type="analysis_report",
                 source_id=str(report.id),
-                source_version="current",
+                source_version=promotion.manifest_checksum,
                 logical_key=str(report.id),
                 title=title[:700],
                 body=body,
                 canonical_route=f"/analyze/{report.id}/report",
                 domain=report.domain,
                 tlp=report.tlp,
-                source_updated_at=report.updated_at,
+                source_updated_at=promotion.promoted_at,
                 metadata={
                     "input_type": report.input_type,
                     "filename": _basename(report.filename),
                     "technique_ids": technique_ids,
                     "actor_ids": actor_ids,
-                    "tags": _safe_values(intake.tags if intake else []),
+                    "tags": promoted_tags,
+                    "review_id": str(promotion.review_id),
+                    "review_revision": promotion.review_revision,
+                    "policy_version": promotion.policy_version,
+                    "promotion_id": str(promotion.id),
+                    "promotion_manifest_checksum": promotion.manifest_checksum,
                 },
                 sanitized=True,
             )
@@ -2078,17 +2348,13 @@ async def _collect_threat_hunts(db: AsyncSession) -> list[SourceRecord]:
 
 
 async def _collect_evidence_nodes(db: AsyncSession) -> list[SourceRecord]:
-    rows = list(
-        (
-            await db.execute(
-                select(EvidenceGraphNode).order_by(
-                    EvidenceGraphNode.created_at, EvidenceGraphNode.id
-                )
-            )
-        )
-        .scalars()
-        .all()
+    rows = list((await db.execute(select(EvidenceGraphNode).order_by(EvidenceGraphNode.created_at, EvidenceGraphNode.id))).scalars().all())
+    authorized_ids = await authorized_report_graph_node_ids(
+        db,
+        rows,
+        target="rag",
     )
+    rows = [node for node in rows if node.id in authorized_ids]
     return [
         SourceRecord(
             source_type="evidence_node",
@@ -2136,6 +2402,23 @@ async def _collect_evidence_nodes(db: AsyncSession) -> list[SourceRecord]:
                 "review_status": node.review_status,
                 "status": node.status,
                 "tags": _safe_values(node.tags),
+                **(
+                    {
+                        field: (node.metadata_json or {}).get(field)
+                        for field in (
+                            "origin",
+                            "report_id",
+                            "analysis_session_id",
+                            "promotion_id",
+                            "review_id",
+                            "review_revision",
+                            "promotion_manifest_checksum",
+                            "accepted_claim_key",
+                        )
+                    }
+                    if str((node.metadata_json or {}).get("origin") or "").strip().casefold() == REPORT_GRAPH_ORIGIN
+                    else {}
+                ),
             },
             legal_sensitive=True,
             sanitized=True,

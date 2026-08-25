@@ -18,6 +18,7 @@ from app.models.threat_hunting import ThreatHuntAIAssistance
 from app.services import threat_hunting as hunts
 from app.services import threat_hunting_ai as hunt_ai
 from app.services.auth import TeamUser, audit, require_permission
+from app.services.report_promotion import get_active_report_promotion, promotion_allows
 
 router = APIRouter(prefix="/threat-hunting/ai", tags=["Threat Hunting AI"])
 run_hunt_ai = require_permission("run_analysis")
@@ -390,6 +391,23 @@ async def hypotheses(
         raise HTTPException(422, "Stored report/research session has no source text")
     if source.domain != "enterprise-attack":
         raise HTTPException(422, "Report-to-hypothesis generation currently supports Enterprise ATT&CK sources only")
+    active_promotion = await get_active_report_promotion(db, source.id)
+    if active_promotion is None:
+        raise HTTPException(
+            409,
+            "Report-to-hypothesis generation requires an active Review Gate promotion",
+        )
+    if not promotion_allows(active_promotion.promotion, "hunting"):
+        raise HTTPException(
+            409,
+            "The active Review Gate promotion does not authorize threat-hunting use",
+        )
+    promotion_ref = {
+        "review_id": str(active_promotion.review.id),
+        "review_revision": active_promotion.review.revision,
+        "promotion_id": str(active_promotion.promotion.id),
+        "promotion_manifest_checksum": active_promotion.promotion.manifest_checksum,
+    }
 
     source_id = source.id
     source_domain = source.domain
@@ -417,6 +435,7 @@ async def hypotheses(
     )
     input_payload = {
         "source_session_id": str(source_id),
+        "promotion_manifest_checksum": promotion_ref["promotion_manifest_checksum"],
         "source_state_checksum": source_state_checksum,
         "source_coverage_hash": hunt_ai.checksum(bounded_text),
         "source_type": body.source_type,
@@ -472,9 +491,13 @@ async def hypotheses(
                 .execution_options(populate_existing=True)
             )
         ).scalar_one_or_none()
+        current_promotion = await get_active_report_promotion(db, source_id)
         source_context_changed = (
             current_source is None
             or hunt_ai.checksum(_source_state(current_source)) != source_state_checksum
+            or current_promotion is None
+            or current_promotion.promotion.manifest_checksum
+            != promotion_ref["promotion_manifest_checksum"]
         )
     except Exception:
         await _finalize_cloud_egress_failure(db, user, cloud_attempt, "source_context_revalidation_failed")
@@ -482,7 +505,10 @@ async def hypotheses(
     if source_context_changed:
         await db.rollback()
         await _finalize_cloud_egress_failure(db, user, cloud_attempt, "source_context_changed")
-        raise HTTPException(409, "Stored report/research changed while hypotheses were being generated; retry with the current source")
+        raise HTTPException(
+            409,
+            "Stored report/research or its Review Gate promotion changed while hypotheses were being generated; retry with the current source",
+        )
     try:
         parsed = hunt_ai.parse_hypothesis_output(raw)
         candidates, warnings = await hunt_ai.sanitize_hypothesis_output(
@@ -538,6 +564,7 @@ async def hypotheses(
                 "tlp": effective_tlp,
                 "coverage_chars": len(bounded_text),
                 "source_chars": len(source_text),
+                **promotion_ref,
             }],
             input_checksum=hunt_ai.checksum(input_payload),
             output=response_payload,

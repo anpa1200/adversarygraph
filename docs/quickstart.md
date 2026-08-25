@@ -2,6 +2,11 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
+The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
+`v7.0.0` remains the latest stable release. Use only public, synthetic, or
+otherwise approved data during beta evaluation, and record unresolved tests as
+pending rather than treating successful startup as stable acceptance.
+
 For the public capability walkthrough with screenshots and infographics, use
 the 1200km mirror or Medium publication:
 
@@ -32,6 +37,17 @@ The public browser workspace at <https://1200km.com/threat-matrix/> does not req
 git clone https://github.com/anpa1200/adversarygraph.git
 cd adversarygraph
 ```
+
+The default branch can move. After the protected beta tag is published, select
+the exact pre-release for reproducible testing:
+
+```bash
+git fetch --tags origin
+git checkout v8.0.0-beta.1
+```
+
+Do not infer that the tag exists from this source document; verify it resolves
+to the reviewed candidate commit before using it as release evidence.
 
 ## 2. Configure
 
@@ -157,6 +173,12 @@ silently disabled Create action, rebuild/recreate `frontend` and hard-refresh
 the page. See
 [Authentication and User Management](authentication-and-users.md#create-a-named-user).
 
+Authentication is mandatory for Review Gate beta testing. Create a named
+submitter with `review_reports` and a different named approver with
+`promote_reports`. One auth-disabled `local:local` identity cannot demonstrate
+the required four-eyes approval boundary. See
+[Report Review Gate](report-review-gate.md).
+
 For a production-overlay deployment, authentication is mandatory. Set an
 HTTPS `CORS_ALLOWED_ORIGINS`, keep `SECURE_COOKIES=true`, and configure either
 a strong one-time bootstrap administrator or a trusted OIDC/SAML proxy with a
@@ -269,6 +291,13 @@ the eight custom image families locally, including the isolated scanner MCP. It
 does not require Docker Hub
 repositories named `adversarygraph-*`.
 
+Before the API, worker, or Beat process starts, Compose runs the one-shot
+`migrate` service from the same backend image and requires Alembic head
+`20260824_0004`. Startup then verifies the physical workflow-authority
+fingerprint. A failed migration or fingerprint is a stop condition: inspect the
+logs and follow the [upgrade guide](upgrade-guide.md); never bypass it with
+`alembic stamp`.
+
 Do not point source installs at mutable GHCR `latest` tags. The historical
 `v6.0.0` release contains only five of the eight current image families and has
 no `adversarygraph-images.env` digest manifest. A prebuilt production rollout
@@ -277,8 +306,9 @@ and digest-pinned artifact set. The release workflow currently publishes
 Linux/AMD64 images; other architectures use an independently validated source
 build until a multi-architecture release gate is implemented.
 
-First startup creates the external DB directory, installs the bundled pgvector
-extension, creates the RAG tables and indexes, and ingests MITRE ATT&CK STIX
+First startup creates the external DB directory, applies the migration-owned
+research/workflow/outbox schema, installs the bundled pgvector extension,
+creates the legacy-compatible RAG tables and indexes, and ingests MITRE ATT&CK STIX
 data into PostgreSQL. This can take several minutes. Source ingestion does not
 automatically mean the derived RAG corpus is ready; queue the first
 reconciliation after startup.
@@ -316,7 +346,7 @@ curl http://localhost:3000/api/rag/status
 Expected health response:
 
 ```json
-{"status":"ok","version":"7.0.0"}
+{"status":"ok","version":"8.0.0-beta.1"}
 ```
 
 The readiness response is `200` with `status: "ready"` when the database can

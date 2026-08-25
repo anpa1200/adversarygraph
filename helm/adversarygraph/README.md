@@ -1,10 +1,12 @@
 # AdversaryGraph Helm Chart
 
-This v7 chart is a deployment scaffold for a controlled, single-workspace
-Kubernetes installation. Production use requires the image digests and manifest
-produced by the successful v7.0.0 tag workflow; source metadata or human-readable
-tags alone are not release evidence. It is not a managed-SaaS or multi-tenant
-isolation boundary.
+This chart accompanies the `v8.0.0-beta.1` manual-testing pre-release for a
+controlled, single-workspace Kubernetes installation. v7.0.0 remains the latest
+stable release. Beta evaluation with prebuilt images requires the digests and
+manifest produced by the successful `v8.0.0-beta.1` tag workflow; source
+metadata or human-readable tags alone are not release evidence. It is not a
+managed-SaaS or multi-tenant isolation boundary, and successful rendering does
+not complete the v8 manual readiness matrix.
 
 ## Prerequisites
 
@@ -21,7 +23,9 @@ isolation boundary.
 The bundled chart deploys PostgreSQL and Redis. Setting either bundled service
 to `enabled: false` requires a deployment-specific chart overlay that supplies
 the external host/URL and removes the corresponding internal-service
-assumptions; the base values do not configure managed database endpoints.
+assumptions. For PostgreSQL, set `postgresql.externalHost` and
+`postgresql.externalPort`; the external database and runtime Secret must exist
+before installation so the blocking pre-install migration hook can connect.
 
 ## Secrets
 
@@ -99,15 +103,20 @@ helm template adversarygraph ./helm/adversarygraph \
 
 Review `rendered.yaml` without committing it: confirm image tags, Secret names,
 PVC/storage classes, resource limits, CORS origin, secure cookies, ingress TLS,
-pod security contexts, and the rendered NetworkPolicies.
+pod security contexts, the migration Job and schema-authority init containers,
+and the rendered NetworkPolicies. Render an upgrade separately with
+`helm template --is-upgrade` and confirm that the migration Job is a
+`pre-upgrade` hook from the same reviewed backend image.
 
 `config.productionMode: "true"` is fail-closed. Rendering then requires native
 authentication, secure cookies, explicit HTTPS CORS origins, the baseline
 NetworkPolicies, an externally managed Secret, reviewed backend/frontend,
-enabled-MalwareGraph, and enabled-scanner-MCP digests, the custom remediated PostgreSQL repository and
-digest, and a Redis digest. This validates chart values, not the contents of an
-existing Secret or the registry provenance of a syntactically valid digest;
-review both separately.
+enabled-MalwareGraph, and enabled-scanner-MCP digests, a Redis digest, and the
+custom remediated PostgreSQL repository and digest when bundled PostgreSQL is
+enabled. An external-database overlay must separately attest its PostgreSQL and
+pgvector build. This validates chart values, not the contents of an existing
+Secret or the registry provenance of a syntactically valid digest; review both
+separately.
 
 ### Image integrity
 
@@ -117,11 +126,11 @@ PostgreSQL
 uses the pgvector project's `0.8.2-pg16` compatibility image so the development
 chart has the extension required by the RAG schema; both PostgreSQL and Redis
 compatibility images are digest-pinned. Do not deploy the application tags
-until the matching tag workflow publishes and verifies them. For production,
-use the release manifest, replace the PostgreSQL
-compatibility image with the release's custom image and use the digest manifest
-created by that revision's successful tag workflow. A configured digest takes
-precedence over its human-readable tag:
+until the matching tag workflow publishes and verifies them. For production
+with bundled PostgreSQL, use the release manifest, replace the compatibility
+image with the release's custom image, and use the digest manifest created by
+that revision's successful tag workflow. A configured digest takes precedence
+over its human-readable tag:
 
 ```yaml
 image:
@@ -153,8 +162,8 @@ PostgreSQL pin for the remediated release image in a gated rollout.
 `networkPolicy.enabled: true` creates a baseline ingress policy for every chart
 pod. The API accepts port 8000 only from this release's frontend; PostgreSQL,
 Redis, and MalwareGraph accept their service ports only from the components
-that use them; scanner MCP accepts port 8200 only from API pods; worker and beat
-admit no pod ingress. The frontend admits port
+that use them; scanner MCP accepts port 8200 only from API pods; worker, Beat,
+and migration jobs admit no pod ingress. The frontend admits port
 8080 from any source because ingress-controller namespace and pod labels are
 cluster-specific.
 
@@ -167,6 +176,49 @@ additional raw ingress rules required by monitoring or backup workloads. For
 example, a PostgreSQL backup job must be explicitly allowed by its pod labels.
 Disable the baseline only when an equivalent namespace or CNI policy is already
 enforced and documented.
+
+### Schema migration gate
+
+The chart runs `python -m alembic upgrade head` from the exact backend image
+being deployed. It supplies only the configured database endpoint and the
+`DB_NAME`, `DB_USER`, and `DB_PASS` keys from the runtime Secret. The Job and
+all schema gates run without a service-account token, as UID/GID 999, with a
+read-only root filesystem and all capabilities dropped.
+
+The lifecycle is deliberately fail-closed:
+
+- A first install with bundled PostgreSQL creates a normal `migrate-install`
+  Job. Its init container waits for the new database, while API, worker, and
+  Beat init containers wait for the exact Alembic head and physical authority
+  fingerprint before starting their application processes.
+- A first install with `postgresql.enabled=false` uses a blocking `pre-install`
+  hook. Set `postgresql.externalHost`, `postgresql.externalPort`, and an
+  out-of-band `secrets.existingSecret`; Helm refuses a chart-managed Secret
+  because normal release resources do not exist when pre-install hooks run.
+- Every upgrade uses a blocking `pre-upgrade` hook. A failed migration keeps
+  the old workload revision in place and retains the failed Job for diagnosis;
+  a successful hook is removed. The ordinary first-install Job is removed by
+  its TTL after completion.
+
+Before an upgrade, verify a logical backup, quiesce API writers, and stop Beat
+and worker processing. Revision `20260824_0004` rejects incompatible live
+workflow authority in its preflight; repair from retained broker/audit evidence
+under an operator-reviewed procedure. Never use `alembic stamp` to bypass a
+failed migration. Helm `--atomic` can roll back Kubernetes resources, but it
+does not reverse a successful database migration; do not treat it as a
+downgrade guarantee.
+
+Inspect migration state during installation or after a failure with:
+
+```bash
+kubectl -n adversarygraph get jobs,pods \
+  -l app.kubernetes.io/role=migration
+kubectl -n adversarygraph logs job/adversarygraph-migrate-install -c migrate
+```
+
+The exact Job name includes the Helm release fullname. For a failed upgrade,
+use `helm get hooks adversarygraph` to resolve the retained hook name before
+reading its logs.
 
 ### Scanner MCP boundary
 
@@ -213,13 +265,16 @@ across nodes and hope the scheduler can attach a single-node volume twice.
 ```bash
 helm upgrade --install adversarygraph ./helm/adversarygraph \
   --namespace adversarygraph --create-namespace \
-  --atomic --timeout 15m -f values.prod.yaml
+  --atomic --wait-for-jobs --timeout 15m -f values.prod.yaml
 kubectl -n adversarygraph rollout status deployment/adversarygraph-api
 kubectl -n adversarygraph rollout status deployment/adversarygraph-frontend
 ```
 
-The API liveness probe uses `/api/health`; readiness uses `/api/ready` and does
-not admit traffic until PostgreSQL responds. The frontend receives the
+On an initial bundled-database install, the migration Job may already have been
+removed by its completion TTL; in that case confirm the API, worker, and Beat
+pods passed their `schema-authority` init container. The API liveness probe uses
+`/api/health`; readiness uses `/api/ready` and does not admit traffic until
+PostgreSQL and the required authority schema respond. The frontend receives the
 release-qualified API Service through `API_UPSTREAM`.
 
 `config.localLlmBaseUrl` is empty by default because Kubernetes does not
@@ -229,7 +284,7 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 
 ## Unified RAG Configuration
 
-The v7 chart templates enable RAG configuration and scheduled reconciliation
+The v8 beta chart templates enable RAG configuration and scheduled reconciliation
 by default, while semantic embeddings remain disabled. Use revision-matched
 backend and frontend application images; worker and Beat use the backend image.
 The digest-pinned
@@ -309,15 +364,17 @@ MCP HTTP/SSE listener to the chart. See
 - Review and extend the chart's baseline ingress NetworkPolicies; supply
   deployment-specific egress/DNS policy, Pod Security admission, image-signing
   policy, monitoring, backup automation, and secret rotation.
-- The chart has no Alembic migration Job; v7 still uses additive startup schema
-  compatibility, so upgrades require a verified logical backup.
+- The chart gates research/workflow authority through Alembic, but unrelated
+  legacy tables still use additive startup compatibility. Every upgrade still
+  requires a verified logical backup; the chart does not claim zero-downtime or
+  downgrade-safe schema compatibility.
 - The chart does not deploy the attack-lab web or endpoint fixtures. Keep those
   fixtures in a separate authorized lab environment.
 - MalwareGraph dynamic/runtime behavior remains disabled unless an operator
   explicitly approves an isolated disposable runtime.
 
 See [`SECURITY.md`](../../SECURITY.md),
-[`docs/release-readiness-v7.md`](../../docs/release-readiness-v7.md), and
+[`docs/release-readiness-v8.md`](../../docs/release-readiness-v8.md), and
 [`docs/backup-restore.md`](../../docs/backup-restore.md).
 
 ## Scanner findings that require deployment context
@@ -330,17 +387,19 @@ the deployment review:
   `metadata.namespace`, which is standard for reusable Helm charts. Install
   with `--namespace adversarygraph --create-namespace` as shown above and scan
   the release in that namespace. Do not hard-code a namespace into the chart.
-- `CKV_K8S_35`: AdversaryGraph and the upstream PostgreSQL/Redis images consume
-  credentials through environment variables. The chart references an
-  externally managed Secret and does not place secret values in ConfigMaps or
-  rendered default values. Converting to secret files requires application and
-  upstream entrypoint support; protect Secret RBAC, admission, audit, and
-  rotation instead of applying an incompatible manifest-only rewrite.
-- `CKV_K8S_40`: API/worker/beat, scanner MCP, frontend, PostgreSQL, and Redis use the
-  non-root UIDs defined and tested by their images. Raising those UIDs solely
-  for a scanner can break image files and persistent-volume ownership. The
-  chart enforces `runAsNonRoot`, drops all capabilities, disables privilege
-  escalation and service-account token mounting, and uses the compatible UID.
+- `CKV_K8S_35`: AdversaryGraph, its migration/schema gates, and the upstream
+  PostgreSQL/Redis images consume credentials through environment variables.
+  The chart references an externally managed Secret and does not place secret
+  values in ConfigMaps or rendered default values. Converting to secret files
+  requires application and upstream entrypoint support; protect Secret RBAC,
+  admission, audit, and rotation instead of applying an incompatible
+  manifest-only rewrite.
+- `CKV_K8S_40`: API/worker/Beat, migration/schema gates, scanner MCP, frontend,
+  PostgreSQL, and Redis use the non-root UIDs defined and tested by their
+  images. Raising those UIDs solely for a scanner can break image files and
+  persistent-volume ownership. The chart enforces `runAsNonRoot`, drops all
+  capabilities, disables privilege escalation and service-account token
+  mounting, and uses the compatible UID.
 - `CKV_K8S_43`: the four tag-based custom images remain findings in a default
   render until the operator supplies the release's reviewed digests.
   Redis and the development pgvector compatibility image are digest-pinned.

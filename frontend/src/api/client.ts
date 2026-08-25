@@ -26,7 +26,11 @@ http.interceptors.response.use(
     const detail = error.response?.data?.detail;
     const message = Array.isArray(detail)
       ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join('; ')
-      : detail || error.response?.data?.message || error.message || 'Unknown API error';
+      : typeof detail === 'string'
+        ? detail
+        : detail && typeof detail === 'object'
+          ? String(detail.message || JSON.stringify(detail))
+          : error.response?.data?.message || error.message || 'Unknown API error';
     const url = error.config?.url || '';
     const silentOn500 = ['/report', '/workflow-graph', '/logs'];
     const isSilent500 = error.response?.status === 500 && silentOn500.some(p => url.endsWith(p));
@@ -762,6 +766,8 @@ export const iocApi = {
     extracted: number;
     imported: {source: string; days: null; inserted: number; updated: number; actor_links: number};
     preview: IOCItem[];
+    candidate_only: true;
+    review_path: string;
   }> =>
     http.post('/ioc/report', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
   actorCsvUrl: (actorId: string, days = 180, activeOnly = true) =>
@@ -802,6 +808,10 @@ export interface AnalysisResult {
     evidence_start?: number | null;
     evidence_end?: number | null;
     evidence_source?: string;
+    llm_verified?: boolean;
+    review_note?: string;
+    reviewer?: string;
+    reviewed_at?: string | null;
   }>;
   apt_matches: Array<{ group_attack_id: string; group_name: string; similarity: number; shared_count: number; shared_techniques: string[] }>;
   apt_hints: string[];
@@ -831,6 +841,193 @@ export interface LinkedReportEntity {
 }
 
 export type ReportTlp = 'TLP:CLEAR' | 'TLP:GREEN' | 'TLP:AMBER' | 'TLP:AMBER+STRICT' | 'TLP:RED';
+
+export type ReportReviewProfile = 'external_cti' | 'internal_ir';
+export type ReportReviewState = 'draft' | 'in_review' | 'changes_requested' | 'approved' | 'promoted' | 'stale' | 'rejected' | 'revoked';
+export type ReportReviewGateKey = 'source_provenance' | 'publication_date' | 'procedure_relevance' | 'procedure_level_claim' | 'actor_identification';
+export type ReportReviewMachineVerdict = 'not_run' | 'pass' | 'fail' | 'warning';
+export type ReportReviewAnalystVerdict = 'pending' | 'pass' | 'fail' | 'needs_information' | 'not_applicable';
+export type ReportReviewClaimStatus = 'suggested' | 'accepted' | 'rejected' | 'needs_evidence';
+export type ReportReviewClaimType = 'procedure' | 'actor' | 'publication_date' | 'indicator' | 'vulnerability';
+export type ReportReviewPromotionTarget = 'canonical_intelligence' | 'rag' | 'hunting' | 'exports';
+
+export interface ReportReviewEvidenceRef {
+  id?: string;
+  kind?: string;
+  type?: string;
+  label?: string;
+  value?: unknown;
+  excerpt?: string;
+  quote?: string;
+  source?: string;
+  source_url?: string;
+  locator?: string | Record<string, unknown>;
+  evidence_start?: number | null;
+  evidence_end?: number | null;
+  start?: number | null;
+  end?: number | null;
+  path?: string;
+  captured_at?: string | null;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface ReportReviewGate {
+  id?: string;
+  gate_key: ReportReviewGateKey;
+  ordinal?: number;
+  title?: string;
+  question?: string;
+  description?: string;
+  required?: boolean;
+  machine_verdict: ReportReviewMachineVerdict;
+  machine_summary?: string;
+  machine_evidence?: ReportReviewEvidenceRef[];
+  machine_details?: Record<string, unknown>;
+  machine_evidence_refs?: ReportReviewEvidenceRef[];
+  machine_evaluator?: string;
+  machine_evaluated_at?: string | null;
+  allowed_reason_codes?: string[];
+  allowed_reason_codes_by_verdict?: Partial<Record<ReportReviewAnalystVerdict, string[]>>;
+  analyst_verdict: ReportReviewAnalystVerdict;
+  reason_code?: string;
+  rationale?: string;
+  evidence_refs: ReportReviewEvidenceRef[];
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  stale?: boolean;
+  stale_reasons?: string[];
+}
+
+export interface ReportReviewClaim {
+  id: string;
+  claim_key?: string;
+  claim_type: ReportReviewClaimType;
+  title?: string;
+  claim?: string;
+  statement?: string;
+  subject?: string;
+  action?: string;
+  predicate?: string;
+  object?: string;
+  status: ReportReviewClaimStatus;
+  reason_code?: string;
+  rationale?: string;
+  evidence_refs: ReportReviewEvidenceRef[];
+  evidence_text?: string;
+  evidence_start?: number | null;
+  evidence_end?: number | null;
+  extraction_method?: string;
+  attack_id?: string;
+  actor_id?: string;
+  attack_ids?: string[];
+  actor_ids?: string[];
+  confidence?: number | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReportReviewReadiness {
+  ready: boolean;
+  blockers: string[];
+  accepted_claim_count: number;
+  required_gate_count: number;
+  reviewed_gate_count: number;
+  failed_gate_count?: number;
+  pending_claim_count?: number;
+}
+
+export interface ReportReviewPromotion {
+  id?: string;
+  status?: string;
+  targets?: ReportReviewPromotionTarget[];
+  promoted_by?: string | null;
+  promoted_at?: string | null;
+  revoked_by?: string | null;
+  revoked_at?: string | null;
+  reason?: string;
+  manifest?: Record<string, unknown>;
+}
+
+export interface ReportReviewAssessment {
+  id?: string;
+  session_id: string;
+  profile: ReportReviewProfile;
+  state: ReportReviewState;
+  revision?: number;
+  version: number;
+  policy_version?: string;
+  source_checksum?: string;
+  analysis_checksum?: string;
+  source_revision?: number;
+  analysis_revision?: number;
+  source_char_count?: number;
+  analyzed_char_count?: number;
+  coverage_complete?: boolean;
+  coverage_exception_reason?: string;
+  coverage_exception_by?: string;
+  coverage_exception_at?: string | null;
+  gates: ReportReviewGate[];
+  claims: ReportReviewClaim[];
+  readiness: ReportReviewReadiness;
+  active_promotion?: ReportReviewPromotion | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
+  submitted_by?: string | null;
+  submitted_at?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+}
+
+export interface ReportReviewAiAdvisory {
+  authoritative: false;
+  provider?: string;
+  model?: string;
+  prompt_version?: string;
+  coverage?: { source_char_count?: number; analyzed_char_count?: number; complete?: boolean };
+  source_chars?: number;
+  coverage_chars?: number;
+  complete_coverage?: boolean;
+  review_id?: string;
+  review_revision?: number;
+  review_version?: number;
+  review?: ReportReviewAssessment;
+  suggested_claim_count?: number;
+  disclaimer?: string;
+  parts?: Array<Record<string, unknown>>;
+  summary?: string;
+  warnings?: string[];
+  suggestions?: Record<string, unknown>;
+  assessment?: ReportReviewAssessment;
+  [key: string]: unknown;
+}
+
+export interface ReportReviewHistoryEvent {
+  id?: string;
+  action?: string;
+  event_type?: string;
+  actor?: string;
+  reviewer?: string;
+  from_state?: string | null;
+  to_state?: string | null;
+  summary?: string;
+  details?: Record<string, unknown>;
+  created_at?: string;
+  occurred_at?: string;
+}
+
+export interface ReportReviewCollectionSummary {
+  state: ReportReviewState | 'unreviewed';
+  ready: boolean;
+  reviewed_gate_count: number;
+  required_gate_count: number;
+  accepted_claim_count: number;
+  blocker_count: number;
+  blockers?: string[];
+}
 
 export interface LinkedAnalysisReport {
   session_id: string;
@@ -876,6 +1073,9 @@ export interface ReportCollectionItem {
   source_text_available: boolean;
   counts: Record<string, number>;
   tags: Record<string, ReportCollectionTag[]>;
+  review?: ReportReviewCollectionSummary | null;
+  review_summary?: ReportReviewCollectionSummary | null;
+  review_state?: ReportReviewState | 'unreviewed' | null;
 }
 
 export interface ReportCollectionResult {
@@ -954,10 +1154,100 @@ export const analyzeApi = {
       review_status: 'suggested' | 'accepted' | 'rejected' | 'needs-evidence';
       evidence?: string;
       review_note?: string;
-      reviewer?: string;
     },
   ): Promise<AnalysisResult['techniques'][number]> =>
     http.patch(`/analyze/sessions/${sessionId}/techniques/${attackId}/review`, body).then(r => r.data),
+
+  reportReview: (sessionId: string): Promise<ReportReviewAssessment> =>
+    http.get(`/analyze/sessions/${sessionId}/review`, { skipGlobalError: true } as any).then(r => r.data),
+
+  startReportReview: (
+    sessionId: string,
+    body: { profile?: ReportReviewProfile; expected_source_checksum?: string },
+  ): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/start`, body).then(r => r.data),
+
+  runReportReviewPreflight: (sessionId: string, expectedVersion: number): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/preflight`, { expected_version: expectedVersion }).then(r => r.data),
+
+  assistReportReview: (
+    sessionId: string,
+    body: { expected_version: number; provider?: string; model?: string; cloud_processing_acknowledged: boolean },
+  ): Promise<ReportReviewAiAdvisory> =>
+    http.post(`/analyze/sessions/${sessionId}/review/ai-assist`, body).then(r => r.data),
+
+  updateReportReviewGate: (
+    sessionId: string,
+    gateKey: ReportReviewGateKey,
+    body: {
+      expected_version: number;
+      verdict: Exclude<ReportReviewAnalystVerdict, 'pending'>;
+      reason_code: string;
+      rationale?: string;
+      evidence_refs?: ReportReviewEvidenceRef[];
+    },
+  ): Promise<ReportReviewAssessment> =>
+    http.patch(`/analyze/sessions/${sessionId}/review/gates/${gateKey}`, body).then(r => r.data),
+
+  updateReportReviewClaim: (
+    sessionId: string,
+    claimId: string,
+    body: {
+      expected_version: number;
+      status: ReportReviewClaimStatus;
+      rationale?: string;
+      evidence_refs?: ReportReviewEvidenceRef[];
+    },
+  ): Promise<ReportReviewAssessment> =>
+    http.patch(`/analyze/sessions/${sessionId}/review/claims/${claimId}`, body).then(r => r.data),
+
+  createReportReviewClaim: (
+    sessionId: string,
+    body: {
+      expected_version: number;
+      claim_type: ReportReviewClaimType;
+      subject: string;
+      action: string;
+      object: string;
+      statement: string;
+      attack_id?: string;
+      actor_id?: string;
+      rationale?: string;
+      evidence_refs?: ReportReviewEvidenceRef[];
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/claims`, body).then(r => r.data),
+
+  setReportReviewCoverageException: (
+    sessionId: string,
+    body: { expected_version: number; reason: string },
+  ): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/coverage-exception`, body).then(r => r.data),
+
+  submitReportReview: (sessionId: string, expectedVersion: number): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/submit`, { expected_version: expectedVersion }).then(r => r.data),
+
+  approveReportReview: (sessionId: string, body: { expected_version: number; decision_note?: string }): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/approve`, body).then(r => r.data),
+
+  requestReportReviewChanges: (sessionId: string, body: { expected_version: number; reason: string }): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/request-changes`, body).then(r => r.data),
+
+  rejectReportReview: (sessionId: string, body: { expected_version: number; reason: string }): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/reject`, body).then(r => r.data),
+
+  promoteReportReview: (
+    sessionId: string,
+    body: { expected_version: number; targets: ReportReviewPromotionTarget[]; note?: string },
+  ): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/promote`, body).then(r => r.data),
+
+  revokeReportReview: (sessionId: string, body: { expected_version: number; reason: string }): Promise<ReportReviewAssessment> =>
+    http.post(`/analyze/sessions/${sessionId}/review/revoke`, body).then(r => r.data),
+
+  reportReviewHistory: (sessionId: string): Promise<ReportReviewHistoryEvent[]> =>
+    http.get(`/analyze/sessions/${sessionId}/review/history`).then(r => Array.isArray(r.data) ? r.data : (r.data?.items ?? [])),
 };
 
 // ── Asset Attack Surface ─────────────────────────────────────────────────────
@@ -1610,10 +1900,21 @@ export interface Investigation {
   evidence_nodes: Array<Record<string, unknown>>; evidence_edges: Array<Record<string, unknown>>;
   timeline: Array<Record<string, unknown>>; created_at: string; updated_at: string;
 }
-export interface IntakeRecord {
-  id: string; title: string; url: string; publisher: string; status: string; summary: string;
+export type IntakeStatus = 'pending' | 'stored' | 'analyzed' | 'under_review' | 'reviewed' | 'rejected' | 'revoked';
+export interface IntakeBody {
+  title: string; url: string; publisher: string; status: IntakeStatus; summary: string;
   source_reliability: string; actor_ids: string[]; technique_ids: string[];
-  indicators: Array<Record<string, unknown>>; analyst_notes: string; created_at: string; updated_at: string;
+  indicators: Array<Record<string, unknown>>; analyst_notes: string;
+}
+export interface IntakeRecord extends Omit<IntakeBody, 'status'> {
+  id: string;
+  status: string;
+  analysis_session_id: string | null;
+  tags: string[];
+  provenance: Record<string, unknown>;
+  asset_retrohunt?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 export interface DetectionCandidate {
   id: string; title: string; technique_id: string; status: string; owner: string;
@@ -1631,8 +1932,8 @@ export const operationsApi = {
   updateInvestigation: (id: string, body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.put(`${operations}/investigations/${id}`, body).then(r => r.data),
   removeInvestigation: (id: string): Promise<void> => http.delete(`${operations}/investigations/${id}`).then(() => {}),
   intake: (): Promise<IntakeRecord[]> => http.get(`${operations}/intake`).then(r => r.data),
-  createIntake: (body: Omit<IntakeRecord, 'id' | 'created_at' | 'updated_at'>): Promise<IntakeRecord> => http.post(`${operations}/intake`, body).then(r => r.data),
-  updateIntake: (id: string, body: Omit<IntakeRecord, 'id' | 'created_at' | 'updated_at'>): Promise<IntakeRecord> => http.put(`${operations}/intake/${id}`, body).then(r => r.data),
+  createIntake: (body: IntakeBody): Promise<IntakeRecord> => http.post(`${operations}/intake`, body).then(r => r.data),
+  updateIntake: (id: string, body: IntakeBody): Promise<IntakeRecord> => http.put(`${operations}/intake/${id}`, body).then(r => r.data),
   removeIntake: (id: string): Promise<void> => http.delete(`${operations}/intake/${id}`).then(() => {}),
   detections: (): Promise<DetectionCandidate[]> => http.get(`${operations}/detections`).then(r => r.data),
   createDetection: (body: Omit<DetectionCandidate, 'id' | 'created_at' | 'updated_at'>): Promise<DetectionCandidate> => http.post(`${operations}/detections`, body).then(r => r.data),
@@ -3988,6 +4289,199 @@ export interface ThreatCompanySpaceDetail {
   monitors: ThreatSpaceMonitor[];
   ai_steps: ThreatSpaceAIStep[];
 }
+
+export type ResearchProjectStatus = 'active' | 'archived';
+export type ResearchRevisionStatus = 'current' | 'superseded' | 'revoked';
+export type ResearchWorkflowStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'degraded'
+  | 'failed'
+  | 'cancelled'
+  | 'dead_lettered';
+export type ResearchStageStatus =
+  | 'pending'
+  | 'ready'
+  | 'running'
+  | 'retry_wait'
+  | 'succeeded'
+  | 'degraded'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped'
+  | 'dead_lettered';
+
+export interface ResearchProjectSpec {
+  objective: string;
+  intelligence_requirements: string[];
+  domains?: Array<'enterprise-attack' | 'mobile-attack' | 'ics-attack' | 'atlas'>;
+  actor_scope?: string[];
+  technique_scope?: string[];
+  sectors?: string[];
+  regions?: string[];
+  source_kinds?: Array<'url' | 'file' | 'text' | 'rss' | 'taxii' | 'misp' | 'stix' | 'opencti'>;
+  output_targets?: Array<'canonical_intelligence' | 'knowledge' | 'rag' | 'hunting' | 'detections' | 'exports'>;
+  review_profile?: 'external_cti' | 'internal_ir';
+  tlp?: 'TLP:CLEAR' | 'TLP:GREEN' | 'TLP:AMBER' | 'TLP:AMBER+STRICT';
+  date_from?: string | null;
+  date_to?: string | null;
+  tags?: string[];
+}
+
+export interface ResearchProjectRevision {
+  id: string;
+  revision: number;
+  parent_revision_id: string | null;
+  status: ResearchRevisionStatus;
+  schema_version: string;
+  spec_checksum: string;
+  spec: ResearchProjectSpec;
+  change_summary: string;
+  created_by: string;
+  created_by_id: string;
+  revoked_by: string;
+  revoked_by_id: string;
+  revoked_at: string | null;
+  created_at: string | null;
+}
+
+export interface ResearchProject {
+  id: string;
+  project_key: string;
+  name: string;
+  description: string;
+  status: ResearchProjectStatus;
+  domain: string;
+  tlp: string;
+  version: number;
+  created_by: string;
+  created_by_id: string;
+  updated_by: string;
+  updated_by_id: string;
+  archive_reason: string;
+  archived_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  current_revision: ResearchProjectRevision;
+}
+
+export interface ResearchWorkflow {
+  id: string;
+  project_revision_id: string;
+  workflow_type: string;
+  status: ResearchWorkflowStatus;
+  trigger_type: 'manual' | 'api' | 'schedule' | 'replay';
+  correlation_id: string;
+  priority: number;
+  state_version: number;
+  status_reason_code: string;
+  status_summary: string;
+  created_by: string;
+  created_by_id: string;
+  cancel_requested_by: string;
+  cancel_requested_by_id: string;
+  cancel_reason: string;
+  cancel_request_id: string | null;
+  cancel_requested_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ResearchWorkflowStage {
+  id: string;
+  stage_key: string;
+  stage_type: string;
+  stage_version: string;
+  ordinal: number;
+  status: ResearchStageStatus;
+  required: boolean;
+  state_version: number;
+  attempt_count: number;
+  max_attempts: number;
+  next_attempt_at: string | null;
+  checkpoint_version: number;
+  last_error_code: string;
+  last_error_summary: string;
+  last_error_retryable: boolean;
+  first_started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ResearchWorkflowCancellation {
+  request_id: string;
+  workflow_run_id: string;
+  actor: string;
+  actor_id: string;
+  reason: string;
+  previous_workflow_state_version: number;
+  workflow_state_version: number;
+  cancelled_at: string;
+  cancelled_stage_ids: string[];
+  cancelled_attempt_ids: string[];
+  cancelled_message_ids: string[];
+  cancelled_delivery_ids: string[];
+  disposition: 'applied' | 'replayed';
+  should_apply: boolean;
+}
+
+export const researchProjectsApi = {
+  list: (params?: { status?: ResearchProjectStatus; limit?: number; offset?: number }): Promise<{
+    total: number;
+    limit: number;
+    offset: number;
+    items: ResearchProject[];
+  }> => http.get('/research/projects', { params }).then(r => r.data),
+  create: (body: {
+    project_key: string;
+    name: string;
+    description?: string;
+    spec: ResearchProjectSpec;
+    change_summary?: string;
+  }): Promise<ResearchProject> => http.post('/research/projects', body).then(r => r.data),
+  get: (projectId: string): Promise<ResearchProject> =>
+    http.get(`/research/projects/${projectId}`).then(r => r.data),
+  update: (
+    projectId: string,
+    body: { expected_version: number; name?: string; description?: string },
+  ): Promise<ResearchProject> => http.patch(`/research/projects/${projectId}`, body).then(r => r.data),
+  createRevision: (
+    projectId: string,
+    body: { expected_version: number; spec: ResearchProjectSpec; change_summary: string },
+  ): Promise<ResearchProject> => http.post(`/research/projects/${projectId}/revisions`, body).then(r => r.data),
+  revisions: (projectId: string): Promise<{
+    project_id: string;
+    project_version: number;
+    items: ResearchProjectRevision[];
+  }> => http.get(`/research/projects/${projectId}/revisions`).then(r => r.data),
+  revision: (projectId: string, revision: number): Promise<ResearchProjectRevision> =>
+    http.get(`/research/projects/${projectId}/revisions/${revision}`).then(r => r.data),
+  archive: (projectId: string, body: { expected_version: number; reason: string }): Promise<ResearchProject> =>
+    http.post(`/research/projects/${projectId}/archive`, body).then(r => r.data),
+  startWorkflow: (
+    projectId: string,
+    body: { idempotency_token: string; priority?: number },
+  ): Promise<{ created: boolean; workflow: ResearchWorkflow }> =>
+    http.post(`/research/projects/${projectId}/workflows`, body).then(r => r.data),
+  workflows: (projectId: string, params?: { limit?: number; offset?: number }): Promise<{
+    total: number;
+    limit: number;
+    offset: number;
+    items: ResearchWorkflow[];
+  }> => http.get(`/research/projects/${projectId}/workflows`, { params }).then(r => r.data),
+  workflow: (projectId: string, workflowId: string): Promise<{
+    workflow: ResearchWorkflow;
+    stages: ResearchWorkflowStage[];
+  }> => http.get(`/research/projects/${projectId}/workflows/${workflowId}`).then(r => r.data),
+  cancelWorkflow: (
+    projectId: string,
+    workflowId: string,
+    body: { request_id: string; expected_workflow_state_version: number; reason: string },
+  ): Promise<ResearchWorkflowCancellation> =>
+    http.post(`/research/projects/${projectId}/workflows/${workflowId}/cancel`, body).then(r => r.data),
+};
 
 export const threatRadarApi = {
   spaces: (): Promise<ThreatCompanySpace[]> => http.get('/threat-radar/spaces').then(r => r.data),

@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "verify-release-tag-rulesets.py"
-SPEC = importlib.util.spec_from_file_location("verify_release_tag_rulesets", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "verify_release_tag_rulesets", MODULE_PATH
+)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import setup guard
     raise RuntimeError(f"Could not load {MODULE_PATH}")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -30,29 +32,26 @@ class GitHubFnmatchTests(unittest.TestCase):
         self.assertFalse(MODULE._github_fnmatch("refs/**", "refs/tags/v6.0.0"))
 
     def test_supported_character_set(self) -> None:
-        self.assertTrue(
-            MODULE._github_fnmatch("refs/tags/v[0-9]*", "refs/tags/v6.0.0")
-        )
+        self.assertTrue(MODULE._github_fnmatch("refs/tags/v[0-9]*", "refs/tags/v6.0.0"))
 
     def test_unsupported_syntax_fails_closed(self) -> None:
-        self.assertFalse(
-            MODULE._github_fnmatch("refs/tags/v[^x]*", "refs/tags/v6.0.0")
-        )
-        self.assertFalse(
-            MODULE._github_fnmatch(r"refs/tags/v\*", "refs/tags/v6.0.0")
-        )
+        self.assertFalse(MODULE._github_fnmatch("refs/tags/v[^x]*", "refs/tags/v6.0.0"))
+        self.assertFalse(MODULE._github_fnmatch(r"refs/tags/v\*", "refs/tags/v6.0.0"))
 
 
 class RulesetConditionTests(unittest.TestCase):
     def test_broad_single_star_does_not_false_positive(self) -> None:
-        ruleset = {
-            "conditions": {"ref_name": {"include": ["refs/*"], "exclude": []}}
-        }
+        ruleset = {"conditions": {"ref_name": {"include": ["refs/*"], "exclude": []}}}
         self.assertFalse(MODULE._matches_ref(ruleset, "refs/tags/v6.0.0"))
 
 
 class RulesetVerificationTests(unittest.TestCase):
-    def _run(self, ruleset: dict[str, object]) -> int:
+    def _run(
+        self,
+        ruleset: dict[str, object],
+        *,
+        release_ref: str = "refs/tags/v7.0.0",
+    ) -> int:
         with tempfile.TemporaryDirectory() as temp_dir:
             ruleset_path = Path(temp_dir) / "ruleset.json"
             ruleset_path.write_text(json.dumps(ruleset), encoding="utf-8")
@@ -61,7 +60,7 @@ class RulesetVerificationTests(unittest.TestCase):
                 "argv",
                 [
                     "verify-release-tag-rulesets.py",
-                    "refs/tags/v7.0.0",
+                    release_ref,
                     str(ruleset_path),
                 ],
             ):
@@ -74,9 +73,7 @@ class RulesetVerificationTests(unittest.TestCase):
             "name": "Immutable release tags",
             "target": "tag",
             "enforcement": "active",
-            "conditions": {
-                "ref_name": {"include": ["refs/tags/v*"], "exclude": []}
-            },
+            "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
             "rules": [{"type": "deletion"}, {"type": "update"}],
         }
         ruleset.update(extra)
@@ -84,6 +81,15 @@ class RulesetVerificationTests(unittest.TestCase):
 
     def test_accepts_explicit_empty_bypass_list(self) -> None:
         self.assertEqual(self._run(self._ruleset(bypass_actors=[])), 0)
+
+    def test_accepts_numbered_beta_release_tag(self) -> None:
+        self.assertEqual(
+            self._run(
+                self._ruleset(bypass_actors=[]),
+                release_ref="refs/tags/v8.0.0-beta.1",
+            ),
+            0,
+        )
 
     def test_accepts_redacted_list_when_principal_can_never_bypass(self) -> None:
         self.assertEqual(

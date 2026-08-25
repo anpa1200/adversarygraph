@@ -26,6 +26,8 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        {{- include "adversarygraph.schemaAuthorityInitContainer" . | nindent 8 }}
       containers:
         - name: worker
           image: {{ include "adversarygraph.componentImage" .Values.image | quote }}
@@ -108,6 +110,8 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        {{- include "adversarygraph.schemaAuthorityInitContainer" . | nindent 8 }}
       containers:
         - name: beat
           image: {{ include "adversarygraph.componentImage" .Values.image | quote }}

@@ -7,10 +7,21 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.asset_surface import AssetIntelMatch, AssetRegistryItem
 from app.models.attack import AptGroup, AptGroupTechnique, Technique
 from app.models.cve import CVEActorLink, CVERecord, CVETechniqueLink
 from app.models.operations import ReportIntake
+from app.models.report_review import (
+    ReportPromotion,
+    ReportPromotionRevocation,
+    ReportReview,
+)
+from app.services.report_promotion import (
+    get_active_report_promotion,
+    promotion_allows,
+)
+from app.services.report_intake import latest_report_intake_id_subquery
 from app.services.taxonomy import asset_labels, canonical_tag, canonical_tags, canonical_value, labels_to_tags, split_multi
 
 
@@ -62,7 +73,52 @@ async def retrohunt_assets(
     cves = list((await session.execute(select(CVERecord).limit(limit_per_type))).scalars().all())
     cve_technique_links = list((await session.execute(select(CVETechniqueLink).limit(limit_per_type * 5))).scalars().all())
     cve_actor_links = list((await session.execute(select(CVEActorLink).limit(limit_per_type * 5))).scalars().all())
-    reports = list((await session.execute(select(ReportIntake).limit(limit_per_type))).scalars().all())
+    report_rows = (
+        await session.execute(
+            select(
+                ReportIntake,
+                ReportPromotion,
+                ReportReview,
+                AnalysisSession,
+                AnalysisResult,
+            )
+            .select_from(AnalysisSession)
+            .join(
+                ReportIntake,
+                ReportIntake.id
+                == latest_report_intake_id_subquery(AnalysisSession.id),
+            )
+            .join(
+                ReportPromotion,
+                ReportPromotion.session_id == AnalysisSession.id,
+            )
+            .join(ReportReview, ReportReview.id == ReportPromotion.review_id)
+            .join(
+                AnalysisResult,
+                AnalysisResult.session_id == AnalysisSession.id,
+            )
+            .outerjoin(
+                ReportPromotionRevocation,
+                ReportPromotionRevocation.promotion_id == ReportPromotion.id,
+            )
+            .where(
+                ReportIntake.status == "promoted",
+                ReportReview.state == "promoted",
+                ReportPromotionRevocation.id.is_(None),
+            )
+            .order_by(ReportIntake.updated_at.desc(), ReportIntake.id.desc())
+            .limit(limit_per_type)
+        )
+    ).all()
+    reports: list[ReportIntake] = []
+    for intake, promotion, _review, report_session, _result in report_rows:
+        active = await get_active_report_promotion(session, report_session.id)
+        if (
+            active is not None
+            and active.promotion.id == promotion.id
+            and promotion_allows(active.promotion, "canonical_intelligence")
+        ):
+            reports.append(intake)
     actor_rows = (await session.execute(
         select(AptGroup, Technique.attack_id)
         .join(AptGroupTechnique, AptGroupTechnique.group_id == AptGroup.id)

@@ -2,7 +2,40 @@
 
 ## Unreleased
 
-No changes are recorded after the v7.0.0 release boundary.
+No changes are recorded after the v8.0.0-beta.1 pre-release boundary.
+
+## v8.0.0-beta.1 - 2026-08-25
+
+This is a manual-testing pre-release. v7.0.0 remains the latest stable release;
+manual deployment and workflow acceptance for v8 is not yet complete.
+
+- Added the five-gate Report Review Gate with source/analysis fingerprints,
+  source-bound claim adjudication, optimistic concurrency, two-person approval,
+  immutable promotion manifests, optional RAG/hunting/export targets, and
+  append-only revocation history.
+- Made current promotion authority mandatory for report-derived graph, IOC,
+  RAG, hunt, retrohunt, PDF, STIX/OpenCTI, and related downstream consumers.
+- Added durable research projects and immutable revisions plus workflow, stage,
+  fenced-attempt, checkpoint, cancellation, retry, and recovery authority.
+- Added a transactional outbox with versioned messages, delivery attempts,
+  broker receipts, bounded Celery publication/recovery tasks, and receipt-bound
+  worker coordinators.
+- Added Alembic revisions `20260823_0001` through `20260824_0004` for the
+  research/workflow/outbox authority domain, with an exact-head startup gate
+  and catalog-derived physical fingerprint.
+- Added blocking migration orchestration for Docker Compose and Helm, including
+  install/upgrade migration Jobs and schema-authority init containers.
+- Migrated the client to React Router 7 and added Review Gate and operational
+  intake browser coverage.
+- Rebuilt the pinned Nuclei scanner with Go 1.26.7, `golang.org/x/mod` v0.40.0,
+  and `golang.org/x/text` v0.41.0, with compiled-artifact assertions that keep
+  the remediated module graph fail-closed.
+- Added a new, separate Operation Desert Hydra publication draft mapping all 31
+  research and validation steps to native, manual, and external AdversaryGraph
+  boundaries.
+- Added beta release notes, summary, readiness matrices, and operator/reviewer
+  documentation. Stable promotion remains a separate decision after recorded
+  manual testing.
 
 ## v7.0.0 - 2026-08-12
 

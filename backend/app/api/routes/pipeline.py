@@ -19,7 +19,6 @@ from app.core.safe_http import require_body_size
 _limit_10mb = require_body_size(10 * 1024 * 1024)
 from app.models.operations import ReportIntake
 from app.models.pipeline import AuditEvent, CollectionRun, CollectionSource, DetectionVersion, EnrichmentResult, Observable
-from app.services.asset_intel import retrohunt_assets
 from app.services.atlas import normalize_atlas
 from app.services.auth import TeamUser, audit, current_user, require_permission
 from app.services.collection import extract_observables, fetch_rss, misp_reports, stix_reports
@@ -102,9 +101,7 @@ _SENSITIVE_EXACT_NAMES = {
 
 def _is_sensitive_name(value: Any) -> bool:
     compact = re.sub(r"[^a-z0-9]", "", str(value).lower())
-    return compact in _SENSITIVE_EXACT_NAMES or any(
-        compact.endswith(suffix) for suffix in _SENSITIVE_CONFIG_SUFFIXES
-    )
+    return compact in _SENSITIVE_EXACT_NAMES or any(compact.endswith(suffix) for suffix in _SENSITIVE_CONFIG_SUFFIXES)
 
 
 def redact_sensitive_config(value: Any) -> Any:
@@ -139,10 +136,7 @@ def redact_source_url(value: Any) -> str:
                 return "[REDACTED]"
             safe_netloc = ""
         safe_query = urlencode(
-            [
-                (key, "[REDACTED]" if _is_sensitive_name(key) else item)
-                for key, item in parse_qsl(parsed.query, keep_blank_values=True)
-            ],
+            [(key, "[REDACTED]" if _is_sensitive_name(key) else item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)],
             doseq=True,
         )
         # Fragments are not sent to feed servers and commonly carry OAuth
@@ -186,33 +180,39 @@ async def add_observable(db: AsyncSession, item: dict, source_ref: str = "") -> 
 
 
 async def ingest_reports(db: AsyncSession, reports: list[dict], publisher: str, source_ref: str) -> dict:
-    created = observable_count = 0
+    created = 0
     for item in reports:
         url = item.get("url", "")
         existing = await db.execute(select(ReportIntake).where(ReportIntake.url == url, ReportIntake.title == item["title"]))
         if not existing.scalar_one_or_none():
-            indicators = item.get("indicators") or extract_observables(f'{item.get("title", "")} {item.get("summary", "")}')
-            db.add(ReportIntake(
-                title=item["title"], url=url, publisher=publisher, status="pending",
-                summary=item.get("summary", ""), source_reliability="unknown", indicators=indicators,
-                analyst_notes=f"Automated intake from {source_ref}. Review before promotion.",
-            ))
+            indicators = item.get("indicators") or extract_observables(f"{item.get('title', '')} {item.get('summary', '')}")
+            db.add(
+                ReportIntake(
+                    title=item["title"],
+                    url=url,
+                    publisher=publisher,
+                    status="pending",
+                    summary=item.get("summary", ""),
+                    source_reliability="unknown",
+                    indicators=indicators,
+                    analyst_notes=f"Automated intake from {source_ref}. Review before promotion.",
+                )
+            )
             created += 1
-            for indicator in indicators:
-                _, was_created = await add_observable(db, indicator, url or source_ref)
-                observable_count += int(was_created)
-    asset_retrohunt = None
-    if created:
-        try:
-            asset_retrohunt = await retrohunt_assets(db)
-        except Exception:
-            asset_retrohunt = None
-    return {"items_created": created, "observables_created": observable_count, "asset_retrohunt": asset_retrohunt}
+    # Extracted report observables are retained only inside ReportIntake until
+    # an approved promotion materializes accepted claims. Directly creating
+    # Observable rows or running retrohunt here would bypass that authority.
+    return {
+        "items_created": created,
+        "observables_created": 0,
+        "asset_retrohunt": None,
+    }
 
 
 @router.get("/me")
 async def me(user: TeamUser = Depends(current_user)):
     from app.core.config import settings
+
     return {"name": user.name, "roles": user.roles, "auth_enabled": settings.auth_enabled}
 
 
@@ -223,31 +223,31 @@ async def sources(
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(current_user),
 ):
-    rows = await db.execute(
-        select(CollectionSource)
-        .order_by(CollectionSource.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    rows = await db.execute(select(CollectionSource).order_by(CollectionSource.updated_at.desc()).limit(limit).offset(offset))
     return [source_out(row) for row in rows.scalars().all()]
 
 
 @router.post("/sources", status_code=201)
 async def create_source(body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
     row = CollectionSource(**body.model_dump())
-    db.add(row); await db.flush()
+    db.add(row)
+    await db.flush()
     await audit(db, user, "source.create", "collection_source", str(row.id), {"kind": row.kind, "name": row.name})
-    await db.commit(); await db.refresh(row)
+    await db.commit()
+    await db.refresh(row)
     return source_out(row)
 
 
 @router.put("/sources/{source_id}")
-async def update_source(source_id: str, body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)):
+async def update_source(
+    source_id: str, body: SourceBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds)
+):
     row = await source_or_404(db, source_id)
     for key, value in body.model_dump().items():
         setattr(row, key, value)
     await audit(db, user, "source.update", "collection_source", source_id)
-    await db.commit(); await db.refresh(row)
+    await db.commit()
+    await db.refresh(row)
     return source_out(row)
 
 
@@ -265,21 +265,26 @@ async def run_source(source_id: str, db: AsyncSession = Depends(get_session), us
         await db.commit()
         return out(run)
     run = CollectionRun(source_id=source.id)
-    db.add(run); await db.flush()
+    db.add(run)
+    await db.flush()
     try:
         if source.kind != "rss":
             raise ValueError(f"{source.kind.upper()} sources use the reviewed JSON import endpoint")
         reports = await fetch_rss(source.url)
         result = await ingest_reports(db, reports, source.name, source.url)
-        run.status = "complete"; run.items_seen = len(reports)
-        run.items_created = result["items_created"]; run.observables_created = result["observables_created"]
+        run.status = "complete"
+        run.items_seen = len(reports)
+        run.items_created = result["items_created"]
+        run.observables_created = result["observables_created"]
         source.last_run_at = datetime.now(timezone.utc)
     except Exception as exc:
         logger.exception("Collection source run failed source_id=%s", source_id)
-        run.status = "failed"; run.error = "Source collection failed. See server logs."
+        run.status = "failed"
+        run.error = "Source collection failed. See server logs."
     run.completed_at = datetime.now(timezone.utc)
     await audit(db, user, "source.run", "collection_source", source_id, {"status": run.status})
-    await db.commit(); await db.refresh(run)
+    await db.commit()
+    await db.refresh(run)
     return out(run)
 
 
@@ -300,17 +305,14 @@ async def runs(
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(current_user),
 ):
-    rows = await db.execute(
-        select(CollectionRun)
-        .order_by(CollectionRun.started_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    rows = await db.execute(select(CollectionRun).order_by(CollectionRun.started_at.desc()).limit(limit).offset(offset))
     return [out(row) for row in rows.scalars().all()]
 
 
 @router.post("/import/stix")
-async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)):
+async def import_stix(
+    bundle: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)
+):
     reports = stix_reports(bundle)
     result = await ingest_reports(db, reports, "STIX/TAXII import", "manual STIX/TAXII import")
     await audit(db, user, "import.stix", "report_intake", details={"seen": len(reports), **result})
@@ -319,7 +321,9 @@ async def import_stix(bundle: dict, db: AsyncSession = Depends(get_session), use
 
 
 @router.post("/import/misp")
-async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)):
+async def import_misp(
+    event: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel), _body=Depends(_limit_10mb)
+):
     reports = misp_reports(event)
     result = await ingest_reports(db, reports, "MISP import", "manual MISP import")
     await audit(db, user, "import.misp", "report_intake", details={"seen": len(reports), **result})
@@ -328,7 +332,9 @@ async def import_misp(event: dict, db: AsyncSession = Depends(get_session), user
 
 
 @router.post("/import/atlas")
-async def import_atlas(payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds), _body=Depends(_limit_10mb)):
+async def import_atlas(
+    payload: dict, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_feeds), _body=Depends(_limit_10mb)
+):
     result = normalize_atlas(payload)
     await audit(db, user, "import.atlas", "framework", "atlas", {"technique_count": result["technique_count"]})
     await db.commit()
@@ -342,12 +348,7 @@ async def observables(
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(current_user),
 ):
-    rows = await db.execute(
-        select(Observable)
-        .order_by(Observable.last_seen_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    rows = await db.execute(select(Observable).order_by(Observable.last_seen_at.desc()).limit(limit).offset(offset))
     return [out(row) for row in rows.scalars().all()]
 
 
@@ -363,9 +364,13 @@ async def sandbox_behaviors(
 @router.post("/observables", status_code=201)
 async def create_observable(body: ObservableBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_pipeline_intel)):
     row, created = await add_observable(db, {**body.model_dump(), "normalized_value": body.value.lower().strip()})
-    row.status = body.status; row.confidence = body.confidence; row.tags = normalize_freeform_tags(body.tags); row.source_refs = body.source_refs
+    row.status = body.status
+    row.confidence = body.confidence
+    row.tags = normalize_freeform_tags(body.tags)
+    row.source_refs = body.source_refs
     await audit(db, user, "observable.create" if created else "observable.update", "observable", str(row.id))
-    await db.commit(); await db.refresh(row)
+    await db.commit()
+    await db.refresh(row)
     return out(row)
 
 
@@ -386,11 +391,18 @@ async def enrich(
         result = await enrich_observable(row.type, row.normalized_value, provider)
     except Exception as exc:
         logger.exception("Observable enrichment failed observable_id=%s provider=%s", observable_id, provider)
-        result = {"provider": provider, "status": "failed", "verdict": "unknown", "confidence": 0, "raw_data": {"error": "Enrichment provider request failed. See server logs."}}
+        result = {
+            "provider": provider,
+            "status": "failed",
+            "verdict": "unknown",
+            "confidence": 0,
+            "raw_data": {"error": "Enrichment provider request failed. See server logs."},
+        }
     enrichment = EnrichmentResult(observable_id=row.id, **result)
     db.add(enrichment)
     await audit(db, user, "observable.enrich", "observable", observable_id, {"provider": result["provider"], "status": result["status"]})
-    await db.commit(); await db.refresh(enrichment)
+    await db.commit()
+    await db.refresh(enrichment)
     return out(enrichment)
 
 
@@ -424,10 +436,27 @@ async def generate(body: DetectionBody, db: AsyncSession = Depends(get_session),
         detection_id = uuid.UUID(body.detection_id) if body.detection_id else None
     except ValueError:
         raise HTTPException(400, "Invalid detection ID")
-    row = DetectionVersion(detection_id=detection_id, title=body.title, technique_id=body.technique_id.upper(), format=body.format.lower(), content=content, validation=validation, created_by=user.name)
-    db.add(row); await db.flush()
-    await audit(db, user, "detection.generate", "detection_version", str(row.id), {"format": row.format, "technique_id": row.technique_id, "generation": validation["generation"], "provider": provider})
-    await db.commit(); await db.refresh(row)
+    row = DetectionVersion(
+        detection_id=detection_id,
+        title=body.title,
+        technique_id=body.technique_id.upper(),
+        format=body.format.lower(),
+        content=content,
+        validation=validation,
+        created_by=user.name,
+    )
+    db.add(row)
+    await db.flush()
+    await audit(
+        db,
+        user,
+        "detection.generate",
+        "detection_version",
+        str(row.id),
+        {"format": row.format, "technique_id": row.technique_id, "generation": validation["generation"], "provider": provider},
+    )
+    await db.commit()
+    await db.refresh(row)
     return out(row)
 
 
@@ -443,12 +472,7 @@ async def detection_versions(
     db: AsyncSession = Depends(get_session),
     _: TeamUser = Depends(current_user),
 ):
-    rows = await db.execute(
-        select(DetectionVersion)
-        .order_by(DetectionVersion.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    rows = await db.execute(select(DetectionVersion).order_by(DetectionVersion.created_at.desc()).limit(limit).offset(offset))
     return [out(row) for row in rows.scalars().all()]
 
 

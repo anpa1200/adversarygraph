@@ -6,6 +6,9 @@ from celery.schedules import crontab
 
 from app.core.config import settings
 
+_WORKFLOW_PUBLISH_PERIOD_SECONDS = 10
+_WORKFLOW_RECOVERY_PERIOD_SECONDS = 30
+
 celery_app = Celery(
     "adversarygraph",
     broker=settings.redis_url,
@@ -16,6 +19,7 @@ celery_app = Celery(
         "app.tasks.retrohunt",
         "app.tasks.rag",
         "app.tasks.rag_retention",
+        "app.tasks.workflow",
     ],
 )
 
@@ -73,6 +77,33 @@ celery_app.conf.beat_schedule = {
         ),
         "options": {"queue": "celery"},
     },
+    "workflow-publish-due": {
+        "task": "workflow.publish_due",
+        "schedule": timedelta(seconds=_WORKFLOW_PUBLISH_PERIOD_SECONDS),
+        "args": (100,),
+        "options": {
+            "queue": "celery",
+            "expires": _WORKFLOW_PUBLISH_PERIOD_SECONDS - 1,
+        },
+    },
+    "workflow-recover-outbox": {
+        "task": "workflow.recover_outbox",
+        "schedule": timedelta(seconds=_WORKFLOW_RECOVERY_PERIOD_SECONDS),
+        "args": (100,),
+        "options": {
+            "queue": "celery",
+            "expires": _WORKFLOW_RECOVERY_PERIOD_SECONDS - 1,
+        },
+    },
+    "workflow-recover-expired": {
+        "task": "workflow.recover_expired",
+        "schedule": timedelta(seconds=_WORKFLOW_RECOVERY_PERIOD_SECONDS),
+        "args": (100,),
+        "options": {
+            "queue": "celery",
+            "expires": _WORKFLOW_RECOVERY_PERIOD_SECONDS - 1,
+        },
+    },
 }
 
 
@@ -100,9 +131,7 @@ def queue_rag_reconcile():
                     .limit(1)
                 )
                 if active is not None:
-                    should_dispatch = (
-                        active.status == "queued" or rag_index_run_is_stale(active)
-                    )
+                    should_dispatch = active.status == "queued" or rag_index_run_is_stale(active)
                     # Release the transaction-scoped enqueue lock before any
                     # broker call. Publishing an existing queued/stale run is
                     # safe because the corpus worker is globally serialized.

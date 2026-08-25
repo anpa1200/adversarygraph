@@ -103,7 +103,7 @@ def test_evidence_truncated_at_200_chars():
     assert len(result.techniques[0].evidence) <= 200
 
 
-def test_parse_review_metadata_and_normalizes_bad_status():
+def test_parse_review_metadata_never_trusts_provider_status():
     parsed = json.loads(_valid_payload())
     parsed["techniques"][0]["review_status"] = "accepted"
     parsed["techniques"][0]["evidence_start"] = 10
@@ -120,11 +120,17 @@ def test_parse_review_metadata_and_normalizes_bad_status():
 
     result = _parse_response(json.dumps(parsed), "claude", "claude-opus-4-8")
 
-    assert result.techniques[0].review_status == "accepted"
+    assert result.techniques[0].review_status == "suggested"
     assert result.techniques[0].evidence_start == 10
     assert result.techniques[0].evidence_end == 42
     assert result.techniques[0].evidence_source == "source-text"
     assert result.techniques[1].review_status == "suggested"
+
+
+def test_generated_techniques_default_to_catalog_unverified():
+    result = _parse_response(_valid_payload(), "claude", "claude-opus-4-8")
+
+    assert result.techniques[0].llm_verified is False
 
 
 def test_bind_evidence_spans_when_quote_exists_in_source_text():

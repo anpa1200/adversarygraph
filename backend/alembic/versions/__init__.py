@@ -1,0 +1,1 @@
+"""AdversaryGraph database schema revisions."""

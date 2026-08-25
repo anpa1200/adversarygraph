@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.payload_limits import BoundedPayloadModel
 from app.models.operations import DetectionCandidate, Investigation, ReportIntake, TrackedActor
-from app.services.asset_intel import retrohunt_assets
 from app.services.auth import TeamUser, analyst, audit, require_permission
 
 router = APIRouter(prefix="/operations", tags=["Operational Intelligence"])
@@ -19,11 +18,10 @@ manage_operations_intel = require_permission("manage_intel")
 manage_operations_detections = require_permission("manage_detections")
 
 
-async def _retrohunt_assets_after_intake(db: AsyncSession) -> dict | None:
-    try:
-        return await retrohunt_assets(db)
-    except Exception:
-        return None
+_REVIEW_GATE_DEFERRED = {
+    "status": "deferred",
+    "reason": "Report intelligence is not eligible for retrohunt until Review Gate promotion.",
+}
 
 
 class InvestigationBody(BoundedPayloadModel):
@@ -43,7 +41,11 @@ class IntakeBody(BoundedPayloadModel):
     title: str = Field(..., min_length=1, max_length=500)
     url: str = Field("", max_length=1000)
     publisher: str = Field("", max_length=255)
-    status: str = Field("pending", max_length=30)
+    status: str = Field(
+        "pending",
+        max_length=30,
+        pattern="^(pending|stored|analyzed|under_review|reviewed|rejected|revoked)$",
+    )
     summary: str = Field("", max_length=100_000)
     source_reliability: str = Field("unknown", max_length=30)
     actor_ids: list[str] = Field(default_factory=list, max_length=500)
@@ -145,29 +147,41 @@ async def intake(
 @router.post("/intake", status_code=201)
 async def create_intake(body: IntakeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
     row = ReportIntake(**body.model_dump()); db.add(row); await db.flush()
-    asset_retrohunt = await _retrohunt_assets_after_intake(db)
     await audit(db, user, "operations.create_intake", "report_intake", str(row.id), {"title": row.title})
     await db.commit(); await db.refresh(row)
     payload = out(row)
-    payload["asset_retrohunt"] = asset_retrohunt
+    payload["asset_retrohunt"] = dict(_REVIEW_GATE_DEFERRED)
     return payload
 
 
 @router.put("/intake/{item_id}")
 async def update_intake(item_id: str, body: IntakeBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
     row = await get_or_404(db, ReportIntake, item_id)
+    if row.analysis_session_id is not None:
+        raise HTTPException(
+            409,
+            "Linked report intake metadata must be changed through Reports / Research so the Review Gate revision is invalidated",
+        )
+    if row.status == "promoted":
+        raise HTTPException(409, "Promoted reports must be changed through the Review Gate revocation workflow")
     for key, value in body.model_dump().items(): setattr(row, key, value)
-    asset_retrohunt = await _retrohunt_assets_after_intake(db)
     await audit(db, user, "operations.update_intake", "report_intake", item_id)
     await db.commit(); await db.refresh(row)
     payload = out(row)
-    payload["asset_retrohunt"] = asset_retrohunt
+    payload["asset_retrohunt"] = dict(_REVIEW_GATE_DEFERRED)
     return payload
 
 
 @router.delete("/intake/{item_id}", status_code=204)
 async def delete_intake(item_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
     row = await get_or_404(db, ReportIntake, item_id)
+    if row.analysis_session_id is not None:
+        raise HTTPException(
+            409,
+            "Linked report intake records are owned by Reports / Research and cannot be deleted through Operations",
+        )
+    if row.status == "promoted":
+        raise HTTPException(409, "Revoke the report promotion before deleting its intake record")
     await audit(db, user, "operations.delete_intake", "report_intake", item_id)
     await db.delete(row); await db.commit()
 

@@ -9,6 +9,11 @@ OPENAPI_TAGS = [
     {"name": "ATT&CK Group Profiles", "description": "Threat groups, campaigns, overlap analysis, and technique comparison."},
     {"name": "MITRE Sync", "description": "ATT&CK/ATLAS version discovery, ingestion, and task status."},
     {"name": "Analysis", "description": "Report ingestion, AI-assisted analysis, review, chat, and linked-report workflow."},
+    {
+        "name": "Report Review Gate",
+        "description": "Immutable report intake, adversarial review, approval, promotion, and audit authority.",
+    },
+    {"name": "Research Projects", "description": "Revisioned CTI research scope, lineage, lifecycle, and workflow authority."},
     {"name": "IOC Intelligence", "description": "IOC sources, synchronization, investigation, enrichment, graph context, and export."},
     {"name": "CVE Intelligence", "description": "CVE feeds, CVSS/EPSS/KEV context, correlation, and ATT&CK relationships."},
     {"name": "MalwareGraph", "description": "Static/dynamic malware-analysis workflows and MalwareGraph service operations."},

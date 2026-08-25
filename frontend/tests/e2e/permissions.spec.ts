@@ -250,6 +250,10 @@ test('intel manager can review and update the authoritative stored report TLP', 
   await expect(tlp.locator('option')).toHaveText(['TLP:CLEAR', 'TLP:GREEN', 'TLP:AMBER', 'TLP:AMBER+STRICT', 'TLP:RED']);
   await expect(tlp).toHaveValue('TLP:AMBER+STRICT');
   await tlp.selectOption('TLP:RED');
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain('withdraws any active promotion');
+    await dialog.accept();
+  });
   await page.getByRole('button', { name: 'Save changes' }).click();
 
   await expect.poll(() => patchPayload?.tlp).toBe('TLP:RED');

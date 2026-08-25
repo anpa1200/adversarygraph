@@ -1,4 +1,5 @@
 from app.models.evidence_graph import EvidenceGraphEdge
+from app.models.intelligence import IntelligenceEntityTag
 from app.models.threat_hunting import ThreatHuntAIAssistance
 
 
@@ -19,3 +20,19 @@ def test_persisted_ai_source_and_evidence_edges_have_delete_safe_foreign_keys():
     assert edge_target_fk.target_fullname == "evidence_graph_nodes.id"
     assert edge_source_fk.ondelete == "CASCADE"
     assert edge_target_fk.ondelete == "CASCADE"
+
+
+def test_entity_tags_preserve_independent_source_provenance():
+    constraint = next(
+        item
+        for item in IntelligenceEntityTag.__table__.constraints
+        if item.name == "uq_intelligence_entity_tag"
+    )
+
+    assert list(constraint.columns.keys()) == [
+        "entity_type",
+        "entity_id",
+        "tag",
+        "source_type",
+        "source_id",
+    ]

@@ -1,13 +1,14 @@
 # Build a dependency-hardened Nuclei binary from an immutable official source
 # snapshot. Explicit transitive pins keep the Nuclei v3.11.0 build on remediated
 # dependency versions even when the upstream snapshot's module graph lags.
-FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS nuclei
+FROM golang:1.26.7-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468 AS nuclei
 
 ARG NUCLEI_SOURCE_COMMIT=6ecdb947408db868f9f9865e09f51a0a19e4413f
 ARG NUCLEI_SOURCE_SHA256=f923448173fa10021aed3c3c5f8d7638003f055fce22c1d319a1f2292dc86d99
 ARG NUCLEI_KIN_OPENAPI_VERSION=v0.144.0
 ARG NUCLEI_GO_GIT_VERSION=v5.19.2
-ARG NUCLEI_X_TEXT_VERSION=v0.39.0
+ARG NUCLEI_X_TEXT_VERSION=v0.41.0
+ARG NUCLEI_X_MOD_VERSION=v0.40.0
 RUN apk add --no-cache build-base ca-certificates curl git tar \
     && curl -fsSL \
       "https://github.com/projectdiscovery/nuclei/archive/${NUCLEI_SOURCE_COMMIT}.tar.gz" \
@@ -20,6 +21,7 @@ RUN apk add --no-cache build-base ca-certificates curl git tar \
     && go get "github.com/getkin/kin-openapi@${NUCLEI_KIN_OPENAPI_VERSION}" \
     && go get "github.com/go-git/go-git/v5@${NUCLEI_GO_GIT_VERSION}" \
     && go get "golang.org/x/text@${NUCLEI_X_TEXT_VERSION}" \
+    && go get "golang.org/x/mod@${NUCLEI_X_MOD_VERSION}" \
     && go mod tidy \
     && grep -Fqx $'\t\t\tif schema.ExclusiveMin {' pkg/input/formats/openapi/examples.go \
     && grep -Fqx $'\t\t\tif schema.ExclusiveMax {' pkg/input/formats/openapi/examples.go \
@@ -31,6 +33,11 @@ RUN apk add --no-cache build-base ca-certificates curl git tar \
     && CGO_ENABLED=0 go build -trimpath -pgo=auto \
       -ldflags="-s -w -extldflags -static" \
       -o /out/nuclei ./cmd/nuclei/main.go \
+    && test "$(go version /out/nuclei)" = "/out/nuclei: go1.26.7" \
+    && go version -m /out/nuclei \
+      | grep -F $'\tdep\tgolang.org/x/mod\t'"${NUCLEI_X_MOD_VERSION}"$'\t' \
+    && go version -m /out/nuclei \
+      | grep -F $'\tdep\tgolang.org/x/text\t'"${NUCLEI_X_TEXT_VERSION}"$'\t' \
     && /out/nuclei -version 2>&1 | grep -F "Nuclei Engine Version: v3.11.0"
 
 

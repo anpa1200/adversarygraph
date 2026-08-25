@@ -31,7 +31,10 @@ class ExtractedTechnique:
     evidence_start: int | None = None
     evidence_end: int | None = None
     evidence_source: str = "llm"
-    llm_verified: bool = True   # False when the ID was not found in the local ATT&CK DB
+    # Provider output is untrusted until the identifier is resolved against the
+    # locally loaded, versioned ATT&CK/ATLAS catalog.  Missing catalog data must
+    # therefore remain fail-closed rather than silently granting trust.
+    llm_verified: bool = False
 
 
 @dataclass
@@ -162,16 +165,17 @@ def _parse_response(raw: str, provider: str, model: str) -> ExtractionResult:
     techniques = []
     for t in data.get("techniques", []):
         try:
-            status = str(t.get("review_status", "suggested")).lower()
-            if status not in {"suggested", "accepted", "rejected", "needs-evidence"}:
-                status = "suggested"
             techniques.append(ExtractedTechnique(
                 attack_id=str(t.get("attack_id", "")).upper(),
                 name=str(t.get("name", "")),
                 tactic=str(t.get("tactic", "")),
                 confidence=float(t.get("confidence", 0.5)),
                 evidence=str(t.get("evidence", ""))[:200],
-                review_status=status,
+                # Provider output is never an analyst decision.  Even if an
+                # untrusted report or a misbehaving model asks for an accepted
+                # status, every generated mapping enters the deterministic
+                # review workflow as a suggestion.
+                review_status="suggested",
                 evidence_start=_optional_int(t.get("evidence_start")),
                 evidence_end=_optional_int(t.get("evidence_end")),
                 evidence_source=str(t.get("evidence_source", "llm"))[:80],

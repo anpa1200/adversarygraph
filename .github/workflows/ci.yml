@@ -52,6 +52,321 @@ jobs:
           LOG_DIR: /tmp/adversarygraph-test-logs
         run: PYTHONPATH=. python -m pytest
 
+  postgres-schema-authority:
+    name: PostgreSQL migration and schema authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DB_HOST: 127.0.0.1
+      DB_NAME: adversarygraph_schema_ci
+      UPGRADE_DB_NAME: adversarygraph_upgrade_ci
+      ROUNDTRIP_DB_NAME: adversarygraph_roundtrip_ci
+      DB_USER: adversarygraph_ci
+      DB_PASS: ci_schema_authority_password
+      RUN_POSTGRES_TESTS: "1"
+      AUTH_ENABLED: "false"
+      AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
+      LOG_DIR: /tmp/adversarygraph-schema-ci-logs
+      POSTGRES_CONTAINER: adversarygraph-postgres-schema-ci
+      POSTGRES_IMAGE: adversarygraph-postgres:schema-ci
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Build repository PostgreSQL image
+        working-directory: .
+        run: docker build --file docker/postgres/Dockerfile --tag "$POSTGRES_IMAGE" .
+      - name: Start disposable PostgreSQL
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --detach \
+            --name "$POSTGRES_CONTAINER" \
+            --publish 127.0.0.1::5432 \
+            --env "POSTGRES_DB=$DB_NAME" \
+            --env "POSTGRES_USER=$DB_USER" \
+            --env "POSTGRES_PASSWORD=$DB_PASS" \
+            "$POSTGRES_IMAGE" >/dev/null
+
+          ready=false
+          for _ in {1..60}; do
+            if docker exec "$POSTGRES_CONTAINER" \
+              pg_isready --username "$DB_USER" --dbname "$DB_NAME" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "true" ]]; then
+            docker logs "$POSTGRES_CONTAINER"
+            exit 1
+          fi
+
+          port_mapping="$(docker port "$POSTGRES_CONTAINER" 5432/tcp)"
+          database_port="${port_mapping##*:}"
+          if [[ ! "$database_port" =~ ^[0-9]+$ ]]; then
+            echo "Could not resolve disposable PostgreSQL port: ${port_mapping:-<missing>}" >&2
+            exit 1
+          fi
+          echo "DB_PORT=$database_port" >> "$GITHUB_ENV"
+      - name: Validate fresh Alembic migration authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m alembic upgrade head
+          python -m alembic current --verbose
+          python -m alembic check
+      - name: Verify startup physical schema
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import asyncio
+
+          import main  # noqa: F401 - register the complete application metadata
+          from app.core.database import create_tables, engine
+
+
+          async def verify() -> None:
+              try:
+                  await create_tables()
+              finally:
+                  await engine.dispose()
+
+
+          asyncio.run(verify())
+          PY
+      - name: Validate 0001 to 0002 data-preserving upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker exec "$POSTGRES_CONTAINER" \
+            psql --username "$DB_USER" --dbname postgres \
+              --no-psqlrc --set ON_ERROR_STOP=1 \
+              --command "CREATE DATABASE \"$UPGRADE_DB_NAME\";"
+
+          DB_NAME="$UPGRADE_DB_NAME" python -m alembic upgrade 20260823_0001
+
+          docker exec --interactive "$POSTGRES_CONTAINER" \
+            psql --username "$DB_USER" --dbname "$UPGRADE_DB_NAME" \
+              --no-psqlrc --set ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          INSERT INTO research_projects (
+            id, project_key, name, description, status, domain, tlp, version,
+            created_by, created_by_id, updated_by, updated_by_id,
+            archive_reason, archived_at
+          ) VALUES (
+            '11111111-1111-4111-8111-111111111111',
+            'ci-upgrade-authority',
+            'CI upgrade authority project',
+            'Sentinel authority data that must survive the 0001 to 0002 expansion.',
+            'active', 'enterprise-attack', 'TLP:AMBER', 2,
+            'CI migration gate', 'ci-migration-gate',
+            'CI migration gate', 'ci-migration-gate',
+            '', NULL
+          );
+          INSERT INTO project_revisions (
+            id, project_id, parent_revision_id, revision, status,
+            schema_version, spec, spec_checksum, change_summary,
+            created_by, created_by_id, revoked_by, revoked_by_id, revoked_at
+          ) VALUES
+          (
+            '22222222-2222-4222-8222-222222222222',
+            '11111111-1111-4111-8111-111111111111',
+            NULL, 1, 'superseded', 'research-project-spec-v1',
+            '{"actor_scope":[],"date_from":null,"date_to":null,"domains":["enterprise-attack"],"intelligence_requirements":["Which authority facts survive the schema expansion?"],"objective":"Preserve the first migration authority revision.","output_targets":["canonical_intelligence","detections"],"regions":[],"review_profile":"external_cti","sectors":[],"source_kinds":["url","file","text"],"tags":[],"technique_scope":[],"tlp":"TLP:AMBER"}'::jsonb,
+            'c13174f53506c91b6e37a00adea2e42d48fe56bb00593510f8124b8ce7c12be4',
+            'Initial upgrade sentinel.',
+            'CI migration gate', 'ci-migration-gate', '', '', NULL
+          ),
+          (
+            '33333333-3333-4333-8333-333333333333',
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+            2, 'current', 'research-project-spec-v1',
+            '{"actor_scope":[],"date_from":null,"date_to":null,"domains":["enterprise-attack"],"intelligence_requirements":["Does revision lineage survive the schema expansion?"],"objective":"Preserve the second linked authority revision.","output_targets":["canonical_intelligence","detections","hunting"],"regions":[],"review_profile":"external_cti","sectors":[],"source_kinds":["url","file","text"],"tags":[],"technique_scope":[],"tlp":"TLP:AMBER"}'::jsonb,
+            'dddb0ad1112e869f02fcc22e399c76206593036113e52751c2fe9dbc4ff780bf',
+            'Linked upgrade sentinel.',
+            'CI migration gate', 'ci-migration-gate', '', '', NULL
+          );
+          COMMIT;
+          SQL
+
+          DB_NAME="$UPGRADE_DB_NAME" python -m alembic upgrade 20260823_0002
+
+          project_state="$(
+            docker exec "$POSTGRES_CONTAINER" \
+              psql --username "$DB_USER" --dbname "$UPGRADE_DB_NAME" \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 \
+                --command "
+                  SELECT id::text || '|' || project_key || '|' || version::text
+                  FROM research_projects
+                  WHERE id = '11111111-1111-4111-8111-111111111111';
+                "
+          )"
+          expected_project_state="11111111-1111-4111-8111-111111111111|ci-upgrade-authority|2"
+          if [[ "$project_state" != "$expected_project_state" ]]; then
+            echo "Project authority changed during 0001 to 0002 upgrade: ${project_state:-<missing>}" >&2
+            exit 1
+          fi
+
+          revision_state="$(
+            docker exec "$POSTGRES_CONTAINER" \
+              psql --username "$DB_USER" --dbname "$UPGRADE_DB_NAME" \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 \
+                --command "
+                  SELECT string_agg(
+                    revision::text || '|' || id::text || '|' ||
+                    COALESCE(parent_revision_id::text, 'root') || '|' ||
+                    spec_checksum || '|' || status,
+                    ';' ORDER BY revision
+                  )
+                  FROM project_revisions
+                  WHERE project_id = '11111111-1111-4111-8111-111111111111';
+                "
+          )"
+          expected_revision_state="1|22222222-2222-4222-8222-222222222222|root|c13174f53506c91b6e37a00adea2e42d48fe56bb00593510f8124b8ce7c12be4|superseded;2|33333333-3333-4333-8333-333333333333|22222222-2222-4222-8222-222222222222|dddb0ad1112e869f02fcc22e399c76206593036113e52751c2fe9dbc4ff780bf|current"
+          if [[ "$revision_state" != "$expected_revision_state" ]]; then
+            echo "Revision authority changed during 0001 to 0002 upgrade: ${revision_state:-<missing>}" >&2
+            exit 1
+          fi
+
+          spec_state="$(
+            docker exec "$POSTGRES_CONTAINER" \
+              psql --username "$DB_USER" --dbname "$UPGRADE_DB_NAME" \
+                --no-psqlrc --quiet --tuples-only --no-align \
+                --set ON_ERROR_STOP=1 \
+                --command "
+                  SELECT bool_and(
+                    CASE revision
+                      WHEN 1 THEN spec =
+                        '{\"actor_scope\":[],\"date_from\":null,\"date_to\":null,\"domains\":[\"enterprise-attack\"],\"intelligence_requirements\":[\"Which authority facts survive the schema expansion?\"],\"objective\":\"Preserve the first migration authority revision.\",\"output_targets\":[\"canonical_intelligence\",\"detections\"],\"regions\":[],\"review_profile\":\"external_cti\",\"sectors\":[],\"source_kinds\":[\"url\",\"file\",\"text\"],\"tags\":[],\"technique_scope\":[],\"tlp\":\"TLP:AMBER\"}'::jsonb
+                      WHEN 2 THEN spec =
+                        '{\"actor_scope\":[],\"date_from\":null,\"date_to\":null,\"domains\":[\"enterprise-attack\"],\"intelligence_requirements\":[\"Does revision lineage survive the schema expansion?\"],\"objective\":\"Preserve the second linked authority revision.\",\"output_targets\":[\"canonical_intelligence\",\"detections\",\"hunting\"],\"regions\":[],\"review_profile\":\"external_cti\",\"sectors\":[],\"source_kinds\":[\"url\",\"file\",\"text\"],\"tags\":[],\"technique_scope\":[],\"tlp\":\"TLP:AMBER\"}'::jsonb
+                      ELSE FALSE
+                    END
+                  )::text || '|' || count(*)::text
+                  FROM project_revisions
+                  WHERE project_id = '11111111-1111-4111-8111-111111111111';
+                "
+          )"
+          if [[ "$spec_state" != "true|2" ]]; then
+            echo "Revision specifications changed during 0001 to 0002 upgrade: ${spec_state:-<missing>}" >&2
+            exit 1
+          fi
+
+          DB_NAME="$UPGRADE_DB_NAME" python -m alembic upgrade head
+          DB_NAME="$UPGRADE_DB_NAME" python -m alembic current --verbose
+          DB_NAME="$UPGRADE_DB_NAME" python -m alembic check
+      - name: Verify upgraded startup physical schema
+        env:
+          DB_NAME: adversarygraph_upgrade_ci
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import asyncio
+
+          import main  # noqa: F401 - register the complete application metadata
+          from app.core.database import create_tables, engine
+
+
+          async def verify() -> None:
+              try:
+                  await create_tables()
+              finally:
+                  await engine.dispose()
+
+
+          asyncio.run(verify())
+          PY
+      - name: Verify reproducible schema authority fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker exec "$POSTGRES_CONTAINER" \
+            psql --username "$DB_USER" --dbname postgres \
+              --no-psqlrc --set ON_ERROR_STOP=1 \
+              --command "CREATE DATABASE \"$ROUNDTRIP_DB_NAME\";"
+
+          DB_NAME="$ROUNDTRIP_DB_NAME" python -m alembic upgrade head
+          DB_NAME="$ROUNDTRIP_DB_NAME" python -m alembic downgrade 20260823_0001
+          DB_NAME="$ROUNDTRIP_DB_NAME" python -m alembic upgrade head
+
+          PYTHONPATH=. python - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          from sqlalchemy.engine import URL
+
+
+          raw_port = os.environ.get("DB_PORT", "")
+          if not raw_port.isascii() or not raw_port.isdecimal():
+              raise SystemExit("DB_PORT must be an ASCII decimal port")
+          database_port = int(raw_port)
+          if not 1 <= database_port <= 65535:
+              raise SystemExit("DB_PORT is outside the TCP port range")
+
+          endpoints = {
+              "FRESH_A_DATABASE_URL": os.environ["DB_NAME"],
+              "FRESH_B_DATABASE_URL": os.environ["UPGRADE_DB_NAME"],
+              "ROUNDTRIP_DATABASE_URL": os.environ["ROUNDTRIP_DB_NAME"],
+          }
+          child_environment = os.environ.copy()
+          for environment_name, database_name in endpoints.items():
+              child_environment[environment_name] = URL.create(
+                  "postgresql+asyncpg",
+                  username=os.environ["DB_USER"],
+                  password=os.environ["DB_PASS"],
+                  host=os.environ["DB_HOST"],
+                  port=database_port,
+                  database=database_name,
+              ).render_as_string(hide_password=False)
+
+          subprocess.run(
+              [
+                  sys.executable,
+                  "-m",
+                  "scripts.verify_schema_authority_fingerprint",
+                  "--database-env",
+                  "FRESH_A_DATABASE_URL",
+                  "--database-env",
+                  "FRESH_B_DATABASE_URL",
+                  "--database-env",
+                  "ROUNDTRIP_DATABASE_URL",
+              ],
+              check=True,
+              env=child_environment,
+          )
+          PY
+      - name: Run real PostgreSQL schema tests
+        run: |
+          PYTHONPATH=. python -m pytest -q \
+            -o addopts='' \
+            --confcutdir=tests/postgres \
+            tests/postgres
+      - name: Show PostgreSQL logs on failure
+        if: failure()
+        working-directory: .
+        run: docker logs "$POSTGRES_CONTAINER" || true
+      - name: Remove disposable PostgreSQL
+        if: always()
+        working-directory: .
+        run: docker rm --force --volumes "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+
   backend-lint:
     name: Backend lint (ruff)
     runs-on: ubuntu-latest
@@ -261,8 +576,32 @@ jobs:
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
       - name: Validate Helm chart
         run: |
+          set -euo pipefail
           helm lint helm/adversarygraph
           helm template adversarygraph helm/adversarygraph >/tmp/adversarygraph-rendered.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --is-upgrade \
+            >/tmp/adversarygraph-upgrade.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --set postgresql.enabled=false \
+            --set postgresql.externalHost=postgres.external.example \
+            --set-string postgresql.externalPort=6432 \
+            --set secrets.existingSecret=adversarygraph-external-runtime \
+            >/tmp/adversarygraph-external.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --show-only templates/migration.yaml \
+            >/tmp/adversarygraph-migration-install.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --is-upgrade \
+            --show-only templates/migration.yaml \
+            >/tmp/adversarygraph-migration-upgrade.yaml
+          helm template adversarygraph helm/adversarygraph \
+            --set postgresql.enabled=false \
+            --set postgresql.externalHost=postgres.external.example \
+            --set-string postgresql.externalPort=6432 \
+            --set secrets.existingSecret=adversarygraph-external-runtime \
+            --show-only templates/migration.yaml \
+            >/tmp/adversarygraph-migration-external.yaml
           helm template adversarygraph helm/adversarygraph --set malwaregraph.enabled=false >/tmp/adversarygraph-no-malwaregraph.yaml
           helm template adversarygraph helm/adversarygraph \
             --set 'malwaregraph.accessModes={ReadWriteMany}' \
@@ -289,6 +628,47 @@ jobs:
             --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
+          for rendered in \
+            /tmp/adversarygraph-rendered.yaml \
+            /tmp/adversarygraph-upgrade.yaml \
+            /tmp/adversarygraph-external.yaml; do
+            if [[ "$(grep -Fc -- 'name: schema-authority' "$rendered")" -ne 3 ]]; then
+              echo "Helm render $rendered did not gate API, worker, and Beat on schema authority." >&2
+              exit 1
+            fi
+          done
+          if grep -Fq -- 'helm.sh/hook:' /tmp/adversarygraph-migration-install.yaml; then
+            echo "Bundled PostgreSQL first install unexpectedly rendered the migration Job as a hook." >&2
+            exit 1
+          fi
+          grep -Fq -- 'name: adversarygraph-migrate-install' /tmp/adversarygraph-migration-install.yaml
+          grep -Fq -- 'helm.sh/hook: "pre-upgrade"' /tmp/adversarygraph-migration-upgrade.yaml
+          grep -Fq -- 'app.kubernetes.io/component: worker' /tmp/adversarygraph-migration-upgrade.yaml
+          grep -Fq -- 'helm.sh/hook: "pre-install"' /tmp/adversarygraph-migration-external.yaml
+          grep -Fq -- 'value: "postgres.external.example"' /tmp/adversarygraph-migration-external.yaml
+          grep -Fq -- 'value: "6432"' /tmp/adversarygraph-migration-external.yaml
+          grep -Fq -- 'name: adversarygraph-external-runtime' /tmp/adversarygraph-migration-external.yaml
+          for migration in \
+            /tmp/adversarygraph-migration-install.yaml \
+            /tmp/adversarygraph-migration-upgrade.yaml \
+            /tmp/adversarygraph-migration-external.yaml; do
+            grep -Fq -- 'command: ["python", "-m", "alembic", "upgrade", "head"]' "$migration"
+          done
+          if helm template adversarygraph helm/adversarygraph \
+            --set postgresql.enabled=false \
+            --set postgresql.externalHost=postgres.external.example \
+            --set secrets.existingSecret= \
+            >/dev/null 2>&1; then
+            echo "Helm chart accepted an external-database install without an out-of-band Secret." >&2
+            exit 1
+          fi
+          if helm template adversarygraph helm/adversarygraph \
+            --set postgresql.enabled=false \
+            --set secrets.existingSecret=adversarygraph-external-runtime \
+            >/dev/null 2>&1; then
+            echo "Helm chart accepted an external-database install without a database host." >&2
+            exit 1
+          fi
           if helm template adversarygraph helm/adversarygraph --set secrets.existingSecret= >/dev/null 2>&1; then
             echo "Helm chart accepted missing managed credentials." >&2
             exit 1
