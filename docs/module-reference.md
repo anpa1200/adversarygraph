@@ -4,10 +4,11 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares version `7.0.0`. Immutable artifacts and their
+The checked-out source declares the `8.0.0-beta.1` manual-testing pre-release;
+`7.0.0` remains the latest stable release. Immutable beta artifacts and their
 digest manifest exist only after the matching protected tag workflow succeeds.
-Verify the checked-out tag or commit and corresponding release evidence before
-using this document as acceptance evidence.
+Verify the exact tag or commit, corresponding release evidence, and pending v8
+manual acceptance before using this document as acceptance evidence.
 
 The examples and case studies below are reproducible workflows or clearly
 labelled illustrative scenarios. They are not customer testimonials, adoption
@@ -46,7 +47,10 @@ Module visibility and action authority are separate controls. A user needs the
 module in an enabled access group. Mutating or sensitive actions additionally
 require permissions such as `run_analysis`, `manage_intel`,
 `run_attack_simulation`, `manage_feeds`, `view_audit`, or `manage_users`. The
-API enforces the same boundary as the frontend. See
+Report Review Gate decisions additionally require `review_reports`; approval,
+promotion, and revocation require `promote_reports`, and approval must be by a
+different authenticated human from the submitter. The API enforces the same
+boundary as the frontend. See
 [Authentication and User Management](authentication-and-users.md).
 
 External enrichment is conditional. A provider appearing in the interface does
@@ -193,6 +197,8 @@ results.
 - A defensible TLP and source URL or internal evidence reference.
 - `upload_files` for file intake; provider-backed extraction additionally
   requires a ready and permitted AI provider.
+- Named-user authentication for four-eyes testing: the submitter needs
+  `review_reports`, and a different approver needs `promote_reports`.
 
 **Workflow.**
 
@@ -990,6 +996,11 @@ single validation plan. Acceptance is deduplicated work without lost evidence.
 **Limits.** Operations is a local workflow manager, not a replacement for an
 enterprise ticketing, SOAR, or case-management platform unless explicitly
 integrated.
+
+The beta research API also persists immutable project revisions and registered
+workflow state through a transactional outbox. That runtime accepts only
+registered, replay-safe stage handlers and does not make Operations an
+arbitrary-job executor. See [Durable Research Workflows](research-workflows.md).
 
 <!-- module:pipeline -->
 ### Pipeline

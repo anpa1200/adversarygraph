@@ -583,8 +583,9 @@ jobs:
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION must contain semantic X.Y.Z, got '$version'." >&2
+          semver_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9][0-9]*)?$'
+          if [[ ! "$version" =~ $semver_pattern ]]; then
+            echo "VERSION must contain semantic X.Y.Z or X.Y.Z-beta.N, got '$version'." >&2
             exit 1
           fi
           if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
@@ -595,8 +596,13 @@ jobs:
             echo "Release tag '${GITHUB_REF_NAME:-}' does not match VERSION '$version'." >&2
             exit 1
           fi
+          prerelease=false
+          if [[ "$version" == *-beta.* ]]; then
+            prerelease=true
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Verify remote release tag target
         shell: bash
@@ -1127,6 +1133,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
           RESUME_DRAFT: ${{ steps.release_state.outputs.resume_draft }}
         run: |
           set -euo pipefail
@@ -1140,7 +1147,7 @@ jobs:
             actual_body="$(gh release view "$RELEASE_TAG" --json body --jq '.body')"
             expected_body="$(cat "$notes_file")"
             asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | map(.name) | sort | join("\n")')"
-            if [[ "$is_draft" != "true" || "$is_prerelease" != "false" || "$actual_name" != "$release_name" || "$actual_body" != "$expected_body" ]]; then
+            if [[ "$is_draft" != "true" || "$is_prerelease" != "$RELEASE_PRERELEASE" || "$actual_name" != "$release_name" || "$actual_body" != "$expected_body" ]]; then
               echo "Existing draft metadata does not exactly match this release; refusing to modify it." >&2
               exit 1
             fi
@@ -1171,17 +1178,23 @@ jobs:
             echo "GitHub release lookup failed ambiguously; refusing to create a release." >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" adversarygraph-images.env \
-            --verify-tag \
-            --draft \
-            --title "$release_name" \
+          release_args=(
+            --verify-tag
+            --draft
+            --title "$release_name"
             --notes-file "$notes_file"
+          )
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" adversarygraph-images.env "${release_args[@]}"
 
       - name: Verify manifest asset and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -1249,7 +1262,7 @@ jobs:
             --dir "$download_dir" \
             --clobber
           cmp adversarygraph-images.env "$download_dir/adversarygraph-images.env"
-          if [[ "$is_draft" != "true" || "$is_prerelease" != "false" || "$actual_name" != "AdversaryGraph v${RELEASE_VERSION}" || "$actual_body" != "$expected_body" || "$asset_names" != "adversarygraph-images.env" ]]; then
+          if [[ "$is_draft" != "true" || "$is_prerelease" != "$RELEASE_PRERELEASE" || "$actual_name" != "AdversaryGraph v${RELEASE_VERSION}" || "$actual_body" != "$expected_body" || "$asset_names" != "adversarygraph-images.env" ]]; then
             echo "Release draft changed before publication; refusing further changes." >&2
             exit 1
           fi

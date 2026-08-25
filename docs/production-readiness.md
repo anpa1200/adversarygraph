@@ -1,15 +1,16 @@
 # Production Readiness
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
-controlled deployments. The checked-out source is the `v7.0.0` release
-candidate described in
-[the changelog](../CHANGELOG.md). This document tracks the checked-out
+controlled deployments. The checked-out source is the `v8.0.0-beta.1`
+manual-testing pre-release described in [the changelog](../CHANGELOG.md), while
+`v7.0.0` remains the latest stable release. This document tracks the checked-out
 repository, so every production review must record the exact tag or commit and
 must not transfer evidence from a different revision.
 
 ## Current Status
 
-The AdversaryGraph v7 source is suitable for:
+The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
+`v7.0.0` remains the latest stable release. The beta source is suitable for:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
@@ -19,9 +20,12 @@ The AdversaryGraph v7 source is suitable for:
   build, scan, configuration, backup, restore, and acceptance evidence for the
   exact deployed artifacts
 
-Historical release evidence does not validate this source. The v7 source is a
-release candidate until the protected `v7.0.0` tag workflow publishes and
+Historical release evidence does not validate this source. The beta remains a
+pre-release until the protected `v8.0.0-beta.1` tag workflow publishes and
 verifies the eight-image family and attached `adversarygraph-images.env`.
+Automated publication does not complete the manual matrix in
+[`release-readiness-v8.md`](release-readiness-v8.md) or authorize a stable
+claim.
 
 AdversaryGraph is not a managed public SaaS. The default deployment is suitable
 for controlled self-hosted use; public internet exposure still requires a
@@ -37,8 +41,10 @@ handling policy.
 | Anomaly documentation build | Implemented | `npm --prefix anomaly_detection/docs-site run build` with fail-closed internal-link and anchor checks |
 | CI workflow | Implemented | `.github/workflows/ci.yml` |
 | Coverage gate | Implemented baseline | full backend suite enforces at least 60% line coverage; continue raising it around high-risk workflows |
-| Analyst review states | Partial | `suggested`, `accepted`, `rejected`, `needs-evidence` stored in analysis records |
-| Evidence binding | Partial | best-effort character offsets for quoted source evidence |
+| Report Review Gate | Implemented in v8 beta source; manual acceptance pending | five deterministic gates, versioned source/analysis fingerprints, source-bound claim decisions, two-person approval, immutable promotion manifests, and append-only revocation |
+| Evidence binding | Implemented for Report Review Gate; broader analyst workflows retain their documented limits | exact stored text offsets or acquisition metadata for accepted report claims; model prose alone is rejected |
+| Durable research workflow | Implemented in v8 beta source; manual recovery testing pending | immutable project revisions, workflow/stage/attempt authority, transactional outbox, broker receipts, bounded Celery publisher/recovery tasks |
+| Migration authority | Implemented for research/workflow/outbox domain; legacy migration remains partial | Alembic 0001-0004, exact-head startup gate, physical fingerprint, Compose migration service, Helm migration hooks/init gates |
 | Security model | Implemented | `docs/security-model.md` |
 | Limitations | Implemented | `docs/limitations.md` |
 | Demo data and sample outputs | Implemented | `demo/`, `docs/sample-outputs/` |
@@ -64,9 +70,9 @@ handling policy.
 | Sizing guide | Implemented | `docs/deployment-sizing.md` |
 | Backup/restore scripts | Implemented | checksummed, archive-validated backup and writer-stopped restore in `scripts/backup.sh`, `scripts/restore.sh` |
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
-| Fresh image scan/publish path | Implemented in v7 source; tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow loads and scans eight versioned images before pushing those same local images |
-| Immutable Compose deployment | Implemented in v7 source | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Implemented in v7 source; operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
+| Fresh image scan/publish path | Inherited from v7; beta tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow must load and scan eight versioned images before pushing those same local images |
+| Immutable Compose deployment | Implemented; beta artifacts pending | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
+| Helm image digests | Implemented; beta artifacts and operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 | PostgreSQL full-text and pgvector | Implemented in v6.5 source | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
 | Unified RAG corpus | Implemented in v6.5 source | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
@@ -74,7 +80,7 @@ handling policy.
 | Local MCP integration | Implemented in v6.5 source | stdio-only bounded tools over authenticated RAG API routes; no remote listener, arbitrary URL/SQL access, proposal confirmation, reindex, or operational mutation |
 | Scanner MCP isolation | Implemented in v7 source | exact stored-target authorization, allowlisted assessment plans, dedicated bearer capability, non-root private service, bounded results, and returned-target/tool-trace verification |
 | Intelligence taxonomy and catalogs | Implemented in v7 source | closed namespace vocabulary, actor/campaign/malware backfill, ATT&CK group seed, maintained actor/tactic/TTP catalogs, and self-test inventory breakdowns |
-| Dependency audit | Implemented with documented residual risk | backend and Anomaly docs resolve without known findings at the v7 candidate lockfiles; the MalwareGraph high-severity dependency path is remediated; the client uses React Router 7 and its reviewed lockfile passes the required npm audit, which remains point-in-time evidence |
+| Dependency audit | Implemented with documented residual risk | exact beta lockfiles remain subject to the full release gate; the client uses React Router 7 and must pass the required npm audit, which remains point-in-time evidence |
 
 ## Remaining Production Blockers
 
@@ -85,9 +91,9 @@ deployment with documented compensating controls:
 - Raise backend coverage beyond the enforced 60% baseline, prioritizing
   authentication, ingestion, exports, threat hunting, simulation, and recovery
   paths rather than treating the aggregate percentage as sufficient evidence.
-- Add report-level review summary counts.
-- Add full UI controls for accepting, rejecting, and filtering mappings.
-- Export review status and evidence spans in Markdown/PDF reports.
+- Complete and retain the v8 manual beta matrices for two-person report review,
+  downstream withdrawal, transactional outbox recovery, Compose/Helm migration,
+  and React Router 7 navigation before making a stable claim.
 - Add retention controls for imported IOC feeds and uploaded IOC extraction inputs.
 - Add per-source IOC sync scheduling policies and health history.
 - Add reverse-proxy hardening examples for production deployments.
@@ -169,7 +175,7 @@ the absence of an externally managed Secret.
 
 ## Container Release Integrity
 
-In the v7 source, strict local and CI container scans are configured to pull
+In the v8 beta source, strict local and CI container scans are configured to pull
 base images and bypass cached layers. Runtime Dockerfiles apply distribution
 updates available during the build, and fixable high/critical Trivy findings
 fail the strict gate. The current `ignore-unfixed` policy filters findings that
@@ -194,8 +200,9 @@ build, and it rescans that artifact before pushing; labels alone are not
 trusted. Mismatches and ambiguous registry or GitHub release lookups stop
 publication and require explicit partial-version cleanup after review.
 The workflow rechecks release state immediately before publishing the draft.
-A successful run for the exact tag is required evidence; the workflow in the
-v7 source is not evidence for a historical artifact.
+A successful run for the exact beta tag is required evidence; the workflow in
+this source is not evidence for a historical artifact or for a future stable
+release.
 
 For Helm deployments, operators supply reviewed registry digests for the
 PostgreSQL, backend, frontend, and MalwareGraph release images. Redis and an

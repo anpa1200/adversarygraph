@@ -1,10 +1,12 @@
 # AdversaryGraph Helm Chart
 
-This v7 chart is a deployment scaffold for a controlled, single-workspace
-Kubernetes installation. Production use requires the image digests and manifest
-produced by the successful v7.0.0 tag workflow; source metadata or human-readable
-tags alone are not release evidence. It is not a managed-SaaS or multi-tenant
-isolation boundary.
+This chart accompanies the `v8.0.0-beta.1` manual-testing pre-release for a
+controlled, single-workspace Kubernetes installation. v7.0.0 remains the latest
+stable release. Beta evaluation with prebuilt images requires the digests and
+manifest produced by the successful `v8.0.0-beta.1` tag workflow; source
+metadata or human-readable tags alone are not release evidence. It is not a
+managed-SaaS or multi-tenant isolation boundary, and successful rendering does
+not complete the v8 manual readiness matrix.
 
 ## Prerequisites
 
@@ -282,7 +284,7 @@ private gateway that is reachable from API, worker, and MalwareGraph pods.
 
 ## Unified RAG Configuration
 
-The v7 chart templates enable RAG configuration and scheduled reconciliation
+The v8 beta chart templates enable RAG configuration and scheduled reconciliation
 by default, while semantic embeddings remain disabled. Use revision-matched
 backend and frontend application images; worker and Beat use the backend image.
 The digest-pinned
@@ -372,7 +374,7 @@ MCP HTTP/SSE listener to the chart. See
   explicitly approves an isolated disposable runtime.
 
 See [`SECURITY.md`](../../SECURITY.md),
-[`docs/release-readiness-v7.md`](../../docs/release-readiness-v7.md), and
+[`docs/release-readiness-v8.md`](../../docs/release-readiness-v8.md), and
 [`docs/backup-restore.md`](../../docs/backup-restore.md).
 
 ## Scanner findings that require deployment context

@@ -5,28 +5,27 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v7.0.0-blue)](VERSION)
+[![Candidate](https://img.shields.io/badge/candidate-v8.0.0--beta.1-orange)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v7.0.0**. This release adds an isolated scanner MCP trust
-boundary, database-backed RAG readiness, stronger intelligence relationships,
-closed taxonomies, self-maintaining catalogs, data-inventory evidence, and an
-eight-image release path while retaining the governed hunting and
-evidence-to-detection workflows prepared in v6.5. See the
-[v7 release notes](docs/release-notes/v7.0.0.md),
-[release summary](docs/release-summary-v7.0.0.md),
-[release readiness guide](docs/release-readiness-v7.md),
-[presentation guide](docs/presentations/adversarygraph-v7-presentation-guide.md),
-[case studies](docs/case-studies-v6.md), and
-[screenshot manifest](docs/assets/adversarygraph-v6/manifest.md).
+Latest stable release: **v7.0.0**.
 
-The `v7.0.0` source metadata defines the release candidate. Its immutable
-artifacts exist only after the protected tag workflow builds, scans, publishes,
-and verifies the complete family and attaches `adversarygraph-images.env`.
-Historical screenshots remain illustrative and are not presented as v7 runtime
-evidence.
+Current source candidate: **v8.0.0-beta.1**. This manual-testing prerelease adds
+the deterministic Report Review Gate, durable research/workflow authority,
+transactional outbox and receipt fencing, formal Alembic migration gates,
+promotion-bound downstream evidence, and end-to-end worker/orchestrator
+integration. See the [v8 beta release notes](docs/release-notes/v8.0.0-beta.1.md),
+[release summary](docs/release-summary-v8.0.0-beta.1.md), and
+[release readiness guide](docs/release-readiness-v8.md).
+
+The beta is not the latest stable release and is not a production-readiness
+claim. Immutable beta artifacts exist only after the protected
+`v8.0.0-beta.1` tag workflow builds, scans, publishes, and verifies the complete
+image family and attaches `adversarygraph-images.env`. After manual acceptance,
+stability fixes and a fresh full gate will produce a separate immutable
+`v8.0.0` commit and tag; the beta tag will never be moved.
 
 ### MalwareGraph dependency security notice
 
@@ -256,6 +255,9 @@ for dedicated-account and client configuration.
 | Case studies and validation examples | [Case Studies And Validation Examples](https://1200km.com/adversarygraph-docs/case-studies-validation/) |
 | Comparison pages | [Comparison Overview](https://1200km.com/adversarygraph-docs/comparisons/overview/) |
 | Reviewer orientation | [docs/reviewer-guide.md](docs/reviewer-guide.md) |
+| v8 beta release notes | [docs/release-notes/v8.0.0-beta.1.md](docs/release-notes/v8.0.0-beta.1.md) |
+| v8 beta release summary | [docs/release-summary-v8.0.0-beta.1.md](docs/release-summary-v8.0.0-beta.1.md) |
+| v8 release readiness | [docs/release-readiness-v8.md](docs/release-readiness-v8.md) |
 | v7 release notes | [docs/release-notes/v7.0.0.md](docs/release-notes/v7.0.0.md) |
 | v7 release summary | [docs/release-summary-v7.0.0.md](docs/release-summary-v7.0.0.md) |
 | v7 presentation guide | [docs/presentations/adversarygraph-v7-presentation-guide.md](docs/presentations/adversarygraph-v7-presentation-guide.md) |

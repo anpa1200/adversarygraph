@@ -1,9 +1,10 @@
 # AdversaryGraph Platform Guide
 
-> The checked-out source is the v7.0.0 release candidate. Immutable v7
-> artifacts exist only after the matching protected tag workflow succeeds;
-> verify the checked-out tag or commit before using it as release evidence. AdversaryGraph
-> is an analyst-assistance system: AI
+> The checked-out source is the v8.0.0-beta.1 manual-testing pre-release;
+> v7.0.0 remains the latest stable release. Immutable beta artifacts exist only
+> after the matching protected tag workflow succeeds. Verify the exact tag or
+> commit and complete the v8 readiness matrix before using this source as
+> acceptance evidence. AdversaryGraph is an analyst-assistance system: AI
 > mappings, similarity scores, IOC enrichment, malware-analysis output, and
 > generated detections require human validation before operational use.
 
@@ -58,6 +59,9 @@ AdversaryGraph is built around this defensive CTI workflow:
 ```text
 report / IOC / malware sample / feed source
   -> extraction and enrichment
+  -> source-bound report claims and deterministic five-gate preflight
+  -> analyst submission and independent approval
+  -> immutable, target-scoped promotion or explicit revocation
   -> unified exact, full-text, relationship, and optional vector retrieval
   -> citation-bound answer or temporary Navigator proposal
   -> ATT&CK / ATLAS mapping candidates
@@ -73,15 +77,22 @@ The platform keeps the source of each conclusion visible. A technique selected
 from an uploaded report, an actor profile, an IOC feed, a malware sample, or an
 AI assistant should remain traceable back to evidence.
 
+For report-derived intelligence, traceability is also an authority boundary.
+Parsing and AI assistance create candidates; only accepted claims in the exact
+current promotion manifest may enter authorized downstream projections. See
+[Report Review Gate](report-review-gate.md) and
+[Durable Research Workflows](research-workflows.md).
+
 ## Modules and Abilities
 
 | Module | Primary abilities |
 |---|---|
 | Discover | Start workspace, monitor platform state, open common CTI workflows, inspect selected TTP counts, actor context, and recent intelligence entry points. |
+| Reports / Research | Store source reports and acquisition receipts; run five-gate preflight; adjudicate source-bound claims; submit for independent approval; promote or revoke target-scoped report intelligence with append-only history. |
 | Navigator | Explore Enterprise, Mobile, ICS ATT&CK and ATLAS matrices; select TTPs; review technique detail; overlay actors; track coverage; export Navigator JSON and backlog data. |
 | Intelligence RAG Assistant | Search normalized IOC, CVE, TTP, actor, campaign, report, Knowledge, Threat Radar, Threat Hunting, Evidence Graph, and sanitized asset context; apply a saved business profile; generate citation-bound answers; preview and explicitly confirm expiring Navigator proposals. |
 | ATT&CK Group Library | Search actor profiles, aliases, campaigns, techniques, reports, source-backed IOCs, and push actor TTPs into Navigator or comparisons. |
-| AI Analysis | Paste text or upload PDF/DOCX/TXT; choose Claude, OpenAI, Gemini, MiniMax, or local OpenAI-compatible LLM; extract mapping candidates; review evidence and add accepted TTPs. |
+| AI Analysis | Paste text or upload PDF/DOCX/TXT; choose Claude, OpenAI, Gemini, MiniMax, or local OpenAI-compatible LLM; extract mapping candidates; bind claims to source evidence; complete Review Gate submission and independent approval before promotion. |
 | Compare | Compare current TTP layers, reports, groups, and campaigns; inspect overlap, matrix diff, tactic breakdown, and gap analysis. |
 | Group vs Group | Select multiple actor profiles; compare shared and exclusive techniques; view overlap matrix, combined matrix, and technique table. |
 | Sector Intel | Rank actors by sector, geography, technology, recency, campaign evidence, and MISP Galaxy context. |
@@ -96,7 +107,7 @@ AI assistant should remain traceable back to evidence.
 | VirusTotal Lookup | Run on-demand VT enrichment for hashes, IPs, domains, and URLs; add TTP and actor context into AdversaryGraph workflows. |
 | Feeds Management | Sync ATT&CK/ATLAS, ThreatFox, Malpedia, OTX, OpenCTI, STIX/TAXII, MISP JSON, custom CSV/JSON/TXT, Sigma/YARA, and sandbox behavior feeds. |
 | Investigation Report | Build analyst handoff reports from selected TTPs, evidence, investigation notes, actor context, and exports. |
-| Operations | Manage investigation workspaces, tracked actors, detection lifecycle records, and team operational tasks. |
+| Operations | Manage investigation workspaces, tracked actors, detection lifecycle records, team operational tasks, and durable research-project workflow state. |
 | Pipeline | Register and import external intelligence sources, STIX/TAXII collections, MISP exports, sandbox behavior, and detection-content feeds. |
 | Administration | Create named native users, assign persistent SOC groups, review effective module/action access, manage custom groups, reset passwords/MFA, revoke sessions, and inspect authentication audit events. |
 | DFIR Examples | Use public DFIR examples and sample workflows to demonstrate report-to-ATT&CK analysis without private data. |
