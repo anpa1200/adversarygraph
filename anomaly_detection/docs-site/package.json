@@ -8,6 +8,9 @@
     "build": "docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
+    "generate:seo-dates": "node scripts/generate-seo-date-manifest.mjs",
+    "check:seo-dates": "node scripts/generate-seo-date-manifest.mjs --check",
+    "test:seo-dates": "node --test scripts/seo-date-manifest.test.cjs",
     "test:image-size-boundary": "node vendor/image-size/test.cjs"
   },
   "dependencies": {

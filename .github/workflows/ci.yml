@@ -527,6 +527,8 @@ jobs:
         working-directory: anomaly_detection/docs-site
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
@@ -537,6 +539,8 @@ jobs:
       - name: Audit
         run: |
           npm run test:image-size-boundary
+          npm run check:seo-dates
+          npm run test:seo-dates
           npm audit --audit-level=high
       - name: Production build
         run: npm run build

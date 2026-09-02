@@ -72,6 +72,8 @@ jobs:
         run: |
           npm ci
           npm run test:image-size-boundary
+          npm run check:seo-dates
+          npm run test:seo-dates
           npm audit --audit-level=high
           npm run build
 
