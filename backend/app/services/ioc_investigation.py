@@ -11,13 +11,13 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.version import APP_USER_AGENT
-from app.models.attack import AptGroup, Technique
+from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
@@ -258,13 +258,22 @@ async def _expand_local_tier(
 async def _safe_source(name: str, fn) -> dict[str, Any]:
     try:
         return await fn()
-    except Exception:
-        logger.warning("IOC enrichment source failed source=%s", name, exc_info=True)
+    except Exception as exc:
+        # Provider URLs may contain query-string credentials. Never persist or
+        # log an exception traceback/request URL from this boundary.
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        category = ('rate_limited' if status == 429 else 'authentication' if status in {401, 403}
+                    else 'timeout' if isinstance(exc, httpx.TimeoutException)
+                    else 'authentication' if isinstance(exc, RuntimeError) and 'rejected' in str(exc) and 'credentials' in str(exc)
+                    else 'provider_error')
+        logger.warning("IOC enrichment source failed source=%s category=%s exception_type=%s", name, category, type(exc).__name__)
         msg = f"{name} enrichment failed. See server logs."
         return {
             "source": name,
             "status": "error",
             "error": msg,
+            "error_category": category,
+            "http_status": status,
             "summary": msg,
             "relationships": [],
             "technique_ids": [],
@@ -275,23 +284,16 @@ async def _safe_source(name: str, fn) -> dict[str, Any]:
 
 async def _local_enrichment(session: AsyncSession, value: str, artifact_type: str, domain: str, tier: int = 1) -> dict[str, Any]:
     term = value.strip()
-    pattern = f"%{term}%"
+    expected_key = _exact_indicator_key(artifact_type, term)
     rows = await session.execute(
         select(IOCIndicator)
         .options(selectinload(IOCIndicator.actor_links))
-        .where(
-            or_(
-                IOCIndicator.value == term,
-                IOCIndicator.value.ilike(pattern),
-                IOCIndicator.description.ilike(pattern),
-                IOCIndicator.malware_family.ilike(pattern),
-                IOCIndicator.campaign.ilike(pattern),
-            )
-        )
+        .where(func.lower(IOCIndicator.value) == expected_key[1].lower())
         .order_by(IOCIndicator.updated_at.desc())
         .limit(30)
     )
-    indicators = list(rows.scalars().all())
+    indicators = [row for row in rows.scalars().all()
+                  if _exact_indicator_key(row.indicator_type, row.value) == expected_key]
     relationships: list[dict[str, Any]] = []
     technique_ids: list[str] = []
     actors: list[dict[str, Any]] = []
@@ -316,8 +318,29 @@ async def _local_enrichment(session: AsyncSession, value: str, artifact_type: st
         "relationships": relationships,
         "technique_ids": _dedupe(technique_ids),
         "actors": _dedupe_actors(actors),
-        "raw": {"matched_records": len(indicators), "artifact_type": artifact_type, "domain": domain},
+        "raw": {"matched_records": len(indicators), "artifact_type": artifact_type, "domain": domain,
+                "match_basis": "exact-normalized-type-and-value", "record_limit": 30},
     }
+
+
+def _exact_indicator_key(kind: str, value: str) -> tuple[str, str]:
+    kind = {'ip': 'ipv4', 'ip-dst': 'ipv4', 'ip-src': 'ipv4', 'domain-name': 'domain', 'hostname': 'domain'}.get(kind, kind)
+    if not kind or kind == 'hash':
+        if HASH_RE.fullmatch(value):
+            kind = {32:'md5', 40:'sha1', 64:'sha256'}[len(value)]
+        elif not kind:
+            kind = _classify_investigation_artifact(value).type
+    if kind in {'ip', 'ipv4', 'ipv6'}:
+        try:
+            address = ipaddress.ip_address(value)
+            return ('ipv4' if address.version == 4 else 'ipv6', str(address))
+        except ValueError:
+            pass
+    if kind == 'domain':
+        value = value.lower().rstrip('.')
+    elif kind in {'md5','sha1','sha256', *NETWORK_FINGERPRINT_TYPES}:
+        value = value.lower()
+    return kind, value
 
 
 async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str, artifact_type: str) -> dict[str, Any]:
@@ -534,7 +557,10 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
         task = row.get("task") or {}
         verdicts = row.get("verdicts") or {}
         stats = row.get("stats") or {}
-        if any(str(verdicts.get(key, {})).lower().find("malicious") >= 0 for key in ("overall", "urlscan", "engines", "community")):
+        # A field named "malicious" with value false is not a positive verdict.
+        # Strings, scores and keyword matches must not be promoted to booleans.
+        if any(isinstance(verdicts.get(key), dict) and verdicts[key].get("malicious") is True
+               for key in ("overall", "urlscan", "engines", "community")):
             verdict_hits += 1
         page_url = str(page.get("url") or "")
         task_url = str(task.get("url") or "")
@@ -562,7 +588,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
             "evidence": f"{verdict_hits} urlscan result(s) contain malicious verdict context",
             "rationale": "A malicious verdict is a source-backed signal requiring analyst review.",
         })
-        technique_ids.append("T1204")
+        # A reputation verdict does not prove a victim executed a file/link.
     if redirect_hosts - submitted_hosts:
         findings.append({
             "severity": "medium",
@@ -570,7 +596,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
             "evidence": f"observed page hosts differ from submitted hosts: {', '.join(sorted((redirect_hosts - submitted_hosts))[:5])}",
             "rationale": "Domain changes after submission may indicate redirect chains, compromised content, or external payload hosting.",
         })
-        technique_ids.append("T1189")
+        # Cross-host navigation alone does not establish drive-by compromise.
     for term, pattern, technique in [
         ("phish", "phishing-themed content", "T1566"),
         ("credential", "credential collection language", "T1056"),
@@ -586,7 +612,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
                 "evidence": f"urlscan metadata contains '{term}'",
                 "rationale": "Keyword evidence is weak alone, but useful for triage when combined with verdicts and pivots.",
             })
-            technique_ids.append(technique)
+            # Preserve metadata as a triage lead, not a behavioral ATT&CK mapping.
 
     findings = _dedupe_findings(findings)
     summary = f"urlscan activity analysis found {len(findings)} suspicious pattern(s)." if findings else "urlscan activity analysis found no obvious suspicious pattern."
@@ -825,7 +851,9 @@ async def _resolve_techniques(session: AsyncSession, attack_ids: list[str], doma
     rows = await session.execute(
         select(Technique)
         .options(selectinload(Technique.tactics))
-        .where(Technique.attack_id.in_(ids))
+        .join(AttackVersion)
+        .where(Technique.attack_id.in_(ids), Technique.domain == domain,
+               AttackVersion.is_latest.is_(True), Technique.is_deprecated.is_(False))
     )
     by_id = {tech.attack_id: tech for tech in rows.scalars().all()}
     output = []
@@ -859,10 +887,10 @@ async def _resolve_actors(session: AsyncSession, source_results: list[dict[str, 
         if rel.get("target_type") in {"tag", "report", "malware", "name"}
     ).lower()
     if actor_text:
-        rows = await session.execute(select(AptGroup).where(AptGroup.domain == domain).limit(300))
+        rows = await session.execute(select(AptGroup).join(AttackVersion).where(AptGroup.domain == domain, AttackVersion.is_latest.is_(True)).limit(300))
         for group in rows.scalars().all():
             terms = [group.name, *[str(alias) for alias in group.aliases or []]]
-            matched = [term for term in terms if len(term) >= 4 and term.lower() in actor_text]
+            matched = [term for term in terms if len(term) >= 4 and re.search(r'(?<!\w)' + re.escape(term.lower()) + r'(?!\w)', actor_text)]
             if matched:
                 actors.append({
                     "attack_id": group.attack_id,
@@ -870,6 +898,7 @@ async def _resolve_actors(session: AsyncSession, source_results: list[dict[str, 
                     "source": "local-actor-alias-match",
                     "confidence": 55,
                     "evidence": ", ".join(matched[:5]),
+                    "status": "alias-mention-investigation-lead-not-attribution",
                 })
     return _dedupe_actors(actors)
 

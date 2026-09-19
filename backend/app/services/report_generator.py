@@ -249,7 +249,7 @@ def _review_gate(pdf: _Report, review: dict[str, Any]) -> None:
         _heading2(pdf, "Promotion blockers")
         pdf.set_font("Helvetica", "", 9)
         for blocker in blockers[:20]:
-            pdf.multi_cell(0, 5, f"- {str(blocker)[:300]}")
+            pdf.multi_cell(0, 5, f"- {str(blocker)[:300]}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(4)
     pdf.set_font("Helvetica", "I", 8)
