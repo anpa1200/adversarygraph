@@ -204,6 +204,12 @@ async def export_analysis_pdf(
         "review_state": review["state"],
         "review": review,
         "authoritative": export_authorized,
+        # Keep packet observations available in a clearly separated appendix;
+        # candidate findings are not promoted intelligence or actor attribution.
+        "packet_evidence_report": db_session.source_text
+        if db_session.llm_provider == "deterministic"
+        and (db_session.source_provenance or {}).get("source_kind") == "pcap"
+        else "",
     }
 
     pdf_bytes = generate_analysis_report(data)

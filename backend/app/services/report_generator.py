@@ -29,6 +29,13 @@ _BLUE  = (59,  130, 246)
 
 
 class _Report(FPDF):
+    def normalize_text(self, text):
+        # Core PDF fonts cannot encode arbitrary packet/provider text. Preserve
+        # unsupported code points as explicit escapes instead of crashing or
+        # silently dropping evidence. JSON/Markdown retain the original Unicode.
+        text = str(text).encode("latin-1", "backslashreplace").decode("latin-1")
+        return super().normalize_text(text)
+
     def header(self):
         if self.page_no() == 1:
             return
@@ -84,6 +91,9 @@ def generate_analysis_report(data: dict[str, Any]) -> bytes:
     if tactic_data:
         _tactic_coverage(pdf, tactic_data)
 
+    if data.get("packet_evidence_report"):
+        _packet_evidence(pdf, data["packet_evidence_report"])
+
     return bytes(pdf.output())
 
 
@@ -115,6 +125,26 @@ def generate_layer_report(
 
     _table(pdf, rows, col_widths=[22, 60, 55, 41])
     return bytes(pdf.output())
+
+
+def _packet_evidence(pdf: _Report, report: str) -> None:
+    pdf.add_page()
+    _heading(pdf, "Packet Evidence Appendix")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.multi_cell(
+        0, 5,
+        "Observed packet data and rule candidates. This appendix does not approve "
+        "ATT&CK mappings, maliciousness, or actor attribution.",
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 8)
+    # Render as plain text: packet-controlled Markdown is never interpreted.
+    for line in str(report).splitlines():
+        pdf.multi_cell(
+            0, 4, line.encode("latin-1", "backslashreplace").decode("latin-1") or " ",
+            new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+        )
 
 
 # ── Page builders ──────────────────────────────────────────────────────────────
