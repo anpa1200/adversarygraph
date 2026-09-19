@@ -597,7 +597,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
             "rationale": "Domain changes after submission may indicate redirect chains, compromised content, or external payload hosting.",
         })
         # Cross-host navigation alone does not establish drive-by compromise.
-    for term, pattern, technique in [
+    for term, pattern, _technique in [
         ("phish", "phishing-themed content", "T1566"),
         ("credential", "credential collection language", "T1056"),
         ("login", "login page or credential prompt", "T1056"),

@@ -476,7 +476,8 @@ function LogPcapResultView({
                 label: `Log/PCAP analysis ${sourceRef}`,
                 domain,
                 techniqueIds: ttpIds,
-                actorIds: result.apt_matches.map(item => item.group_attack_id),
+                // TTP overlap is a lead, not an asserted investigation actor.
+                actorIds: [],
                 evidenceNodes: [
                   {
                     id: `log-pcap:${analysisId}`,
@@ -486,7 +487,18 @@ function LogPcapResultView({
                     analysis_id: analysisId,
                     summary: result.summary,
                     report: result.report,
-                    observables: result.observables,
+                    observables: result.observables.slice(0, 100),
+                    observable_count: result.observables.length,
+                    observables_truncated: result.observables.length > 100,
+                    ...(deterministic ? {
+                      source_analysis_ref: `/api/pcap/analyses/${analysisId}`,
+                      source_sha256: deterministic.capture.source_sha256,
+                      semantic_sha256: deterministic.semantic_sha256,
+                      evidence_copy_scope: 'bounded-preview-full-evidence-retained-in-source-analysis',
+                    } : {}),
+                    actor_similarity_leads: result.apt_matches.slice(0, 10).map(item => ({
+                      ...item, status: 'ttp-overlap-not-attribution',
+                    })),
                     suspicious_findings: result.suspicious_findings,
                     expected_suspicious_behaviors: expectedBehaviors,
                   },
