@@ -33,6 +33,7 @@ test('large PCAP handoff is bounded and actor overlap stays advisory', async ({ 
   await page.goto('/analyze');
   await page.getByRole('button',{name:'Log / PCAP',exact:true}).click();
   await page.getByRole('button',{name:/large-synthetic-control.pcap/}).click();
+  await expect(page.getByText(/Expected suspicious behaviors/)).toHaveCount(0);
   await page.getByRole('button',{name:'+ Add to investigation',exact:true}).click();
   await page.getByRole('button',{name:'Add to selected investigation',exact:true}).click();
   await expect.poll(()=>submitted).toBeTruthy();
@@ -44,5 +45,6 @@ test('large PCAP handoff is bounded and actor overlap stays advisory', async ({ 
   expect(source.source_analysis_ref).toBe(`/api/pcap/analyses/${analysisId}`);
   expect(source.source_sha256).toBe(hash);
   expect(source.actor_similarity_leads[0].status).toBe('ttp-overlap-not-attribution');
+  expect(source.expected_suspicious_behaviors).toEqual([]);
   expect(JSON.stringify(submitted).length).toBeLessThan(1024*1024);
 });

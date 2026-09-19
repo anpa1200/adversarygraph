@@ -433,7 +433,9 @@ function LogPcapResultView({
   const deterministic = result.deterministic_result;
   const ttpIds = result.techniques.filter(item => item.review_status !== 'rejected').map(item => item.attack_id);
   const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ja3', 'ja4'].includes(item.type));
-  const expectedBehaviors = buildExpectedSuspiciousBehaviors(result);
+  // Packet identities and DNS names are not endpoint command-execution logs.
+  // Only the decoder's frame-backed findings apply to deterministic captures.
+  const expectedBehaviors = deterministic ? [] : buildExpectedSuspiciousBehaviors(result);
   const analysisId = getLogPcapAnalysisId(result);
   const sourceRef = result.filename || `log-pcap-${analysisId.slice(0, 8)}`;
   const addToMyTtps = () => addTechniques(ttpIds);
@@ -611,14 +613,14 @@ function LogPcapResultView({
               </div>
             </Panel>
           )}
-          <ExpectedSuspiciousBehaviorsPanel
+          {!deterministic && <ExpectedSuspiciousBehaviorsPanel
             rows={expectedBehaviors}
             onOpenTtp={(id) => {
               addTechniques([id]);
               navigate('/navigator');
             }}
             onOpenIoc={(value) => navigate(`/ioc-investigation?indicator=${encodeURIComponent(value)}`)}
-          />
+          />}
 
           <Panel title={`Suspicious / malicious findings (${result.suspicious_findings.length})`}>
             {result.suspicious_findings.length ? result.suspicious_findings.map((finding, index) => (
