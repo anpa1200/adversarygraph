@@ -407,6 +407,7 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
     volumes:
       - pcap_data:/app/data/pcap
     restart: "no"
