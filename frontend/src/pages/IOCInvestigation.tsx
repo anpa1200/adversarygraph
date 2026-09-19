@@ -345,14 +345,18 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
   const sourceRef = `ioc-investigation:${result.session_id || result.artifact}`;
   const previewNodes = result.relationships.nodes.slice(0, 120);
   const nodeId = (id: string) => `${sourceRef}:node:${id}`;
+  const seenEdges = new Set<string>();
   // Provider graph edges use observable values, while case graphs use node IDs.
   // Keep only edges whose endpoints are in the bounded transferred preview.
-  const previewEdges = result.relationships.edges.flatMap(edge => {
+  const previewEdges = result.relationships.edges.flatMap((edge, index) => {
     const source = previewNodes.find(node => node.value === edge.source);
     const target = previewNodes.find(node => node.value === edge.target && node.type === edge.type);
+    const baseId = `${sourceRef}:edge:${source?.id}->${target?.id}:${edge.evidence_source}`;
+    const id = seenEdges.has(baseId) ? `${baseId}:evidence:${index}` : baseId;
+    seenEdges.add(baseId);
     return source && target ? [{
       ...edge,
-      id: `${sourceRef}:edge:${source.id}->${target.id}:${edge.evidence_source}`,
+      id,
       source: nodeId(source.id), target: nodeId(target.id), source_ref: sourceRef,
       source_value: edge.source, target_value: edge.target,
     }] : [];
