@@ -51,6 +51,9 @@ jobs:
           DB_PASS: ci_test_password
           LOG_DIR: /tmp/adversarygraph-test-logs
         run: PYTHONPATH=. python -m pytest
+      - name: Run deterministic PCAP analyzer unit tests
+        working-directory: .
+        run: PYTHONPATH=backend:. python -m pytest -q -c /dev/null pcap_analyzer/tests
 
   postgres-schema-authority:
     name: PostgreSQL migration and schema authority
@@ -552,6 +555,7 @@ jobs:
           REDIS_PASSWORD: ci_validation_redis_password
           RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
           ASSET_SCANNER_MCP_TOKEN: ci_scanner_mcp_token_0123456789abcdef
+          PCAP_ANALYZER_TOKEN: ci_pcap_analyzer_token_0123456789abcdef
           CORS_ALLOWED_ORIGINS: https://adversarygraph.example.com
           AUTH_ENABLED: "true"
           AUTH_EXISTING_ADMIN_CONFIRMED: "true"
@@ -561,6 +565,7 @@ jobs:
           ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_SCANNER_MCP_IMAGE: example.invalid/adversarygraph-scanner-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE: example.invalid/adversarygraph-pcap-analyzer@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_FRONTEND_IMAGE: example.invalid/adversarygraph-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_MALWAREGRAPH_IMAGE: example.invalid/adversarygraph-malwaregraph@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE: example.invalid/adversarygraph-attack-lab-web@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -610,6 +615,8 @@ jobs:
             --set persistence.attckData.storageClassName=shared-rwx \
             --set 'persistence.logs.accessModes={ReadWriteMany}' \
             --set persistence.logs.storageClassName=shared-rwx \
+            --set 'persistence.pcapData.accessModes={ReadWriteMany}' \
+            --set persistence.pcapData.storageClassName=shared-rwx \
             >/tmp/adversarygraph-shared-storage.yaml
           helm template adversarygraph helm/adversarygraph \
             --set-string config.productionMode=true \
@@ -619,6 +626,7 @@ jobs:
             --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string pcapAnalyzer.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             >/tmp/adversarygraph-production.yaml
           helm template adversarygraph helm/adversarygraph \
             --set secrets.existingSecret= \
@@ -626,6 +634,7 @@ jobs:
             --set secrets.redisPassword=helm_validation_redis_password \
             --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
             --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
+            --set secrets.pcapAnalyzerToken=helm_validation_pcap_analyzer_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
           for rendered in \
@@ -778,6 +787,14 @@ jobs:
           load: true
           push: false
           tags: adversarygraph-scanner-mcp:ci
+      - name: Build PCAP analyzer image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: pcap_analyzer/Dockerfile
+          load: true
+          push: false
+          tags: adversarygraph-pcap-analyzer:ci
       - name: Verify scanner-container boundary
         run: |
           docker run --rm --entrypoint sh adversarygraph-backend:ci -ec '
@@ -790,6 +807,12 @@ jobs:
             command -v nmap
             command -v nuclei
             test -d /app/nuclei-templates
+          '
+          docker run --rm --entrypoint sh adversarygraph-pcap-analyzer:ci -ec '
+            test "$(id -u)" = 10003
+            command -v tshark
+            command -v capinfos
+            test ! -e /root/.config/wireshark
           '
       - name: Build frontend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -835,13 +858,14 @@ jobs:
       REDIS_PASSWORD: ci_redis_password
       RATE_LIMIT_PROXY_SECRET: ci_rate_limit_proxy_secret_value
       ASSET_SCANNER_MCP_TOKEN: ci_scanner_mcp_token_0123456789abcdef
+      PCAP_ANALYZER_TOKEN: ci_pcap_analyzer_token_0123456789abcdef
       AUTH_ENABLED: "false"
       AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
       ATTCK_DOMAINS: enterprise-attack
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Start core stack
-        run: docker compose up -d --build --wait --wait-timeout 300 postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint api worker frontend
+        run: docker compose up -d --build --wait --wait-timeout 300 postgres redis scanner-mcp pcap-analyzer malwaregraph attack-lab-web attack-lab-endpoint api worker frontend
       - name: Queue initial dynamic RAG reconciliation
         timeout-minutes: 8
         run: |
@@ -922,7 +946,7 @@ jobs:
           if-no-files-found: warn
       - name: Show logs on failure
         if: failure()
-        run: docker compose logs --tail=200 api frontend postgres redis scanner-mcp malwaregraph attack-lab-web attack-lab-endpoint
+        run: docker compose logs --tail=200 api frontend postgres redis scanner-mcp pcap-analyzer malwaregraph attack-lab-web attack-lab-endpoint
       - name: Stop stack
         if: always()
         run: docker compose down -v
@@ -946,6 +970,10 @@ jobs:
             context: scanner_mcp
             file: scanner_mcp/Dockerfile
             tag: adversarygraph-scanner-mcp:scan
+          - name: pcap-analyzer
+            context: .
+            file: pcap_analyzer/Dockerfile
+            tag: adversarygraph-pcap-analyzer:scan
           - name: frontend
             context: frontend
             file: frontend/Dockerfile

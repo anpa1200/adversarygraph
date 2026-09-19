@@ -81,6 +81,7 @@ jobs:
           REDIS_PASSWORD: release_validation_redis_password
           RATE_LIMIT_PROXY_SECRET: release_validation_rate_limit_proxy_secret
           ASSET_SCANNER_MCP_TOKEN: release_validation_scanner_mcp_token
+          PCAP_ANALYZER_TOKEN: release_validation_pcap_analyzer_token
           CORS_ALLOWED_ORIGINS: https://adversarygraph.example.com
           AUTH_ENABLED: "true"
           AUTH_EXISTING_ADMIN_CONFIRMED: "true"
@@ -89,6 +90,7 @@ jobs:
           ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_SCANNER_MCP_IMAGE: example.invalid/adversarygraph-scanner-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE: example.invalid/adversarygraph-pcap-analyzer@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_FRONTEND_IMAGE: example.invalid/adversarygraph-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_MALWAREGRAPH_IMAGE: example.invalid/adversarygraph-malwaregraph@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE: example.invalid/adversarygraph-attack-lab-web@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -140,6 +142,8 @@ jobs:
             --set persistence.attckData.storageClassName=shared-rwx \
             --set 'persistence.logs.accessModes={ReadWriteMany}' \
             --set persistence.logs.storageClassName=shared-rwx \
+            --set 'persistence.pcapData.accessModes={ReadWriteMany}' \
+            --set persistence.pcapData.storageClassName=shared-rwx \
             >/tmp/adversarygraph-shared-storage.yaml
           helm template adversarygraph helm/adversarygraph \
             --set-string config.productionMode=true \
@@ -149,6 +153,7 @@ jobs:
             --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set-string pcapAnalyzer.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             >/tmp/adversarygraph-production.yaml
           helm template adversarygraph helm/adversarygraph \
             --set secrets.existingSecret= \
@@ -156,6 +161,7 @@ jobs:
             --set secrets.redisPassword=helm_validation_redis_password \
             --set secrets.rateLimitProxySecret=helm_validation_rate_limit_proxy_secret \
             --set secrets.assetScannerMcpToken=helm_validation_scanner_mcp_token \
+            --set secrets.pcapAnalyzerToken=helm_validation_pcap_analyzer_token \
             --set secrets.authBootstrapAdminPassword=helm_validation_bootstrap_password \
             >/tmp/adversarygraph-managed-secret.yaml
           for rendered in \
@@ -765,6 +771,23 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
+      - name: Build PCAP analyzer release image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: pcap_analyzer/Dockerfile
+          push: false
+          load: true
+          pull: true
+          platforms: linux/amd64
+          no-cache: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/adversarygraph-pcap-analyzer:${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
       - name: Build frontend release image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -870,6 +893,7 @@ jobs:
             "postgres:adversarygraph-postgres"
             "backend:adversarygraph-backend"
             "scanner_mcp:adversarygraph-scanner-mcp"
+            "pcap_analyzer:adversarygraph-pcap-analyzer"
             "frontend:adversarygraph-frontend"
             "malwaregraph:adversarygraph-malwaregraph"
             "attack_lab_web:adversarygraph-attack-lab-web"
@@ -945,6 +969,15 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
+      - name: Scan PCAP analyzer publication candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.publish_ids.outputs.pcap_analyzer }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
       - name: Scan frontend publication candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -998,6 +1031,7 @@ jobs:
           POSTGRES_IMAGE_ID: ${{ steps.publish_ids.outputs.postgres }}
           BACKEND_IMAGE_ID: ${{ steps.publish_ids.outputs.backend }}
           SCANNER_MCP_IMAGE_ID: ${{ steps.publish_ids.outputs.scanner_mcp }}
+          PCAP_ANALYZER_IMAGE_ID: ${{ steps.publish_ids.outputs.pcap_analyzer }}
           FRONTEND_IMAGE_ID: ${{ steps.publish_ids.outputs.frontend }}
           MALWAREGRAPH_IMAGE_ID: ${{ steps.publish_ids.outputs.malwaregraph }}
           ATTACK_LAB_WEB_IMAGE_ID: ${{ steps.publish_ids.outputs.attack_lab_web }}
@@ -1009,6 +1043,7 @@ jobs:
             [adversarygraph-postgres]="$POSTGRES_IMAGE_ID"
             [adversarygraph-backend]="$BACKEND_IMAGE_ID"
             [adversarygraph-scanner-mcp]="$SCANNER_MCP_IMAGE_ID"
+            [adversarygraph-pcap-analyzer]="$PCAP_ANALYZER_IMAGE_ID"
             [adversarygraph-frontend]="$FRONTEND_IMAGE_ID"
             [adversarygraph-malwaregraph]="$MALWAREGRAPH_IMAGE_ID"
             [adversarygraph-attack-lab-web]="$ATTACK_LAB_WEB_IMAGE_ID"
@@ -1019,6 +1054,7 @@ jobs:
             [adversarygraph-postgres]="ADVERSARYGRAPH_POSTGRES_IMAGE"
             [adversarygraph-backend]="ADVERSARYGRAPH_BACKEND_IMAGE"
             [adversarygraph-scanner-mcp]="ADVERSARYGRAPH_SCANNER_MCP_IMAGE"
+            [adversarygraph-pcap-analyzer]="ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE"
             [adversarygraph-frontend]="ADVERSARYGRAPH_FRONTEND_IMAGE"
             [adversarygraph-malwaregraph]="ADVERSARYGRAPH_MALWAREGRAPH_IMAGE"
             [adversarygraph-attack-lab-web]="ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE"
@@ -1029,6 +1065,7 @@ jobs:
             adversarygraph-postgres
             adversarygraph-backend
             adversarygraph-scanner-mcp
+            adversarygraph-pcap-analyzer
             adversarygraph-frontend
             adversarygraph-malwaregraph
             adversarygraph-attack-lab-web
@@ -1077,7 +1114,7 @@ jobs:
           # digest and bind it to the scanned local image ID. The release asset
           # is written from these verified digests, never from a later mutable
           # tag lookup. Shared `latest` tags are intentionally not published:
-          # an eight-image family cannot be advanced atomically.
+          # a nine-image family cannot be advanced atomically.
           : > adversarygraph-images.env
           declare -A published_digests=()
           for image in "${images[@]}"; do

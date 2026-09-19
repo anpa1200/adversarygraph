@@ -395,6 +395,47 @@ services:
       - attck_data:/app/data/attck
     restart: "no"
 
+  pcap-storage-permissions:
+    image: ${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}
+    command: sh -c "mkdir -p /app/data/pcap && chown -R 999:999 /app/data/pcap && chmod 0700 /app/data/pcap"
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    volumes:
+      - pcap_data:/app/data/pcap
+    restart: "no"
+
+  pcap-analyzer:
+    image: ${ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE:-adversarygraph-pcap-analyzer:local-scan}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: pcap_analyzer/Dockerfile
+    restart: unless-stopped
+    environment:
+      PCAP_ANALYZER_TOKEN: ${PCAP_ANALYZER_TOKEN:-development-only-pcap-analyzer-token}
+      PCAP_ANALYZER_MAX_UPLOAD_BYTES: ${PCAP_MAX_UPLOAD_BYTES:-536870912}
+      PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS: ${PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS:-300}
+      PCAP_ANALYZER_MAX_TOOL_OUTPUT_BYTES: ${PCAP_ANALYZER_MAX_TOOL_OUTPUT_BYTES:-268435456}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=1536m,noexec,nosuid,nodev,uid=10003,gid=10003,mode=0700
+    networks:
+      - pcap_control
+
   # Initialize the shared log volume before concurrent non-root writers start.
   # nocopy prevents Docker from racing image-directory copy-up on a fresh volume.
   logs-permissions:
@@ -446,6 +487,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - attck_data:/app/data/attck
+      - pcap_data:/app/data/pcap
       - type: volume
         source: adversarygraph_logs
         target: /app/logs
@@ -566,6 +608,13 @@ services:
       MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS: ${MALWAREGRAPH_UPLOAD_TIMEOUT_SECONDS:-180}
       MALWAREGRAPH_LONG_TIMEOUT_SECONDS: ${MALWAREGRAPH_LONG_TIMEOUT_SECONDS:-300}
       MALWAREGRAPH_MAX_UPLOAD_BYTES: ${MALWAREGRAPH_MAX_UPLOAD_BYTES:-268435456}
+      PCAP_ANALYZER_ENABLED: ${PCAP_ANALYZER_ENABLED:-true}
+      PCAP_ANALYZER_URL: http://pcap-analyzer:8300
+      PCAP_ANALYZER_TOKEN: ${PCAP_ANALYZER_TOKEN:-development-only-pcap-analyzer-token}
+      PCAP_ANALYZER_TIMEOUT_SECONDS: ${PCAP_ANALYZER_TIMEOUT_SECONDS:-600}
+      PCAP_MAX_UPLOAD_BYTES: ${PCAP_MAX_UPLOAD_BYTES:-536870912}
+      PCAP_STORAGE_DIR: /app/data/pcap
+      PCAP_RETAIN_UPLOADS: ${PCAP_RETAIN_UPLOADS:-true}
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/ready || exit 1"]
@@ -594,10 +643,15 @@ services:
         condition: service_completed_successfully
       logs-permissions:
         condition: service_completed_successfully
+      pcap-storage-permissions:
+        condition: service_completed_successfully
+      pcap-analyzer:
+        condition: service_healthy
     networks:
       - default
       - malwaregraph_internal
       - scanner_control
+      - pcap_control
     deploy:
       resources:
         limits:
@@ -902,6 +956,7 @@ volumes:
   atlas_site:
   malwaregraph_storage:
   adversarygraph_logs:
+  pcap_data:
 
 networks:
   malwaregraph_internal:
@@ -909,3 +964,5 @@ networks:
   scanner_control:
     internal: true
   scanner_egress:
+  pcap_control:
+    internal: true

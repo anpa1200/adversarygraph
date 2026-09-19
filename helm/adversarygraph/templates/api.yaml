@@ -67,6 +67,10 @@ spec:
             - name: malwaregraph
               mountPath: /malwaregraph-storage
             {{- end }}
+            {{- if .Values.pcapAnalyzer.enabled }}
+            - name: pcap-data
+              mountPath: /app/data/pcap
+            {{- end }}
             - name: tmp
               mountPath: /tmp
           resources:
@@ -89,6 +93,11 @@ spec:
         - name: malwaregraph
           persistentVolumeClaim:
             claimName: {{ include "adversarygraph.fullname" . }}-malwaregraph
+        {{- end }}
+        {{- if .Values.pcapAnalyzer.enabled }}
+        - name: pcap-data
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-pcap-data
         {{- end }}
 ---
 apiVersion: v1

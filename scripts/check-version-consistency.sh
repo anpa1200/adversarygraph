@@ -58,6 +58,7 @@ checks = [
     ("helm/adversarygraph/values.yaml frontend.image.tag", yaml_scalar(helm_values, ("frontend", "image", "tag"))),
     ("helm/adversarygraph/values.yaml malwaregraph.image.tag", yaml_scalar(helm_values, ("malwaregraph", "image", "tag"))),
     ("helm/adversarygraph/values.yaml scannerMcp.image.tag", yaml_scalar(helm_values, ("scannerMcp", "image", "tag"))),
+    ("helm/adversarygraph/values.yaml pcapAnalyzer.image.tag", yaml_scalar(helm_values, ("pcapAnalyzer", "image", "tag"))),
     ("backend/app/core/version.py", re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', (root / "backend/app/core/version.py").read_text(), re.M).group(1)),
 ]
 failed = False

@@ -165,14 +165,40 @@ scannerMcp:
       cpu: "2"
       memory: 2Gi
 
+pcapAnalyzer:
+  enabled: true
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-pcap-analyzer
+    tag: "8.0.0-beta.1"
+    digest: ""
+  service:
+    port: 8300
+  maxUploadBytes: "536870912"
+  toolTimeoutSeconds: "300"
+  maxToolOutputBytes: "268435456"
+  apiTimeoutSeconds: "600"
+  retainUploads: "true"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
 persistence:
   attckDataSize: 10Gi
   logsSize: 20Gi
+  pcapDataSize: 100Gi
   attckData:
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
   logs:
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+  pcapData:
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
@@ -182,6 +208,10 @@ ingress:
   className: ""
   host: adversarygraph.example.com
   tlsSecretName: ""
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "520m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "650"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "650"
 
 networkPolicy:
   # Baseline ingress isolation is enabled by default. Egress remains open
@@ -195,6 +225,7 @@ networkPolicy:
     frontend: []
     malwaregraph: []
     scannerMcp: []
+    pcapAnalyzer: []
     postgres: []
     redis: []
     worker: []
@@ -231,6 +262,8 @@ secrets:
   # Independent capability token used only between the API and scanner MCP.
   # Use at least 24 random URL-safe characters and never reuse another secret.
   assetScannerMcpToken: ""
+  # Independent capability token used only between the API and PCAP analyzer.
+  pcapAnalyzerToken: ""
 
 config:
   # Set true in reviewed production values. This enables fail-closed Helm

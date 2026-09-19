@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-No changes are recorded after the v8.0.0-beta.1 pre-release boundary.
+- Added isolated deterministic PCAP/PCAPNG decoding with a versioned TShark
+  manifest, canonical semantic hashes, durable content-addressed analyses,
+  normalized packet/event/flow/identity/artifact evidence, frame-bound rule
+  findings, and six-capture regression contracts.
+- Integrated packet-derived observables, object hashes, identities, ATT&CK
+  candidates, and explicitly non-attributive actor-overlap leads with IOC
+  Investigation, Investigation evidence, Navigator, linked reports, and the
+  internal-IR Review Gate.
 
 ## v8.0.0-beta.1 - 2026-08-25
 

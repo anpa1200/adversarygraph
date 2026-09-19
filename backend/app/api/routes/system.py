@@ -1337,6 +1337,10 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
     checks.append(
         _storage_writable_check(settings.attck_data_dir, "attck_storage_writable")
     )
+    if settings.pcap_analyzer_enabled and settings.pcap_retain_uploads:
+        checks.append(
+            _storage_writable_check(settings.pcap_storage_dir, "pcap_storage_writable")
+        )
     checks.append(
         await _service_health_check(
             "attack_lab_web_health",
@@ -1352,6 +1356,16 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
         )
     )
     checks.append(await _malwaregraph_health_check())
+    if settings.pcap_analyzer_enabled:
+        checks.append(
+            await _service_health_check(
+                "pcap_analyzer_health",
+                settings.pcap_analyzer_url,
+                timeout_seconds=5.0,
+            )
+        )
+    else:
+        checks.append(_check("pcap_analyzer_health", True, "PCAP analyzer is disabled by configuration."))
 
     status = _overall_selftest_status(checks)
     return SelfTestResult(

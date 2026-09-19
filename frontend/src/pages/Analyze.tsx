@@ -3,8 +3,8 @@ import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
-import { analyzeApi, exportApi, reportsApi } from '@/api/client';
-import type { AnalysisResult, LogPcapAnalysisResult } from '@/api/client';
+import { analyzeApi, exportApi, pcapApi, reportsApi } from '@/api/client';
+import type { AnalysisResult, LogPcapAnalysisResult, PcapAnalysisResult, PcapAnalysisSummary } from '@/api/client';
 import { useSseStream } from '@/hooks/useSseStream';
 import { Header } from '@/components/Layout/Header';
 import { AddToInvestigationButton } from '@/components/AddToInvestigationButton';
@@ -63,6 +63,13 @@ export function Analyze() {
     staleTime: 30_000,
   });
 
+  const { data: pcapCollection, isLoading: pcapHistoryLoading } = useQuery({
+    queryKey: ['pcap-analyses'],
+    queryFn: () => pcapApi.analyses(50, 0),
+    enabled: mode === 'log-pcap',
+    staleTime: 30_000,
+  });
+
   const loadReportMutation = useMutation({
     mutationFn: (sessionId: string) => analyzeApi.getResult(sessionId),
     onSuccess: data => {
@@ -100,6 +107,28 @@ export function Analyze() {
     },
   });
 
+  const pcapMutation = useMutation({
+    mutationFn: (fd: FormData) => pcapApi.analyze(fd),
+    onSuccess: data => {
+      reset();
+      setLoadedResult(null);
+      setLogPcapResult(adaptPcapAnalysis(data));
+      setActiveLogPcapHistoryId(data.analysis_id);
+      queryClient.invalidateQueries({ queryKey: ['pcap-analyses'] });
+      queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
+    },
+  });
+
+  const loadPcapMutation = useMutation({
+    mutationFn: (analysisId: string) => pcapApi.analysis(analysisId),
+    onSuccess: data => {
+      reset();
+      setLoadedResult(null);
+      setLogPcapResult(adaptPcapAnalysis(data));
+      setActiveLogPcapHistoryId(data.analysis_id);
+    },
+  });
+
   useEffect(() => {
     if (result?.session_id) {
       queryClient.invalidateQueries({ queryKey: ['report-sessions'] });
@@ -120,11 +149,12 @@ export function Analyze() {
     setLogPcapResult(null);
     setActiveLogPcapHistoryId(null);
     if (mode === 'log-pcap') {
-      logPcapMutation.mutate(fd);
+      if (file && isPacketCaptureFile(file)) pcapMutation.mutate(fd);
+      else logPcapMutation.mutate(fd);
       return;
     }
     await run(signal => analyzeApi.stream(fd, signal));
-  }, [canRunAnalysis, canUploadFiles, provider, domain, file, text, reset, mode, logPcapMutation, run]);
+  }, [canRunAnalysis, canUploadFiles, provider, domain, file, text, reset, mode, logPcapMutation, pcapMutation, run]);
 
   const onDrop = useCallback(([f]: File[]) => { if (canRunAnalysis && canUploadFiles && f) { setFile(f); setText(''); } }, [canRunAnalysis, canUploadFiles]);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -139,7 +169,9 @@ export function Analyze() {
     disabled: !canRunAnalysis || !canUploadFiles,
   });
 
-  const canSubmit = canRunAnalysis && (!!text.trim() || (!!file && canUploadFiles)) && !streaming && !logPcapMutation.isPending;
+  const analysisPending = logPcapMutation.isPending || pcapMutation.isPending;
+  const analysisError = error || logPcapMutation.error || pcapMutation.error || loadPcapMutation.error;
+  const canSubmit = canRunAnalysis && (!!text.trim() || (!!file && canUploadFiles)) && !streaming && !analysisPending;
 
   return (
     <div className="flex flex-col h-full">
@@ -192,7 +224,9 @@ export function Analyze() {
             </div>
             {mode === 'log-pcap' && (
               <div className="mb-3 rounded border border-cyan-700/40 bg-cyan-950/20 p-3 text-[11px] leading-5 text-cyan-100">
-                No manual prompt is needed. AdversaryGraph uses the built-in Log / PCAP analysis system prompt. Analyze one source at a time, for example firewall logs first and EDR logs second, then add each result to your investigation.
+                {file && isPacketCaptureFile(file)
+                  ? 'PCAP files use the isolated deterministic packet decoder. Packet facts, hashes, rule versions, and frame references are saved server-side; enrichment and actor overlap remain reviewable leads.'
+                  : 'Logs use the built-in analysis prompt. Analyze one source at a time, then add each result to your investigation.'}
               </div>
             )}
             <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Paste text</div>
@@ -247,12 +281,12 @@ export function Analyze() {
                 disabled={!canSubmit}
                 className="w-full bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white py-2.5 rounded font-medium text-sm transition-colors"
               >
-                {logPcapMutation.isPending ? 'Analysing log / PCAP...' : mode === 'log-pcap' ? 'Analyse log / PCAP' : 'Analyse with AI'}
+                {analysisPending ? 'Analysing log / PCAP...' : mode === 'log-pcap' ? 'Analyse log / PCAP' : 'Analyse with AI'}
               </button>
             )}
-            {(error || logPcapMutation.error) && (
+            {analysisError && (
               <div className="mt-3 text-xs text-red-400 bg-red-900/20 px-3 py-2 rounded">
-                {error || (logPcapMutation.error instanceof Error ? logPcapMutation.error.message : String(logPcapMutation.error))}
+                {analysisError instanceof Error ? analysisError.message : String(analysisError)}
               </div>
             )}
           </div>
@@ -268,28 +302,37 @@ export function Analyze() {
           </div>
 
           {mode === 'log-pcap' ? (
-            <PreviousLogPcapAnalysisList
-              items={logPcapHistory}
-              activeHistoryId={activeLogPcapHistoryId}
-              onOpen={item => {
-                reset();
-                setLoadedResult(null);
-                setLogPcapResult(item);
-                setActiveLogPcapHistoryId(item.history_id);
-              }}
-              onDelete={historyId => {
-                if (!window.confirm('Delete this stored log analysis?')) return;
-                setLogPcapHistory(current => {
-                  const next = current.filter(item => item.history_id !== historyId);
-                  saveLogPcapHistory(next);
-                  return next;
-                });
-                if (activeLogPcapHistoryId === historyId) {
-                  setLogPcapResult(null);
-                  setActiveLogPcapHistoryId(null);
-                }
-              }}
-            />
+            <div className="min-h-0 overflow-y-auto">
+              <PreviousPcapAnalysisList
+                items={pcapCollection?.items ?? []}
+                loading={pcapHistoryLoading}
+                activeAnalysisId={activeLogPcapHistoryId}
+                loadingAnalysisId={loadPcapMutation.variables ?? null}
+                onOpen={analysisId => loadPcapMutation.mutate(analysisId)}
+              />
+              <PreviousLogPcapAnalysisList
+                items={logPcapHistory}
+                activeHistoryId={activeLogPcapHistoryId}
+                onOpen={item => {
+                  reset();
+                  setLoadedResult(null);
+                  setLogPcapResult(item);
+                  setActiveLogPcapHistoryId(item.history_id);
+                }}
+                onDelete={historyId => {
+                  if (!window.confirm('Delete this local log analysis?')) return;
+                  setLogPcapHistory(current => {
+                    const next = current.filter(item => item.history_id !== historyId);
+                    saveLogPcapHistory(next);
+                    return next;
+                  });
+                  if (activeLogPcapHistoryId === historyId) {
+                    setLogPcapResult(null);
+                    setActiveLogPcapHistoryId(null);
+                  }
+                }}
+              />
+            </div>
           ) : (
             <PreviousAnalysisList
               reports={previousReports}
@@ -331,7 +374,7 @@ export function Analyze() {
               <div className="text-5xl mb-4">⬢</div>
               <p className="text-gray-500">Submit a report, log, or PCAP to extract ATT&CK techniques.</p>
               <p className="text-xs mt-2 text-gray-600">
-                Previous analyses are remembered locally and can be reopened from the left panel.
+                PCAP analyses are retained server-side; recent log analyses are remembered in this browser.
               </p>
             </div>
           )}
@@ -387,8 +430,9 @@ function LogPcapResultView({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const canExport = useHasPermission('export_data');
+  const deterministic = result.deterministic_result;
   const ttpIds = result.techniques.filter(item => item.review_status !== 'rejected').map(item => item.attack_id);
-  const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].includes(item.type));
+  const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ja3', 'ja4'].includes(item.type));
   const expectedBehaviors = buildExpectedSuspiciousBehaviors(result);
   const analysisId = getLogPcapAnalysisId(result);
   const sourceRef = result.filename || `log-pcap-${analysisId.slice(0, 8)}`;
@@ -417,8 +461,14 @@ function LogPcapResultView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <span className="text-xs text-gray-500 font-mono">{result.provider} / {result.model}</span>
-            <h2 className="mt-1 text-lg font-semibold text-white">Log / PCAP Analysis</h2>
-            <p className="mt-1 max-w-4xl text-sm text-gray-300">{result.summary || 'No AI summary returned.'}</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">{deterministic ? 'Deterministic PCAP Analysis' : 'Log Analysis'}</h2>
+            <p className="mt-1 max-w-4xl text-sm text-gray-300">{result.summary || 'No summary returned.'}</p>
+            {deterministic && (
+              <div className="mt-2 flex flex-wrap gap-2 font-mono text-[9px] text-gray-500">
+                <span>capture {deterministic.capture.source_sha256}</span>
+                <span>result {deterministic.semantic_sha256}</span>
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <AddToInvestigationButton
@@ -477,6 +527,46 @@ function LogPcapResultView({
                     description: item.description,
                     source: 'log-pcap-analysis',
                   })),
+                  ...(deterministic?.findings.slice(0, 100).map(item => ({
+                    id: item.finding_id,
+                    type: 'pcap-finding',
+                    label: item.title,
+                    source_ref: sourceRef,
+                    analysis_id: analysisId,
+                    rule_id: item.rule_id,
+                    rule_version: item.rule_version,
+                    severity: item.severity,
+                    confidence: item.confidence,
+                    explanation: item.explanation,
+                    metrics: item.metrics,
+                    frame_evidence: item.evidence,
+                    source: 'deterministic-pcap-analysis',
+                  })) ?? []),
+                  ...(deterministic?.identities.slice(0, 100).map(item => ({
+                    id: item.identity_id,
+                    type: 'identity',
+                    label: `${item.type}: ${item.value}`,
+                    value: item.value,
+                    identity_type: item.type,
+                    ip_addresses: item.ip_addresses,
+                    frame_evidence: item.evidence,
+                    source_ref: sourceRef,
+                    analysis_id: analysisId,
+                    source: 'deterministic-pcap-analysis',
+                  })) ?? []),
+                  ...(deterministic?.artifacts.slice(0, 100).map(item => ({
+                    id: item.artifact_id,
+                    type: 'file-artifact',
+                    label: item.filename,
+                    value: item.sha256,
+                    sha256: item.sha256,
+                    size_bytes: item.size_bytes,
+                    content_type: item.media_type,
+                    frame_evidence: item.evidence,
+                    source_ref: sourceRef,
+                    analysis_id: analysisId,
+                    source: 'deterministic-pcap-analysis',
+                  })) ?? []),
                 ],
                 timelineEvent: `Added Log/PCAP analysis ${sourceRef}`.trim(),
               }}
@@ -485,6 +575,7 @@ function LogPcapResultView({
             />
             <button onClick={addToMyTtps} disabled={!ttpIds.length} className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">+ My TTPs</button>
             <button onClick={compareOnMatrix} disabled={!ttpIds.length} className="text-xs bg-mitre-accent hover:bg-red-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">⇄ Matrix compare</button>
+            {result.session_id && <a href={`/analyze/${result.session_id}/report`} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">Review / promote</a>}
             {canExport && <button onClick={() => downloadReport('md')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ MD report</button>}
             {canExport && <button onClick={() => downloadReport('txt')} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">↓ TXT report</button>}
           </div>
@@ -493,6 +584,21 @@ function LogPcapResultView({
 
       <div className="grid gap-4 p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="space-y-4">
+          {deterministic && (
+            <Panel title="Capture evidence contract">
+              <div className="grid gap-3 p-3 text-xs text-gray-300 sm:grid-cols-3">
+                <PcapMetric label="Packets" value={deterministic.capture.packet_count.toLocaleString()} />
+                <PcapMetric label="Duration" value={`${deterministic.capture.duration_seconds}s`} />
+                <PcapMetric label="Flows" value={deterministic.flows.length.toLocaleString()} />
+                <PcapMetric label="Endpoints" value={deterministic.endpoints.length.toLocaleString()} />
+                <PcapMetric label="Identities" value={deterministic.identities.length.toLocaleString()} />
+                <PcapMetric label="Exported objects" value={deterministic.artifacts.length.toLocaleString()} />
+              </div>
+              <div className="border-t border-gray-800 p-3 text-[10px] leading-5 text-gray-500">
+                Packet facts are bound to the capture SHA-256, analyzer manifest, rule-pack version, and semantic result hash. Encrypted payloads are metadata-only unless separately decrypted.
+              </div>
+            </Panel>
+          )}
           <ExpectedSuspiciousBehaviorsPanel
             rows={expectedBehaviors}
             onOpenTtp={(id) => {
@@ -547,7 +653,7 @@ function LogPcapResultView({
                   </div>
                   <p className="mt-1 text-[10px] text-gray-500">{ioc.description}</p>
                   <div className="mt-2 flex gap-2">
-                    <button onClick={() => navigate(`/virustotal?indicator=${encodeURIComponent(ioc.value)}`)} className="secondary-action text-[10px]">Enrich</button>
+                    <button onClick={() => navigate(`/ioc-investigation?indicator=${encodeURIComponent(ioc.value)}`)} className="secondary-action text-[10px]">Investigate / enrich</button>
                     <button onClick={() => navigate(`/ioc-library?search=${encodeURIComponent(ioc.value)}`)} className="secondary-action text-[10px]">Search IOC DB</button>
                   </div>
                 </div>
@@ -555,7 +661,35 @@ function LogPcapResultView({
             </div>
           </Panel>
 
-          <Panel title={`Actor overlap (${result.apt_matches.length})`}>
+          {deterministic && <Panel title={`Recovered identities (${deterministic.identities.length})`}>
+            <div className="max-h-64 overflow-y-auto">
+              {deterministic.identities.slice(0, 100).map(identity => (
+                <div key={identity.identity_id} className="border-t border-gray-800 p-3">
+                  <div className="break-all font-mono text-xs text-gray-200">{identity.value}</div>
+                  <div className="mt-1 text-[10px] text-gray-500">{identity.type} · {identity.ip_addresses.join(', ') || 'no IP binding'} · {formatPcapEvidence(identity.evidence)}</div>
+                </div>
+              ))}
+              {!deterministic.identities.length && <p className="p-3 text-xs text-gray-500">No identity-protocol values recovered.</p>}
+            </div>
+          </Panel>}
+
+          {deterministic && <Panel title={`Exported object hashes (${deterministic.artifacts.length})`}>
+            <div className="max-h-72 overflow-y-auto">
+              {deterministic.artifacts.slice(0, 100).map(artifact => (
+                <div key={artifact.artifact_id} className="border-t border-gray-800 p-3">
+                  <div className="break-all text-xs text-gray-200">{artifact.filename}</div>
+                  <div className="mt-1 break-all font-mono text-[9px] text-gray-500">{artifact.sha256}</div>
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-600">
+                    <span>{artifact.size_bytes.toLocaleString()} bytes</span>
+                    <button onClick={() => navigate(`/ioc-investigation?indicator=${artifact.sha256}`)} className="secondary-action text-[10px]">Investigate hash</button>
+                  </div>
+                </div>
+              ))}
+              {!deterministic.artifacts.length && <p className="p-3 text-xs text-gray-500">No HTTP objects were exportable.</p>}
+            </div>
+          </Panel>}
+
+          <Panel title={`Actor TTP-overlap leads — not attribution (${result.apt_matches.length})`}>
             {result.apt_matches.length ? result.apt_matches.slice(0, 10).map(match => (
               <div key={match.group_attack_id} className="border-t border-gray-800 p-3">
                 <a href={`/apt?group=${match.group_attack_id}`} className="text-sm font-semibold text-white hover:text-mitre-accent">{match.group_name}</a>
@@ -661,6 +795,61 @@ function PreviousAnalysisList({
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </button>}
               </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PreviousPcapAnalysisList({
+  items,
+  loading,
+  activeAnalysisId,
+  loadingAnalysisId,
+  onOpen,
+}: {
+  items: PcapAnalysisSummary[];
+  loading: boolean;
+  activeAnalysisId: string | null;
+  loadingAnalysisId: string | null;
+  onOpen: (analysisId: string) => void;
+}) {
+  return (
+    <div className="min-h-[140px] max-h-[300px] flex flex-col border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+        <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Saved PCAP analyses</div>
+        <span className="text-[10px] text-gray-600">{items.length}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading && <div className="px-4 py-3 text-xs text-gray-600">Loading captures...</div>}
+        {!loading && items.length === 0 && (
+          <div className="px-4 py-3 text-xs text-gray-600 leading-relaxed">
+            Deterministic capture analyses will be retained here by content hash.
+          </div>
+        )}
+        {items.map(item => {
+          const active = activeAnalysisId === item.analysis_id;
+          const opening = loadingAnalysisId === item.analysis_id;
+          return (
+            <div key={item.analysis_id} className={`border-b border-gray-800 px-4 py-3 ${active ? 'bg-mitre-accent/10' : 'hover:bg-gray-900/60'}`}>
+              <button type="button" onClick={() => onOpen(item.analysis_id)} disabled={opening} className="w-full min-w-0 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-gray-200">{item.filename}</span>
+                  {active && <span className="text-[10px] text-mitre-accent">open</span>}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-gray-600">
+                  <span>{item.technique_count} TTPs</span>
+                  <span>{item.observable_count} observables</span>
+                  <span>{item.finding_count} findings</span>
+                  <span>{opening ? 'opening...' : item.status}</span>
+                </div>
+                <div className="mt-1 truncate font-mono text-[9px] text-gray-700">SHA-256 {item.source_sha256}</div>
+              </button>
+              <a href={`/analyze/${item.session_id}/report`} className="mt-2 inline-block text-[10px] text-mitre-accent hover:text-red-300">
+                Review / promote report
+              </a>
             </div>
           );
         })}
@@ -1435,6 +1624,7 @@ function createLogPcapHistoryItem(result: LogPcapAnalysisResult): LogPcapHistory
 }
 
 function getLogPcapAnalysisId(result: LogPcapAnalysisResult) {
+  if (result.analysis_id) return result.analysis_id;
   const historyId = (result as Partial<LogPcapHistoryItem>).history_id;
   if (historyId) return historyId;
   return `adhoc-${simpleHash([
@@ -1444,6 +1634,50 @@ function getLogPcapAnalysisId(result: LogPcapAnalysisResult) {
     result.summary,
     result.report,
   ].join('|'))}`;
+}
+
+function isPacketCaptureFile(file: File) {
+  return /\.(?:pcap|pcapng|cap)$/i.test(file.name);
+}
+
+function formatPcapEvidence(evidence: Array<{ frame_number: number; tcp_stream?: number | null; udp_stream?: number | null }>) {
+  if (!evidence.length) return 'no frame reference';
+  const values = evidence.slice(0, 5).map(item => {
+    const stream = item.tcp_stream != null
+      ? ` / TCP stream ${item.tcp_stream}`
+      : item.udp_stream != null ? ` / UDP stream ${item.udp_stream}` : '';
+    return `frame ${item.frame_number}${stream}`;
+  });
+  return `${values.join(', ')}${evidence.length > values.length ? ` +${evidence.length - values.length} more` : ''}`;
+}
+
+function adaptPcapAnalysis(result: PcapAnalysisResult): LogPcapAnalysisResult {
+  const profile = String(result.analyzer_manifest.profile_id ?? 'tshark-evidence-v1');
+  return {
+    provider: 'deterministic',
+    model: profile,
+    filename: result.filename,
+    summary: result.summary,
+    report: result.report,
+    analysis_id: result.analysis_id,
+    session_id: result.session_id,
+    semantic_sha256: result.semantic_sha256,
+    deterministic_result: result.result,
+    observables: result.result.observables.map(item => ({
+      value: item.value,
+      type: item.type,
+      confidence: 1,
+      description: `${item.roles.join(', ') || 'packet-derived'}; ${formatPcapEvidence(item.evidence)}`,
+    })),
+    suspicious_findings: result.result.findings.map(item => ({
+      severity: item.severity,
+      category: item.title,
+      evidence: formatPcapEvidence(item.evidence),
+      reason: `${item.explanation} Rule ${item.rule_id}@${item.rule_version}; confidence ${Math.round(item.confidence * 100)}%.`,
+    })),
+    techniques: result.techniques,
+    apt_matches: result.apt_matches,
+  };
 }
 
 function simpleHash(value: string) {
@@ -1474,6 +1708,15 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h2 className="border-b border-gray-800 px-3 py-2 text-sm font-semibold text-white">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function PcapMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-gray-800 bg-gray-950/60 p-3">
+      <div className="text-[10px] uppercase tracking-wide text-gray-600">{label}</div>
+      <div className="mt-1 font-mono text-sm text-gray-200">{value}</div>
+    </div>
   );
 }
 

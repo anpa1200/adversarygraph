@@ -95,6 +95,17 @@ class Settings(BaseSettings):
     malwaregraph_max_upload_bytes: int = 256 * 1024 * 1024
     malwaregraph_storage_dir: str = "/malwaregraph-storage"
 
+    # Deterministic packet-capture analysis runs in a dedicated, internally
+    # networked sidecar with no internet egress.  The API retains the immutable
+    # acquisition separately and stores only structured evidence in PostgreSQL.
+    pcap_analyzer_enabled: bool = True
+    pcap_analyzer_url: str = "http://pcap-analyzer:8300"
+    pcap_analyzer_token: str = ""
+    pcap_analyzer_timeout_seconds: int = Field(default=600, ge=30, le=3_600)
+    pcap_max_upload_bytes: int = Field(default=512 * 1024 * 1024, ge=1024, le=2 * 1024 * 1024 * 1024)
+    pcap_storage_dir: str = "/app/data/pcap"
+    pcap_retain_uploads: bool = True
+
     # ATT&CK ingestion
     attck_domains: str = "enterprise-attack,mobile-attack,ics-attack,atlas"
     attck_data_dir: str = "/app/data/attck"

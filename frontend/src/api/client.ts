@@ -828,6 +828,142 @@ export interface LogPcapAnalysisResult {
   suspicious_findings: Array<{ severity: string; category: string; evidence: string; reason: string }>;
   techniques: AnalysisResult['techniques'];
   apt_matches: AnalysisResult['apt_matches'];
+  analysis_id?: string;
+  session_id?: string;
+  semantic_sha256?: string;
+  deterministic_result?: PcapDeterministicResult;
+}
+
+export interface PcapEvidenceRef {
+  frame_number: number;
+  tcp_stream?: number | null;
+  udp_stream?: number | null;
+  event_id?: string;
+}
+
+export interface PcapDeterministicResult {
+  schema_version: string;
+  semantic_sha256: string;
+  capture: {
+    source_sha256: string;
+    source_size_bytes: number;
+    packet_count: number;
+    duration_seconds: number;
+    captured_bytes: number;
+    first_packet_epoch?: string;
+    last_packet_epoch?: string;
+    protocol_counts?: Record<string, number>;
+  };
+  endpoints: Array<{
+    endpoint_id: string;
+    ip: string;
+    ip_version: number;
+    is_private: boolean;
+    packets_sent: number;
+    packets_received: number;
+    bytes_sent: number;
+    bytes_received: number;
+    mac_addresses: string[];
+    evidence_frames: number[];
+  }>;
+  flows: Array<{
+    flow_id: string;
+    transport: string;
+    initiator_ip: string;
+    initiator_port: number;
+    responder_ip: string;
+    responder_port: number;
+    packets: number;
+    bytes: number;
+    stream: number;
+  }>;
+  identities: Array<{
+    identity_id: string;
+    type: string;
+    value: string;
+    ip_addresses: string[];
+    mac_addresses: string[];
+    evidence: PcapEvidenceRef[];
+  }>;
+  artifacts: Array<{
+    artifact_id: string;
+    filename: string;
+    sha256: string;
+    size_bytes: number;
+    media_type?: string;
+    evidence?: PcapEvidenceRef[];
+  }>;
+  observables: Array<{
+    observable_id: string;
+    type: string;
+    value: string;
+    roles: string[];
+    is_private?: boolean | null;
+    evidence: PcapEvidenceRef[];
+    enrichment_state: string;
+  }>;
+  findings: Array<{
+    finding_id: string;
+    rule_id: string;
+    rule_version: string;
+    severity: string;
+    title: string;
+    explanation: string;
+    confidence: number;
+    status: string;
+    evidence: PcapEvidenceRef[];
+    metrics: Record<string, unknown>;
+  }>;
+  attack_candidates: Array<{
+    attack_id: string;
+    name: string;
+    tactic: string;
+    confidence: number;
+    status: string;
+    mapping_basis: string;
+    evidence: PcapEvidenceRef[];
+  }>;
+  coverage: { warnings?: string[]; encrypted_payload_visibility?: string; [key: string]: unknown };
+  summary: string;
+}
+
+export interface PcapAnalysisResult {
+  analysis_id: string;
+  session_id: string;
+  status: string;
+  filename: string;
+  source_sha256: string;
+  source_size_bytes: number;
+  schema_version: string;
+  semantic_sha256: string;
+  analyzer_manifest: Record<string, unknown>;
+  summary: string;
+  report: string;
+  result: PcapDeterministicResult;
+  techniques: AnalysisResult['techniques'];
+  apt_matches: AnalysisResult['apt_matches'];
+}
+
+export interface PcapAnalysisSummary {
+  analysis_id: string;
+  session_id: string;
+  status: string;
+  filename: string;
+  source_sha256: string;
+  source_size_bytes: number;
+  schema_version: string;
+  semantic_sha256: string;
+  summary: string;
+  finding_count: number;
+  observable_count: number;
+  technique_count: number;
+  created_at: string;
+}
+
+export interface PcapAnalysisCollection {
+  items: PcapAnalysisSummary[];
+  limit: number;
+  offset: number;
 }
 
 export interface LinkedReportEntity {
@@ -1248,6 +1384,15 @@ export const analyzeApi = {
 
   reportReviewHistory: (sessionId: string): Promise<ReportReviewHistoryEvent[]> =>
     http.get(`/analyze/sessions/${sessionId}/review/history`).then(r => Array.isArray(r.data) ? r.data : (r.data?.items ?? [])),
+};
+
+export const pcapApi = {
+  analyze: (formData: FormData): Promise<PcapAnalysisResult> =>
+    http.post('/pcap/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+  analyses: (limit = 50, offset = 0): Promise<PcapAnalysisCollection> =>
+    http.get('/pcap/analyses', { params: { limit, offset } }).then(r => r.data),
+  analysis: (analysisId: string): Promise<PcapAnalysisResult> =>
+    http.get(`/pcap/analyses/${analysisId}`).then(r => r.data),
 };
 
 // ── Asset Attack Surface ─────────────────────────────────────────────────────

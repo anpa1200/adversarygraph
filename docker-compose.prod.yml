@@ -66,6 +66,24 @@ services:
           memory: ${SCANNER_MCP_MEMORY_RESERVATION:-512m}
           cpus: '${SCANNER_MCP_CPU_RESERVATION:-0.5}'
 
+  pcap-storage-permissions:
+    pull_policy: missing
+
+  pcap-analyzer:
+    pull_policy: missing
+    restart: always
+    environment:
+      PCAP_ANALYZER_TOKEN: ${PCAP_ANALYZER_TOKEN:?PCAP_ANALYZER_TOKEN is required for the production overlay}
+    deploy:
+      resources:
+        limits:
+          memory: ${PCAP_ANALYZER_MEMORY_LIMIT:-2g}
+          cpus: '${PCAP_ANALYZER_CPU_LIMIT:-2.0}'
+          pids: 256
+        reservations:
+          memory: ${PCAP_ANALYZER_MEMORY_RESERVATION:-512m}
+          cpus: '${PCAP_ANALYZER_CPU_RESERVATION:-0.5}'
+
   api:
     pull_policy: missing
     restart: always
@@ -89,6 +107,7 @@ services:
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
       AUTO_IOC_FULL_SYNC_ON_STARTUP: ${AUTO_IOC_FULL_SYNC_ON_STARTUP:-false}
       ASSET_SCANNER_MCP_TOKEN: ${ASSET_SCANNER_MCP_TOKEN:?ASSET_SCANNER_MCP_TOKEN is required for the production overlay}
+      PCAP_ANALYZER_TOKEN: ${PCAP_ANALYZER_TOKEN:?PCAP_ANALYZER_TOKEN is required for the production overlay}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     deploy:
       resources:

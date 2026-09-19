@@ -10,6 +10,10 @@ OPENAPI_TAGS = [
     {"name": "MITRE Sync", "description": "ATT&CK/ATLAS version discovery, ingestion, and task status."},
     {"name": "Analysis", "description": "Report ingestion, AI-assisted analysis, review, chat, and linked-report workflow."},
     {
+        "name": "PCAP Analysis",
+        "description": "Deterministic packet decoding, evidence-bound findings, durable capture results, and analyst review pivots.",
+    },
+    {
         "name": "Report Review Gate",
         "description": "Immutable report intake, adversarial review, approval, promotion, and audit authority.",
     },

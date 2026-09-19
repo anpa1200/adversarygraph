@@ -72,6 +72,10 @@ Core capabilities:
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
 - Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories, with strict `namespace:value` labels for products, suppliers, dependencies, technologies, sectors, CVEs, TTPs, risk, and exposure.
 - Malware Analysis workflow backed by the isolated MalwareGraph service for static triage, strings, unpacking/deobfuscation support, debugger-style review, and AI summaries.
+- Deterministic saved-PCAP analysis through an internal-only TShark sidecar,
+  with content-addressed durable results, endpoints/flows/DNS/HTTP/TLS/identity
+  evidence, exported-object hashes, versioned frame-bound findings, and
+  governed IOC, ATT&CK, actor-overlap, investigation, and Review Gate pivots.
 - Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
 - Evidence-to-Detection Graph for preserving the full reasoning chain from evidence to claims, behavior, ATT&CK, required telemetry, detection candidates, rules, validation scenarios, SIEM results, and analyst decisions.
 - Observability dashboard with API request metrics, recent traces, redacted log tails, Prometheus-compatible metrics, and health/self-test views.
@@ -128,10 +132,11 @@ This checkout is a source-build installation. Its custom
 only refreshes pinned third-party runtime images and intentionally skips those
 build targets. Do not replace the custom image variables with mutable `latest`
 tags. A prebuilt production deployment from current-development source requires
-all eight immutable image
+all nine immutable image
 digests from the exact release's `adversarygraph-images.env` attachment; the
 historical `v6.0.0` release does not contain that complete artifact set.
-The eighth family is the isolated scanner MCP image. Use a manifest only after
+The eighth family is the isolated scanner MCP image and the ninth is the
+deterministic PCAP analyzer. Use a manifest only after
 the matching tag workflow publishes and verifies that complete artifact set.
 The self-test waits up to fifteen minutes for first-boot ATT&CK/ATLAS reference
 ingestion; override this with `SELFTEST_TIMEOUT` when operating across a slower

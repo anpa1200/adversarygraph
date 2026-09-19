@@ -87,12 +87,13 @@ The wrapper runs:
 | Backend SAST | `bandit` at medium/high severity |
 | Backend dependency audit | `pip-audit` |
 | Scanner MCP tests/lint/SAST/dependency audit | `pytest`, `ruff`, `bandit`, and `pip-audit` in `scanner_mcp/` |
+| PCAP analyzer tests/lint/SAST/dependency audit | `pytest`, `ruff`, `bandit`, and `pip-audit` in `pcap_analyzer/` |
 | Frontend dependency audit | `npm audit --audit-level=high` |
 | Anomaly docs dependency audit | `npm audit --audit-level=high` |
 | Anomaly docs production validation | `npm run build` with broken-link and anchor failures enabled |
 | Secret scan | `gitleaks` |
 | Deployment validation | default/development/production Docker Compose render and Helm lint/render |
-| Container scan | `trivy` across eight custom images (PostgreSQL, backend, scanner MCP, frontend, MalwareGraph, both attack-lab images, and anomaly docs) plus pinned Redis, BusyBox, and docs Nginx |
+| Container scan | `trivy` across nine custom images (PostgreSQL, backend, scanner MCP, PCAP analyzer, frontend, MalwareGraph, both attack-lab images, and anomaly docs) plus pinned Redis, BusyBox, and docs Nginx |
 
 Strict mode requires Bandit, pip-audit, Gitleaks, Trivy, and Helm to be present.
 Missing tools or failed checks stop the command. CI installs and runs the
@@ -109,7 +110,7 @@ Store the dated output or CI URL for each release. At minimum it must show:
 - frontend lint/build/browser tests and npm audit passed;
 - Gitleaks passed with reviewed configuration;
 - all three Compose configurations and the Helm chart rendered successfully;
-- all eight release images and all three pinned stack images passed the
+- all nine release images and all three pinned stack images passed the
   configured Trivy gate.
 
 Do not present best-effort output containing `SKIP` as release evidence.

@@ -22,7 +22,7 @@ The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
 
 Historical release evidence does not validate this source. The beta remains a
 pre-release until the protected `v8.0.0-beta.1` tag workflow publishes and
-verifies the eight-image family and attached `adversarygraph-images.env`.
+verifies the nine-image family and attached `adversarygraph-images.env`.
 Automated publication does not complete the manual matrix in
 [`release-readiness-v8.md`](release-readiness-v8.md) or authorize a stable
 claim.
@@ -70,9 +70,9 @@ handling policy.
 | Sizing guide | Implemented | `docs/deployment-sizing.md` |
 | Backup/restore scripts | Implemented | checksummed, archive-validated backup and writer-stopped restore in `scripts/backup.sh`, `scripts/restore.sh` |
 | Request-size controls | Implemented with deployment requirement | bounded structured models and file handlers plus route-specific Nginx decoded-body limits; the API must remain behind that edge because `Content-Length` alone does not cover chunked bodies |
-| Fresh image scan/publish path | Inherited from v7; beta tag-workflow evidence required | strict local builds scan eight custom images, including scanner MCP, plus the three pinned third-party stack images; the tag workflow must load and scan eight versioned images before pushing those same local images |
-| Immutable Compose deployment | Implemented; beta artifacts pending | production preflight requires all eight custom registry images by digest and `make prod` uses `--no-build` |
-| Helm image digests | Implemented; beta artifacts and operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
+| Fresh image scan/publish path | Inherited from v7; beta tag-workflow evidence required | strict local builds scan nine custom images, including scanner MCP and the PCAP analyzer, plus the three pinned third-party stack images; the tag workflow must load and scan nine versioned images before pushing those same local images |
+| Immutable Compose deployment | Implemented; beta artifacts pending | production preflight requires all nine custom registry images by digest and `make prod` uses `--no-build` |
+| Helm image digests | Implemented; beta artifacts and operator input required | PostgreSQL and Redis evaluation defaults are digest-pinned; backend/frontend/MalwareGraph/scanner MCP/PCAP analyzer carry human-readable defaults with empty digest fields. Production replaces PostgreSQL and supplies reviewed digests for every enabled custom component from one successful matching tag workflow. |
 | Upgrade guide | Implemented | `docs/upgrade-guide.md` |
 | PostgreSQL full-text and pgvector | Implemented in v6.5 source | checksum-pinned pgvector build, extension/version smoke, generated `tsvector`, GIN, HNSW, and cosine-query CI checks |
 | Unified RAG corpus | Implemented in v6.5 source | normalized allowlisted source adapters, idempotent scheduled reconciliation, advisory locking, stale-run redispatch, status/history API, tombstone and assistance retention |
@@ -158,7 +158,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
 ```
 
-Before this command, load the eight `ADVERSARYGRAPH_*_IMAGE` values from the
+Before this command, load the nine `ADVERSARYGRAPH_*_IMAGE` values from the
 `adversarygraph-images.env` file attached to the exact GitHub release. The
 production preflight rejects tags and accepts only `repository@sha256:...`
 references. It also requires URL-safe Redis credentials because the stack
@@ -189,7 +189,7 @@ that exact candidate without rebuilding. It serializes release jobs, verifies
 that each anonymously readable public manifest contains the scanned image ID,
 and attaches the verified immutable digest set as
 `adversarygraph-images.env`. Shared `latest` tags are not advanced because the
-eight-image family cannot be updated atomically. The workflow refuses to
+nine-image family cannot be updated atomically. The workflow refuses to
 modify a published GitHub release. It resumes a draft only when the title,
 notes, and sole manifest asset exactly match the regenerated release; otherwise
 it stops for explicit review. The workflow currently publishes Linux/AMD64

@@ -1,0 +1,88 @@
+{{- if .Values.pcapAnalyzer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-pcap-analyzer
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pcap-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pcap-analyzer
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: pcap-analyzer
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10003
+        runAsGroup: 10003
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pcap-analyzer
+          image: {{ include "adversarygraph.componentImage" .Values.pcapAnalyzer.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: PCAP_ANALYZER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adversarygraph.secretName" . }}
+                  key: PCAP_ANALYZER_TOKEN
+            - name: PCAP_ANALYZER_MAX_UPLOAD_BYTES
+              value: {{ .Values.pcapAnalyzer.maxUploadBytes | quote }}
+            - name: PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS
+              value: {{ .Values.pcapAnalyzer.toolTimeoutSeconds | quote }}
+            - name: PCAP_ANALYZER_MAX_TOOL_OUTPUT_BYTES
+              value: {{ .Values.pcapAnalyzer.maxToolOutputBytes | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.pcapAnalyzer.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.pcapAnalyzer.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1536Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-pcap-analyzer
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "adversarygraph.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pcap-analyzer
+  ports:
+    - name: http
+      port: {{ .Values.pcapAnalyzer.service.port }}
+      targetPort: http
+{{- end }}
