@@ -192,6 +192,25 @@ produced the same semantic SHA-256 twice.
 
 ## Limitations
 
+### Passive enrichment handoff
+
+IOC Investigation is a separate, opt-in disclosure boundary: submit only
+authorized indicators to configured providers, not raw captures or payloads.
+Depth-two/three expansion uses the local corpus. Saved provider results can be
+opened without a fresh lookup at `/ioc-investigation?session=<session-id>`.
+Case handoff retains a bounded graph preview, full-result reference, provider
+provenance and explicit truncation counts. Graph edges reference transferred
+node IDs; actor assertions remain unreviewed leads, not case actor associations.
+Provider-reported ATT&CK leads distinguish the submitted indicator from local
+pivots and do not establish that a captured host executed those techniques.
+
+MalwareBazaar hash metadata queries use the documented form-encoded `get_info`
+request. Application-level request failures are errors even with HTTP 200;
+missing records have `not_found` status, not a benign verdict. No sample upload
+or download is performed. See the [provider API contract](https://bazaar.abuse.ch/api/#query_hash).
+
+### Packet coverage
+
 - Saved-capture decoding is not traffic capture, malware execution, fake
   internet, TLS decryption, memory analysis, or endpoint telemetry.
 - Encrypted payload contents remain unavailable unless the analyst provides

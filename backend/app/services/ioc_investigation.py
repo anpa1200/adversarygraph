@@ -186,6 +186,8 @@ async def investigate_ioc(
 
     pivot_results = [*tier2_results, *tier3_results]
     techniques = await _resolve_techniques(session, _collect_attack_ids(source_results, pivot_results), options.domain)
+    for technique in techniques:
+        technique["evidence_sources"] = _technique_evidence_sources(technique["attack_id"], source_results, pivot_results)
     actors = await _resolve_actors(session, source_results, pivot_results, options.domain)
     score = _suspicion_score(source_results, graph_nodes)
     for node in graph_nodes.values():
@@ -257,11 +259,19 @@ async def _expand_local_tier(
 
 async def _safe_source(name: str, fn) -> dict[str, Any]:
     try:
-        return await fn()
+        result = await fn()
+        raw = result.get("raw") or {}
+        if isinstance(raw, dict) and raw.get("query_status") in {"no_result", "hash_not_found", "not_found"}:
+            result["status"] = "not_found"
+        return result
     except Exception as exc:
         # Provider URLs may contain query-string credentials. Never persist or
         # log an exception traceback/request URL from this boundary.
         status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        if status == 404:
+            return {"source": name, "status": "not_found", "http_status": status,
+                    "summary": f"{name} has no record for this lookup.", "relationships": [],
+                    "technique_ids": [], "actors": [], "raw": {"query_status": "not_found"}}
         category = ('rate_limited' if status == 429 else 'authentication' if status in {401, 403}
                     else 'timeout' if isinstance(exc, httpx.TimeoutException)
                     else 'authentication' if isinstance(exc, RuntimeError) and 'rejected' in str(exc) and 'credentials' in str(exc)
@@ -378,6 +388,7 @@ async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any
         json_body={"query": query, key: value},
         headers={"Auth-Key": settings.threatfox_auth_key, "Accept": "application/json", "User-Agent": APP_USER_AGENT},
     )
+    _validate_query_status(payload, {"ok", "no_result"})
     rows = payload.get("data") or []
     relationships: list[dict[str, Any]] = []
     technique_ids: list[str] = []
@@ -401,7 +412,8 @@ async def _malwarebazaar_enrichment(value: str) -> dict[str, Any]:
     mb_headers: dict[str, str] = {"Accept": "application/json", "User-Agent": APP_USER_AGENT}
     if settings.threatfox_auth_key:
         mb_headers["Auth-Key"] = settings.threatfox_auth_key
-    payload = await _post_json("https://mb-api.abuse.ch/api/v1/", json_body={"query": "get_info", "hash": value}, headers=mb_headers)
+    payload = await _post_form("https://mb-api.abuse.ch/api/v1/", data={"query": "get_info", "hash": value}, headers=mb_headers)
+    _validate_query_status(payload, {"ok", "hash_not_found"})
     rows = payload.get("data") or []
     relationships: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
@@ -546,7 +558,9 @@ async def _urlscan_activity_analysis(
 def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     technique_ids: list[str] = []
-    raw_text = json.dumps({"value": value, "rows": rows, "payload": payload}, default=str).lower()
+    # Input hashes and echoed search queries are not scan observations. In
+    # particular a hex hash containing "c2" must not produce a C2 finding.
+    raw_text = json.dumps(rows, default=str).lower()
     verdict_hits = 0
     redirect_hosts: set[str] = set()
     submitted_hosts: set[str] = set()
@@ -825,6 +839,20 @@ async def _post_json(url: str, *, json_body: dict[str, Any], headers: dict[str, 
             raise RuntimeError(_credential_error_detail(url, response))
         response.raise_for_status()
         return response.json()
+
+
+async def _post_form(url: str, *, data: dict[str, str], headers: dict[str, str] | None = None) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.post(url, data=data, headers=headers or {})
+        response.raise_for_status()
+        return response.json()
+
+
+def _validate_query_status(payload: dict[str, Any], allowed: set[str]) -> None:
+    # abuse.ch can return application errors in HTTP 200 responses. Never
+    # report an invalid request as a successful zero-hit intelligence lookup.
+    if payload.get("query_status") not in allowed:
+        raise RuntimeError("Provider rejected the lookup request")
 
 
 def _credential_error_detail(url: str, response: httpx.Response) -> str:
@@ -1265,6 +1293,15 @@ def _collect_attack_ids(source_results: list[dict[str, Any]], tier2_results: lis
     return _dedupe([item.upper() for item in ids])
 
 
+def _technique_evidence_sources(attack_id: str, direct: list[dict[str, Any]], pivots: list[dict[str, Any]]) -> list[str]:
+    return _dedupe([
+        f"{result.get('source', 'unknown')} ({scope}; provider-reported lead, not packet execution proof)"
+        for scope, results in (("submitted indicator", direct), ("related local pivot", pivots))
+        for result in results
+        if attack_id in _collect_attack_ids([result], [])
+    ])
+
+
 def _suspicion_score(source_results: list[dict[str, Any]], nodes: dict[str, dict[str, Any]]) -> int:
     score = 0
     for result in source_results:
@@ -1292,7 +1329,7 @@ def _suspicion_score(source_results: list[dict[str, Any]], nodes: dict[str, dict
                 elif severity:
                     score += 3
         for term in ("c2", "botnet", "ransomware", "trojan", "stealer", "backdoor"):
-            if term in raw_text:
+            if re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", raw_text):
                 score += 8
         if "greynoise" == result.get("source") and "benign" in raw_text:
             score -= 15

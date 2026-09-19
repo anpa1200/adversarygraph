@@ -83,8 +83,15 @@ export function IOCInvestigation() {
   const result = rawResult?.session_id && deletedSessionIds.has(rawResult.session_id) ? null : rawResult;
   const techniqueIds = useMemo(() => result?.techniques.map(item => item.attack_id) ?? [], [result]);
   const resetIocMutation = mutation.reset;
+  const loadSavedInvestigation = loadInvestigation.mutate;
 
   useEffect(() => {
+    const sessionId = params.get('session');
+    if (sessionId) loadSavedInvestigation(sessionId);
+  }, [params, loadSavedInvestigation]);
+
+  useEffect(() => {
+    if (params.get('session')) return;
     const value = params.get('indicator')?.trim();
     if (value && value !== artifact) {
       setArtifact(value);
@@ -335,6 +342,21 @@ function PivotList({ pivots }: { pivots: PivotItem[] }) {
 
 function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IOCInvestigationResult; techniqueIds: string[]; onShowMatrix: () => void; onAddTtps: () => void }) {
   const navigate = useNavigate();
+  const sourceRef = `ioc-investigation:${result.session_id || result.artifact}`;
+  const previewNodes = result.relationships.nodes.slice(0, 120);
+  const nodeId = (id: string) => `${sourceRef}:node:${id}`;
+  // Provider graph edges use observable values, while case graphs use node IDs.
+  // Keep only edges whose endpoints are in the bounded transferred preview.
+  const previewEdges = result.relationships.edges.flatMap(edge => {
+    const source = previewNodes.find(node => node.value === edge.source);
+    const target = previewNodes.find(node => node.value === edge.target && node.type === edge.type);
+    return source && target ? [{
+      ...edge,
+      id: `${sourceRef}:edge:${source.id}->${target.id}:${edge.evidence_source}`,
+      source: nodeId(source.id), target: nodeId(target.id), source_ref: sourceRef,
+      source_value: edge.source, target_value: edge.target,
+    }] : [];
+  }).slice(0, 200);
   return (
     <section className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
       <h3 className="text-sm font-semibold text-white">Actions</h3>
@@ -344,7 +366,9 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
             label: `IOC investigation ${result.artifact}`,
             domain: 'enterprise-attack',
             techniqueIds,
-            actorIds: result.actors.map(item => item.attack_id).filter(Boolean),
+            // Source assertions/alias matches remain reviewable leads. Adding
+            // an analytic result is not an analyst attribution decision.
+            actorIds: [],
             reportIds: result.session_id ? [result.session_id] : [],
             evidenceNodes: [
               {
@@ -358,6 +382,15 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
                 summary: result.summary,
                 source: 'ioc-investigation',
                 source_ref: `ioc-investigation:${result.session_id || result.artifact}`,
+                source_analysis_ref: result.session_id ? `/api/ioc/investigations/${result.session_id}` : undefined,
+                review_status: 'unreviewed-provider-context',
+                actor_leads: result.actors.slice(0, 50).map(actor => ({...actor, status: 'source-lead-not-attribution'})),
+                actor_lead_count: result.actors.length,
+                graph_node_count: result.relationships.nodes.length,
+                graph_edge_count: result.relationships.edges.length,
+                graph_preview_node_count: previewNodes.length,
+                graph_preview_edge_count: previewEdges.length,
+                graph_preview_truncated: previewNodes.length < result.relationships.nodes.length || previewEdges.length < result.relationships.edges.length,
                 sources: result.sources.map(source => ({ source: source.source, status: source.status, summary: source.summary })),
               },
               {
@@ -382,15 +415,14 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
                 evidence: item.evidence_sources?.join('; ') || result.summary,
                 references: item.evidence_sources ?? [],
               })),
-              ...result.relationships.nodes.slice(0, 120).map(node => ({
+              ...previewNodes.map(node => ({
                 ...node,
-                id: `ioc-node:${node.id}`,
+                id: nodeId(node.id),
+                source_ref: sourceRef,
+                review_status: 'unreviewed-provider-context',
               })),
             ],
-            evidenceEdges: result.relationships.edges.slice(0, 200).map(edge => ({
-              ...edge,
-              id: `ioc-edge:${edge.source}->${edge.target}:${edge.type}`,
-            })),
+            evidenceEdges: previewEdges,
             timelineEvent: `Added IOC investigation for ${result.artifact}`,
           }}
           disabled={!techniqueIds.length && !result.relationships.nodes.length}

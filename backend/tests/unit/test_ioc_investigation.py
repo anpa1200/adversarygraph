@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from app.services.ioc_investigation import _exact_indicator_key, _local_enrichment, _safe_source
+from app.services import ioc_investigation as investigation
 
 
 def test_dedupe_actors_uses_string_key_not_tuple_lower():
@@ -90,3 +91,69 @@ async def test_provider_error_does_not_leak_query_credentials(caplog):
     assert result['http_status'] == 429
     assert 'secret-regression-key' not in str(result)
     assert 'secret-regression-key' not in caplog.text
+
+
+def test_urlscan_empty_results_do_not_classify_echoed_input():
+    result = _urlscan_heuristic_analysis('c2' * 32, [], {'query': 'c2' * 32, 'results': []})
+    assert result['findings'] == []
+    assert result['technique_ids'] == []
+
+
+@pytest.mark.parametrize('status', ['missing_query', 'illegal_hash', 'unknown_auth_key', None])
+def test_abusech_application_errors_are_not_successful_empty_results(status):
+    with pytest.raises(RuntimeError, match='rejected'):
+        investigation._validate_query_status({'query_status': status}, {'ok', 'hash_not_found'})
+
+
+@pytest.mark.asyncio
+async def test_malwarebazaar_uses_form_encoded_lookup(monkeypatch):
+    captured = []
+    async def handler(request):
+        captured.append(request)
+        return httpx.Response(200, json={'query_status': 'ok', 'data': [{'sha256_hash': 'a' * 64, 'signature': 'Fixture'}]})
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(investigation.httpx, 'AsyncClient', lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = await investigation._malwarebazaar_enrichment('a' * 64)
+    assert captured[0].headers['content-type'] == 'application/x-www-form-urlencoded'
+    assert captured[0].content == b'query=get_info&hash=' + b'a' * 64
+    assert result['status'] == 'ok'
+    assert '1 sample' in result['summary']
+
+
+@pytest.mark.asyncio
+async def test_malwarebazaar_http_200_application_failure_is_error(monkeypatch):
+    monkeypatch.setattr(investigation, '_post_form', AsyncMock(return_value={'query_status': 'missing_query'}))
+    result = await _safe_source('malwarebazaar', lambda: investigation._malwarebazaar_enrichment('a' * 64))
+    assert result['status'] == 'error'
+    assert result['error_category'] == 'provider_error'
+
+
+def test_technique_provenance_distinguishes_direct_and_related_pivots():
+    direct = [{'source': 'virustotal', 'technique_ids': ['T1059.001']}]
+    pivots = [{'source': 'local-db', 'technique_ids': ['T1059.001']}]
+    evidence = investigation._technique_evidence_sources('T1059.001', direct, pivots)
+    assert len(evidence) == 2
+    assert 'submitted indicator' in evidence[0]
+    assert 'related local pivot' in evidence[1]
+    assert all('not packet execution proof' in item for item in evidence)
+
+
+def test_hash_substrings_do_not_increase_risk_score():
+    sources = [{'source': 'virustotal', 'status': 'ok', 'raw': {'indicator': 'c2' * 32}}]
+    assert investigation._suspicion_score(sources, {}) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('query_status', ['no_result', 'hash_not_found', 'not_found'])
+async def test_provider_absence_is_explicit_not_found(query_status):
+    result = await _safe_source('test', AsyncMock(return_value={'status': 'ok', 'raw': {'query_status': query_status}}))
+    assert result['status'] == 'not_found'
+
+
+@pytest.mark.asyncio
+async def test_http_404_is_absence_not_provider_failure():
+    request = httpx.Request('GET', 'https://provider.invalid/lookup')
+    error = httpx.HTTPStatusError('not found', request=request, response=httpx.Response(404, request=request))
+    result = await _safe_source('test', AsyncMock(side_effect=error))
+    assert result['status'] == 'not_found'
+    assert result['http_status'] == 404
