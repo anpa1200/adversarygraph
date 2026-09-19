@@ -107,8 +107,8 @@ postgresql:
 
 redis:
   enabled: true
-  image: redis:7-alpine
-  imageDigest: sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+  image: redis:7.4.11-alpine
+  imageDigest: sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
   resources:
     requests:
       cpu: 100m

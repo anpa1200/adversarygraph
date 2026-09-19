@@ -51,6 +51,11 @@ class ScannerMcpDockerfileTests(unittest.TestCase):
             self.text,
         )
 
+    def test_nuclei_binary_pins_remediated_grpc(self) -> None:
+        self.assertIn("ARG NUCLEI_GRPC_VERSION=v1.83.2", self.text)
+        self.assertIn('go get "google.golang.org/grpc@${NUCLEI_GRPC_VERSION}"', self.text)
+        self.assertIn('google.golang.org/grpc', self.text.split('go version -m /out/nuclei')[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

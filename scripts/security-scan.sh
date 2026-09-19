@@ -113,9 +113,9 @@ if command -v trivy >/dev/null 2>&1; then
   scan_image attack-lab-web . docker/attack-lab-web/Dockerfile
   scan_image attack-lab-endpoint . docker/attack-lab-endpoint/Dockerfile
   scan_image anomaly-docs . anomaly_detection/docs-site/Dockerfile
-  scan_pinned_image redis "${REDIS_IMAGE:-redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99}"
+  scan_pinned_image redis "${REDIS_IMAGE:-redis:7.4.11-alpine@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7}"
   scan_pinned_image busybox-tools "${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}"
-  scan_pinned_image anomaly-docs-nginx "${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46}"
+  scan_pinned_image anomaly-docs-nginx "${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:ef8676b33d681f272ba429b27658bdd7e640963279714c96bddf1dc76307f7b6}"
 else
   printf '\n==> Container image scans\nSKIP: trivy is not installed.\n'
 fi

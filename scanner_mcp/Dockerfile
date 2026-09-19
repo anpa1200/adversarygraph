@@ -9,6 +9,7 @@ ARG NUCLEI_KIN_OPENAPI_VERSION=v0.144.0
 ARG NUCLEI_GO_GIT_VERSION=v5.19.2
 ARG NUCLEI_X_TEXT_VERSION=v0.41.0
 ARG NUCLEI_X_MOD_VERSION=v0.40.0
+ARG NUCLEI_GRPC_VERSION=v1.83.2
 RUN apk add --no-cache build-base ca-certificates curl git tar \
     && curl -fsSL \
       "https://github.com/projectdiscovery/nuclei/archive/${NUCLEI_SOURCE_COMMIT}.tar.gz" \
@@ -22,6 +23,7 @@ RUN apk add --no-cache build-base ca-certificates curl git tar \
     && go get "github.com/go-git/go-git/v5@${NUCLEI_GO_GIT_VERSION}" \
     && go get "golang.org/x/text@${NUCLEI_X_TEXT_VERSION}" \
     && go get "golang.org/x/mod@${NUCLEI_X_MOD_VERSION}" \
+    && go get "google.golang.org/grpc@${NUCLEI_GRPC_VERSION}" \
     && go mod tidy \
     && grep -Fqx $'\t\t\tif schema.ExclusiveMin {' pkg/input/formats/openapi/examples.go \
     && grep -Fqx $'\t\t\tif schema.ExclusiveMax {' pkg/input/formats/openapi/examples.go \
@@ -38,6 +40,8 @@ RUN apk add --no-cache build-base ca-certificates curl git tar \
       | grep -F $'\tdep\tgolang.org/x/mod\t'"${NUCLEI_X_MOD_VERSION}"$'\t' \
     && go version -m /out/nuclei \
       | grep -F $'\tdep\tgolang.org/x/text\t'"${NUCLEI_X_TEXT_VERSION}"$'\t' \
+    && go version -m /out/nuclei \
+      | grep -F $'\tdep\tgoogle.golang.org/grpc\t'"${NUCLEI_GRPC_VERSION}"$'\t' \
     && /out/nuclei -version 2>&1 | grep -F "Nuclei Engine Version: v3.11.0"
 
 
