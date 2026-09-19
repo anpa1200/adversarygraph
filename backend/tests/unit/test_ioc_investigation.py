@@ -173,3 +173,9 @@ def test_graph_preserves_url_path_case_and_binds_normalized_domains():
     assert 'https://example.test/abc' in values
     assert 'child.example.test' in values
     assert all(edge['source'] in values and edge['target'] in values for edge in edges)
+
+
+@pytest.mark.asyncio
+async def test_virustotal_not_found_is_not_provider_failure():
+    result = await _safe_source('virustotal', AsyncMock(side_effect=investigation.VirusTotalNotFoundError('not found')))
+    assert result['status'] == 'not_found'

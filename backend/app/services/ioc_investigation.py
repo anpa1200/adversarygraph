@@ -21,7 +21,7 @@ from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
-from app.services.virustotal import IndicatorTarget, classify_indicator, lookup_virustotal_ioc
+from app.services.virustotal import IndicatorTarget, VirusTotalNotFoundError, classify_indicator, lookup_virustotal_ioc
 
 logger = logging.getLogger(__name__)
 
@@ -268,8 +268,8 @@ async def _safe_source(name: str, fn) -> dict[str, Any]:
         # Provider URLs may contain query-string credentials. Never persist or
         # log an exception traceback/request URL from this boundary.
         status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-        if status == 404:
-            return {"source": name, "status": "not_found", "http_status": status,
+        if status == 404 or isinstance(exc, VirusTotalNotFoundError):
+            return {"source": name, "status": "not_found", "http_status": 404,
                     "summary": f"{name} has no record for this lookup.", "relationships": [],
                     "technique_ids": [], "actors": [], "raw": {"query_status": "not_found"}}
         category = ('rate_limited' if status == 429 else 'authentication' if status in {401, 403}

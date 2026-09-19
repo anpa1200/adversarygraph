@@ -16,6 +16,12 @@ from app.core.config import settings
 from app.models.attack import AptGroup, AptGroupTechnique, AttackVersion, Technique
 
 VT_BASE_URL = "https://www.virustotal.com/api/v3"
+
+
+class VirusTotalNotFoundError(ValueError):
+    """An absent object, distinct from malformed input or provider failure."""
+
+
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
 HASH_RE = re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
 NOISY_ACTOR_TERMS = {
@@ -172,6 +178,10 @@ async def lookup_virustotal_ioc(
         if target.type == "hash":
             try:
                 mitre_response = await _vt_get(client, f"/files/{target.value}/behaviour_mitre_trees")
+            except VirusTotalNotFoundError:
+                # An absent optional behavior tree must not discard the
+                # successful file reputation / metadata response.
+                pass
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code not in {400, 404}:
                     raise
@@ -217,7 +227,7 @@ async def lookup_virustotal_ioc(
 async def _vt_get(client: httpx.AsyncClient, endpoint: str) -> dict[str, Any]:
     response = await client.get(endpoint)
     if response.status_code == 404:
-        raise ValueError("Indicator was not found in VirusTotal.")
+        raise VirusTotalNotFoundError("Indicator was not found in VirusTotal.")
     if response.status_code == 401:
         raise RuntimeError("VirusTotal API key was rejected.")
     if response.status_code == 429:

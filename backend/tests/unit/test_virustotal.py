@@ -79,3 +79,23 @@ async def test_lookup_falls_back_to_search_when_domain_like_name_gets_400(monkey
 
     assert result["indicator"] == "osx.waveshaper"
     assert result["type"] == "search"
+
+
+@pytest.mark.asyncio
+async def test_optional_missing_behavior_tree_retains_file_metadata(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services import virustotal
+    from app.core.config import settings
+
+    async def fake_vt_get(client, endpoint):
+        if endpoint.endswith('/behaviour_mitre_trees'):
+            raise virustotal.VirusTotalNotFoundError('Indicator was not found in VirusTotal.')
+        return {'data': {'attributes': {'last_analysis_stats': {'malicious': 12}, 'names': ['fixture.exe']}}}
+
+    monkeypatch.setattr(settings, 'virustotal_api_key', 'test-key')
+    monkeypatch.setattr(virustotal, '_vt_get', fake_vt_get)
+    monkeypatch.setattr(virustotal, '_resolve_techniques', AsyncMock(return_value=[]))
+    monkeypatch.setattr(virustotal, '_match_local_actors', AsyncMock(return_value=[]))
+    result = await lookup_virustotal_ioc(None, 'a' * 64)
+    assert result['last_analysis_stats']['malicious'] == 12
+    assert 'fixture.exe' in result['names']
