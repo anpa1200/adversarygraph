@@ -114,6 +114,8 @@ async def test_pcap_analysis_is_durable_and_retrievable(
     payload = created.json()
     assert payload["status"] == "completed"
     assert payload["source_sha256"] == hashlib.sha256(PCAP).hexdigest()
+    assert payload["result"] == _analyzer_result(), "API must not insert defaults or drop evidence fields"
+    assert payload["context"]["mode"] == "local-only"
     assert payload["result"]["findings"][0]["evidence"][0]["frame_number"] == 1
     assert payload["techniques"][0]["attack_id"] == "T1071.001"
     assert "not attribution" not in payload["report"]
@@ -137,6 +139,7 @@ async def test_pcap_analysis_is_durable_and_retrievable(
     fetched = await client.get(f"/api/pcap/analyses/{payload['analysis_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["semantic_sha256"] == payload["semantic_sha256"]
+    assert fetched.json()["result"] == payload["result"]
 
     collection = await client.get("/api/pcap/analyses")
     assert collection.status_code == 200

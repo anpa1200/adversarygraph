@@ -9,6 +9,7 @@ storage, review, enrichment, and promotion.
 from __future__ import annotations
 
 import csv
+import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -25,11 +26,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 
 SCHEMA_VERSION = "pcap-analysis-v1"
-PROFILE_ID = "tshark-evidence-v1"
-RULEPACK_VERSION = "pcap-rules-v1"
+PROFILE_ID = "tshark-evidence-v3"
+RULEPACK_VERSION = "pcap-rules-v3"
 MAX_UPLOAD_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
 TOOL_TIMEOUT_SECONDS = int(os.getenv("PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS", "300"))
 MAX_TOOL_OUTPUT_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_TOOL_OUTPUT_BYTES", str(256 * 1024 * 1024)))
@@ -37,6 +39,7 @@ MAX_EVENTS_PER_KIND = int(os.getenv("PCAP_ANALYZER_MAX_EVENTS_PER_KIND", "50000"
 MAX_FLOWS = int(os.getenv("PCAP_ANALYZER_MAX_FLOWS", "50000"))
 MAX_ENDPOINTS = int(os.getenv("PCAP_ANALYZER_MAX_ENDPOINTS", "20000"))
 MAX_EXPORTED_OBJECTS = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_OBJECTS", "500"))
+MAX_OBJECT_HASH_INDEX = int(os.getenv("PCAP_ANALYZER_MAX_OBJECT_HASH_INDEX", "50000"))
 MAX_EXPORTED_OBJECT_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_OBJECT_BYTES", str(50 * 1024 * 1024)))
 MAX_EXPORTED_TOTAL_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_TOTAL_BYTES", str(256 * 1024 * 1024)))
 AUTH_TOKEN = os.getenv("PCAP_ANALYZER_TOKEN", "")
@@ -52,7 +55,7 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 PACKET_FIELDS = (
-    "frame.number", "frame.time_epoch", "frame.len", "frame.interface_id", "frame.encap_type",
+    "frame.number", "frame.time_epoch", "frame.len", "frame.cap_len", "frame.interface_id", "frame.encap_type",
     "frame.protocols", "eth.src", "eth.dst", "ip.src", "ip.dst", "ipv6.src", "ipv6.dst",
     "ip.proto", "tcp.srcport", "tcp.dstport", "tcp.stream", "tcp.len", "udp.srcport",
     "udp.dstport", "udp.stream",
@@ -68,12 +71,12 @@ EVENT_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
         "http.request",
         ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport",
          "tcp.stream", "http.request.method", "http.host", "http.request.uri", "http.request.full_uri", "http.user_agent",
-         "http.content_length"),
+         "http.content_length", "http.response_in"),
     ),
     "http_response": (
         "http.response",
         ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport",
-         "tcp.stream", "http.response.code", "http.content_type", "http.content_length", "http.response_for.uri"),
+         "tcp.stream", "http.response.code", "http.content_type", "http.content_length", "http.response_for.uri", "http.request_in"),
     ),
     "tls_client_hello": (
         "tls.handshake.type == 1",
@@ -83,19 +86,30 @@ EVENT_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
     "dhcp": (
         "dhcp || bootp",
         ("frame.number", "frame.time_epoch", "eth.src", "ip.src", "ip.dst", "udp.stream", "dhcp.option.dhcp",
-         "dhcp.option.hostname", "dhcp.option.requested_ip_address"),
+         "dhcp.option.hostname", "dhcp.option.requested_ip_address", "dhcp.ip.your", "dhcp.hw.mac_addr"),
     ),
     "identity": (
-        "nbns || llmnr || mdns || kerberos || ntlmssp || smb2",
-        ("frame.number", "frame.time_epoch", "eth.src", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.stream", "udp.stream",
-         "nbns.name", "dns.qry.name", "kerberos.CNameString", "ntlmssp.auth.domain", "ntlmssp.auth.username",
-         "ntlmssp.auth.hostname", "smb2.acct"),
+        "nbns || llmnr || mdns || kerberos || ntlmssp || smb2 || samr || browser",
+        ("frame.number", "frame.time_epoch", "eth.src", "eth.dst", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.stream", "udp.stream",
+         "nbns.name", "nbns.flags.response", "nbns.flags.opcode", "nbns.nb_flags.group", "dns.qry.name", "kerberos.CNameString", "kerberos.msg_type",
+         "ntlmssp.auth.domain", "ntlmssp.auth.username", "ntlmssp.auth.hostname", "smb2.acct", "samr.samr_UserInfo21.account_name", "samr.samr_UserInfo21.full_name",
+         "browser.server", "browser.response_computer_name"),
+    ),
+    "directory_service": (
+        "samr || drsuapi || ldap",
+        ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.stream",
+         "samr.opnum", "samr.samr_UserInfo21.account_name", "samr.samr_UserInfo21.full_name", "drsuapi.opnum", "ldap.protocolOp", "ldap.baseObject", "ldap.filter"),
+    ),
+    "unclassified_tcp": (
+        "tcp && data && tcp.len > 0 && tcp.len <= 2048 && !(http || tls || smb || smb2 || kerberos || ldap || dcerpc || nbss || dns)",
+        ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport", "tcp.stream", "tcp.payload"),
     ),
 }
 
 app = FastAPI(title="AdversaryGraph PCAP Analyzer", version=SCHEMA_VERSION)
 _SUPPORTED_FIELDS: set[str] | None = None
 _MANIFEST: dict[str, Any] | None = None
+_ANALYSIS_SLOT = asyncio.Semaphore(1)
 
 
 def _canonical(value: Any) -> str:
@@ -109,7 +123,7 @@ def _sha256_json(value: Any) -> str:
 def _tool_version(binary: str) -> str:
     completed = subprocess.run(
         [binary, "--version"], capture_output=True, text=True, timeout=10, check=True,
-        env={**os.environ, "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "HOME": tempfile.gettempdir()},
+        env={**os.environ, "LANG": "C", "LC_ALL": "C", "TZ": "UTC"},
     )
     return completed.stdout.splitlines()[0].strip()
 
@@ -120,7 +134,7 @@ def _supported_fields() -> set[str]:
         return _SUPPORTED_FIELDS
     completed = subprocess.run(
         ["tshark", "-G", "fields"], capture_output=True, text=True, timeout=60, check=True,
-        env={**os.environ, "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "HOME": tempfile.gettempdir()},
+        env={**os.environ, "LANG": "C", "LC_ALL": "C", "TZ": "UTC"},
     )
     fields: set[str] = set()
     for line in completed.stdout.splitlines():
@@ -154,6 +168,7 @@ def analyzer_manifest() -> dict[str, Any]:
         "profile_id": PROFILE_ID,
         "rulepack_version": RULEPACK_VERSION,
         "tshark_version": _tool_version("tshark"),
+        "implementation_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "capinfos_version": _tool_version("capinfos"),
         "limits": {
             "max_upload_bytes": MAX_UPLOAD_BYTES,
@@ -163,6 +178,7 @@ def analyzer_manifest() -> dict[str, Any]:
             "max_flows": MAX_FLOWS,
             "max_endpoints": MAX_ENDPOINTS,
             "max_exported_objects": MAX_EXPORTED_OBJECTS,
+            "max_object_hash_index": MAX_OBJECT_HASH_INDEX,
             "max_exported_object_bytes": MAX_EXPORTED_OBJECT_BYTES,
             "max_exported_total_bytes": MAX_EXPORTED_TOTAL_BYTES,
         },
@@ -232,14 +248,12 @@ async def analyze(
         if not capture_format:
             raise HTTPException(400, "File is not a recognized PCAP or PCAPNG capture")
         try:
-            return analyze_capture(
-                capture,
-                source_sha256=digest.hexdigest(),
-                source_size_bytes=total,
-                filename=file.filename or "capture",
-                capture_format=capture_format,
-                scratch=root,
-            )
+            async with _ANALYSIS_SLOT:
+                return await run_in_threadpool(
+                    analyze_capture, capture, source_sha256=digest.hexdigest(),
+                    source_size_bytes=total, filename=file.filename or "capture",
+                    capture_format=capture_format, scratch=root,
+                )
         except subprocess.TimeoutExpired as exc:
             raise HTTPException(422, "Packet decoding exceeded the configured timeout") from exc
         except AnalyzerLimitError as exc:
@@ -263,7 +277,6 @@ def _tool_env(root: Path) -> dict[str, str]:
     config.mkdir(mode=0o700, exist_ok=True)
     return {
         **os.environ,
-        "HOME": str(root),
         "LANG": "C",
         "LC_ALL": "C",
         "TZ": "UTC",
@@ -278,7 +291,7 @@ def _run_fields(root: Path, capture: Path, kind: str, display_filter: str, reque
         raise RuntimeError("TShark does not expose the required frame.number field")
     output = root / f"{_SAFE_NAME_RE.sub('-', kind)}.tsv"
     command = [
-        "tshark", "-n", "-r", str(capture), "-T", "fields",
+        "tshark", "-n", "-2", "-r", str(capture), "-T", "fields",
         "-E", "header=y", "-E", "separator=/t", "-E", "quote=d", "-E", "escape=y", "-E", "occurrence=a",
     ]
     if display_filter:
@@ -305,11 +318,11 @@ def _run_fields(root: Path, capture: Path, kind: str, display_filter: str, reque
         reader = csv.DictReader(source, delimiter="\t", quotechar='"')
         for row in reader:
             clean = {key: value for key, value in row.items() if key and value not in (None, "")}
-            if clean:
-                rows.append(clean)
-            if kind != "packets" and len(rows) >= MAX_EVENTS_PER_KIND:
+            if clean and kind != "packets" and len(rows) >= MAX_EVENTS_PER_KIND:
                 truncated = True
                 break
+            if clean:
+                rows.append(clean)
     return rows, truncated
 
 
@@ -355,10 +368,20 @@ def analyze_capture(
     })
 
     identities = _build_identities(source_sha256, events)
-    artifacts, artifact_warnings = _export_http_objects(scratch, capture, source_sha256)
+    coverage["http_objects"] = {}
+    artifacts, artifact_warnings = _export_http_objects(scratch, capture, source_sha256, inventory=coverage["http_objects"])
     coverage["warnings"].extend(artifact_warnings)
     observables = _build_observables(source_sha256, endpoints, events, artifacts)
+    # Compact overflow hashes stay available for enrichment even when richer
+    # per-object metadata reaches its cap.
+    indexed = _build_observables(source_sha256, [], {}, coverage["http_objects"].get("compact_hash_index", []))
+    existing_observables = {o["observable_id"] for o in observables}
+    observables.extend(o for o in indexed if o["observable_id"] not in existing_observables)
     findings = _build_findings(source_sha256, events)
+    findings.extend(_context_findings(source_sha256, events))
+    findings.extend(_unclassified_findings(source_sha256, events, flows))
+    coverage["complete_within_profile"] = not coverage["warnings"]
+    coverage["limitations"] = ["Encrypted application contents are not decrypted", "Protocol decoding and heuristic findings do not establish malware family or attribution", "No endpoint execution, persistence, or credential-theft proof without corresponding evidence"]
     attack_candidates = _attack_candidates(findings)
     summary = _deterministic_summary(capture_summary, endpoints, flows, events, findings, artifacts)
 
@@ -451,7 +474,7 @@ def _summarize_packets(source_sha256: str, rows: list[dict[str, str]]) -> tuple[
         frame = _int(row.get("frame.number"))
         timestamp = _float(row.get("frame.time_epoch"))
         length = max(0, _int(row.get("frame.len")))
-        captured_bytes += length
+        captured_bytes += max(0, _int(row.get("frame.cap_len", row.get("frame.len"))))
         if timestamp is not None:
             first_epoch = timestamp if first_epoch is None else min(first_epoch, timestamp)
             last_epoch = timestamp if last_epoch is None else max(last_epoch, timestamp)
@@ -586,15 +609,49 @@ def _evidence_ref(event: dict[str, Any]) -> dict[str, Any]:
 def _build_identities(source_sha256: str, events: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     field_types = {
-        "dhcp.option.hostname": "hostname", "nbns.name": "hostname", "dns.qry.name": "hostname",
+        "dhcp.option.hostname": "hostname", "nbns.name": "hostname",
         "kerberos.CNameString": "account", "ntlmssp.auth.username": "account", "ntlmssp.auth.domain": "domain",
         "ntlmssp.auth.hostname": "hostname", "smb2.acct": "account",
+        "browser.response_computer_name": "hostname", "browser.server": "hostname",
+        "samr.samr_UserInfo21.account_name": "account", "samr.samr_UserInfo21.full_name": "full-name",
     }
     for event in events.get("dhcp", []) + events.get("identity", []):
         for field, identity_type in field_types.items():
-            value = str(event.get("fields", {}).get(field) or "").strip().strip(".")
-            if not value:
+            fields = event.get("fields", {})
+            value = str(fields.get(field) or "").strip().strip(".")
+            if not value or (field.startswith("ntlmssp.auth.") and value.upper() == "NULL"):
                 continue
+            raw_value = value
+            relation = "client-asserted"
+            ip = event.get("src_ip")
+            mac = fields.get("eth.src", "")
+            if field == "nbns.name":
+                # Queries name a target, not the querying host. Only registration
+                # requests (opcode 5) support a source ownership assertion.
+                if _int(fields.get("nbns.flags.opcode")) != 5 or str(fields.get("nbns.flags.response", "")).lower() in {"1", "true"}:
+                    continue
+                value = re.sub(r"<[^>]*>.*$", "", value.split(",")[0]).strip()
+                if not value or value.startswith("__"):
+                    continue
+                relation = "netbios-registration"
+                if any(v.lower() in {"1", "true"} for v in _split_multi(str(fields.get("nbns.nb_flags.group", "")))):
+                    identity_type = "netbios-group"
+                    ip, mac, relation = None, "", "group-membership-not-hostname"
+            elif field.startswith("samr."):
+                # A returned directory object is not proof its subject logged in
+                # on the recipient. Preserve the conversation separately.
+                ip, mac, relation = None, "", "directory-subject-returned-to-client"
+            elif field == "kerberos.CNameString":
+                msg_type = _int(fields.get("kerberos.msg_type"))
+                if msg_type in (11, 13, 30):
+                    ip, mac = event.get("dst_ip"), fields.get("eth.dst", "")
+                elif msg_type not in (10, 12, 14):
+                    ip, mac = None, ""
+                relation = "kerberos-client-principal"
+            elif field.startswith("dhcp."):
+                ip = fields.get("dhcp.ip.your") or fields.get("dhcp.option.requested_ip_address") or ip
+                mac = fields.get("dhcp.hw.mac_addr") or mac
+                relation = "dhcp-client-assertion"
             key = (identity_type, value.lower())
             entry = rows.setdefault(key, {
                 "identity_id": "identity-" + hashlib.sha256(f"{source_sha256}|{identity_type}|{value.lower()}".encode()).hexdigest()[:24],
@@ -603,24 +660,41 @@ def _build_identities(source_sha256: str, events: dict[str, list[dict[str, Any]]
                 "ip_addresses": set(),
                 "mac_addresses": set(),
                 "evidence": [],
+                "bindings": [],
+                "raw_values": set(),
             })
-            for ip in (event.get("src_ip"), event.get("dst_ip")):
-                if ip:
-                    entry["ip_addresses"].add(ip)
-            mac = str(event.get("fields", {}).get("eth.src") or "").lower()
-            if mac:
-                entry["mac_addresses"].add(mac)
+            if ip and ip != "0.0.0.0":
+                entry["ip_addresses"].add(ip)
+            if mac and not str(mac).startswith(("ff:", "01:")):
+                entry["mac_addresses"].add(str(mac).lower())
+            entry["raw_values"].add(raw_value)
             if len(entry["evidence"]) < 20:
                 entry["evidence"].append(_evidence_ref(event))
+                entry["bindings"].append({"frame_number": event["frame_number"], "relationship": relation, "owner_ip": ip,
+                    "conversation_src": event.get("src_ip"), "conversation_dst": event.get("dst_ip"),
+                    "account": fields.get("samr.samr_UserInfo21.account_name", ""), "source_field": field})
+    # Bind a directory full name only when its account was independently
+    # observed as a client principal on that same requesting endpoint.
+    for entry in rows.values():
+        if entry["type"] != "full-name":
+            continue
+        for binding in entry["bindings"]:
+            principal = rows.get(("account", binding["account"].lower()))
+            recipient = binding["conversation_dst"]
+            if principal and recipient in principal["ip_addresses"]:
+                entry["ip_addresses"].add(recipient)
+                binding["owner_ip"] = recipient
+                binding["relationship"] = "directory-name-correlated-with-client-principal"
     result = []
     for entry in sorted(rows.values(), key=lambda item: (item["type"], item["value"].lower())):
         entry["ip_addresses"] = sorted(entry["ip_addresses"])
         entry["mac_addresses"] = sorted(entry["mac_addresses"])
+        entry["raw_values"] = sorted(entry["raw_values"])
         result.append(entry)
     return result[:10000]
 
 
-def _export_http_objects(root: Path, capture: Path, source_sha256: str) -> tuple[list[dict[str, Any]], list[str]]:
+def _export_http_objects(root: Path, capture: Path, source_sha256: str, *, inventory: dict | None = None) -> tuple[list[dict[str, Any]], list[str]]:
     export_dir = root / "http-objects"
     export_dir.mkdir(mode=0o700, exist_ok=True)
     command = ["tshark", "-n", "-r", str(capture), "--export-objects", f"http,{export_dir}"]
@@ -632,36 +706,81 @@ def _export_http_objects(root: Path, capture: Path, source_sha256: str) -> tuple
     if completed.returncode != 0:
         warnings.append("HTTP object export failed; packet evidence remains available")
         return [], warnings
-    artifacts: list[dict[str, Any]] = []
+    unique: dict[str, dict[str, Any]] = {}
     total = 0
     candidates = sorted((path for path in export_dir.iterdir() if path.is_file()), key=lambda path: path.name)
-    if len(candidates) > MAX_EXPORTED_OBJECTS:
-        warnings.append(f"HTTP object metadata was truncated at {MAX_EXPORTED_OBJECTS}")
-    for index, path in enumerate(candidates[:MAX_EXPORTED_OBJECTS]):
+    hashed = 0
+    for path in candidates:
         size = path.stat().st_size
         if size > MAX_EXPORTED_OBJECT_BYTES:
             warnings.append(f"One HTTP object exceeded the {MAX_EXPORTED_OBJECT_BYTES} byte hashing limit")
             continue
+        if total + size > MAX_EXPORTED_TOTAL_BYTES:
+            warnings.append(f"An HTTP object exceeded remaining {MAX_EXPORTED_TOTAL_BYTES} total hashing budget")
+            continue
         total += size
-        if total > MAX_EXPORTED_TOTAL_BYTES:
-            warnings.append(f"HTTP object hashing stopped at {MAX_EXPORTED_TOTAL_BYTES} total bytes")
-            break
         digest = hashlib.sha256()
         with path.open("rb") as source:
             for block in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(block)
         sha256 = digest.hexdigest()
-        artifacts.append({
-            "artifact_id": "artifact-" + hashlib.sha256(f"{source_sha256}|http|{index}|{sha256}".encode()).hexdigest()[:24],
+        hashed += 1
+        if sha256 in unique:
+            unique[sha256]["occurrences"] += 1
+            # Filename aliases are bounded, occurrence count remains exact.
+            if len(unique[sha256]["filenames"]) < 30:
+                unique[sha256]["filenames"].append(path.name[:500])
+            continue
+        features = _object_features(path)
+        unique[sha256] = {
+            "artifact_id": "artifact-" + hashlib.sha256(f"{source_sha256}|http|{sha256}".encode()).hexdigest()[:24],
             "type": "http-exported-object",
             "filename": path.name[:500],
+            "filenames": [path.name[:500]],
+            "occurrences": 1,
+            "static_features": features,
             "size_bytes": size,
             "sha256": sha256,
             "media_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
             "extraction_method": "tshark-http-export-objects",
             "content_retained_by_analyzer": False,
-        })
+        }
+    ordered = sorted(unique.values(), key=lambda item: (-bool(item["static_features"]["content_kind"] != "unclassified"), -item["size_bytes"], item["sha256"]))
+    artifacts = ordered[:MAX_EXPORTED_OBJECTS]
+    compact_index = [{key: item[key] for key in ("artifact_id", "filename", "sha256", "size_bytes", "occurrences")}
+                     for item in ordered[MAX_EXPORTED_OBJECTS:MAX_EXPORTED_OBJECTS + MAX_OBJECT_HASH_INDEX]]
+    omitted = len(ordered) - len(artifacts) - len(compact_index)
+    if omitted:
+        warnings.append(f"HTTP object inventory omitted {omitted} unique hashes at metadata limit {MAX_EXPORTED_OBJECTS}")
+    if inventory is not None:
+        inventory.update(exported_objects=len(candidates), hashed_objects=hashed, unique_hashes=len(unique), returned_unique_hashes=len(artifacts)+len(compact_index),
+                         detailed_objects=len(artifacts), compact_hash_index=compact_index, compact_objects=len(compact_index),
+                         omitted_unique_hashes=omitted, unhashed_objects=len(candidates)-hashed, hashed_bytes=total,
+                         selection="content-classified first, then size descending, SHA256 tie-break; deduplicated by full hash; overflow retains a compact hash index",
+                         complete=(not omitted and hashed == len(candidates)))
     return artifacts, warnings
+
+
+def _object_features(path: Path) -> dict[str, Any]:
+    """Bounded static inspection only. Never execute, import, or unpack objects."""
+    with path.open("rb") as source:
+        data = source.read(256 * 1024)
+    text = data.decode("utf-8", errors="replace")
+    patterns = {
+        "powershell-download": r"(?i)DownloadString|DownloadFile|Invoke-WebRequest|Start-BitsTransfer",
+        "dynamic-evaluation": r"(?i)\bInvoke-Expression\b|\biex\b|\beval\s*\(",
+        "system-inventory": r"(?i)Get-WmiObject|Get-CimInstance|Win32_OperatingSystem|Win32_ComputerSystem",
+        "encoded-command": r"(?i)-(?:enc|encodedcommand)\s+[A-Za-z0-9+/=]{16,}",
+    }
+    matches = [{"feature": label, "excerpt": match.group(0)[:120], "offset": match.start()}
+               for label, pattern in patterns.items() if (match := re.search(pattern, text))]
+    kind = "pe" if data[:2] == b"MZ" and len(data) > 64 and data[int.from_bytes(data[60:64], "little"):][:4] == b"PE\0\0" else "unclassified"
+    if data.startswith(b"PK\x03\x04"):
+        kind = "zip"
+    elif kind == "unclassified" and matches:
+        kind = "script-like-text"
+    return {"content_kind": kind, "inspected_bytes": len(data), "inspection_truncated": path.stat().st_size > len(data),
+            "features": matches, "interpretation": "Static content only; not proof of execution, intent, or malware family"}
 
 
 def _normalize_domain(value: str) -> str:
@@ -831,8 +950,8 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
         ))
     for (user_agent, src, dst), group in sorted(powershell_clients.items()):
         findings.append(_finding(
-            source_sha256, "powershell-http-client", "high", "PowerShell-originated HTTP traffic",
-            "The HTTP User-Agent explicitly identifies Windows PowerShell. This is execution evidence for a PowerShell web request, but the script intent still requires endpoint context.",
+            source_sha256, "powershell-http-client", "medium", "HTTP client claiming a PowerShell User-Agent",
+            "The HTTP User-Agent claims Windows PowerShell. User-Agent strings can be spoofed; this alone does not prove interpreter execution or malicious intent.",
             [_evidence_ref(event) for event in group], confidence=0.94,
             metrics={"request_count": len(group), "user_agent": user_agent, "source": src, "destination": dst},
         ))
@@ -846,8 +965,8 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
     for (src, dst, host, path), group in sorted(fingerprint_uploads.items()):
         lengths = [_int(event["fields"].get("http.content_length")) for event in group]
         findings.append(_finding(
-            source_sha256, "browser-fingerprint-upload", "high", "Browser or host fingerprint data uploaded",
-            "A tokenized agent/fingerprint API received one or more multi-kilobyte HTTP POST bodies, consistent with detailed browser or host fingerprint submission.",
+            source_sha256, "browser-fingerprint-upload", "medium", "Upload to a fingerprint-like API path",
+            "A tokenized agent/fingerprint path received multi-kilobyte POST bodies. Path naming does not establish body content or data theft; inspect the payload and authorization.",
             [_evidence_ref(event) for event in group], confidence=0.88,
             metrics={"request_count": len(group), "declared_body_bytes": sum(lengths), "source": src, "destination": dst, "host": host, "path": path},
         ))
@@ -923,14 +1042,16 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
                                  "source": src, "destination": dst, "port": port, "host": host, "uri": uri, "method": method},
                     ))
 
-    request_by_stream = {event.get("tcp_stream"): event for event in requests if event.get("tcp_stream") is not None}
+    request_by_frame = {event["frame_number"]: event for event in requests}
     transfers: dict[tuple[str, str, str, str], list[tuple[dict[str, Any], dict[str, Any] | None]]] = defaultdict(list)
     for response in events.get("http_response", []):
-        request = request_by_stream.get(response.get("tcp_stream"))
+        request = _paired_request(response, request_by_frame)
         uri = str((request or {}).get("fields", {}).get("http.request.uri") or response["fields"].get("http.response_for.uri") or "")
         content_type = str(response["fields"].get("http.content_type") or "")
+        if response["fields"].get("http.content_length") == "0":
+            continue
         if re.search(r"(?i)\.(?:exe|dll|ps1|vbs|js|hta|zip|rar|7z)(?:$|\?)", uri) or re.search(
-            r"(?i)application/(?:x-dosexec|x-msdownload|octet-stream|zip)", content_type
+            r"(?i)application/(?:x-dosexec|x-msdownload|zip)", content_type
         ):
             transfer_key = (
                 str(response.get("src_ip") or ""), str(response.get("dst_ip") or ""), uri, content_type.lower()
@@ -942,8 +1063,8 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
         evidence = [_evidence_ref(response) for response in responses]
         evidence.extend(_evidence_ref(request) for _response, request in group if request is not None)
         findings.append(_finding(
-            source_sha256, "script-or-executable-transfer", "high", "Script, archive, or executable transfer",
-            "HTTP response metadata or the requested path indicates delivery of executable code, a script, or an archive.",
+            source_sha256, "script-or-executable-transfer", "medium", "Script, archive, or executable transfer candidate",
+            "HTTP metadata names a script, archive, or executable. This is a transfer candidate, not proof of file type, execution, or malicious intent; legitimate updates use the same formats.",
             evidence, confidence=0.86,
             metrics={
                 "response_count": len(responses),
@@ -964,15 +1085,117 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
 _ATTACK_RULES = {
     "http-on-tls-port": ("T1071.001", "Application Layer Protocol: Web Protocols", "command-and-control", 0.75),
     "periodic-http-callbacks": ("T1071.001", "Application Layer Protocol: Web Protocols", "command-and-control", 0.85),
-    "large-http-post": ("T1041", "Exfiltration Over C2 Channel", "exfiltration", 0.55),
-    "repeated-http-posts": ("T1041", "Exfiltration Over C2 Channel", "exfiltration", 0.45),
     "remote-access-user-agent": ("T1219", "Remote Access Software", "command-and-control", 0.9),
     "script-or-executable-transfer": ("T1105", "Ingress Tool Transfer", "command-and-control", 0.8),
-    "powershell-http-client": ("T1059.001", "Command and Scripting Interpreter: PowerShell", "execution", 0.85),
+    "powershell-http-client": ("T1059.001", "Command and Scripting Interpreter: PowerShell", "execution", 0.5),
     "distributed-periodic-http-posts": ("T1071.001", "Application Layer Protocol: Web Protocols", "command-and-control", 0.88),
-    "browser-fingerprint-upload": ("T1041", "Exfiltration Over C2 Channel", "exfiltration", 0.5),
-    "high-volume-http-posts": ("T1041", "Exfiltration Over C2 Channel", "exfiltration", 0.6),
 }
+
+
+def _paired_request(response: dict, by_frame: dict[int, dict]) -> dict | None:
+    """Trust decoder frame linkage only when stream and endpoint direction agree."""
+    request = by_frame.get(_int(response.get("fields", {}).get("http.request_in")))
+    if not request or request.get("tcp_stream") is None or request.get("tcp_stream") != response.get("tcp_stream"):
+        return None
+    if request["frame_number"] >= response["frame_number"]:
+        return None
+    if (request.get("src_ip"), request.get("dst_ip")) != (response.get("dst_ip"), response.get("src_ip")):
+        return None
+    return request
+
+
+def _context_findings(source_sha256: str, events: dict) -> list[dict]:
+    """Metadata-only investigation leads; no automatic DGA/DCSync/C2 labels."""
+    findings = []
+    failed_dns: dict[tuple, list] = defaultdict(list)
+    for event in events.get("dns", []):
+        if event["fields"].get("dns.flags.rcode") == "3":
+            failed_dns[(event.get("dst_ip"), event["fields"].get("dns.qry.name", ""))].append(event)
+    for (client, name), group in sorted(failed_dns.items()):
+        if len(group) >= 10:
+            findings.append(_finding(source_sha256, "repeated-nxdomain", "low", "Repeated unsuccessful DNS resolution",
+                "Repeated NXDOMAIN responses may indicate a dead domain, misconfiguration, retrying software, or malicious fallback. They do not establish a domain-generation algorithm.",
+                [_evidence_ref(e) for e in group], confidence=0.5,
+                metrics={"source": client, "domain": name, "response_count": len(group)}))
+    tls_groups: dict[tuple, list] = defaultdict(list)
+    for event in events.get("tls_client_hello", []):
+        tls_groups[(event.get("src_ip", ""), event["fields"].get("tls.handshake.ja3", ""))].append(event)
+    for (client, ja3), group in sorted(tls_groups.items()):
+        hosts = sorted({e["fields"].get("tls.handshake.extensions_server_name", "") for e in group} - {""})
+        if len(group) < 12 or len(hosts) < 3:
+            continue
+        # Detect repeated per-host cadence even when requests form tight bursts.
+        medians = []
+        regular = 0
+        regular_names = []
+        for host in hosts:
+            times = sorted(float(e["timestamp_epoch"]) for e in group if e["fields"].get("tls.handshake.extensions_server_name") == host)
+            deltas = [b-a for a,b in zip(times, times[1:]) if b-a > 0.1]
+            if len(deltas) >= 3:
+                median = statistics.median(deltas)
+                if median >= 2 and statistics.median(abs(d-median) for d in deltas) / median < .25:
+                    regular += 1
+                    regular_names.append(host)
+                    medians.append(round(median, 3))
+        if regular >= 3:
+            findings.append(_finding(source_sha256, "multi-host-tls-cadence", "medium", "Repeated TLS cadence across multiple names",
+                "A client fingerprint repeats connections across several names at regular per-name intervals. Telemetry and legitimate agents can do this; TLS payload content and attribution remain unknown.",
+                [_evidence_ref(e) for e in group], confidence=.6,
+                metrics={"source": client, "ja3": ja3, "hosts": regular_names, "other_names_sharing_fingerprint": sorted(set(hosts)-set(regular_names)),
+                         "client_hello_count": len(group), "regular_hosts": regular, "per_host_median_intervals": medians}))
+    directory_groups: dict[tuple, list] = defaultdict(list)
+    for event in events.get("directory_service", []):
+        fields = event["fields"]
+        protocol = "samr" if any(k.startswith("samr.") for k in fields) else "drsuapi" if "drsuapi.opnum" in fields else "ldap"
+        directory_groups[(event.get("src_ip", ""), event.get("dst_ip", ""), protocol)].append(event)
+    for (src, dst, protocol), group in sorted(directory_groups.items()):
+        findings.append(_finding(source_sha256, "directory-service-activity", "low", "Directory-service protocol activity",
+            "Directory protocol operations were decoded. Normal Windows logon uses these protocols; activity alone does not establish discovery, credential theft, or DCSync.",
+            [_evidence_ref(e) for e in group], confidence=.95,
+            metrics={"source": src, "destination": dst, "protocol": protocol, "event_count": len(group),
+                     "operation_numbers": sorted({str(e["fields"].get(protocol + ".opnum", e["fields"].get("ldap.protocolOp", ""))) for e in group})}))
+    return findings
+
+
+def _unclassified_findings(source_sha256: str, events: dict, flows: list[dict]) -> list[dict]:
+    """Expose non-web coverage gaps and literal software labels, without an IOC allowlist."""
+    findings = []
+    labels: dict[tuple, list] = defaultdict(list)
+    for event in events.get("unclassified_tcp", []):
+        payload = str(event["fields"].get("tcp.payload", "")).split(",", 1)[0].replace(":", "")
+        try:
+            data = bytes.fromhex(payload[:4096]).decode("ascii", errors="replace")
+        except ValueError:
+            continue
+        match = re.match(r"(?i)^ping\|([A-Za-z][A-Za-z0-9_.-]{2,31})\|([a-f0-9]{4,64})\|([^|]{1,80})\|([^|]{1,80})\|", data)
+        if match:
+            labels[(event.get("src_ip", ""), event.get("dst_ip", ""), event.get("dst_port"), *match.groups())].append(event)
+    for (src, dst, port, label, client_id, hostname, account), group in sorted(labels.items()):
+        findings.append(_finding(source_sha256, "cleartext-tool-self-identification", "high", "Client announces a software label and host identity",
+            "An otherwise unclassified TCP payload contains a structured ping, software label, client identifier, hostname and account. These are literal self-reported values, not authenticated identity or independent malware-family attribution.",
+            [_evidence_ref(e) for e in group], confidence=.98,
+            metrics={"source":src,"destination":dst,"destination_port":port,"software_label":label,"client_id":client_id,
+                     "claimed_hostname":hostname,"claimed_account":account,"message_count":len(group)}))
+    classified = {e.get("tcp_stream") for kind, rows in events.items() if kind != "unclassified_tcp" for e in rows if e.get("tcp_stream") is not None}
+    for flow in flows:
+        if flow["transport"] != "tcp" or flow["stream"] in classified or flow["packets"] < 12:
+            continue
+        try:
+            local = ipaddress.ip_address(flow["initiator_ip"])
+            remote = ipaddress.ip_address(flow["responder_ip"])
+        except ValueError:
+            continue
+        if not local.is_private or not remote.is_global:
+            continue
+        duration = float(flow["last_seen_epoch"] or 0)-float(flow["first_seen_epoch"] or 0)
+        if duration < 30:
+            continue
+        findings.append(_finding(source_sha256, "unclassified-external-tcp", "medium", "Sustained external TCP conversation outside decoded application coverage",
+            "The flow exchanges traffic with a public endpoint but has no HTTP/TLS/identity event in this profile. Inspect the stream for a custom protocol or a missing handshake. This is a coverage/investigation lead, not a malware verdict.",
+            [{"frame_number":flow["first_frame"],"tcp_stream":flow["stream"],"timestamp_epoch":flow["first_seen_epoch"],"display_filter":f"tcp.stream == {flow['stream']}"}],confidence=.7,
+            metrics={"source":flow["initiator_ip"],"destination":flow["responder_ip"],"destination_port":flow["responder_port"],
+                     "duration_seconds":round(duration,3),"packets":flow["packets"],"wire_bytes":flow["bytes"]}))
+    return findings
 
 
 def _attack_candidates(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:

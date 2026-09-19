@@ -177,7 +177,7 @@ def _sha256(value: Any) -> bool:
     return value == value.lower()
 
 
-def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[str, Any]]) -> str:
+def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[str, Any]], *, context: dict | None = None) -> str:
     capture = result.get("capture", {})
     findings = list(result.get("findings") or [])
     observables = list(result.get("observables") or [])
@@ -237,7 +237,8 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
         lines.append("- No deterministic ATT&CK candidates.")
     lines.extend(["", "## Identities", ""])
     for identity in identities[:200]:
-        lines.append(f"- {identity.get('type')}: `{identity.get('value')}`; IPs: {', '.join(identity.get('ip_addresses') or []) or 'none'}")
+        frames = ', '.join(str(e.get('frame_number')) for e in identity.get('evidence', [])[:5])
+        lines.append(f"- {identity.get('type')}: `{identity.get('value')}`; client IPs: {', '.join(identity.get('ip_addresses') or []) or 'unbound subject'}; frames: {frames or 'unavailable'}")
     if not identities:
         lines.append("- No identity-protocol values recovered.")
     lines.extend(["", "## IOC and artifact candidates", ""])
@@ -247,6 +248,9 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
         lines.append(
             f"- exported object `{artifact.get('filename')}`; SHA-256 `{artifact.get('sha256')}`; size {artifact.get('size_bytes')} bytes"
         )
+        features = artifact.get('static_features') or {}
+        if features.get('content_kind') != 'unclassified' and features:
+            lines.append(f"  Static content: `{canonical_json(features)}`. Not execution proof.")
     if not observables and not artifacts:
         lines.append("- No candidates recovered.")
     lines.extend(["", "## Actor similarity leads", ""])
@@ -259,6 +263,17 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
     else:
         lines.append("- No actor lead was calculated.")
     coverage = result.get("coverage") or {}
+    if context:
+        lines.extend(["", "## Local enrichment and correlations", "", str(context.get('interpretation', '')),
+            f"Snapshot: `{context.get('snapshot_sha256')}`; recorded {context.get('created_at')}; mode: local-only.",
+            f"Coverage: `{canonical_json(context.get('coverage', {}))}`", ""])
+        for match in context.get('matches', []):
+            lines.append(f"- Exact {match['type']} match `{match['value']}`: source `{match['source_id']}`, family `{match.get('malware_family') or 'not specified'}`, source URL: {match.get('source_url') or 'not recorded'}; not case attribution.")
+        for technique in context.get('techniques', []):
+            lines.append(f"- Catalog {technique['attack_id']}: {technique['url']}; detection strategies: {canonical_json(technique['detection_strategies'])}")
+        for link in context.get('cross_case_correlations', []):
+            lines.append(f"- Prior analysis `{link['analysis_id']}` shares {link['shared_count']} observations. This does not establish a common campaign.")
+        lines.append("- External provider queries: 0. Not requested; no unknown indicator is classified as benign.")
     lines.extend([
         "",
         "## Coverage and limitations",
@@ -266,6 +281,9 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
         "- Packet and protocol facts are deterministic for the recorded analyzer manifest.",
         "- Encrypted application payloads are not decrypted; only available metadata is reported.",
         "- ATT&CK mappings and actor overlaps are candidates until analyst review and promotion.",
+        f"- HTTP object inventory: `{canonical_json({k:v for k,v in coverage.get('http_objects', {}).items() if k != 'compact_hash_index'})}`. Compact overflow hashes are retained in JSON coverage and observables.",
+        "- A directory subject is not necessarily a logged-in user; consult identity bindings in the JSON evidence.",
+        f"- Rendered / available: findings {min(len(findings),200)}/{len(findings)}, identities {min(len(identities),200)}/{len(identities)}, observables {min(len(observables),500)}/{len(observables)}, artifacts {min(len(artifacts),200)}/{len(artifacts)}. Full returned inventory is in the JSON result.",
     ])
     for warning in coverage.get("warnings") or []:
         lines.append(f"- Warning: {warning}")

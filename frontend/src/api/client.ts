@@ -940,6 +940,15 @@ export interface PcapAnalysisResult {
   summary: string;
   report: string;
   result: PcapDeterministicResult;
+  context?: {
+    schema_version: string;
+    snapshot_sha256: string;
+    mode: 'local-only';
+    coverage: Record<string, unknown>;
+    matches: Array<Record<string, unknown>>;
+    techniques: Array<Record<string, unknown>>;
+    cross_case_correlations: Array<Record<string, unknown>>;
+  };
   techniques: AnalysisResult['techniques'];
   apt_matches: AnalysisResult['apt_matches'];
 }

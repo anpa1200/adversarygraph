@@ -27,6 +27,7 @@ from app.core.database import get_session
 from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.operations import ReportIntake
 from app.models.pcap import PcapAnalysis
+from app.services.pcap_context import build_context
 from app.services.ai.base import ExtractedTechnique, ExtractionResult, technique_to_record
 from app.services.auth import TeamUser, audit, current_user, has_permission, require_permission
 from app.services.pcap_analyzer import (
@@ -188,8 +189,10 @@ class PcapAnalysisOut(BaseModel):
     analyzer_manifest: dict[str, Any]
     summary: str
     report: str
-    # Failed/in-progress legacy rows may not yet have a completed v1 result.
-    result: PcapDeterministicResult | dict[str, Any]
+    # Hash-covered evidence must be serialized without default insertion or
+    # unknown-field removal. Validation belongs at ingestion, not serialization.
+    result: dict[str, Any]
+    context: dict[str, Any] = Field(default_factory=dict)
     techniques: list[TechniqueHit]
     apt_matches: list[AptMatch]
 
@@ -338,6 +341,7 @@ def _build_out(row: PcapAnalysis, session: AnalysisSession, result_row: Analysis
         summary=(result_row.summary if result_row else "") or str((row.result or {}).get("summary") or ""),
         report=row.report_text or session.source_text or "",
         result=row.result or {},
+        context=(session.source_provenance or {}).get("pcap_context", {}),
         techniques=techniques,
         apt_matches=apt_matches,
     )
@@ -452,7 +456,8 @@ async def create_analysis(
             }
             for match in apt_matches
         ]
-        report = render_report(filename, result, actor_leads)
+        context = await build_context(db, result, session_id=str(session.id))
+        report = render_report(filename, result, actor_leads, context=context)
         _bind_report_evidence(extraction, report)
 
         session.status = "completed"
@@ -464,6 +469,7 @@ async def create_analysis(
             content_sha256=source_sha256,
             content_size_bytes=source_size,
         )
+        session.source_provenance = {**session.source_provenance, "pcap_context": context}
         row.status = "completed"
         row.schema_version = str(result.get("schema_version") or "pcap-analysis-v1")[:80]
         row.semantic_sha256 = str(result.get("semantic_sha256") or "")

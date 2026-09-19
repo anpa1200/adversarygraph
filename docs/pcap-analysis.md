@@ -55,6 +55,56 @@ manifest mismatches.
 
 ## Rule-pack boundary
 
+### Evidence profile and rule pack v3
+
+The v2 manifest includes the analyzer source-code SHA-256. The API returns the
+original verified JSON object without Pydantic default insertion or field
+removal, preserving the semantic checksum on upload and retrieval.
+
+HTTP decoding uses two-pass frame references for keep-alive request/response
+association. Missing or contradictory linkage stays unknown. Object hashing
+visits all exported objects within byte budgets, deduplicates full SHA-256s,
+then prioritizes content-classified objects and size before applying the unique
+metadata cap. Inventory totals, omissions, aliases and occurrence counts are
+explicit. Bounded static inspection never executes, imports, or unpacks files.
+
+Identity extraction includes Browser announcements and SAMR full names. SAMR
+subjects are not automatically assigned to the replying server or requesting
+client; full-name/client binding requires an independently observed principal.
+NBNS queries are not hostname ownership evidence and group names are distinct.
+
+Repeated NXDOMAIN, directory-service operations and multi-name TLS cadence are
+contextual leads, not DGA, DCSync or attribution claims. Generic octet-stream or
+zero-length responses do not establish executable delivery. POST size/count
+does not automatically map to T1041. Static content and User-Agent claims do
+not establish execution. Rule confidence measures the pattern, not maliciousness.
+
+Every successful upload also creates a dated, independently hashed `context`
+snapshot in session provenance: up to 5,000 exact typed local IOC lookups,
+current local ATT&CK catalog/detection links, source-backed actor assertions,
+and observation overlap with up to 50 prior completed captures. URL path case
+is preserved; a substring is not an exact match. These snapshots are outside
+the immutable packet result and do not promote indicators or attribute actors.
+Their limits are visible. Historical knowledge may postdate the incident.
+External provider calls remain explicit analyst actions in IOC Investigation;
+PCAP ingestion makes none. No match means unknown in the available corpus.
+
+The shared AI extraction system prompt and legacy log/PCAP prompt separate
+facts, heuristics, source claims and hypotheses; reject instructions embedded
+in evidence; and require grounded mappings without fabricated family labels.
+The deterministic PCAP route does not invoke an LLM, so its retest cannot
+measure a prompt-quality or model-accuracy improvement.
+
+The v3 follow-up preserves a compact overflow hash index (up to 50,000 entries)
+beyond the 500 rich artifact records, exposing those hashes as observables for
+local enrichment. It also normalizes TShark boolean spellings, suppresses NULL
+NTLM placeholders, and exposes bounded short unclassified TCP payloads.
+Structured software self-identification is reported literally, without a
+sample-specific IOC list. Sustained unclassified public TCP conversations are
+review leads, not automatic C2 verdicts. The first ten unseen v2 outputs are
+preserved separately; v3 retests on those captures are regression tests, not a
+second independent held-out benchmark.
+
 The initial rule pack recognizes evidence-backed behaviors including:
 
 - cleartext HTTP on TCP/443;
