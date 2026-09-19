@@ -157,3 +157,19 @@ async def test_http_404_is_absence_not_provider_failure():
     result = await _safe_source('test', AsyncMock(side_effect=error))
     assert result['status'] == 'not_found'
     assert result['http_status'] == 404
+
+
+def test_graph_preserves_url_path_case_and_binds_normalized_domains():
+    nodes, edges = {}, []
+    result = {'source': 'urlscan', 'status': 'ok', 'relationships': [
+        {'source':'Example.TEST','target':'https://example.test/AbC','target_type':'url'},
+        {'source':'example.test','target':'https://example.test/abc','target_type':'url'},
+        {'source':'EXAMPLE.TEST','target':'Child.Example.TEST','target_type':'domain'},
+    ]}
+    investigation._merge_graph(nodes, edges, result, 'example.test')
+    assert len(nodes) == 4
+    values = {node['value'] for node in nodes.values()}
+    assert 'https://example.test/AbC' in values
+    assert 'https://example.test/abc' in values
+    assert 'child.example.test' in values
+    assert all(edge['source'] in values and edge['target'] in values for edge in edges)

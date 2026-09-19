@@ -1142,6 +1142,8 @@ def _merge_graph(nodes: dict[str, dict[str, Any]], edges: list[dict[str, Any]], 
             continue
         tier = int(rel.get("tier") or default_tier)
         source_type = _infer_graph_source_type(source)
+        source = _exact_indicator_key(source_type, source)[1]
+        target = _exact_indicator_key(target_type, target)[1]
         suspicious = _relationship_suspicious_score(result, rel)
         _add_node(nodes, "artifact", source, source_type, tier=max(0, tier - 1), source=result.get("source", "unknown"), suspicious=suspicious)
         _add_node(nodes, "relationship", target, target_type, tier=tier, source=str(rel.get("evidence_source") or result.get("source") or "unknown"), suspicious=suspicious)
@@ -1160,7 +1162,10 @@ def _merge_graph(nodes: dict[str, dict[str, Any]], edges: list[dict[str, Any]], 
 def _add_node(nodes: dict[str, dict[str, Any]], kind: str, value: str, node_type: str, *, tier: int, source: str, suspicious: int = -1) -> None:
     if not value:
         return
-    key = f"{node_type}:{value}".lower()
+    # DNS names and hashes are case-insensitive; URL paths are not. Folding
+    # whole URLs merged distinct payload paths and left dangling graph edges.
+    value = _exact_indicator_key(node_type, value)[1]
+    key = f"{node_type}:{value}"
     existing = nodes.get(key)
     if existing:
         existing["tier"] = min(existing["tier"], tier)
