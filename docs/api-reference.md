@@ -4,7 +4,7 @@
 
 - Version: **8.0.0-beta.1**
 - Modules: **31**
-Operations: **354**
+Operations: **356**
 
 Interactive contracts are available from a running deployment at `/docs`,
 `/redoc`, and `/openapi.json`. All platform operations use `/api`; protected
@@ -331,7 +331,7 @@ suite rather than by the live smoke command.
 
 ## Operational Intelligence
 
-15 operations.
+17 operations.
 
 | Method | Path | Operation | Success |
 |---|---|---|---|
@@ -347,6 +347,8 @@ suite rather than by the live smoke command.
 | `POST` | `/api/operations/investigations` | Create Investigation | 201 |
 | `DELETE` | `/api/operations/investigations/{item_id}` | Delete Investigation | 204 |
 | `PUT` | `/api/operations/investigations/{item_id}` | Update Investigation | 200 |
+| `GET` | `/api/operations/investigations/{item_id}/summaries/{summary_id}` | Investigation Summary Snapshot | 200 |
+| `POST` | `/api/operations/investigations/{item_id}/summary` | Summarize Investigation | 200 |
 | `GET` | `/api/operations/tracked-actors` | Tracked Actors | 200 |
 | `POST` | `/api/operations/tracked-actors` | Track Actor | 201 |
 | `DELETE` | `/api/operations/tracked-actors/{item_id}` | Delete Tracked Actor | 204 |
