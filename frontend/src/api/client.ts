@@ -2085,6 +2085,10 @@ export const operationsApi = {
   createInvestigation: (body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.post(`${operations}/investigations`, body).then(r => r.data),
   updateInvestigation: (id: string, body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.put(`${operations}/investigations/${id}`, body).then(r => r.data),
   removeInvestigation: (id: string): Promise<void> => http.delete(`${operations}/investigations/${id}`).then(() => {}),
+  summarizeInvestigation: (id: string, body: { report_id: string; provider: string }): Promise<{ id: string; content: string; model: string; status: string }> =>
+    http.post(`${operations}/investigations/${id}/summary`, body, { timeout: 210_000 }).then(r => r.data),
+  investigationSummarySnapshot: (id: string, summaryId: string): Promise<{ stale: boolean; status: string }> =>
+    http.get(`${operations}/investigations/${id}/summaries/${encodeURIComponent(summaryId)}`).then(r => r.data),
   intake: (): Promise<IntakeRecord[]> => http.get(`${operations}/intake`).then(r => r.data),
   createIntake: (body: IntakeBody): Promise<IntakeRecord> => http.post(`${operations}/intake`, body).then(r => r.data),
   updateIntake: (id: string, body: IntakeBody): Promise<IntakeRecord> => http.put(`${operations}/intake/${id}`, body).then(r => r.data),

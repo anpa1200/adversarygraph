@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://host.docker.internal:11434/v1"
     local_llm_api_key: str = "local"
     local_llm_model: str = "llama3.1:8b"
+    # Verified input+output capacity for non-Ollama investigation summaries.
+    # Zero means unknown, so the second-layer summary fails closed.
+    local_llm_context_tokens: int = 0
 
     # Threat Hunting AI is an advisory-only feature. Cloud processing remains
     # disabled until an operator explicitly enables it and the analyst confirms

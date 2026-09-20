@@ -119,3 +119,54 @@ async def test_ollama_native_call_disables_thinking(
         == proposal_type
     )
     assert captured["json"]["options"]["num_predict"] == token_limit
+
+
+@pytest.mark.asyncio
+async def test_story_context_preflight_blocks_oversize_without_chat(monkeypatch):
+    from fastapi import HTTPException
+    captured = []
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, url, *, json):
+            captured.append(url)
+            return SimpleNamespace(raise_for_status=lambda: None,
+                                   json=lambda: {"model_info": {"qwen3.context_length": 40960}})
+    adapter = LocalLLMAdapter(model="qwen3:8b", base_url="http://127.0.0.1:11434/v1")
+    monkeypatch.setattr("app.services.ai.local.httpx.AsyncClient", lambda **kw: Client())
+    with pytest.raises(HTTPException) as exc:
+        await adapter.prepare_investigation_story("system", "x" * 45000)
+    assert exc.value.status_code == 413
+    assert captured == ["http://127.0.0.1:11434/api/show"]
+    assert adapter._story_context_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_story_reserves_context_uses_compatible_json_and_records_real_usage(monkeypatch):
+    captured = []
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, url, *, json):
+            captured.append((url, json))
+            payload = {"model_info": {"qwen3.context_length": 40960}} if url.endswith('/show') else {
+                "message": {"content": '{"ok":true}'}, "prompt_eval_count": 41, "eval_count": 7, "done_reason": "stop",
+            }
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
+    adapter = LocalLLMAdapter(model="qwen3:8b", base_url="http://127.0.0.1:11434/v1")
+    monkeypatch.setattr("app.services.ai.local.httpx.AsyncClient", lambda **kw: Client())
+    await adapter.prepare_investigation_story("system", "user")
+    await adapter._raw_complete("system", "user")
+    assert captured[-1][1]["options"]["num_ctx"] == 10 + 8192 + 1024
+    assert captured[-1][1]["format"] == "json"
+    assert adapter.story_usage == {"input_tokens": 41, "output_tokens": 7, "source": "ollama-response"}
+
+
+@pytest.mark.asyncio
+async def test_unknown_private_server_capacity_fails_closed(monkeypatch):
+    from fastapi import HTTPException
+    monkeypatch.setattr("app.services.ai.local.settings.local_llm_context_tokens", 0)
+    adapter = LocalLLMAdapter(base_url="http://127.0.0.1:1234/v1")
+    with pytest.raises(HTTPException) as exc:
+        await adapter.prepare_investigation_story("system", "user")
+    assert exc.value.status_code == 503

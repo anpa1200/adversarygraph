@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { aptApi, attackApi, analyzeApi, iocApi, operationsApi, type IOCItem, type Investigation } from '@/api/client';
@@ -39,6 +39,7 @@ type SavedReportNode = {
   provider?: string;
   format?: string;
   created_at?: string;
+  report_id?: string;
 };
 type SourceTaggedEvidence = {
   sourceTag: string;
@@ -143,7 +144,6 @@ export function InvestigationReport() {
   const [reportTitle, setReportTitle] = useState('AdversaryGraph Investigation Report');
   const [generatedReport, setGeneratedReport] = useState('');
   const [selectedSavedReportId, setSelectedSavedReportId] = useState('');
-  const [aiSummary, setAiSummary] = useState('');
   const [summaryViewer, setSummaryViewer] = useState<{ title: string; text: string; source?: string } | null>(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [isSummaryGenerating, setIsSummaryGenerating] = useState(false);
@@ -158,6 +158,13 @@ export function InvestigationReport() {
     () => investigations.find(item => item.id === activeInvestigationId) ?? investigations[0] ?? null,
     [activeInvestigationId, investigations],
   );
+  useEffect(() => {
+    setSelectedSavedReportId('');
+    setGeneratedReport('');
+    setSummaryViewer(null);
+    setAiError('');
+    setWorkflowMessage('');
+  }, [activeInvestigation?.id]);
   const investigationIds = useMemo(
     () => Array.from(new Set([...(activeInvestigation?.technique_ids ?? []), ...ids])).sort(),
     [activeInvestigation, ids],
@@ -223,6 +230,16 @@ export function InvestigationReport() {
     () => savedReports.find(report => report.id === selectedSavedReportId) ?? null,
     [savedReports, selectedSavedReportId],
   );
+  const summarySource = selectedSavedReport?.type === 'investigation-report'
+    ? selectedSavedReport
+    : savedReports.find(report => report.type === 'investigation-report'
+      && (!selectedSavedReport?.report_id || report.id === selectedSavedReport.report_id));
+  const summarySnapshot = useQuery({
+    queryKey: ['investigation-summary-snapshot', activeInvestigation?.id, selectedSavedReport?.id, activeInvestigation?.updated_at],
+    queryFn: () => operationsApi.investigationSummarySnapshot(activeInvestigation!.id, selectedSavedReport!.id),
+    enabled: Boolean(activeInvestigation && selectedSavedReport?.type === 'investigation-summary'),
+    staleTime: 0,
+  });
   const activeReport = selectedSavedReport?.content || generatedReport || localReport;
   const activeReportTitle = selectedSavedReport?.label || reportTitle || 'adversarygraph-investigation-report';
   const selectedSectionCount = Object.values(sections).filter(Boolean).length;
@@ -289,44 +306,24 @@ export function InvestigationReport() {
       setWorkflowMessage('run_analysis and manage_intel permissions are required to generate and save an investigation summary.');
       return;
     }
-    if (!activeInvestigation || !investigationIds.length) {
-      setWorkflowMessage('Create/select an investigation and add evidence before AI summary.');
+    if (!activeInvestigation || !summarySource) {
+      setWorkflowMessage('Save a full investigation report first, then create its second-layer summary.');
       return;
     }
     setIsSummaryGenerating(true);
     setAiError('');
     setWorkflowMessage('');
     try {
-      const context = buildReportContext({ domain, rows, matches, relevantIocs, sections, investigation: activeInvestigation, evidenceIndex });
-      const response = await analyzeApi.chat({
+      const summary = await operationsApi.summarizeInvestigation(activeInvestigation.id, {
+        report_id: summarySource.id,
         provider,
-        context,
-        message: [
-          `Summarize the active investigation "${activeInvestigation.name}".`,
-          'Use this structure: current assessment, strongest evidence, IOC findings, TTP layer, actor-comparison leads, caveats, and next actions.',
-          'Use only the provided evidence. Do not claim attribution. Separate direct evidence from enrichment leads.',
-        ].join(' '),
       });
-      const summary = (await readSseText(response)).trim() || 'AI summary returned no content.';
-      setAiSummary(summary);
-      await updateActiveInvestigation.mutateAsync(mergeInvestigation(activeInvestigation, {
-        evidence_nodes: [{
-          id: `ai-summary:${Date.now()}`,
-          type: 'ai-summary',
-          label: 'AI investigation summary',
-          summary,
-          provider,
-        }],
-        timeline: [{
-          at: new Date().toISOString(),
-          event: 'Generated AI investigation summary',
-          source: provider,
-          technique_count: investigationIds.length,
-        }],
-      }));
-      setWorkflowMessage(`AI summary saved to ${activeInvestigation.name}.`);
+      await queryClient.invalidateQueries({ queryKey: ['operations-investigations'] });
+      setSelectedSavedReportId(summary.id);
+      setWorkflowMessage(`Second-layer summary saved separately to ${activeInvestigation.name}. Review its evidence references before sharing.`);
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : String(error));
+      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      setAiError(typeof detail === 'string' ? detail : error instanceof Error ? error.message : String(error));
     } finally {
       setIsSummaryGenerating(false);
     }
@@ -418,8 +415,8 @@ export function InvestigationReport() {
               <FlowStep number={5} title="Keep investigation structured" text="Review logs, reports, TTP layer, IOC list, evidence nodes, and timeline below." />
               <FlowStep number={6} title="Create Navigator-like TTP layer" text="Send all investigation TTPs to the ATT&CK matrix." actionLabel="Send to matrix" onAction={openLayerOnMatrix} disabled={!investigationIds.length} />
               <FlowStep number={7} title="Compare TTPs with threat actors" text="Compare the investigation layer and save overlap leads to this case." actionLabel="Compare + save" onAction={() => void compareAndSave()} disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending} />
-              <FlowStep number={8} title="Summarize investigation with AI" text="Summarize saved evidence, TTPs, IOCs, actor leads, and caveats." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Summarize'} onAction={() => void summarizeInvestigation()} disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || isSummaryGenerating} />
-              <FlowStep number={9} title="Create investigation report" text="Generate a local or AI-assisted report, then export PDF / Markdown / TXT." />
+              <FlowStep number={8} title="Create the full investigation report" text="Complete investigation and enrichment, then generate and save the full report below." />
+              <FlowStep number={9} title="Tell the story — second-layer summary" text="Read the saved report and linked evidence: what happened, identities, TTPs, priority IOCs, and unknowns. Saved as a separate analyst-review draft." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Tell the story'} onAction={() => void summarizeInvestigation()} disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || provider !== 'local'} />
             </div>
             {(workflowMessage || updateActiveInvestigation.error) && (
               <div className="border-t border-gray-800 px-4 py-3 text-xs">
@@ -545,10 +542,10 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={() => void summarizeInvestigation()}
-                        disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || isSummaryGenerating}
+                        disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || provider !== 'local'}
                         className="primary-action disabled:opacity-40"
                       >
-                        {isSummaryGenerating ? 'Summarizing...' : 'Complete AI analysis'}
+                        {isSummaryGenerating ? 'Summarizing...' : 'Tell the story'}
                       </button>
                     </div>
                     <button
@@ -574,6 +571,12 @@ export function InvestigationReport() {
                     </div>
                     <p className="mt-2 text-[10px] leading-4 text-gray-500">
                       AI mode sends the selected Navigator/TTP/actor/IOC parameters to the configured LLM and writes a client-ready report.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-amber-200">
+                      Tell the story reads the saved full report and linked evidence, independently of section checkboxes.
+                      Workspaces are private by default: this second layer requires the configured Local LLM.
+                      It does not change the original report or approve intelligence.
+                      {summarySource ? ` Source report: ${summarySource.label}.` : ' Save a full report first.'}
                     </p>
                     {aiError && <p className="mt-2 rounded border border-red-500/50 bg-red-950/30 p-2 text-xs text-red-200">{aiError}</p>}
                   </div>
@@ -653,27 +656,19 @@ export function InvestigationReport() {
                 {!investigationIds.length && <p className="px-3 pb-3 text-xs text-amber-300">Select TTPs or add analytic results to an investigation before generating a report.</p>}
               </Panel>
 
-              {aiSummary && (
-                <Panel title="AI investigation summary">
-                  <div className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs text-gray-500">Full AI summary is available in a readable investigation view.</p>
-                      <button
-                        type="button"
-                        onClick={() => setSummaryViewer({ title: 'AI investigation summary', text: aiSummary, source: provider })}
-                        className="secondary-action"
-                      >
-                        Open summary
-                      </button>
-                    </div>
-                    <p className="mt-3 line-clamp-5 whitespace-pre-wrap text-xs leading-5 text-gray-300">{aiSummary}</p>
-                  </div>
-                </Panel>
-              )}
             </div>
 
             <Panel title={selectedSavedReport ? `Report preview: ${selectedSavedReport.label}` : 'Report preview'}>
               <div className="max-h-[calc(100vh-220px)] overflow-auto p-6">
+                {selectedSavedReport?.type === 'investigation-summary' && (
+                  <p role="status" className="mb-4 rounded border border-amber-700 p-3 text-xs text-amber-200">
+                    {summarySnapshot.isPending ? 'Checking source snapshot…' : summarySnapshot.isError
+                      ? 'Source freshness could not be verified. Treat this as a historical draft.'
+                      : summarySnapshot.data?.stale
+                        ? 'Evidence has changed or is unavailable. Regenerate this summary before use.'
+                        : 'Source snapshot is current. This is still an analyst-review draft, not a validated verdict.'}
+                  </p>
+                )}
                 {activeReport.trim() ? <ReadableMarkdown text={activeReport} /> : <p className="text-sm text-gray-500">No report content yet.</p>}
               </div>
             </Panel>
@@ -957,7 +952,7 @@ function InvestigationStructure({
   const nodes = investigation?.evidence_nodes ?? [];
   const logNodes = nodes.filter(item => String(item.type ?? '').includes('log'));
   const reportNodes = nodes.filter(item => String(item.type ?? '').includes('report') || String(item.type ?? '').includes('analysis'));
-  const summaryNodes = nodes.filter(item => String(item.type ?? '') === 'ai-summary');
+  const summaryNodes = nodes.filter(item => ['ai-summary', 'investigation-summary'].includes(String(item.type ?? '')));
   const iocNodes = uniqueIocNodes(nodes);
   const behaviorNodes = uniqueSuspiciousBehaviorNodes(nodes);
   const ttpEvidenceNodes = uniqueTtpEvidenceNodes(nodes);
@@ -986,7 +981,7 @@ function InvestigationStructure({
           </div>
           <div className="grid gap-2 lg:grid-cols-2">
             {summaryNodes.slice(-4).map(node => {
-              const text = String(node.summary ?? node.description ?? '');
+              const text = String(node.content ?? node.summary ?? node.description ?? '');
               const title = String(node.label ?? 'AI investigation summary');
               return (
                 <div key={String(node.id ?? title)} className="rounded border border-gray-800 bg-gray-950 p-3">
@@ -1612,7 +1607,7 @@ function inferIocType(value: string) {
 
 function isIocEvidenceNode(node: Record<string, unknown>) {
   const type = String(node.ioc_type ?? node.indicator_type ?? node.type ?? '').toLowerCase();
-  if (['ai-summary', 'investigation-report', 'actor-comparison', 'suspicious-behavior'].includes(type)) return false;
+  if (['ai-summary', 'investigation-summary', 'investigation-report', 'actor-comparison', 'suspicious-behavior'].includes(type)) return false;
   const value = String(node.value ?? node.indicator ?? node.observable ?? '').trim();
   if (!value) return false;
   if (/(^|\b)(ioc|indicator|observable|ip|domain|url|hash|sha1|sha256|md5)(\b|$)/i.test(type)) return true;
@@ -1809,20 +1804,21 @@ function buildSavedReportNode({
 function savedReportNodes(investigation: Investigation | null): SavedReportNode[] {
   if (!investigation) return [];
   return (investigation.evidence_nodes ?? [])
-    .filter(node => String(node.type ?? '') === 'investigation-report')
+    .filter(node => ['investigation-report', 'investigation-summary'].includes(String(node.type ?? '')))
     .map((node, index) => {
       const record = node as Record<string, unknown>;
       const label = String(record.label ?? record.title ?? 'Investigation report');
       const content = String(record.content ?? record.report ?? record.markdown ?? record.body ?? record.summary ?? '');
       return {
         id: String(record.id ?? `investigation-report:${index}`),
-        type: 'investigation-report',
+        type: String(record.type),
         label,
         summary: String(record.summary ?? truncate(content.replace(/\s+/g, ' ').trim(), 500)),
         content,
         provider: String(record.provider ?? record.source ?? ''),
         format: String(record.format ?? 'markdown'),
         created_at: String(record.created_at ?? record.generated_at ?? ''),
+        report_id: typeof record.report_id === 'string' ? record.report_id : undefined,
       };
     })
     .filter(report => Boolean(report.content.trim()))
