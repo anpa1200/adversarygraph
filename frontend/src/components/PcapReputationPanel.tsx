@@ -17,14 +17,19 @@ export function PcapReputationPanel({ result, onUpdated }: { result: LogPcapAnal
   const assessment = result.pcap_assessment;
   const mutation = useMutation({
     mutationFn: () => pcapApi.enrich(result.analysis_id!, selected, providers),
-    onSuccess: data => { onUpdated(data); setConsent(false); },
+    onSuccess: data => { onUpdated(data); setConsent(false); setSelected([]); },
   });
   if (!assessment) return <p className="p-3 text-xs text-gray-400">Reopen this capture from server history to load its evidence assessment.</p>;
-  const items = assessment.items.filter(item => (showAll || item.ioc_candidate || item.roles.includes('exported-object')) && item.value.toLowerCase().includes(query.toLowerCase()));
+  const plan = assessment.enrichment_plan;
+  const rank = new Map(plan?.items.map((item, index) => [item.observable_id, index]) ?? []);
+  const items = assessment.items.filter(item => (showAll || selected.includes(item.observable_id) || item.ioc_candidate || item.roles.includes('exported-object')) && item.value.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => (rank.get(a.observable_id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.observable_id) ?? Number.MAX_SAFE_INTEGER));
   return <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 text-xs text-gray-300">
     <h2 className="text-sm font-semibold text-white">Evidence-backed IOC assessment</h2>
     <p className="my-2">{assessment.summary}</p>
     <p className="my-2 text-gray-400">Recovered files can be checked without first labelling them malicious. Provider reports do not prove execution or capture-time intent.</p>
+    {plan && <div className="my-2"><p>{plan.scope}</p><button className="secondary-action my-2" disabled={mutation.isPending || !plan.next_batch.length}
+      onClick={() => { setSelected(plan.next_batch); setQuery(''); setShowAll(true); setConsent(false); }}>Select next recommended batch ({plan.next_batch.length})</button></div>}
     <label className="block my-2"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Show other observations (not IOCs)</label>
     <input aria-label="Filter PCAP observations" className="w-full rounded border border-gray-700 bg-gray-950 p-2" placeholder="Filter by address, domain or hash" value={query} onChange={e => setQuery(e.target.value)} />
     <div className="my-2 max-h-96 overflow-auto">

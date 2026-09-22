@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field, ValidationError
@@ -43,6 +44,11 @@ class InvestigationStoryBody(BoundedPayloadModel):
     provider: str = Field("local", max_length=40)
     model: str | None = Field(None, max_length=100)
     cloud_processing_acknowledged: bool = False
+
+
+class InvestigationMarkingBody(BoundedPayloadModel):
+    tlp: Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
+    reason: str = Field(min_length=12, max_length=1000)
 
 
 class IntakeBody(BoundedPayloadModel):
@@ -113,7 +119,7 @@ async def investigations(
 
 @router.post("/investigations", status_code=201)
 async def create_investigation(body: InvestigationBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
-    row = Investigation(**body.model_dump())
+    row = Investigation(**body.model_dump(), tlp="TLP:AMBER+STRICT")
     db.add(row); await db.flush()
     await audit(db, user, "operations.create_investigation", "investigation", str(row.id), {"name": row.name})
     await db.commit(); await db.refresh(row)
@@ -129,11 +135,38 @@ async def update_investigation(item_id: str, body: InvestigationBody, db: AsyncS
     return out(row)
 
 
+@router.patch("/investigations/{item_id}/marking", dependencies=[Depends(require_permission("export_data"))])
+async def mark_investigation(item_id: str, body: InvestigationMarkingBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
+    row = await get_or_404(db, Investigation, item_id)
+    previous = row.tlp or "TLP:AMBER+STRICT"
+    row.tlp = body.tlp
+    await audit(db, user, "operations.investigation.marking", "investigation", item_id,
+                {"previous": previous, "tlp": body.tlp, "reason": body.reason,
+                 "scope": "Workspace only; linked source restrictions remain authoritative"})
+    await db.commit(); await db.refresh(row)
+    return out(row)
+
+
 @router.delete("/investigations/{item_id}", status_code=204)
 async def delete_investigation(item_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
     row = await get_or_404(db, Investigation, item_id)
     await audit(db, user, "operations.delete_investigation", "investigation", item_id)
     await db.delete(row); await db.commit()
+
+
+@router.get("/investigations/{item_id}/summary/preflight")
+async def summary_preflight(item_id: str, report_id: str = Query(min_length=1, max_length=200),
+                            db: AsyncSession = Depends(get_session), _: TeamUser = Depends(manage_operations_intel)):
+    from app.services import investigation_story, threat_hunting_ai
+    row = await get_or_404(db, Investigation, item_id)
+    pack = await investigation_story.build_pack(db, row, report_id)
+    providers = threat_hunting_ai.provider_catalog()
+    for provider in providers:
+        if provider["remote"] and pack["effective_tlp"] in {"TLP:AMBER+STRICT", "TLP:RED"}:
+            provider.update(available=False, status="blocked_by_classification", reason="Workspace or linked source prohibits cloud disclosure")
+    return {"effective_tlp": pack["effective_tlp"], "coverage": pack["coverage"],
+            "source_sha256": pack["source_sha256"], "providers": providers,
+            "scope": "No model call, provider lookup, or source reclassification was performed"}
 
 
 @router.post("/investigations/{item_id}/summary", dependencies=[Depends(run_operations_analysis)])
@@ -164,10 +197,20 @@ async def summarize_investigation(
         summary = await investigation_story.generate_story(pack, adapter)
     except threat_hunting_ai.AIProviderTimeoutError:
         raise HTTPException(504, "Summary provider timed out. No summary was saved.")
-    except threat_hunting_ai.AIProviderCallError:
-        raise HTTPException(502, "Summary provider failed. No summary was saved.")
-    except ValueError:
-        raise HTTPException(502, "Summary failed evidence or structure validation. No summary was saved; the original report is unchanged.")
+    except threat_hunting_ai.AIProviderCallError as exc:
+        await audit(db, user, "operations.summary.provider_failed", "investigation", item_id,
+                    {"provider": adapter.provider, "model": adapter.model, "category": exc.category, "http_status": exc.status_code, "rate_details": exc.rate_details,
+                     "prior_attempts": getattr(exc, "prior_attempts", [])})
+        await db.commit()
+        raise HTTPException(503 if exc.category in {"rate_limited", "quota_exhausted"} else 502,
+                            f"Summary provider failed ({exc.category}). Quota details: {exc.rate_details}. No summary was saved.")
+    except ValueError as exc:
+        code = getattr(exc, "code", investigation_story.validation_error_code(exc))
+        await audit(db, user, "operations.summary.validation_failed", "investigation", item_id,
+                    {"provider": adapter.provider, "model": adapter.model, "code": code,
+                     "attempts": getattr(exc, "attempts", [])})
+        await db.commit()
+        raise HTTPException(502, f"Summary failed evidence or structure validation ({code}). No summary was saved; the original report is unchanged.")
     # Do not hold a transaction/row lock across a slow provider call. Re-read
     # after generation, then append under lock without replacing other work.
     current = await db.scalar(select(Investigation).where(Investigation.id == uuid.UUID(item_id))

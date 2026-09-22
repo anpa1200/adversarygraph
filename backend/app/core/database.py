@@ -673,6 +673,7 @@ async def create_tables() -> None:
         )
         await conn.execute(text("ALTER TABLE analysis_sessions ALTER COLUMN tlp SET DEFAULT 'TLP:AMBER+STRICT'"))
         await conn.execute(text("ALTER TABLE analysis_sessions ALTER COLUMN tlp SET NOT NULL"))
+        await conn.execute(text("ALTER TABLE investigations ADD COLUMN IF NOT EXISTS tlp VARCHAR(20) NOT NULL DEFAULT 'TLP:AMBER+STRICT'"))
         await conn.execute(text("ALTER TABLE ioc_indicators ADD COLUMN IF NOT EXISTS technique_ids JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE report_intake ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE report_intake ADD COLUMN IF NOT EXISTS provenance JSONB DEFAULT '{}'::jsonb"))

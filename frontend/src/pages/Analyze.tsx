@@ -563,6 +563,12 @@ function LogPcapResultView({
                     source_ref: sourceRef,
                     analysis_id: analysisId,
                     description: item.description,
+                    ...(deterministic ? {
+                      ioc_candidate: true,
+                      source_analysis_ref: `/api/pcap/analyses/${analysisId}`,
+                      frame_evidence: result.pcap_assessment?.items.find(row => row.value === item.value && row.type === item.type)?.evidence ?? [],
+                      provider_signals: result.pcap_assessment?.items.find(row => row.value === item.value && row.type === item.type)?.signals ?? [],
+                    } : {}),
                     source: 'log-pcap-analysis',
                   })),
                   ...(deterministic?.findings.slice(0, 100).map(item => ({
@@ -599,6 +605,13 @@ function LogPcapResultView({
                     value: item.sha256,
                     sha256: item.sha256,
                     size_bytes: item.size_bytes,
+                    completeness: item.completeness,
+                    extraction_method: item.extraction_method,
+                    transfers: item.transfers,
+                    sha1: item.sha1,
+                    md5: item.md5,
+                    // A file inventory node is not a duplicate threat indicator.
+                    ioc_candidate: false,
                     content_type: item.media_type,
                     frame_evidence: item.evidence,
                     source_ref: sourceRef,
@@ -718,7 +731,7 @@ function LogPcapResultView({
             </div>
           </Panel>}
 
-          {deterministic && <Panel title={`Recovered HTTP objects (${deterministic.artifacts.length})`}>
+          {deterministic && <Panel title={`Recovered files and messages (${deterministic.artifacts.length})`}>
             <p className="p-3 text-xs text-amber-300">Treat downloaded files as untrusted. Never execute them on your workstation. Hashes describe exported bytes; completeness may be unknown.</p>
             {artifactError && <p role="alert" className="p-3 text-xs text-red-400">{artifactError}</p>}
             <div className="max-h-72 overflow-y-auto">
@@ -728,6 +741,7 @@ function LogPcapResultView({
                   <div className="mt-1 break-all font-mono text-[9px] text-gray-500">{artifact.sha256}</div>
                   <div className="mt-1 break-all font-mono text-[9px] text-gray-500">SHA-1: {artifact.sha1 || 'not recorded'} · MD5: {artifact.md5 || 'not recorded'}</div>
                   <p className="mt-1 text-[10px] text-gray-400">Completeness: {artifact.completeness || 'unknown'} · {formatPcapEvidence(artifact.evidence || [])}</p>
+                  <p className="mt-1 text-[10px] text-gray-400">Extraction: {artifact.extraction_method || 'unspecified'}</p>
                   {artifact.transfers?.map((transfer, i) => <p key={i} className="break-all text-[10px] text-gray-500">Request {transfer.request_frame ?? 'unbound'} → response {transfer.response_frame}: {transfer.url || 'URL unbound'}</p>)}
                   <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-600">
                     <span>{artifact.size_bytes.toLocaleString()} bytes</span>
@@ -736,7 +750,7 @@ function LogPcapResultView({
                   </div>
                 </div>
               ))}
-              {!deterministic.artifacts.length && <p className="p-3 text-xs text-gray-500">No HTTP objects were exportable.</p>}
+              {!deterministic.artifacts.length && <p className="p-3 text-xs text-gray-500">No files or messages were recoverable within this profile.</p>}
             </div>
           </Panel>}
 

@@ -849,6 +849,7 @@ export interface PcapAssessmentItem {
   provider_conflict: boolean;
   roles: string[];
   reasons: Array<Record<string, unknown>>;
+  evidence?: PcapEvidenceRef[];
   signals: Array<{ source: string; status: string; verdict: string; basis: string; queried_at?: string; evidence?: Record<string, unknown> }>;
 }
 
@@ -860,6 +861,7 @@ export interface PcapAssessment {
   ioc_candidate_count: number;
   summary: string;
   limitations: string[];
+  enrichment_plan?: { next_batch: string[]; eligible_count: number; scope: string; items: Array<{ observable_id: string; priority: number; reasons: string[]; direct_checked: boolean }> };
 }
 
 export interface PcapEvidenceRef {
@@ -914,6 +916,7 @@ export interface PcapDeterministicResult {
     evidence: PcapEvidenceRef[];
   }>;
   artifacts: Array<{
+    extraction_method?: string;
     artifact_id: string;
     filename: string;
     sha256: string;
@@ -2090,6 +2093,7 @@ export const exportApi = {
 
 export interface Investigation {
   id: string; name: string; description: string; status: string; domain: string;
+  tlp?: string;
   actor_ids: string[]; technique_ids: string[]; report_ids: string[];
   evidence_nodes: Array<Record<string, unknown>>; evidence_edges: Array<Record<string, unknown>>;
   timeline: Array<Record<string, unknown>>; created_at: string; updated_at: string;
@@ -2123,9 +2127,10 @@ const operations = '/operations';
 export const operationsApi = {
   investigations: (): Promise<Investigation[]> => http.get(`${operations}/investigations`).then(r => r.data),
   createInvestigation: (body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.post(`${operations}/investigations`, body).then(r => r.data),
-  updateInvestigation: (id: string, body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.put(`${operations}/investigations/${id}`, body).then(r => r.data),
+  updateInvestigation: (id: string, body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>): Promise<Investigation> => http.put(`${operations}/investigations/${id}`, Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'tlp'))).then(r => r.data),
   removeInvestigation: (id: string): Promise<void> => http.delete(`${operations}/investigations/${id}`).then(() => {}),
-  summarizeInvestigation: (id: string, body: { report_id: string; provider: string }): Promise<{ id: string; content: string; model: string; status: string }> =>
+  markInvestigation: (id: string, tlp: string, reason: string): Promise<Investigation> => http.patch(`${operations}/investigations/${id}/marking`, { tlp, reason }).then(r => r.data),
+  summarizeInvestigation: (id: string, body: { report_id: string; provider: string; cloud_processing_acknowledged?: boolean }): Promise<{ id: string; content: string; model: string; status: string }> =>
     http.post(`${operations}/investigations/${id}/summary`, body, { timeout: 210_000 }).then(r => r.data),
   investigationSummarySnapshot: (id: string, summaryId: string): Promise<{ stale: boolean; status: string }> =>
     http.get(`${operations}/investigations/${id}/summaries/${encodeURIComponent(summaryId)}`).then(r => r.data),

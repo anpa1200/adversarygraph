@@ -9,12 +9,13 @@ import hashlib
 import ipaddress
 import re
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from app.services.pcap_context import observable_key
 from app.services.pcap_analyzer import canonical_json
 
-POLICY_VERSION = "pcap-assessment-v1"
+POLICY_VERSION = "pcap-assessment-v2"
 NETWORK_TYPES = {"ipv4", "ipv6", "domain", "url"}
 HASH_TYPES = {"md5", "sha1", "sha256"}
 # These rules support investigation, not an unconditional malicious verdict.
@@ -23,8 +24,7 @@ TRIAGE_RULES = {
     "http-on-tls-port", "remote-access-user-agent", "powershell-http-client",
     "cleartext-tokenized-api", "browser-fingerprint-upload", "high-volume-http-posts",
     "distributed-periodic-http-posts", "large-http-post", "repeated-http-posts",
-    "periodic-http-callbacks", "multi-host-tls-cadence", "cleartext-tool-self-identification",
-    "unclassified-external-tcp",
+    "periodic-http-callbacks", "cleartext-tool-self-identification", "sensitive-data-in-cleartext",
 }
 
 
@@ -51,6 +51,16 @@ def disclosure_allowed(kind: str, value: str) -> bool:
 
 def _integer(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def enrichment_state(signals: list[dict]) -> str:
+    applicable = [s for s in signals if s.get("status") not in {"not-applicable", "skipped"}]
+    usable = sum(s.get("status") in {"ok", "not_found"} for s in applicable)
+    if not signals:
+        return "not-requested"
+    if usable and usable == len(applicable):
+        return "checked"
+    return "partial" if usable else "unavailable"
 
 
 def provider_signal(kind: str, value: str, result: dict) -> dict:
@@ -84,6 +94,11 @@ def provider_signal(kind: str, value: str, result: dict) -> dict:
         )
         if not stats:
             signal.update(verdict="unknown", basis="Provider returned no analysis statistics")
+        if kind in HASH_TYPES:
+            # These are labels on this exact file, not names of related hosts
+            # or a transitive malware-family assertion about the whole capture.
+            signal["evidence"]["threat_names"] = [v[:160] for v in raw.get("threat_names", []) if isinstance(v, str)][:20]
+            signal["evidence"]["known_filenames"] = [v[:160] for v in raw.get("names", []) if isinstance(v, str)][:10]
     elif source in {"malwarebazaar", "threatfox"}:
         rows = raw.get("data") or []
         matches = []
@@ -120,7 +135,7 @@ def assess(result: dict, context: dict | None = None, enrichment: dict | None = 
     local = defaultdict(list)
     for match in context.get("matches", []):
         local[observable_key(match.get("type", ""), match.get("value", ""))].append(match)
-    providers = {observable_key(item["type"], item["value"]): item for item in enrichment.get("items", [])}
+    providers = {observable_key(item["type"], item["value"]): item for item in enrichment.get("items", []) if item.get("type") and item.get("value")}
     artifacts = {a["sha256"]: a for a in result.get("artifacts", [])}
     related = defaultdict(list)
     # Resolve the remote peer from request direction, not all participants in a
@@ -135,7 +150,11 @@ def assess(result: dict, context: dict | None = None, enrichment: dict | None = 
         for evidence in finding.get("evidence", []):
             for event in by_frame.get(evidence.get("frame_number"), []):
                 fields = event.get("fields", {})
-                targets = [("ipv4", event.get("dst_ip", ""))]
+                targets = []
+                for address in (event.get("src_ip", ""), event.get("dst_ip", "")):
+                    ip_type = "ipv6" if ":" in address else "ipv4"
+                    if disclosure_allowed(ip_type, address):
+                        targets.append((ip_type, address))
                 host = str(fields.get("http.host", ""))
                 # IPv6 literals are handled as addresses, not domain labels.
                 if host and not host.startswith("["):
@@ -165,27 +184,123 @@ def assess(result: dict, context: dict | None = None, enrichment: dict | None = 
         conflicting = malicious and any(s.get("verdict") == "provider-reported-benign" for s in signals)
         classification = "provider-reported-malicious" if malicious else "suspicious" if suspicious or any(r["kind"] in {"behavior", "static-review"} for r in reasons) else "intelligence-match" if reasons else "observed"
         candidate = classification != "observed" and (kind not in {"ipv4", "ipv6"} or disclosure_allowed(kind, value))
+        # A single engine's warning on a shared service must remain visible,
+        # but is not enough to put that service into a capture's IOC shortlist.
+        # Three is an explicit triage threshold, not independent corroboration
+        # or proof; behavior/local evidence can separately justify review.
+        weak_network_reputation_only = kind in NETWORK_TYPES and not reasons and not any(
+            (s.get("source") == "virustotal" and _integer(s.get("evidence", {}).get("last_analysis_stats", {}).get("malicious")) >= 3)
+            or (s.get("source") != "virustotal" and s.get("verdict") == "provider-reported-malicious")
+            for s in signals
+        )
+        if weak_network_reputation_only:
+            candidate = False
         rows.append({
             "observable_id": observable["observable_id"], "type": kind, "value": value,
             "classification": classification, "ioc_candidate": candidate, "reasons": reasons,
             "signals": signals, "provider_conflict": conflicting,
+            "ioc_selection_note": "Weak reputation only: retained as provider context, not a declared IOC candidate" if weak_network_reputation_only and classification != "observed" else "Candidate requires analyst validation" if candidate else "Observation only",
             "evidence": observable.get("evidence", [])[:20], "roles": observable.get("roles", []),
             "enrichment_eligible": disclosure_allowed(kind, value),
-            "enrichment_status": "checked" if signals else "not-requested",
+            "enrichment_status": enrichment_state(signals),
             "queried_at": entry.get("queried_at"),
         })
     counts = dict(Counter(r["classification"] for r in rows))
     output = {
         "policy_version": POLICY_VERSION, "source_semantic_sha256": result.get("semantic_sha256"),
         "items": rows, "counts": counts, "ioc_candidate_count": sum(r["ioc_candidate"] for r in rows),
-        "summary": f"{len(rows)} typed observations; {sum(r['ioc_candidate'] for r in rows)} evidence-backed IOC candidates for review, including {counts.get('provider-reported-malicious', 0)} with direct malicious provider reports. No automatic confirmation or attribution.",
+        "summary": f"{len(rows)} typed observations; {sum(r['ioc_candidate'] for r in rows)} evidence-backed IOC candidates for review, including {sum(r['ioc_candidate'] and r['classification'] == 'provider-reported-malicious' for r in rows)} with direct malicious provider reports. No automatic confirmation or attribution.",
         "limitations": ["No detections, no record, missing credentials and provider errors do not mean benign.",
                        "Current reputation may postdate the capture. Shared hosting, DNS resolution and graph overlap do not transfer maliciousness.",
                        "A recovered file is not proof of execution; hashes identify exported bytes, including partial objects.",
                        "Public-looking enterprise domains may still be sensitive: review selected targets before external disclosure."],
     }
+    output["enrichment_plan"] = enrichment_plan(result, rows)
     output["assessment_sha256"] = hashlib.sha256(canonical_json(output).encode()).hexdigest()
     return output
+
+
+def enrichment_plan(result: dict, rows: list[dict]) -> dict:
+    """Rank bounded next queries, independently of IOC declaration.
+
+    TLS names, DNS and opaque conversations must remain discoverable even when
+    they do not establish maliciousness. No popularity allowlist or test IOCs.
+    """
+    priority: dict[tuple, tuple[int, set[str]]] = {}
+
+    def offer(kind, value, score, reason):
+        if not value:
+            return
+        key = observable_key(kind, value)
+        old_score, reasons = priority.get(key, (0, set()))
+        priority[key] = (max(score, old_score), reasons | {reason})
+
+    for artifact in result.get("artifacts", []):
+        kind = artifact.get("static_features", {}).get("content_kind")
+        score = 95 if kind in {"pe", "ole-document", "script-like-text"} else 70 if kind == "zip" else 25
+        offer("sha256", artifact.get("sha256"), score, "recovered-" + str(kind or "unclassified") + "-bytes")
+        for transfer in artifact.get("transfers", []):
+            if score >= 70:
+                value = transfer.get("server_ip", "")
+                offer("ipv6" if ":" in value else "ipv4", value, 80, "served-inspectable-file-not-transitive-verdict")
+    for kind in ("http_request", "tls_client_hello", "unclassified_tcp", "smtp"):
+        for event in result.get("events", {}).get(kind, []):
+            fields = event.get("fields", {})
+            score = 60 if kind == "http_request" and fields.get("http.request.method") == "POST" else 45
+            # Either direction may contain a public peer, including a victim's
+            # HTTP server responding to an external client.
+            for endpoint in (event.get("src_ip", ""), event.get("dst_ip", "")):
+                offer("ipv6" if ":" in endpoint else "ipv4", endpoint, score, kind + "-peer")
+            host = str(fields.get("http.host", ""))
+            if host and not host.startswith("["):
+                offer("domain", host.split(":", 1)[0], score + 1, "observed-http-host")
+            for name in str(fields.get("tls.handshake.extensions_server_name", "")).split(","):
+                offer("domain", name.strip(), 46, "observed-tls-sni-content-unknown")
+    for event in result.get("events", {}).get("dns", []):
+        fields = event.get("fields", {})
+        addresses = str(fields.get("dns.a", "")).split(",") + str(fields.get("dns.aaaa", "")).split(",")
+        connected = [priority.get(observable_key("ipv6" if ":" in v else "ipv4", v), (0, set()))[0] for v in addresses]
+        for name in str(fields.get("dns.qry.name", "")).split(","):
+            offer("domain", name.strip(), max([20, *connected]), "dns-name-not-resolver-verdict")
+    items = []
+    for row in rows:
+        if not row["enrichment_eligible"]:
+            continue
+        score, reasons = priority.get(observable_key(row["type"], row["value"]), (10, {"observed-in-capture"}))
+        if row["ioc_candidate"]:
+            score = max(score, 100)
+            reasons = reasons | {"existing-evidence-candidate"}
+        # A completed ThreatFox query cannot hide a failed VirusTotal query.
+        # Never retry an active cooldown or repeatedly queue missing credentials.
+        direct = [s for s in row["signals"] if s.get("source") in {"virustotal", "malwarebazaar", "threatfox"}
+                  and s.get("status") not in {"not-applicable", "skipped"}]
+        checked = [s["source"] for s in direct if s.get("status") in {"ok", "not_found"}]
+        pending = [s for s in direct if s.get("status") not in {"ok", "not_found"}]
+        retryable = []
+        for signal in pending:
+            if signal.get("status") not in {"error", "deferred-rate-limit", "not-attempted-budget"}:
+                continue
+            if signal.get("error_category") in {"authentication", "forbidden", "not_configured", "configuration"}:
+                continue
+            if signal.get("retry_at"):
+                try:
+                    retry_at = datetime.fromisoformat(signal["retry_at"].replace("Z", "+00:00"))
+                    if retry_at.tzinfo is None or retry_at > datetime.now(timezone.utc):
+                        continue
+                except (ValueError, TypeError, AttributeError):
+                    continue
+            retryable.append(signal["source"])
+        direct_checked = bool(checked) and not pending
+        queue_ready = not direct or bool(retryable)
+        items.append({"observable_id": row["observable_id"], "type": row["type"], "value": row["value"],
+                      "priority": score, "reasons": sorted(reasons), "direct_checked": direct_checked,
+                      "checked_providers": sorted(checked), "pending_providers": sorted(s["source"] for s in pending),
+                      "retryable_providers": sorted(retryable), "queue_ready": queue_ready,
+                      "ioc_candidate": row["ioc_candidate"]})
+    items.sort(key=lambda r: (not r["queue_ready"], bool(r["retryable_providers"]), -r["priority"], r["type"], r["value"]))
+    return {"policy": "evidence-priority-v2", "items": items, "eligible_count": len(items),
+            "next_batch": [r["observable_id"] for r in items if r["queue_ready"]][:10],
+            "scope": "Query recommendations, not IOC verdicts. Partial provider coverage stays pending; cooldowns/credential failures are not completed checks. Checked means completed attempted direct providers, not all available providers. Review before external disclosure."}
 
 
 def review_candidates(assessment: dict) -> list[dict]:

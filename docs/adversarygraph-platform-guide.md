@@ -1,6 +1,6 @@
 # AdversaryGraph Platform Guide
 
-> The checked-out source is the v8.0.0-beta.1 manual-testing pre-release;
+> The checked-out source is the v8.1.0-beta.1 manual-testing pre-release;
 > v7.0.0 remains the latest stable release. Immutable beta artifacts exist only
 > after the matching protected tag workflow succeeds. Verify the exact tag or
 > commit and complete the v8 readiness matrix before using this source as

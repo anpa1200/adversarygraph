@@ -106,6 +106,12 @@ class AIProviderTimeoutError(TimeoutError):
 class AIProviderCallError(RuntimeError):
     """The provider failed without exposing its potentially sensitive detail."""
 
+    def __init__(self, category: str = "provider_error", status_code: int | None = None, rate_details: dict | None = None):
+        super().__init__(category)
+        self.category = category
+        self.status_code = status_code
+        self.rate_details = rate_details or {}
+
 
 @dataclass(frozen=True)
 class LocalProviderReadiness:
@@ -520,9 +526,9 @@ def create_adapter(
         raise HTTPException(422, str(exc)) from exc
 
 
-async def complete(adapter, system: str, user: str) -> str:
+async def complete(adapter, system: str, user: str, *, timeout_seconds: float | None = None) -> str:
     """Run one bounded provider call and sanitize all failure surfaces."""
-    timeout = min(max(float(settings.threat_hunting_ai_timeout_seconds), 5.0), 180.0)
+    timeout = min(max(float(settings.threat_hunting_ai_timeout_seconds if timeout_seconds is None else timeout_seconds), 5.0), 180.0)
     if getattr(adapter, "provider", "") == "local":
         timeout = 180.0
     try:
@@ -530,7 +536,23 @@ async def complete(adapter, system: str, user: str) -> str:
     except TimeoutError as exc:
         raise AIProviderTimeoutError from exc
     except Exception as exc:
-        raise AIProviderCallError from exc
+        status = getattr(exc, "status_code", None)
+        category = "rate_limited" if status == 429 else "authentication" if status in {401, 403} else "model_or_endpoint_unavailable" if status == 404 else "request_rejected" if status == 400 else "provider_error"
+        details = {}
+        if status == 429:
+            body = getattr(exc, "body", {})
+            if isinstance(body, dict):
+                error = body.get("error", body)
+                if isinstance(error, dict):
+                    if error.get("code") == "insufficient_quota":
+                        category = "quota_exhausted"
+                    # Export numeric quota metadata only, never raw messages,
+                    # organization identifiers, URLs or credential headers.
+                    for name in ("limit", "requested", "used"):
+                        match = re.search(r"\b" + name + r"\s*:?\s*(\d+)", str(error.get("message", "")), re.I)
+                        if match:
+                            details[name] = int(match[1])
+        raise AIProviderCallError(category, status, details) from exc
 
 
 def assist_prompt(

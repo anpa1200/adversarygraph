@@ -74,6 +74,7 @@ def test_payloads_survive_callback_metadata_flood(tmp_path, monkeypatch):
     for n in range(6):
         (directory / f'zzz-payload-{n}.ps1').write_text(f'Invoke-WebRequest https://example.test/{n}')
     monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
+    monkeypatch.setattr(analyzer, '_run_event_fields', lambda *a: {})
     inventory = {}
     artifacts, warnings = analyzer._export_http_objects(tmp_path, Path('unused'), 'a'*64, inventory=inventory)
     assert len(artifacts) == 7
@@ -170,6 +171,7 @@ def test_object_binding_requires_exact_body_hash_and_valid_request_link():
 
 
 def test_all_hashes_and_recovery_reject_symlinks(tmp_path, monkeypatch):
+    monkeypatch.setattr(analyzer, '_run_event_fields', lambda *a: {})
     directory = tmp_path / 'http-objects'
     directory.mkdir()
     content = b'not executable, just a fixture'

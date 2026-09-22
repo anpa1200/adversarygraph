@@ -6,24 +6,31 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v8.0.0-beta.1 |
-| Release date | 2026-08-25 |
-| Theme | Governed report promotion and durable workflow authority |
-| Status | Manual-testing pre-release; automated and deployment-specific acceptance evidence remains required |
+| Version | v8.1.0-beta.1 |
+| Source candidate date | 2026-09-22 |
+| Theme | Evidence-bound PCAP investigations and provider-aware enrichment |
+| Status | Source candidate; publication, remaining story validation and deployment-specific acceptance are not implied |
 
 Immutable beta artifacts and their digest manifest exist only after the
-protected `v8.0.0-beta.1` tag workflow succeeds. Historical screenshots and v7
+protected `v8.1.0-beta.1` tag workflow succeeds. Historical screenshots and v7
 test records are not beta runtime evidence. The beta must not be represented as
 stable or manually accepted while the v8 readiness matrices remain pending.
 
 ### v8 Beta Capability Evaluation
 
-v8.0.0-beta.1 adds the five-gate Report Review Gate, source-bound claims,
+v8.1.0-beta.1 adds deterministic PCAP investigation, inert bounded file recovery,
+evidence-qualified IOC triage, provider caching/cooldowns, partial-check retry
+bookkeeping, native reports and source-bound story drafts. The known-case
+regression improves file recovery and report preservation but leaves network
+shortlist recall and live narrative validation incomplete. See the
+[current beta notes](release-notes/v8.1.0-beta.1.md).
+
+The v8.0.0-beta.1 foundation added the five-gate Report Review Gate, source-bound claims,
 two-person approval, promotion/revocation authority, durable research projects,
 transactional workflow/outbox processing, Alembic revisions 0001-0004, blocking
 Compose/Helm migration gates, React Router 7, and the new Operation Desert Hydra
 AdversaryGraph workflow draft. See the
-[beta release notes](release-notes/v8.0.0-beta.1.md) and
+[v8.0 beta release notes](release-notes/v8.0.0-beta.1.md) and
 [v8 readiness matrix](release-readiness-v8.md).
 
 ## Latest Stable Release
@@ -41,6 +48,7 @@ readiness record are not rewritten to describe v8 behavior.
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v8.1.0-beta.1 | Evidence-bound PCAP Investigations | Source candidate: deterministic decoding, bounded payload recovery, typed IOC triage, provider-aware enrichment, native reports/PDFs and governed source-bound stories; known recall and live narrative validation gaps retained |
 | v8.0.0-beta.1 | Governed Report Promotion and Durable Workflow Authority | Manual-testing pre-release: five-gate Review Gate, two-person promotion, downstream evidence authority, research workflow runtime, transactional outbox, Alembic 0001-0004, Compose/Helm migration gates, React Router 7, and Desert Hydra workflow draft |
 | v7.0.0 | Isolated Assessment, Governed Intelligence, and Data Quality | Private scanner MCP boundary, verified assessment traces, production RAG/MCP readiness, governed local AI adapter, stronger intelligence relationships, closed taxonomy, self-maintaining catalogs, self-test data inventory, and eight-image release publication |
 | v6.5.0 | Governed Intelligence, Hunting, Exposure Assessment, and SOC Operations | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization across 31 workspaces, complete API contracts, and post-v6 platform hardening |
@@ -67,7 +75,7 @@ readiness record are not rewritten to describe v8 behavior.
 For complete per-version changelogs see [CHANGELOG.md](../CHANGELOG.md).
 For a consolidated account of every v5 release, see the [v5 overview](v5-overview.md).
 For the current pre-release narrative, see
-[v8.0.0-beta.1 release notes](release-notes/v8.0.0-beta.1.md). For the latest
+[v8.1.0-beta.1 release notes](release-notes/v8.1.0-beta.1.md). For the latest
 stable narrative, see [v7.0.0 release notes](release-notes/v7.0.0.md).
 
 ## Feature Gate Legend

@@ -2,7 +2,7 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
+The checked-out source is the `v8.1.0-beta.1` manual-testing pre-release;
 `v7.0.0` remains the latest stable release. Use only public, synthetic, or
 otherwise approved data during beta evaluation, and record unresolved tests as
 pending rather than treating successful startup as stable acceptance.
@@ -43,7 +43,7 @@ the exact pre-release for reproducible testing:
 
 ```bash
 git fetch --tags origin
-git checkout v8.0.0-beta.1
+git checkout v8.1.0-beta.1
 ```
 
 Do not infer that the tag exists from this source document; verify it resolves
@@ -348,7 +348,7 @@ curl http://localhost:3000/api/rag/status
 Expected health response:
 
 ```json
-{"status":"ok","version":"8.0.0-beta.1"}
+{"status":"ok","version":"8.1.0-beta.1"}
 ```
 
 The readiness response is `200` with `status: "ready"` when the database can

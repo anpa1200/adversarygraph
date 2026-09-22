@@ -1,7 +1,7 @@
 # Production Readiness
 
 AdversaryGraph is a production-oriented self-hosted analyst platform for
-controlled deployments. The checked-out source is the `v8.0.0-beta.1`
+controlled deployments. The checked-out source is the `v8.1.0-beta.1`
 manual-testing pre-release described in [the changelog](../CHANGELOG.md), while
 `v7.0.0` remains the latest stable release. This document tracks the checked-out
 repository, so every production review must record the exact tag or commit and
@@ -9,7 +9,7 @@ must not transfer evidence from a different revision.
 
 ## Current Status
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
+The checked-out source is the `v8.1.0-beta.1` manual-testing pre-release;
 `v7.0.0` remains the latest stable release. The beta source is suitable for:
 
 - local CTI labs
@@ -21,7 +21,7 @@ The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
   exact deployed artifacts
 
 Historical release evidence does not validate this source. The beta remains a
-pre-release until the protected `v8.0.0-beta.1` tag workflow publishes and
+pre-release until the protected `v8.1.0-beta.1` tag workflow publishes and
 verifies the nine-image family and attached `adversarygraph-images.env`.
 Automated publication does not complete the manual matrix in
 [`release-readiness-v8.md`](release-readiness-v8.md) or authorize a stable

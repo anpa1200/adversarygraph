@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## v8.1.0-beta.1 - 2026-09-22
+
+Source candidate only. This minor-version increment preserves beta status;
+it does not authorize stable promotion, publish images, or imply complete
+manual acceptance. v7.0.0 remains the latest stable release.
 
 - Added isolated deterministic PCAP/PCAPNG decoding with a versioned TShark
   manifest, canonical semantic hashes, durable content-addressed analyses,
@@ -10,6 +14,23 @@
   candidates, and explicitly non-attributive actor-overlap leads with IOC
   Investigation, Investigation evidence, Navigator, linked reports, and the
   internal-IR Review Gate.
+- Added inert base64, bounded TCP/HTTP and IMF recovery, exact exported-byte
+  hashing, request/response evidence and combined-pass protocol decoding.
+- Separated victim identities, observed infrastructure, file artifacts and
+  review-qualified IOC candidates; removed TLS cadence as an automatic verdict.
+- Added exact-target provider caching, shared rate-limit cooldowns, optional
+  VirusTotal failure isolation and pending per-provider enrichment checks.
+- Preserved hash candidates and packet evidence in zero-TTP investigation
+  reports, and corrected native PDF byte offsets for text extraction.
+- Added audited investigation markings, inherited source restrictions,
+  cloud-disclosure preflight, strict story schemas, server-bound evidence
+  passages, bounded retries and safe failure/usage records.
+- Retained the known-case regression limits: 12/12 comparable file hashes
+  recovered, 10/10 full reports, but 20/54 reference network indicators
+  shortlisted and 0/10 native stories saved in the recorded run. The final
+  passage-binding revision has local tests; its live cloud retest is pending.
+
+See [release notes](docs/release-notes/v8.1.0-beta.1.md) for validation scope.
 
 ## v8.0.0-beta.1 - 2026-08-25
 

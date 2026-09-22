@@ -282,6 +282,10 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
         features = artifact.get('static_features') or {}
         if features.get('content_kind') != 'unclassified' and features:
             lines.append(f"  Static content: `{canonical_json(features)}`. Not execution proof.")
+        if artifact.get('extraction_method'):
+            lines.append(f"  Extraction: {artifact['extraction_method']}; parent SHA-256: {artifact.get('parent_sha256') or 'none'}.")
+        if artifact.get('body_features'):
+            lines.append(f"  Redacted content structure: `{canonical_json(artifact['body_features'])}`; do not infer the destination without an exact transfer binding.")
     if not observables and not artifacts:
         lines.append("- No candidates recovered.")
     lines.extend(["", "## Actor similarity leads", ""])

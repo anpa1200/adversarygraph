@@ -1,9 +1,9 @@
 # AdversaryGraph Helm Chart
 
-This chart accompanies the `v8.0.0-beta.1` manual-testing pre-release for a
+This chart accompanies the `v8.1.0-beta.1` manual-testing pre-release for a
 controlled, single-workspace Kubernetes installation. v7.0.0 remains the latest
 stable release. Beta evaluation with prebuilt images requires the digests and
-manifest produced by the successful `v8.0.0-beta.1` tag workflow; source
+manifest produced by the successful `v8.1.0-beta.1` tag workflow; source
 metadata or human-readable tags alone are not release evidence. It is not a
 managed-SaaS or multi-tenant isolation boundary, and successful rendering does
 not complete the v8 manual readiness matrix.

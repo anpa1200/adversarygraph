@@ -4,7 +4,7 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares the `8.0.0-beta.1` manual-testing pre-release;
+The checked-out source declares the `8.1.0-beta.1` manual-testing pre-release;
 `7.0.0` remains the latest stable release. Immutable beta artifacts and their
 digest manifest exist only after the matching protected tag workflow succeeds.
 Verify the exact tag or commit, corresponding release evidence, and pending v8

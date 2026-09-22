@@ -2,13 +2,25 @@
 
 Latest stable release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
 
-Current source candidate: **v8.0.0-beta.1** — Reviewed intelligence and durable workflow authority (2026-08-25)
+Current source candidate: **v8.1.0-beta.1** — Evidence-bound PCAP investigations and enrichment (2026-09-22)
 
 For the full history through the current beta see [CHANGELOG.md](CHANGELOG.md).
 
 ## Unreleased
 
-- [ ] Record manual beta findings and resolve accepted blockers before v8.0.0.
+- [ ] Record manual beta findings and resolve accepted blockers before stable promotion.
+- [ ] Improve incident-role network indicator recall without promoting ordinary traffic.
+- [ ] Complete authorized live validation of the revised native story flow and large-report quota handling.
+
+## v8.1 beta — Evidence-bound PCAP Investigations
+
+- [x] Preserve deterministic packet, identity, artifact and transfer evidence through native reports and PDF exports
+- [x] Recover inert embedded payloads and bounded contiguous HTTP objects with hashes and explicit completeness
+- [x] Add evidence-ranked IOC review, dated provider caching, shared cooldowns and partial-provider retry bookkeeping
+- [x] Add governed second-layer summaries with structured output and server-bound evidence passages
+- [x] Record ten known-case regressions with file-recovery gains and unresolved IOC-recall/story gaps
+
+See [v8.1 beta release notes](docs/release-notes/v8.1.0-beta.1.md).
 
 ## v8.0 beta — Reviewed Intelligence and Durable Workflow Authority
 

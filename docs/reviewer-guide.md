@@ -10,8 +10,8 @@ This guide is for security researchers, package curators, and tool evaluators wh
 | Full feature docs | [docs/adversarygraph-platform-guide.md](adversarygraph-platform-guide.md) |
 | Module-by-module examples and case studies | [docs/module-reference.md](module-reference.md) |
 | Version history | [docs/version-matrix.md](version-matrix.md) |
-| v8 beta release notes | [docs/release-notes/v8.0.0-beta.1.md](release-notes/v8.0.0-beta.1.md) |
-| v8 beta release summary | [docs/release-summary-v8.0.0-beta.1.md](release-summary-v8.0.0-beta.1.md) |
+| v8 beta release notes | [docs/release-notes/v8.1.0-beta.1.md](release-notes/v8.1.0-beta.1.md) |
+| v8 beta release summary | [docs/release-summary-v8.1.0-beta.1.md](release-summary-v8.1.0-beta.1.md) |
 | v8 beta manual readiness | [docs/release-readiness-v8.md](release-readiness-v8.md) |
 | Report Review Gate | [docs/report-review-gate.md](report-review-gate.md) |
 | Durable Research Workflows | [docs/research-workflows.md](research-workflows.md) |
@@ -37,7 +37,7 @@ This guide is for security researchers, package curators, and tool evaluators wh
 
 ## What this tool is
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release.
+The checked-out source is the `v8.1.0-beta.1` manual-testing pre-release.
 v7.0.0 remains the latest stable release; do not describe the beta as stable or
 fully manually validated while its readiness matrix remains pending.
 

@@ -22,7 +22,7 @@ test('second-layer summary uses a saved report, survives reload, and exports sep
   await page.goto('/report');
   await expect(page.getByRole('button', { name: 'Tell the story', exact: true }).first()).toBeEnabled();
   await page.getByRole('button', { name: 'Tell the story', exact: true }).first().click();
-  await expect.poll(() => request).toEqual({ report_id: report.id, provider: 'local' });
+  await expect.poll(() => request).toEqual({ report_id: report.id, provider: 'local', cloud_processing_acknowledged: false });
   await expect(page.getByText('Second-layer summary saved separately', { exact: false })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'What happened', exact: true })).toBeVisible();
   expect(workspace.evidence_nodes[0].content).toBe(report.content);

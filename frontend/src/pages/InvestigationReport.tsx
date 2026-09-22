@@ -147,6 +147,8 @@ export function InvestigationReport() {
   const [summaryViewer, setSummaryViewer] = useState<{ title: string; text: string; source?: string } | null>(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [isSummaryGenerating, setIsSummaryGenerating] = useState(false);
+  const [cloudAcknowledged, setCloudAcknowledged] = useState(false);
+  const [markingReason, setMarkingReason] = useState('');
   const [aiError, setAiError] = useState('');
   const [workflowMessage, setWorkflowMessage] = useState('');
   const { data: investigations = [] } = useQuery({
@@ -158,10 +160,13 @@ export function InvestigationReport() {
     () => investigations.find(item => item.id === activeInvestigationId) ?? investigations[0] ?? null,
     [activeInvestigationId, investigations],
   );
+  const cloudSummaryAllowed = Boolean(activeInvestigation?.tlp && !['TLP:AMBER+STRICT', 'TLP:RED'].includes(activeInvestigation.tlp) && cloudAcknowledged);
   useEffect(() => {
     setSelectedSavedReportId('');
     setGeneratedReport('');
     setSummaryViewer(null);
+    setCloudAcknowledged(false);
+    setMarkingReason('');
     setAiError('');
     setWorkflowMessage('');
   }, [activeInvestigation?.id]);
@@ -243,6 +248,7 @@ export function InvestigationReport() {
   const activeReport = selectedSavedReport?.content || generatedReport || localReport;
   const activeReportTitle = selectedSavedReport?.label || reportTitle || 'adversarygraph-investigation-report';
   const selectedSectionCount = Object.values(sections).filter(Boolean).length;
+  const hasReportEvidence = investigationIds.length > 0 || Boolean(activeInvestigation?.evidence_nodes.length);
 
   const updateActiveInvestigation = useMutation({
     mutationFn: (body: Omit<Investigation, 'id' | 'created_at' | 'updated_at'>) => {
@@ -317,6 +323,7 @@ export function InvestigationReport() {
       const summary = await operationsApi.summarizeInvestigation(activeInvestigation.id, {
         report_id: summarySource.id,
         provider,
+        cloud_processing_acknowledged: cloudAcknowledged,
       });
       await queryClient.invalidateQueries({ queryKey: ['operations-investigations'] });
       setSelectedSavedReportId(summary.id);
@@ -359,7 +366,7 @@ export function InvestigationReport() {
   };
 
   const generateWithAi = async () => {
-    if (!canRunAnalysis || !investigationIds.length || !selectedSectionCount) return;
+    if (!canRunAnalysis || !hasReportEvidence || !selectedSectionCount) return;
     setIsAiGenerating(true);
     setAiError('');
     setGeneratedReport('');
@@ -416,7 +423,7 @@ export function InvestigationReport() {
               <FlowStep number={6} title="Create Navigator-like TTP layer" text="Send all investigation TTPs to the ATT&CK matrix." actionLabel="Send to matrix" onAction={openLayerOnMatrix} disabled={!investigationIds.length} />
               <FlowStep number={7} title="Compare TTPs with threat actors" text="Compare the investigation layer and save overlap leads to this case." actionLabel="Compare + save" onAction={() => void compareAndSave()} disabled={!canManageIntel || !activeInvestigation || !investigationIds.length || updateActiveInvestigation.isPending} />
               <FlowStep number={8} title="Create the full investigation report" text="Complete investigation and enrichment, then generate and save the full report below." />
-              <FlowStep number={9} title="Tell the story — second-layer summary" text="Read the saved report and linked evidence: what happened, identities, TTPs, priority IOCs, and unknowns. Saved as a separate analyst-review draft." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Tell the story'} onAction={() => void summarizeInvestigation()} disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || provider !== 'local'} />
+              <FlowStep number={9} title="Tell the story — second-layer summary" text="Read the saved report and linked evidence: what happened, identities, TTPs, priority IOCs, and unknowns. Saved as a separate analyst-review draft." actionLabel={isSummaryGenerating ? 'Summarizing...' : 'Tell the story'} onAction={() => void summarizeInvestigation()} disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || (provider !== 'local' && !cloudSummaryAllowed)} />
             </div>
             {(workflowMessage || updateActiveInvestigation.error) && (
               <div className="border-t border-gray-800 px-4 py-3 text-xs">
@@ -542,7 +549,7 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={() => void summarizeInvestigation()}
-                        disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || provider !== 'local'}
+                        disabled={!canRunAnalysis || !canManageIntel || !summarySource || isSummaryGenerating || (provider !== 'local' && !cloudSummaryAllowed)}
                         className="primary-action disabled:opacity-40"
                       >
                         {isSummaryGenerating ? 'Summarizing...' : 'Tell the story'}
@@ -551,7 +558,7 @@ export function InvestigationReport() {
                     <button
                       type="button"
                       onClick={() => void generateLocal()}
-                      disabled={!investigationIds.length || !selectedSectionCount}
+                      disabled={!hasReportEvidence || !selectedSectionCount}
                       className="secondary-action mb-2 w-full disabled:opacity-40"
                     >
                       Generate locally from selected sections
@@ -563,7 +570,7 @@ export function InvestigationReport() {
                       <button
                         type="button"
                         onClick={generateWithAi}
-                        disabled={!canRunAnalysis || !investigationIds.length || !selectedSectionCount || isAiGenerating}
+                        disabled={!canRunAnalysis || !hasReportEvidence || !selectedSectionCount || isAiGenerating}
                         className="primary-action disabled:opacity-40"
                       >
                         {isAiGenerating ? 'Generating...' : 'AI assistant'}
@@ -574,10 +581,19 @@ export function InvestigationReport() {
                     </p>
                     <p className="mt-2 text-xs leading-5 text-amber-200">
                       Tell the story reads the saved full report and linked evidence, independently of section checkboxes.
-                      Workspaces are private by default: this second layer requires the configured Local LLM.
+                      Workspaces are private by default. Cloud processing requires an audited workspace marking, acknowledgement, and compatible linked-source markings.
                       It does not change the original report or approve intelligence.
                       {summarySource ? ` Source report: ${summarySource.label}.` : ' Save a full report first.'}
                     </p>
+                    {activeInvestigation && <div className="mt-2 space-y-2 text-xs">
+                      <p>Workspace marking: {activeInvestigation.tlp || 'TLP:AMBER+STRICT'}. Linked sources may impose stricter restrictions.</p>
+                      {canManageIntel && canExportData && <>
+                        <input aria-label="Workspace marking reason" className="field w-full" placeholder="Reason this workspace may be marked public (minimum 12 characters)" value={markingReason} onChange={event => setMarkingReason(event.target.value)} />
+                        <button type="button" className="secondary-action" disabled={markingReason.trim().length < 12 || isSummaryGenerating}
+                          onClick={async () => { try { await operationsApi.markInvestigation(activeInvestigation.id, 'TLP:CLEAR', markingReason); await queryClient.invalidateQueries({ queryKey: ['operations-investigations'] }); setWorkflowMessage('Workspace marked TLP:CLEAR with an audit record. Linked source restrictions are unchanged.'); } catch { setAiError('Workspace marking failed. Check permissions.'); } }}>Mark workspace public (TLP:CLEAR)</button>
+                      </>}
+                      {provider !== 'local' && <label className="block"><input type="checkbox" checked={cloudAcknowledged} onChange={event => setCloudAcknowledged(event.target.checked)} /> I authorize sending this report and its eligible linked evidence to the selected cloud model.</label>}
+                    </div>}
                     {aiError && <p className="mt-2 rounded border border-red-500/50 bg-red-950/30 p-2 text-xs text-red-200">{aiError}</p>}
                   </div>
                 </div>
@@ -653,7 +669,7 @@ export function InvestigationReport() {
                   <Metric label="Relevant IOCs" value={relevantIocs.length} />
                 </div>
                 {matchesLoading && <p className="px-3 pb-3 text-xs text-gray-500">Loading actor comparison...</p>}
-                {!investigationIds.length && <p className="px-3 pb-3 text-xs text-amber-300">Select TTPs or add analytic results to an investigation before generating a report.</p>}
+                {!investigationIds.length && <p className="px-3 pb-3 text-xs text-amber-300">No ATT&CK techniques selected. Available investigation evidence can still be reported; no technique is inferred merely to complete a report.</p>}
               </Panel>
 
             </div>
@@ -753,8 +769,8 @@ function buildLocalReport({
     '## Executive Summary',
     '',
     rows.length
-      ? `This report summarizes ${rows.length} selected ATT&CK techniques, ${matches.length} behavior-overlap actor hypotheses, and ${relevantIocs.length} relevant IOC enrichment records available in AdversaryGraph.`
-      : 'No selected techniques were available. Select TTPs or load a workspace before generating the report.',
+      ? `This report preserves the available investigation evidence: ${rows.length} selected ATT&CK mappings and ${uniqueIocNodes(investigation?.evidence_nodes ?? []).length} evidence-qualified IOC candidates. Mappings require validation against their source; actor-profile overlap is contextual, not attribution or proof of execution.`
+      : `This report preserves the available investigation evidence. No ATT&CK techniques are selected; this does not mean no suspicious activity occurred. ${uniqueIocNodes(investigation?.evidence_nodes ?? []).length} evidence-qualified IOC candidates require review.`,
     '',
   ];
   if (sections.navigator) {
@@ -788,8 +804,8 @@ function buildLocalReport({
   }
   if (investigation) {
     const logNodes = investigation.evidence_nodes.filter(item => String(item.type ?? '').includes('log'));
-    const reportNodes = investigation.evidence_nodes.filter(item => String(item.type ?? '').includes('report') || String(item.type ?? '').includes('analysis'));
-    const iocNodes = investigation.evidence_nodes.filter(item => String(item.type ?? '').includes('ioc') || String(item.type ?? '').includes('indicator'));
+    const reportNodes = investigation.evidence_nodes.filter(item => !['investigation-report', 'investigation-summary'].includes(String(item.type)) && (String(item.type ?? '').includes('report') || String(item.type ?? '').includes('analysis')));
+    const iocNodes = uniqueIocNodes(investigation.evidence_nodes);
     lines.push('## Investigation Workspace', '', `Investigation: ${investigation.name}`, `Status: ${investigation.status}`, '');
     lines.push('### Logs - Result Analysis', '');
     if (logNodes.length) logNodes.slice(0, 20).forEach(node => lines.push(`- ${String(node.label ?? node.value ?? node.id ?? 'Log analysis')} - ${String(node.summary ?? node.description ?? '')}`));
@@ -798,8 +814,17 @@ function buildLocalReport({
     if (reportNodes.length) reportNodes.slice(0, 20).forEach(node => lines.push(`- ${String(node.label ?? node.value ?? node.id ?? 'Report analysis')} - ${String(node.summary ?? node.description ?? '')}`));
     else lines.push('- No report analysis evidence has been added yet.');
     lines.push('', '### IOC List', '');
-    if (iocNodes.length) iocNodes.slice(0, 60).forEach(node => lines.push(`- ${String(node.value ?? node.label ?? node.id)} (${String(node.ioc_type ?? node.type ?? 'ioc')})`));
-    else lines.push('- No IOC evidence nodes have been added yet.');
+    if (iocNodes.length) iocNodes.forEach(node => lines.push(`- ${node.value} (${node.type}) — ${node.description || 'Candidate requiring validation'}; source: ${node.sourceRefs.join(', ') || node.source}.`));
+    else lines.push('- No evidence-qualified IOC candidates are attached. Observations, victim identities and recovered files are not automatically IOCs.');
+    const identityNodes = investigation.evidence_nodes.filter(item => item.type === 'identity');
+    lines.push('', '### Identities (not threat IOCs)', '');
+    identityNodes.forEach(node => lines.push(`- ${String(node.identity_type ?? 'identity')}: ${String(node.value ?? '')}; IP associations: ${stringArray(node.ip_addresses).join(', ') || 'unbound'}; evidence: ${compactReferences(node.frame_evidence)}.`));
+    const artifactNodes = investigation.evidence_nodes.filter(item => item.type === 'file-artifact');
+    lines.push('', '### Recovered artifacts (not proof of execution)', '');
+    artifactNodes.forEach(node => lines.push(`- ${String(node.label ?? 'object')}; SHA-256 ${String(node.sha256 ?? node.value ?? '')}; ${String(node.size_bytes ?? 'unknown')} bytes; completeness: ${String(node.completeness ?? 'unknown')}; extraction: ${String(node.extraction_method ?? 'unspecified')}; provenance: ${compactReferences(node.transfers)}.`));
+    const findingNodes = investigation.evidence_nodes.filter(item => item.type === 'pcap-finding');
+    lines.push('', '### Packet behavior findings', '');
+    findingNodes.forEach(node => lines.push(`- ${String(node.label ?? node.rule_id ?? '')}: ${String(node.explanation ?? '')}; metrics: ${JSON.stringify(node.metrics ?? {})}; evidence: ${compactReferences(node.frame_evidence)}.`));
     lines.push('', '### Timeline', '');
     if (investigation.timeline.length) investigation.timeline.slice(-20).forEach(item => lines.push(`- ${String(item.at ?? '')}: ${String(item.event ?? item.source ?? 'Investigation event')}`));
     else lines.push('- No timeline events yet.');
@@ -905,9 +930,10 @@ function iocHandling(item: ReportIocItem) {
 
 function buildReportIocItems(relevantIocs: IOCItem[], evidenceIndex: EvidenceIndex): ReportIocItem[] {
   const merged = new Map<string, ReportIocItem>();
+  const key = (value: string) => /^https?:\/\//i.test(value) ? value : value.toLowerCase();
   relevantIocs.forEach(item => {
     const sourceEvidence = evidenceIndex.iocs.get(item.value) ?? [];
-    merged.set(item.value.toLowerCase(), {
+    merged.set(key(item.value), {
       ...item,
       sourceTag: sourceEvidence[0]?.sourceTag || sourceTagFromValue(item.source || 'feed'),
       reference: formatSourceReferences(sourceEvidence) || item.source_url || item.source || 'ioc-feed',
@@ -915,9 +941,9 @@ function buildReportIocItems(relevantIocs: IOCItem[], evidenceIndex: EvidenceInd
     });
   });
   evidenceIndex.iocs.forEach((items, value) => {
-    if (merged.has(value.toLowerCase())) return;
+    if (merged.has(key(value))) return;
     const first = items[0];
-    merged.set(value.toLowerCase(), {
+    merged.set(key(value), {
       value,
       type: inferIocType(value),
       sourceTag: first?.sourceTag || 'manual',
@@ -927,7 +953,7 @@ function buildReportIocItems(relevantIocs: IOCItem[], evidenceIndex: EvidenceInd
       evidence: first?.evidence,
     });
   });
-  return Array.from(merged.values());
+  return Array.from(merged.values()).sort((a, b) => Number(!evidenceIndex.iocs.has(a.value)) - Number(!evidenceIndex.iocs.has(b.value)));
 }
 
 function InvestigationStructure({
@@ -1468,7 +1494,7 @@ function uniqueIocNodes(nodes: Array<Record<string, unknown>>) {
     .map(node => {
       const rawValue = String(node.value ?? node.indicator ?? node.observable ?? node.label ?? '');
       const value = rawValue.trim();
-      const type = String(node.ioc_type ?? node.indicator_type ?? node.type ?? 'ioc');
+      const type = String(node.ioc_type ?? node.indicator_type ?? inferIocType(value));
       const source = String(node.source ?? node.provider ?? node.evidence_source ?? '');
       const description = String(node.description ?? node.summary ?? '');
       const sourceRefs = collectNodeSourceRefs(node);
@@ -1476,7 +1502,7 @@ function uniqueIocNodes(nodes: Array<Record<string, unknown>>) {
     })
     .forEach(node => {
       if (!node.value) return false;
-      const normalized = node.key.toLowerCase();
+      const normalized = node.type === 'url' ? node.key : node.key.toLowerCase();
       const existing = merged.get(normalized);
       if (!existing) {
         merged.set(normalized, node);
@@ -1493,6 +1519,16 @@ function uniqueIocNodes(nodes: Array<Record<string, unknown>>) {
   return Array.from(merged.values()).slice(0, 100);
 }
 
+function compactReferences(value: unknown): string {
+  const refs = Array.isArray(value) ? value : [];
+  return `${JSON.stringify(refs.slice(0, 3))}; showing ${Math.min(3, refs.length)} of ${refs.length} references; complete references retained in linked source`;
+}
+
+function reportProviderSignals(value: unknown): string {
+  if (!Array.isArray(value)) return '[]';
+  return JSON.stringify(value.map(signal => Object.fromEntries(Object.entries(signal as Record<string, unknown>).filter(([key]) => ['source', 'status', 'verdict', 'basis', 'evidence', 'queried_at', 'cache_hit', 'latest_attempt', 'error_category'].includes(key)))));
+}
+
 function buildEvidenceIndex(investigation: Investigation | null): EvidenceIndex {
   const ttps = new Map<string, SourceTaggedEvidence[]>();
   const iocs = new Map<string, SourceTaggedEvidence[]>();
@@ -1503,7 +1539,10 @@ function buildEvidenceIndex(investigation: Investigation | null): EvidenceIndex 
     const refs = collectNodeSourceRefs(record);
     const sourceTag = sourceTagFromNode(record);
     const reference = refs.join(', ') || sourceTag;
-    const evidence = String(record.evidence ?? record.summary ?? record.description ?? record.label ?? '').trim();
+    const evidence = [String(record.evidence ?? record.summary ?? record.description ?? record.label ?? '').trim(),
+      record.provider_signals ? `Dated direct-target provider assertions (expansion graph omitted): ${reportProviderSignals(record.provider_signals)}` : '',
+      record.frame_evidence ? `Packet references: ${compactReferences(record.frame_evidence)}` : '',
+    ].filter(Boolean).join('; ');
     const confidence = record.confidence as string | number | undefined;
 
     if (String(record.type ?? '') === 'ttp-evidence') {
@@ -1533,7 +1572,9 @@ function buildEvidenceIndex(investigation: Investigation | null): EvidenceIndex 
       addEvidence(iocs, value, { sourceTag, reference, evidence, confidence });
     }
 
-    if (Array.isArray(record.observables)) {
+    // A PCAP's bounded inventory preview is not its IOC assessment. Qualified
+    // candidates are separate typed nodes; do not re-promote the inventory.
+    if (Array.isArray(record.observables) && !record.source_analysis_ref && !String(record.type).includes('pcap')) {
       record.observables.forEach(item => {
         if (!item || typeof item !== 'object') return;
         const observable = item as Record<string, unknown>;
@@ -1606,6 +1647,11 @@ function inferIocType(value: string) {
 }
 
 function isIocEvidenceNode(node: Record<string, unknown>) {
+  const nodeType = String(node.type ?? '').toLowerCase();
+  if (['identity', 'pcap-finding', 'ttp-evidence', 'log-pcap-analysis'].includes(nodeType)) return false;
+  if (node.ioc_candidate === false) return false;
+  if (nodeType === 'file-artifact' && node.ioc_candidate !== true) return false;
+  if (nodeType === 'pcap-observable' && node.ioc_candidate !== true && node.status !== 'candidate-requires-review') return false;
   const type = String(node.ioc_type ?? node.indicator_type ?? node.type ?? '').toLowerCase();
   if (['ai-summary', 'investigation-summary', 'investigation-report', 'actor-comparison', 'suspicious-behavior'].includes(type)) return false;
   const value = String(node.value ?? node.indicator ?? node.observable ?? '').trim();
@@ -1880,6 +1926,7 @@ function markdownToPlainText(markdown: string) {
 }
 
 function buildSimplePdf(text: string) {
+  const byteLength = (value: string) => new TextEncoder().encode(value).length;
   const escapedLines = wrapText(text, 92).flatMap(line => line === '' ? [' '] : [line]);
   const pages: string[][] = [];
   for (let i = 0; i < escapedLines.length; i += 46) pages.push(escapedLines.slice(i, i + 46));
@@ -1899,16 +1946,19 @@ function buildSimplePdf(text: string) {
       ...page.map((line, lineIndex) => `${lineIndex === 0 ? '' : '0 -14 Td'}(${escapePdf(line)}) Tj`),
       'ET',
     ].join('\n');
-    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    objects.push(`<< /Length ${byteLength(stream)} >>\nstream\n${stream}\nendstream`);
   });
 
   let pdf = '%PDF-1.4\n';
+  let byteOffset = byteLength(pdf);
   const offsets: number[] = [0];
   objects.forEach((object, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    offsets.push(byteOffset);
+    const serialized = `${index + 1} 0 obj\n${object}\nendobj\n`;
+    pdf += serialized;
+    byteOffset += byteLength(serialized);
   });
-  const xref = pdf.length;
+  const xref = byteOffset;
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   offsets.slice(1).forEach(offset => {
     pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;

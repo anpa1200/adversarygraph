@@ -9,6 +9,7 @@ storage, review, enrichment, and promotion.
 from __future__ import annotations
 
 import csv
+import base64
 import asyncio
 import hashlib
 import hmac
@@ -32,8 +33,8 @@ from starlette.concurrency import run_in_threadpool
 
 
 SCHEMA_VERSION = "pcap-analysis-v1"
-PROFILE_ID = "tshark-evidence-v4"
-RULEPACK_VERSION = "pcap-rules-v3"
+PROFILE_ID = "tshark-evidence-v6"
+RULEPACK_VERSION = "pcap-rules-v5"
 MAX_UPLOAD_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
 TOOL_TIMEOUT_SECONDS = int(os.getenv("PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS", "300"))
 MAX_TOOL_OUTPUT_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_TOOL_OUTPUT_BYTES", str(256 * 1024 * 1024)))
@@ -77,7 +78,7 @@ EVENT_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
         "http.request",
         ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport",
          "tcp.stream", "http.request.method", "http.host", "http.request.uri", "http.request.full_uri", "http.user_agent",
-         "http.content_length", "http.response_in"),
+         "http.content_length", "http.response_in", "http.file_data"),
     ),
     "http_response": (
         "http.response",
@@ -108,8 +109,13 @@ EVENT_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
          "samr.opnum", "samr.samr_UserInfo21.account_name", "samr.samr_UserInfo21.full_name", "drsuapi.opnum", "ldap.protocolOp", "ldap.baseObject", "ldap.filter"),
     ),
     "unclassified_tcp": (
-        "tcp && data && tcp.len > 0 && tcp.len <= 2048 && !(http || tls || smb || smb2 || kerberos || ldap || dcerpc || nbss || dns)",
+        "tcp && data && tcp.len > 0 && tcp.len <= 2048 && !(http || tls || smtp || imf || smb || smb2 || kerberos || ldap || dcerpc || nbss || dns)",
         ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport", "tcp.stream", "tcp.payload"),
+    ),
+    "smtp": (
+        "smtp || imf",
+        ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport",
+         "tcp.stream", "smtp.req.command", "smtp.response.code", "smtp.data.reassembled.length", "imf.message_id"),
     ),
 }
 
@@ -146,7 +152,7 @@ def _supported_fields() -> set[str]:
     fields: set[str] = set()
     for line in completed.stdout.splitlines():
         columns = line.split("\t")
-        if len(columns) >= 3 and columns[0] == "F":
+        if len(columns) >= 3 and columns[0] in {"F", "P"}:
             fields.add(columns[2])
     _SUPPORTED_FIELDS = fields
     return fields
@@ -307,12 +313,20 @@ async def recover_object(sha256: str, file: UploadFile = File(...), authorizatio
 def _recover_object_bytes(root: Path, capture: Path, sha256: str) -> bytes:
     inventory: dict[str, Any] = {}
     objects, _ = _export_http_objects(root, capture, "", inventory=inventory)
+    # Replay the same bounded extraction pipeline; do not accept a file path or
+    # execute/decompress a payload. Secrets remain downloadable evidence only.
+    if not any(a["sha256"] == sha256 for a in [*objects, *inventory.get("compact_hash_index", [])]):
+        event_rows = _run_event_fields(root, capture)
+        events = {kind: [_normalize_event("", kind, i, row) for i, row in enumerate(rows)] for kind, (rows, _) in event_rows.items()}
+        _bind_objects(objects, events)
+        extra, _ = _supplemental_objects(root, capture, "", events, objects)
+        objects.extend(extra)
     item = next((a for a in [*objects, *inventory.get("compact_hash_index", [])] if a["sha256"] == sha256), None)
     if not item:
         raise HTTPException(404, "Object not recoverable within current extraction limits")
     # Exported names are never accepted as a client-supplied path.
-    directory = (root / "http-objects").resolve()
-    for candidate in directory.iterdir():
+    candidates = [p for name in ("http-objects", "supplemental-objects", "imf-objects") for p in (root / name).glob("*")]
+    for candidate in candidates:
         if candidate.is_symlink() or not candidate.is_file() or candidate.stat().st_size != item["size_bytes"]:
             continue
         with candidate.open("rb") as source:
@@ -403,8 +417,9 @@ def analyze_capture(
         "name_resolution": False,
     }
     events: dict[str, list[dict[str, Any]]] = {}
-    for kind, (display_filter, fields) in EVENT_QUERIES.items():
-        rows, truncated = _run_fields(scratch, capture, kind, display_filter, fields)
+    event_rows = _run_event_fields(scratch, capture)
+    for kind in EVENT_QUERIES:
+        rows, truncated = event_rows[kind]
         normalized = [_normalize_event(source_sha256, kind, index, row) for index, row in enumerate(rows)]
         events[kind] = normalized
         coverage["event_limits"][kind] = {"returned": len(normalized), "truncated": truncated}
@@ -428,6 +443,11 @@ def analyze_capture(
     artifacts, artifact_warnings = _export_http_objects(scratch, capture, source_sha256, inventory=coverage["http_objects"])
     _bind_objects(artifacts, events)
     coverage["warnings"].extend(artifact_warnings)
+    extra, extra_warnings = _supplemental_objects(scratch, capture, source_sha256, events, artifacts)
+    artifacts.extend(extra)
+    artifacts.sort(key=lambda a: (-int(a.get("static_features", {}).get("content_kind") in {"pe", "ole-document", "script-like-text", "zip"}), -a["size_bytes"], a["sha256"]))
+    coverage["warnings"].extend(extra_warnings)
+    coverage["supplemental_objects"] = {"returned": len(extra), "scope": "bounded IMF, inert embedded base64 and complete contiguous HTTP response recovery"}
     observables = _build_observables(source_sha256, endpoints, events, artifacts)
     # Compact overflow hashes stay available for enrichment even when richer
     # per-object metadata reaches its cap.
@@ -437,6 +457,7 @@ def analyze_capture(
     findings = _build_findings(source_sha256, events)
     findings.extend(_context_findings(source_sha256, events))
     findings.extend(_unclassified_findings(source_sha256, events, flows))
+    findings.extend(_additional_findings(source_sha256, events, flows))
     coverage["complete_within_profile"] = not coverage["warnings"]
     coverage["limitations"] = ["Encrypted application contents are not decrypted", "Protocol decoding and heuristic findings do not establish malware family or attribution", "No endpoint execution, persistence, or credential-theft proof without corresponding evidence"]
     attack_candidates = _attack_candidates(findings)
@@ -519,7 +540,71 @@ def _normalize_event(source_sha256: str, kind: str, index: int, row: dict[str, s
         body = bytes.fromhex(raw_body)
         normalized["body_sha256"] = hashlib.sha256(body).hexdigest()
         normalized["body_size_bytes"] = len(body)
+        normalized["body_features"] = _body_features(body)
     return normalized
+
+
+def _run_event_fields(root: Path, capture: Path) -> dict:
+    """One dissection for all event classes, preserving independent class limits."""
+    protocols_requested = {"dns", "dhcp", "bootp", "nbns", "llmnr", "mdns", "kerberos", "ntlmssp", "smb2", "samr", "browser", "drsuapi", "ldap", "smtp", "imf"}
+    selectors = {"frame.protocols", "tcp.len", "tls.handshake.type"} | protocols_requested
+    fields = tuple(sorted(selectors | {f for _, fs in EVENT_QUERIES.values() for f in fs}))
+    rows, _ = _run_fields(root, capture, "packets", " || ".join(f"({f})" for f, _ in EVENT_QUERIES.values()), fields)
+    groups = {kind: [] for kind in EVENT_QUERIES}
+    truncated = {kind: False for kind in EVENT_QUERIES}
+    for row in rows:
+        protocols = set(row.get("frame.protocols", "").split(":"))
+        # frame.protocols is a display stack, not equivalent to dissector
+        # presence (e.g. CLDAP carries LDAP fields). Preserve filter semantics.
+        protocols.update(p for p in protocols_requested if row.get(p))
+        kinds = []
+        if "dns" in protocols: kinds.append("dns")
+        if row.get("http.request.method"): kinds.append("http_request")
+        if row.get("http.response.code"): kinds.append("http_response")
+        if "1" in row.get("tls.handshake.type", "").split(","): kinds.append("tls_client_hello")
+        if protocols & {"dhcp", "bootp"}: kinds.append("dhcp")
+        if protocols & {"nbns", "llmnr", "mdns", "kerberos", "ntlmssp", "smb2", "samr", "browser"}: kinds.append("identity")
+        if protocols & {"samr", "drsuapi", "ldap"}: kinds.append("directory_service")
+        if protocols & {"smtp", "imf"}: kinds.append("smtp")
+        if {"tcp", "data"} <= protocols and 0 < _int(row.get("tcp.len")) <= 2048 and not protocols & {"http", "tls", "smtp", "imf", "smb", "smb2", "kerberos", "ldap", "dcerpc", "nbss", "dns"}:
+            kinds.append("unclassified_tcp")
+        for kind in kinds:
+            if len(groups[kind]) >= MAX_EVENTS_PER_KIND:
+                truncated[kind] = True
+                continue
+            groups[kind].append({f: row[f] for f in EVENT_QUERIES[kind][1] if row.get(f)})
+    return {kind: (groups[kind], truncated[kind]) for kind in groups}
+
+
+def _body_features(body: bytes) -> dict:
+    """Extract allowlisted structure; never copy payloads, passwords or tokens."""
+    text = body[:256 * 1024].decode("utf-8", errors="replace")
+    identities = []
+    patterns = {
+        "hostname": r"(?im)^\s*(?:Host Name[ .]*|ComputerName|COMPUTERNAME)\s*[:=]\s*([A-Za-z0-9_.-]{1,100})\s*$",
+        "account": r"(?im)^\s*(?:User Name|UserName|USERNAME)\s*[:=]\s*([A-Za-z0-9_.\\-]{1,100})\s*$",
+    }
+    for kind, pattern in patterns.items():
+        identities.extend({"type": kind, "value": m.group(1), "source": "explicit-body-label"} for m in list(re.finditer(pattern, text))[:20])
+    identities.extend({"type": "account", "value": m.group(1), "source": "explicit-body-label"}
+                      for m in list(re.finditer(r"(?im)^User name\s{2,}([A-Za-z0-9_.-]{1,100})\s*$", text))[:20])
+    # Directory enumeration describes subjects, not the sender's logged-in
+    # identity. Keep these values unbound even when sent by a known workstation.
+    identities.extend({"type": "account", "value": m.group(1), "source": "directory-subject-in-body"}
+                      for m in list(re.finditer(r"\bUsername:\s*([A-Za-z0-9_.-]{1,100})", text))[:20])
+    if "LOCAL_MACHINE_DATA" in text:
+        identities.extend({"type": "hostname", "value": m.group(1), "source": "directory-subject-in-body"}
+                          for m in list(re.finditer(r"(?m)^Name:\s*([A-Za-z0-9_.-]{1,253})\s*$", text))[:20])
+    # A profile path is evidence of a referenced account, not a logged-in user.
+    identities.extend({"type": "account", "value": m.group(1), "source": "referenced-profile-path"}
+                      for m in list(re.finditer(r"(?i)(?:[A-Z]:\\Users\\|/Users/)([A-Za-z0-9_.-]{1,100})[\\/]", text))[:20])
+    credential_record = bool(re.search(r"(?im)(?:pop3|imap|smtp|ftp)s?://[^\s|\r\n]{1,250}\|[^|\r\n]{1,100}\|[^|\r\n]{1,200}", text)
+                             or re.search(r"(?im)^\s*(?:password|passwd|pwd)\s*[:=]\s*\S+", text))
+    return {"identities": identities[:40], "credential_record_present": credential_record,
+            "private_key_marker_present": "-----BEGIN " in text and "PRIVATE KEY-----" in text,
+            "system_inventory_marker_present": bool(re.search(r"(?i)LOCAL_MACHINE_DATA|SYSTEM_INFO|PROCESS LIST", text)),
+            "inspected_bytes": min(len(body), 256 * 1024), "truncated": len(body) > 256 * 1024,
+            "scope": "Allowlisted structural features; secret values and arbitrary payload text omitted"}
 
 
 def _summarize_packets(source_sha256: str, rows: list[dict[str, str]]) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
@@ -747,6 +832,27 @@ def _build_identities(source_sha256: str, events: dict[str, list[dict[str, Any]]
                 entry["ip_addresses"].add(recipient)
                 binding["owner_ip"] = recipient
                 binding["relationship"] = "directory-name-correlated-with-client-principal"
+    for kind in ("http_request", "http_response"):
+        for event in events.get(kind, []):
+            for identity in event.get("body_features", {}).get("identities", []):
+                value = identity["value"]
+                key = (identity["type"], value.lower())
+                entry = rows.setdefault(key, {
+                    "identity_id": "identity-" + hashlib.sha256(f"{source_sha256}|{key[0]}|{key[1]}".encode()).hexdigest()[:24],
+                    "type": key[0], "value": value, "ip_addresses": set(), "mac_addresses": set(),
+                    "evidence": [], "bindings": [], "raw_values": set(),
+                })
+                entry["raw_values"].add(value)
+                # The body sender is the source of an assertion, not proof of a
+                # successful logon; a server may also return another host's data.
+                owner = event.get("src_ip") if kind == "http_request" and identity["source"] == "explicit-body-label" else None
+                if owner:
+                    entry["ip_addresses"].add(owner)
+                if len(entry["evidence"]) < 20:
+                    entry["evidence"].append(_evidence_ref(event))
+                    entry["bindings"].append({"frame_number": event["frame_number"], "owner_ip": owner,
+                        "relationship": "body-asserted-not-authenticated", "source_field": identity["source"],
+                        "conversation_src": event.get("src_ip"), "conversation_dst": event.get("dst_ip")})
     result = []
     for entry in sorted(rows.values(), key=lambda item: (item["type"], item["value"].lower())):
         entry["ip_addresses"] = sorted(entry["ip_addresses"])
@@ -890,6 +996,11 @@ def _bind_objects(artifacts: list[dict[str, Any]], events: dict[str, list[dict[s
         artifact["transfers"] = transfers[:30]
         artifact["transfers_truncated"] = len(transfers) > 30
         artifact["evidence"] = [_evidence_ref(e) for e in by_hash.get(artifact["sha256"], [])[:30]]
+        responses = by_hash.get(artifact["sha256"], [])
+        if responses and responses[0].get("body_features"):
+            # The full response hash binds these redacted structural features
+            # to the recovered bytes; no raw HTML/credential values copied.
+            artifact["body_features"] = responses[0]["body_features"]
         # Do not claim complete capture or successful execution from body length.
         artifact["completeness"] = "matches-declared-content-length" if transfers and all(t["completeness"] == "matches-declared-content-length" for t in transfers) else "unknown"
 
@@ -910,10 +1021,169 @@ def _object_features(path: Path) -> dict[str, Any]:
     kind = "pe" if data[:2] == b"MZ" and len(data) > 64 and data[int.from_bytes(data[60:64], "little"):][:4] == b"PE\0\0" else "unclassified"
     if data.startswith(b"PK\x03\x04"):
         kind = "zip"
+    elif data.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
+        kind = "ole-document"
     elif kind == "unclassified" and matches:
         kind = "script-like-text"
-    return {"content_kind": kind, "inspected_bytes": len(data), "inspection_truncated": path.stat().st_size > len(data),
+    pe_offset = int.from_bytes(data[60:64], "little") if kind == "pe" else 0
+    pe_kind = ("dll" if int.from_bytes(data[pe_offset + 22:pe_offset + 24], "little") & 0x2000 else "executable") if kind == "pe" else None
+    return {"content_kind": kind, "pe_kind": pe_kind, "inspected_bytes": len(data), "inspection_truncated": path.stat().st_size > len(data),
             "features": matches, "interpretation": "Static content only; not proof of execution, intent, or malware family"}
+
+
+def _contiguous_runs(segments: list[tuple[int, bytes, dict]]) -> list[tuple[int, bytes, list[dict]]]:
+    """Reassemble each direction by TCP sequence, rejecting conflicting overlaps.
+
+    Gaps start new runs; missing bytes are never zero-filled or silently joined.
+    Callers bound segment bytes before invoking this function.
+    """
+    runs = []
+    start = None
+    data = bytearray()
+    refs = []
+    for seq, payload, event in sorted(segments, key=lambda s: (s[0], s[2]["frame_number"])):
+        if start is None or seq > start + len(data):
+            if start is not None:
+                runs.append((start, bytes(data), refs))
+            start, data, refs = seq, bytearray(payload), [event]
+            continue
+        offset = seq - start
+        overlap = min(len(payload), len(data) - offset)
+        if bytes(data[offset:offset + overlap]) != payload[:overlap]:
+            raise AnalyzerLimitError("Conflicting TCP overlap: fallback extraction rejected this direction")
+        data.extend(payload[overlap:])
+        refs.append(event)
+    if start is not None:
+        runs.append((start, bytes(data), refs))
+    return runs
+
+
+def _supplemental_objects(root: Path, capture: Path, source_sha256: str, events: dict, artifacts: list[dict]) -> tuple[list[dict], list[str]]:
+    directory = root / "supplemental-objects"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    existing = {a["sha256"] for a in artifacts}
+    recovered, warnings = [], []
+    total = 0
+
+    def retain(data: bytes, method: str, *, evidence=None, transfers=None, parent=None, completeness="unknown", metadata=None):
+        nonlocal total
+        digest = hashlib.sha256(data).hexdigest()
+        if digest in existing:
+            return
+        if not data or len(data) > MAX_EXPORTED_OBJECT_BYTES or total + len(data) > MAX_EXPORTED_TOTAL_BYTES or len(recovered) >= 200:
+            warnings.append("Supplemental extraction reached its object/byte limit")
+            return
+        path = directory / (digest + ".bin")
+        path.write_bytes(data)
+        total += len(data)
+        existing.add(digest)
+        recovered.append({"artifact_id": "artifact-" + hashlib.sha256(f"{source_sha256}|{method}|{digest}".encode()).hexdigest()[:24],
+            "type": "recovered-object", "filename": digest + ".bin", "filenames": [], "occurrences": 1,
+            "sha256": digest, "sha1": hashlib.sha1(data, usedforsecurity=False).hexdigest(), "md5": hashlib.md5(data, usedforsecurity=False).hexdigest(),
+            "size_bytes": len(data), "static_features": _object_features(path), "extraction_method": method,
+            "body_features": _body_features(data) if method == "tshark-imf-export-objects" else {},
+            "hash_scope": "exact recovered bytes; not execution evidence", "completeness": completeness,
+            "evidence": evidence or [], "transfers": transfers or [], "parent_sha256": parent,
+            "extraction_metadata": metadata or {}, "media_type": "application/octet-stream", "content_retained_by_analyzer": False})
+
+    # A single inert decoding layer: no archives, JavaScript, macros or child
+    # processes. Retain only recognizable binary containers, never random tokens.
+    for path in sorted((root / "http-objects").glob("*")):
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 8 * 1024 * 1024:
+            continue
+        data = path.read_bytes()
+        parent = hashlib.sha256(data).hexdigest()
+        source = next((a for a in artifacts if a["sha256"] == parent), {})
+        for match in re.finditer(rb"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{256,}={0,2}(?![A-Za-z0-9+/=])", data):
+            try:
+                decoded = base64.b64decode(match.group(0), validate=True)
+            except ValueError:
+                continue
+            if decoded.startswith((b"MZ", b"PK\x03\x04", bytes.fromhex("d0cf11e0a1b11ae1"))):
+                retain(decoded, "embedded-base64-static", parent=parent, evidence=source.get("evidence"),
+                       transfers=source.get("transfers"), completeness="complete-base64-value-original-file-unknown",
+                       metadata={"parent_byte_offset": match.start(), "encoded_length": len(match.group(0))})
+
+    if events.get("smtp"):
+        imf_dir = root / "imf-objects"
+        imf_dir.mkdir(mode=0o700, exist_ok=True)
+        try:
+            code = _run_object_export(root, ["tshark", "-n", "-r", str(capture), "--export-objects", f"imf,{imf_dir}"], imf_dir)
+            if code:
+                warnings.append("IMF export unavailable; SMTP metadata retained")
+            else:
+                for path in sorted(imf_dir.iterdir()):
+                    if path.is_file() and not path.is_symlink() and path.stat().st_size <= MAX_EXPORTED_OBJECT_BYTES:
+                        # Exporter does not expose an exact frame association:
+                        # keep it explicitly unbound instead of guessing by size.
+                        retain(path.read_bytes(), "tshark-imf-export-objects", metadata={"frame_binding": "unavailable", "contains_sensitive_message": True})
+        except AnalyzerLimitError as exc:
+            warnings.append(str(exc))
+
+    # Decode only streams with a request whose body/response is missing from the
+    # standard exporter. TShark's out-of-order reassembly can miss intact files.
+    response_requests = {e.get("fields", {}).get("http.request_in") for e in events.get("http_response", []) if e.get("body_sha256")}
+    requests = [e for e in events.get("http_request", []) if e["fields"].get("http.request.method") == "GET" and str(e["frame_number"]) not in response_requests and e.get("tcp_stream") is not None]
+    streams = sorted({e["tcp_stream"] for e in requests})
+    if len(streams) > 100:
+        warnings.append(f"Raw HTTP fallback limited to 100 of {len(streams)} streams")
+        streams = streams[:100]
+    if streams:
+        fields = ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport", "tcp.stream", "tcp.seq", "tcp.payload")
+        rows, truncated = _run_fields(root, capture, "raw-http-fallback", "tcp.len > 0 && tcp.stream in {" + ", ".join(map(str, streams)) + "}", fields)
+        if truncated:
+            warnings.append("Raw HTTP fallback segment limit reached; only complete contiguous responses retained")
+        groups = defaultdict(list)
+        sizes = Counter()
+        for row in rows:
+            try:
+                payload = bytes.fromhex(row.get("tcp.payload", "").replace(":", ""))
+            except ValueError:
+                continue
+            event = _normalize_event(source_sha256, "raw_http", 0, {k: v for k, v in row.items() if k != "tcp.payload"})
+            key = (event["tcp_stream"], event["src_ip"], event["src_port"], event["dst_ip"], event["dst_port"])
+            sizes[key] += len(payload)
+            if sizes[key] <= MAX_EXPORTED_OBJECT_BYTES:
+                groups[key].append((_int(row.get("tcp.seq")), payload, event))
+        for key, segments in groups.items():
+            if sizes[key] > MAX_EXPORTED_OBJECT_BYTES:
+                warnings.append("Raw HTTP fallback skipped an oversized stream direction")
+                continue
+            try:
+                runs = _contiguous_runs(segments)
+            except AnalyzerLimitError as exc:
+                warnings.append(str(exc))
+                continue
+            for seq_start, data, refs in runs:
+                offset = 0
+                while data[offset:offset+5] == b"HTTP/":
+                    end = data.find(b"\r\n\r\n", offset, offset + 65536)
+                    if end < 0:
+                        break
+                    header = data[offset:end]
+                    lengths = re.findall(rb"(?im)^Content-Length:\s*(\d+)\s*$", header)
+                    if len(lengths) != 1 or re.search(rb"(?im)^(Transfer-Encoding|Content-Encoding):", header):
+                        break
+                    size = int(lengths[0])
+                    body_start = end + 4
+                    if size > MAX_EXPORTED_OBJECT_BYTES or body_start + size > len(data):
+                        break
+                    status = re.match(rb"HTTP/\d\.\d (\d{3})", header)
+                    frame_refs = [e for seq, payload, e in segments if seq < seq_start + body_start + size and seq + len(payload) > seq_start + offset]
+                    first = min(frame_refs, key=lambda e: e["frame_number"]) if frame_refs else refs[0]
+                    possible = [e for e in events.get("http_request", []) if e.get("tcp_stream") == key[0] and e.get("src_ip") == key[3] and e.get("dst_ip") == key[1] and e["frame_number"] < first["frame_number"]]
+                    request = max(possible, key=lambda e: e["frame_number"]) if possible else None
+                    if status and status[1] == b"200" and size:
+                        transfer = {"tcp_stream": key[0], "response_frame": first["frame_number"], "server_ip": key[1], "client_ip": key[3],
+                                    "status_code": "200", "request_frame": request["frame_number"] if request else None,
+                                    "url": request["fields"].get("http.request.full_uri", "") if request else "",
+                                    "match_basis": "contiguous-tcp-sequence-content-length; preceding-request-is-context",
+                                    "completeness": "matches-declared-content-length"}
+                        retain(data[body_start:body_start + size], "tcp-sequence-http-content-length", evidence=[_evidence_ref(e) for e in sorted(frame_refs, key=lambda e: e["frame_number"])[:30]],
+                               transfers=[transfer], completeness="matches-declared-content-length",
+                               metadata={"tcp_sequence_start": seq_start + body_start, "segment_count": len(frame_refs), "conflicting_overlaps": False})
+                    offset = body_start + size
+    return recovered, sorted(set(warnings))
 
 
 def _normalize_domain(value: str) -> str:
@@ -1052,7 +1322,7 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
         key = (event.get("src_ip") or "", event.get("dst_ip") or "", int(event.get("dst_port") or 0), host, uri, method)
         groups[key].append(event)
 
-        if int(event.get("dst_port") or 0) == 443:
+        if 443 in {int(event.get("src_port") or 0), int(event.get("dst_port") or 0)}:
             cleartext_443[(str(event.get("src_ip") or ""), str(event.get("dst_ip") or ""), host, uri)].append(event)
         user_agent = str(fields.get("http.user_agent") or "")
         if re.search(r"(?i)NetSupport Manager|TeamViewer", user_agent):
@@ -1123,7 +1393,7 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
         timestamps = sorted(value for event in group if (value := _float(event.get("timestamp_epoch"))) is not None)
         if len(timestamps) < 10 or statistics.median(body_lengths) < 1000:
             continue
-        deltas = [b - a for a, b in zip(timestamps, timestamps[1:]) if b > a]
+        deltas = [b - a for a, b in zip(timestamps, timestamps[1:], strict=False) if b > a]
         if len(deltas) < 9:
             continue
         median = statistics.median(deltas)
@@ -1162,7 +1432,7 @@ def _build_findings(source_sha256: str, events: dict[str, list[dict[str, Any]]])
             ))
         timestamps = sorted(value for event in group if (value := _float(event.get("timestamp_epoch"))) is not None)
         if len(timestamps) >= 6:
-            deltas = [b - a for a, b in zip(timestamps, timestamps[1:]) if b > a]
+            deltas = [b - a for a, b in zip(timestamps, timestamps[1:], strict=False) if b > a]
             if len(deltas) >= 5:
                 median = statistics.median(deltas)
                 deviations = [abs(value - median) for value in deltas]
@@ -1264,7 +1534,7 @@ def _context_findings(source_sha256: str, events: dict) -> list[dict]:
         regular_names = []
         for host in hosts:
             times = sorted(float(e["timestamp_epoch"]) for e in group if e["fields"].get("tls.handshake.extensions_server_name") == host)
-            deltas = [b-a for a,b in zip(times, times[1:]) if b-a > 0.1]
+            deltas = [b-a for a,b in zip(times, times[1:], strict=False) if b-a > 0.1]
             if len(deltas) >= 3:
                 median = statistics.median(deltas)
                 if median >= 2 and statistics.median(abs(d-median) for d in deltas) / median < .25:
@@ -1359,6 +1629,46 @@ def _attack_candidates(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [candidates[key] for key in sorted(candidates)]
 
 
+def _additional_findings(source_sha256: str, events: dict, flows: list[dict]) -> list[dict]:
+    findings = []
+    for event in events.get("http_request", []):
+        features = event.get("body_features", {})
+        if features.get("credential_record_present") or features.get("private_key_marker_present"):
+            findings.append(_finding(source_sha256, "sensitive-data-in-cleartext", "high", "Credential-shaped records in a cleartext HTTP request",
+                "The decoded request body contains a credential-record structure or private-key marker. Values are redacted from derived evidence. This proves transmission of the observed structure, not that a credential is valid or how it was obtained.",
+                [_evidence_ref(event)], confidence=.95,
+                metrics={"source": event["src_ip"], "destination": event["dst_ip"], "body_sha256": event.get("body_sha256"),
+                         "body_size_bytes": event.get("body_size_bytes"), "secrets_redacted": True}))
+        if features.get("system_inventory_marker_present"):
+            findings.append(_finding(source_sha256, "system-inventory-upload", "medium", "System-inventory structure transmitted in HTTP body",
+                "A request body contains process/system inventory markers and may include host/account assertions. This is network-observed transmission, not proof of the commands having executed on that host.",
+                [_evidence_ref(event)], confidence=.9, metrics={"source": event["src_ip"], "destination": event["dst_ip"],
+                    "claimed_identities": features.get("identities", []), "body_sha256": event.get("body_sha256")}))
+    smtp_groups = defaultdict(list)
+    for event in events.get("smtp", []):
+        smtp_groups[event.get("tcp_stream")].append(event)
+    for stream, group in smtp_groups.items():
+        commands = sorted({c for e in group for c in e["fields"].get("smtp.req.command", "").split(",") if c})
+        data_events = [e for e in group if e["fields"].get("smtp.data.reassembled.length") or e["fields"].get("imf.message_id")]
+        if data_events:
+            findings.append(_finding(source_sha256, "cleartext-smtp-message", "medium", "Unencrypted SMTP message content available",
+                "SMTP message transfer is visible in the capture. Review recovered IMF objects securely for sensitive data; mail use alone is not exfiltration proof. Authentication values and message text are excluded from derived events.",
+                [_evidence_ref(e) for e in data_events], confidence=.98,
+                metrics={"tcp_stream": stream, "commands": commands, "visible_messages": len(data_events)}))
+    by_source = defaultdict(list)
+    for flow in flows:
+        if flow.get("transport") == "tcp":
+            by_source[(flow.get("initiator_ip"), flow.get("responder_port"))].append(flow)
+    for (source, port), group in by_source.items():
+        peers = sorted({f["responder_ip"] for f in group})
+        if (port == 445 and len(peers) >= 20) or (port in {25, 465, 587} and len(peers) >= 10):
+            findings.append(_finding(source_sha256, "service-connection-fanout", "medium", "One endpoint contacts many peers on a common service",
+                "Connection fan-out can reflect service discovery, administration, bulk mail or malicious automation. Ports and flow counts do not establish successful authentication, lateral movement, spam delivery or encrypted message contents.",
+                [{"frame_number": f["first_frame"], "tcp_stream": f["stream"], "timestamp_epoch": f["first_seen_epoch"], "display_filter": f"tcp.stream == {f['stream']}"} for f in group[:100]],
+                confidence=.95, metrics={"source": source, "destination_port": port, "peer_count": len(peers), "connection_count": len(group), "peers": peers[:200]}))
+    return findings
+
+
 def _deterministic_summary(
     capture: dict[str, Any], endpoints: list[dict[str, Any]], flows: list[dict[str, Any]], events: dict[str, list[dict[str, Any]]],
     findings: list[dict[str, Any]], artifacts: list[dict[str, Any]],
@@ -1367,7 +1677,7 @@ def _deterministic_summary(
     return (
         f"Decoded {capture['packet_count']} packets across {len(endpoints)} IP endpoints and {len(flows)} transport flows. "
         f"Observed {len(events.get('dns', []))} DNS events, {len(events.get('http_request', []))} HTTP requests, "
-        f"{len(events.get('tls_client_hello', []))} TLS ClientHello events, and {len(artifacts)} exported HTTP object(s). "
+        f"{len(events.get('tls_client_hello', []))} TLS ClientHello events, and {len(artifacts)} recovered file/message object(s). "
         f"Deterministic rules produced {len(findings)} finding(s): {severities.get('high', 0)} high, "
         f"{severities.get('medium', 0)} medium, and {severities.get('low', 0)} low. "
         "Findings are evidence-bound candidates and require analyst review; encrypted payload contents remain unavailable."

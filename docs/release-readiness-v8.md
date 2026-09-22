@@ -1,6 +1,6 @@
-# AdversaryGraph v8.0.0-beta.1 Release Readiness
+# AdversaryGraph v8.1.0-beta.1 Release Readiness
 
-This is the acceptance plan for the `v8.0.0-beta.1` manual-testing
+This is the acceptance plan for the `v8.1.0-beta.1` manual-testing
 pre-release. v7.0.0 remains the latest stable release. The beta is not stable,
 production-accepted, or fully tested until every applicable automated and
 manual gate below has retained evidence for the exact revision and deployment.
@@ -14,7 +14,7 @@ screenshot reference. An unrecorded test is `pending`, not passed.
 
 | Item | Required state for beta publication | Prepared-source state |
 |---|---|---|
-| Source version | Exact `8.0.0-beta.1` across validated metadata | Verify with the version-consistency gate |
+| Source version | Exact `8.1.0-beta.1` across validated metadata | Verify with the version-consistency gate |
 | Latest stable | v7.0.0 remains identified as latest stable | Required |
 | Full local release gate | Passed for exact candidate revision | Pending evidence |
 | Merge CI | Passed for exact candidate revision | Pending evidence |
@@ -211,7 +211,7 @@ not turn a failed test into a pass.
 
 ## Stable Promotion Requirements
 
-Do not overwrite or retag `v8.0.0-beta.1` as stable. Prepare a separate stable
+Do not overwrite or retag `v8.1.0-beta.1` as stable. Prepare a separate stable
 version only after:
 
 1. Every applicable mandatory row above is passed with retained evidence.
@@ -223,7 +223,7 @@ version only after:
 5. The final stable tag workflow publishes revision-matched artifacts and does
    not mark the beta as latest.
 
-See the [beta release notes](release-notes/v8.0.0-beta.1.md),
+See the [beta release notes](release-notes/v8.1.0-beta.1.md),
 [Report Review Gate](report-review-gate.md),
 [Durable Research Workflows](research-workflows.md),
 [upgrade guide](upgrade-guide.md), and

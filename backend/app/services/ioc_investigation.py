@@ -21,7 +21,7 @@ from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
-from app.services.virustotal import IndicatorTarget, VirusTotalNotFoundError, classify_indicator, lookup_virustotal_ioc
+from app.services.virustotal import IndicatorTarget, VirusTotalNotFoundError, classify_indicator, lookup_virustotal_ioc, retry_after_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +289,7 @@ async def _safe_source(name: str, fn) -> dict[str, Any]:
             "error": msg,
             "error_category": category,
             "http_status": status,
+            "retry_after_seconds": retry_after_seconds(exc.response.headers.get("retry-after")) if status == 429 else None,
             "summary": msg,
             "relationships": [],
             "technique_ids": [],

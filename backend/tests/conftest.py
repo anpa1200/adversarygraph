@@ -26,6 +26,12 @@ from sqlalchemy.sql import operators as sa_operators
 os.environ.setdefault("DB_PASS", "test-db-password")
 os.environ.setdefault("LOG_DIR", "/tmp/adversarygraph-test-logs")
 
+
+@pytest.fixture(autouse=True)
+def isolated_passive_query_cache(monkeypatch):
+    from app.services.pcap_provider_cache import ProviderCache
+    monkeypatch.setattr("app.services.pcap_reputation.cache", ProviderCache(""))
+
 # ── DB mock: returns None / empty for every query ─────────────────────────────
 
 class _MockScalarResult:

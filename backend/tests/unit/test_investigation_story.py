@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from unittest.mock import AsyncMock
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -43,6 +44,62 @@ def test_valid_story_binds_quotes_and_renders_readable_sections():
     assert "analyst" in rendered.lower()
 
 
+@pytest.mark.asyncio
+async def test_story_repairs_once_without_relaxing_evidence_rules():
+    evidence = {**pack(), "report_id": "report-1", "source_sha256": "a"*64,
+                "coverage": {}, "effective_tlp": "TLP:CLEAR"}
+    bad = valid()
+    good = valid()
+    for data in (bad, good):
+        for claims in data.values():
+            for claim in claims:
+                claim["evidence"] = [{"source_id": "S0001.1"}]
+    bad["what_happened"][0]["basis"] = "observed"
+    adapter = SimpleNamespace(provider="fixture", model="fixture", story_usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+                              _raw_complete=AsyncMock(side_effect=[json.dumps(bad), json.dumps(good)]))
+    result = await story.generate_story(evidence, adapter)
+    assert adapter._raw_complete.await_count == 2
+    assert result["generation_attempts"][0]["validation"] == "evidence_level"
+    assert result["token_usage"]["total_tokens"] == 60
+    adapter._raw_complete = AsyncMock(return_value=json.dumps(bad))
+    with pytest.raises(story.StoryValidationError) as exc:
+        await story.generate_story(evidence, adapter)
+    assert len(exc.value.attempts) == 2 and adapter._raw_complete.await_count == 2
+
+
+def test_cited_passages_are_lossless_and_quotes_are_server_bound():
+    evidence = pack()
+    evidence["sources"][0]["text"] = TEXT * 35 + " End of unique source."
+    projected, bindings = story.cited_passages(evidence)
+    assert "".join(p["text"] for p in projected["sources"][0]["passages"]) == evidence["sources"][0]["text"]
+    assert bindings
+    assert all(8 <= len(b["quote"]) <= 500 for b in bindings.values())
+    assert all(evidence["sources"][0]["text"].count(b["quote"]) == 1 for b in bindings.values())
+    projected, bindings = story.cited_passages(pack())
+    wire = valid()
+    for claims in wire.values():
+        for claim in claims:
+            claim["evidence"] = [{"source_id": "S0001.1"}]
+    bound = story.validate_story(story.bind_passages(json.dumps(wire), bindings), pack())
+    assert bound["what_happened"][0]["evidence"][0]["quote"] == TEXT
+    wire["what_happened"][0]["evidence"][0]["quote"] = "Model supplied tampered quote"
+    with pytest.raises(ValueError, match="citation structure"):
+        story.bind_passages(json.dumps(wire), bindings)
+    wire["what_happened"][0]["evidence"] = [{"source_id": "S9999.1"}]
+    with pytest.raises(ValueError, match="Unknown"):
+        story.bind_passages(json.dumps(wire), bindings)
+
+
+def test_nonunique_and_short_passages_cannot_be_cited():
+    evidence = pack()
+    evidence["sources"][0]["text"] = "a" * 1200
+    projected, bindings = story.cited_passages(evidence)
+    assert bindings == {}
+    assert all(p["citation_id"] is None for p in projected["sources"][0]["passages"])
+    evidence["sources"][0]["text"] = "short"
+    assert story.cited_passages(evidence)[1] == {}
+
+
 @pytest.mark.parametrize("mutation", [
     lambda d: d["what_happened"][0]["evidence"][0].update(source_id="S9999"),
     lambda d: d["what_happened"][0]["evidence"][0].update(quote="The attacker executed ransomware."),
@@ -69,6 +126,15 @@ def test_provider_tags_never_become_behavior_candidates():
         story.validate_story(json.dumps(data), pack("intelligence_lead"))
     data["ttps"][0]["status"] = "intelligence_lead"
     assert story.validate_story(json.dumps(data), pack("intelligence_lead"))["ttps"][0]["status"] == "intelligence_lead"
+
+
+def test_story_cannot_promote_a_victim_ip_from_the_observation_inventory():
+    evidence = {**pack(), "pcap_ioc_allowlist": []}
+    data = valid()
+    data["iocs"] = [{"kind": "ipv4", "value": "10.0.0.7", "text": "The workstation address is an IOC.", "basis": "reported",
+                     "evidence": [{"source_id": "S0001", "quote": "Host DESKTOP-TEST at 10.0.0.7"}]}]
+    with pytest.raises(ValueError, match="not an evidence-qualified"):
+        story.validate_story(json.dumps(data), evidence)
 
 
 def test_exact_quote_binding_is_not_semantic_proof():
@@ -159,6 +225,17 @@ async def test_authoritative_pcap_bindings_preserve_different_hosts_and_missing_
     assert reputation and all(s["kind"] == "intelligence_lead" for s in reputation)
     assert 'not proof of execution' in reputation[0]["text"]
     assert any('/artifacts/file1' in s['reference'] and s['kind'] == 'packet_fact' for s in result['sources'])
+    row.tlp = "TLP:CLEAR"
+    records[(AnalysisSession, sid)].tlp = "TLP:CLEAR"
+    records[(AnalysisSession, sid)].source_provenance["pcap_context"] = {
+        "matches": [{"type": "sha256", "value": "b"*64, "tlp": "TLP:RED"}],
+        "cross_case_correlations": [{"analysis_id": "PRIVATE-CASE-NOT-FOR-CLOUD", "shared_observables": []}],
+    }
+    governed = await story.build_pack(DB(), row, "r")
+    assert governed["effective_tlp"] == "TLP:RED"
+    assert "PRIVATE-CASE-NOT-FOR-CLOUD" not in json.dumps(governed)
+    records[(AnalysisSession, sid)].source_provenance["pcap_context"]["matches"][0]["tlp"] = "clear"
+    assert (await story.build_pack(DB(), row, "r"))["effective_tlp"] == "TLP:CLEAR"
     records.clear()
     with pytest.raises(HTTPException) as exc:
         await story.build_pack(DB(), row, "r")
