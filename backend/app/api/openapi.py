@@ -11,7 +11,7 @@ OPENAPI_TAGS = [
     {"name": "Analysis", "description": "Report ingestion, AI-assisted analysis, review, chat, and linked-report workflow."},
     {
         "name": "PCAP Analysis",
-        "description": "Deterministic packet decoding, evidence-bound findings, durable capture results, and analyst review pivots.",
+        "description": "Deterministic packet evidence, qualified IOC candidates, consent-gated passive reputation, verified file recovery, and analyst review pivots.",
     },
     {
         "name": "Report Review Gate",

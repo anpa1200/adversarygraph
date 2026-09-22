@@ -65,6 +65,8 @@ class InvestigationOptions:
 
 
 PASSIVE_ENRICHMENT_SOURCES = frozenset({
+    "threatfox",
+    "malwarebazaar",
     "local-db",
     "virustotal",
     "otx",
@@ -96,13 +98,16 @@ async def enrich_ioc_sources(
         raise ValueError("Artifact is empty")
     target = _classify_investigation_artifact(value)
     normalized = target.value
-    selected = list(dict.fromkeys(sources or sorted(PASSIVE_ENRICHMENT_SOURCES)))
+    # Preserve the pre-existing default set for other platform callers.
+    selected = list(dict.fromkeys(sources or sorted(PASSIVE_ENRICHMENT_SOURCES - {"threatfox", "malwarebazaar"})))
     unknown = sorted(set(selected) - PASSIVE_ENRICHMENT_SOURCES)
     if unknown:
         raise ValueError(f"Unsupported passive enrichment source(s): {', '.join(unknown)}")
     options = options or InvestigationOptions()
 
     runners = {
+        "threatfox": lambda: _threatfox_enrichment(normalized, target.type),
+        "malwarebazaar": lambda: _malwarebazaar_enrichment(normalized),
         "local-db": lambda: _local_enrichment(session, normalized, target.type, options.domain),
         "virustotal": lambda: _virustotal_enrichment(session, normalized, options.domain, target.type),
         "otx": lambda: _otx_enrichment(normalized, target.type),
@@ -402,7 +407,7 @@ async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any
         "relationships": relationships,
         "technique_ids": _dedupe([item.upper() for item in technique_ids]),
         "actors": [],
-        "raw": _compact_raw(payload),
+        "raw": _registry_evidence(payload),
     }
 
 
@@ -425,15 +430,26 @@ async def _malwarebazaar_enrichment(value: str) -> dict[str, Any]:
         "relationships": relationships,
         "technique_ids": _dedupe([match.upper() for match in ATTACK_ID_RE.findall(json.dumps(payload, default=str))]),
         "actors": [],
-        "raw": _compact_raw(payload),
+        "raw": _registry_evidence(payload),
     }
+
+
+def _registry_evidence(payload: dict) -> dict:
+    """Keep direct typed verdict fields even when verbose provider JSON is compacted."""
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return _compact_raw(payload)
+    keys = {"id", "ioc", "ioc_type", "sha256_hash", "sha1_hash", "md5_hash", "malware", "signature", "confidence_level", "first_seen", "last_seen", "reference"}
+    compact = [{k: (v[:1000] if isinstance(v, str) else v) for k, v in row.items()
+                if k in keys and isinstance(v, (str, int, float, bool, type(None)))} for row in rows[:50] if isinstance(row, dict)]
+    return {**_compact_raw(payload), "data": compact, "records_total": len(rows), "records_truncated": len(rows) > 50}
 
 
 async def _otx_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     if not settings.otx_api_key:
         return _not_configured("otx", "OTX_API_KEY")
     section = {
-        "ip": "IPv4",
+        "ip": "IPv6" if artifact_type == "ip" and ipaddress.ip_address(value).version == 6 else "IPv4",
         "domain": "domain",
         "url": "url",
         "hash": "file",

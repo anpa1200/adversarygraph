@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+import hashlib
 from pathlib import Path
 import pytest
 import pcap_analyzer.app as analyzer
@@ -73,7 +73,7 @@ def test_payloads_survive_callback_metadata_flood(tmp_path, monkeypatch):
         (directory / f'000-callback-{n}').write_bytes(b'OK\r\n')
     for n in range(6):
         (directory / f'zzz-payload-{n}.ps1').write_text(f'Invoke-WebRequest https://example.test/{n}')
-    monkeypatch.setattr(analyzer.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
     inventory = {}
     artifacts, warnings = analyzer._export_http_objects(tmp_path, Path('unused'), 'a'*64, inventory=inventory)
     assert len(artifacts) == 7
@@ -86,7 +86,7 @@ def test_truncated_inventory_is_explicit(tmp_path, monkeypatch):
     directory = tmp_path / 'http-objects'
     directory.mkdir()
     for n in range(3): (directory / str(n)).write_text(str(n))
-    monkeypatch.setattr(analyzer.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
     monkeypatch.setattr(analyzer, 'MAX_EXPORTED_OBJECTS', 1)
     monkeypatch.setattr(analyzer, 'MAX_OBJECT_HASH_INDEX', 0)
     inventory = {}
@@ -99,7 +99,7 @@ def test_compact_index_preserves_hashes_beyond_rich_metadata_cap(tmp_path, monke
     directory = tmp_path / 'http-objects'
     directory.mkdir()
     for n in range(3): (directory / str(n)).write_text(str(n))
-    monkeypatch.setattr(analyzer.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
     monkeypatch.setattr(analyzer, 'MAX_EXPORTED_OBJECTS', 1)
     inventory = {}
     artifacts, warnings = analyzer._export_http_objects(tmp_path, Path('unused'), 'a'*64, inventory=inventory)
@@ -137,3 +137,56 @@ def test_implementation_digest_in_manifest(monkeypatch):
     monkeypatch.setattr(analyzer, '_supported_fields', lambda: {'frame.number'})
     monkeypatch.setattr(analyzer, '_tool_version', lambda _: 'test')
     assert len(analyzer.analyzer_manifest()['implementation_sha256']) == 64
+
+
+def test_http_bytes_are_hashed_but_not_serialized():
+    raw = {'frame.number': '7', 'http.file_data': b'private bytes'.hex(), 'http.content_length': '13'}
+    normalized = analyzer._normalize_event('a'*64, 'http_response', 0, raw)
+    assert 'http.file_data' not in normalized['fields']
+    assert normalized['body_sha256'] == hashlib.sha256(b'private bytes').hexdigest()
+    assert normalized['body_size_bytes'] == 13
+    raw['http.file_data'] = 'ambiguous,nonhex'
+    assert 'body_sha256' not in analyzer._normalize_event('a'*64, 'http_response', 0, raw)
+
+
+def test_object_binding_requires_exact_body_hash_and_valid_request_link():
+    artifact = {'artifact_id': 'a1', 'sha256': hashlib.sha256(b'abcd').hexdigest(), 'size_bytes': 4}
+    request = analyzer._normalize_event('a'*64, 'http_request', 0, {
+        'frame.number': '1', 'ip.src': '10.0.0.5', 'ip.dst': '9.9.9.9', 'tcp.stream': '1', 'http.request.full_uri': 'http://host.test/a'})
+    response = analyzer._normalize_event('a'*64, 'http_response', 0, {
+        'frame.number': '2', 'ip.src': '9.9.9.9', 'ip.dst': '10.0.0.5', 'tcp.stream': '1',
+        'http.file_data': b'abcd'.hex(), 'http.request_in': '1', 'http.content_length': '4', 'http.response.code': '200'})
+    analyzer._bind_objects([artifact], {'http_request': [request], 'http_response': [response]})
+    assert artifact['completeness'] == 'matches-declared-content-length'
+    assert artifact['transfers'][0]['request_frame'] == 1
+    response['fields']['http.content_length'] = '400'
+    response['fields']['http.request_in'] = '99'
+    analyzer._bind_objects([artifact], {'http_request': [request], 'http_response': [response]})
+    assert artifact['completeness'] == 'unknown'
+    assert artifact['transfers'][0]['request_frame'] is None
+    response['body_sha256'] = 'c'*64
+    analyzer._bind_objects([artifact], {'http_request': [request], 'http_response': [response]})
+    assert artifact['evidence'] == [] and artifact['transfers'] == []
+
+
+def test_all_hashes_and_recovery_reject_symlinks(tmp_path, monkeypatch):
+    directory = tmp_path / 'http-objects'
+    directory.mkdir()
+    content = b'not executable, just a fixture'
+    (directory / 'download.bin').write_bytes(content)
+    (directory / 'outside').symlink_to('/etc/passwd')
+    monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
+    objects, _ = analyzer._export_http_objects(tmp_path, Path('unused'), 'a'*64)
+    assert len(objects) == 1
+    assert objects[0]['md5'] == hashlib.md5(content).hexdigest()
+    assert objects[0]['sha1'] == hashlib.sha1(content).hexdigest()
+    assert objects[0]['sha256'] == hashlib.sha256(content).hexdigest()
+    assert analyzer._recover_object_bytes(tmp_path, Path('unused'), objects[0]['sha256']) == content
+    with pytest.raises(analyzer.HTTPException, match='Object not recoverable'):
+        analyzer._recover_object_bytes(tmp_path, Path('unused'), 'b'*64)
+
+
+def test_case_sensitive_urls_are_separate_observables():
+    requests = [event(1, **{'http.request.full_uri': 'http://host.test/A'}), event(2, **{'http.request.full_uri': 'http://host.test/a'})]
+    objects = analyzer._build_observables('a'*64, [], {'http_request': requests}, [])
+    assert len(objects) == 2 and objects[0]['observable_id'] != objects[1]['observable_id']

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 import httpx
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
@@ -86,6 +87,35 @@ def retain_capture(source: BinaryIO, destination: Path) -> None:
 
 def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {settings.pcap_analyzer_token}"} if settings.pcap_analyzer_token else {}
+
+
+async def recover_artifact(capture_path: Path, source_sha256: str, artifact: dict) -> bytes:
+    """Authenticate to the isolated decoder and independently verify returned bytes."""
+    limit = 50 * 1024 * 1024
+    expected_size = int(artifact.get("size_bytes", -1))
+    if not 0 <= expected_size <= limit:
+        raise PcapAnalyzerError("Object exceeds download limit", status_code=413)
+    try:
+        with capture_path.open("rb") as capture:
+            digest = await run_in_threadpool(hashlib.file_digest, capture, "sha256")
+            if digest.hexdigest() != source_sha256:
+                raise PcapAnalyzerError("Retained capture hash mismatch", status_code=409)
+            capture.seek(0)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(settings.pcap_analyzer_timeout_seconds)) as client:
+                async with client.stream("POST", f"{settings.pcap_analyzer_url.rstrip('/')}/objects/{artifact['sha256']}",
+                                         headers=_headers(), files={"file": ("capture.pcap", capture, "application/octet-stream")}) as response:
+                    if response.status_code != 200:
+                        raise PcapAnalyzerError("Object not recoverable by the current decoder", status_code=422)
+                    content = bytearray()
+                    async for block in response.aiter_bytes():
+                        content.extend(block)
+                        if len(content) > expected_size:
+                            raise PcapAnalyzerError("Recovered object exceeds recorded size", status_code=409)
+    except (OSError, httpx.HTTPError) as exc:
+        raise PcapAnalyzerError("Retained capture or object decoder unavailable", status_code=503) from exc
+    if len(content) != expected_size or hashlib.sha256(content).hexdigest() != artifact["sha256"]:
+        raise PcapAnalyzerError("Recovered object hash or size mismatch", status_code=409)
+    return bytes(content)
 
 
 async def get_manifest() -> dict[str, Any]:
@@ -241,13 +271,14 @@ def render_report(filename: str, result: dict[str, Any], actor_leads: list[dict[
         lines.append(f"- {identity.get('type')}: `{identity.get('value')}`; client IPs: {', '.join(identity.get('ip_addresses') or []) or 'unbound subject'}; frames: {frames or 'unavailable'}")
     if not identities:
         lines.append("- No identity-protocol values recovered.")
-    lines.extend(["", "## IOC and artifact candidates", ""])
+    lines.extend(["", "## Observed network and file inventory — not an IOC verdict", ""])
     for item in observables[:500]:
         lines.append(f"- {item.get('type')}: `{item.get('value')}`; roles: {', '.join(item.get('roles') or [])}")
     for artifact in artifacts[:200]:
         lines.append(
             f"- exported object `{artifact.get('filename')}`; SHA-256 `{artifact.get('sha256')}`; size {artifact.get('size_bytes')} bytes"
         )
+        lines.append(f"  SHA-1: `{artifact.get('sha1', 'not recorded')}`; MD5: `{artifact.get('md5', 'not recorded')}`; completeness: {artifact.get('completeness', 'unknown')}; transfers: `{canonical_json(artifact.get('transfers', []))}`.")
         features = artifact.get('static_features') or {}
         if features.get('content_kind') != 'unclassified' and features:
             lines.append(f"  Static content: `{canonical_json(features)}`. Not execution proof.")

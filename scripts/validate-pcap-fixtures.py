@@ -89,6 +89,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("captures", nargs="+", type=Path)
     parser.add_argument("--repeat", action="store_true", help="analyze each capture twice and compare semantic hashes")
+    parser.add_argument("--output", type=Path, help="Write per-capture evidence JSON and backend assessment reports to this directory")
     args = parser.parse_args()
     failures: list[str] = []
     summaries: list[dict] = []
@@ -107,6 +108,17 @@ def main() -> int:
             failures.append(f"{path.name}: {type(exc).__name__}: {exc}")
             continue
         actual_rules = {item["rule_id"] for item in result["findings"]}
+        if args.output:
+            # Optional API-layer assessment; this remains offline, with no
+            # provider calls or reference-answer contamination.
+            sys.path.insert(0, str(ROOT / "backend"))
+            from app.services.pcap_assessment import assess, assessment_report
+            from app.services.pcap_analyzer import render_report, validate_result
+            validate_result(result)
+            assessment = assess(result)
+            args.output.mkdir(parents=True, exist_ok=True)
+            (args.output / (path.stem + ".json")).write_text(json.dumps({"result": result, "assessment": assessment}, sort_keys=True), encoding="utf-8")
+            (args.output / (path.stem + ".md")).write_text(render_report(path.name, result, []) + "\n" + assessment_report(assessment), encoding="utf-8")
         missing_rules = sorted(spec["required_rules"] - actual_rules)
         if result["capture"]["packet_count"] != spec["packets"]:
             failures.append(f"{path.name}: packet-count regression")
@@ -131,11 +143,16 @@ def main() -> int:
             "flows": len(result["flows"]),
             "observables": len(result["observables"]),
             "artifacts": len(result["artifacts"]),
+            "objects_with_response_binding": sum(bool(a.get("transfers")) for a in result["artifacts"]),
+            "objects_with_all_three_hashes": sum(all(a.get(k) for k in ("md5", "sha1", "sha256")) for a in result["artifacts"]),
             "findings": dict(sorted(Counter(item["rule_id"] for item in result["findings"]).items())),
             "attack_candidates": [item["attack_id"] for item in result["attack_candidates"]],
         })
         print(json.dumps(summaries[-1], sort_keys=True), flush=True)
     print(json.dumps({"captures": len(summaries), "failures": failures}, sort_keys=True))
+    if args.output:
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "summary.json").write_text(json.dumps({"captures": summaries, "failures": failures}, indent=2), encoding="utf-8")
     return 1 if failures else 0
 
 

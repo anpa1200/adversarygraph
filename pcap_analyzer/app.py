@@ -21,16 +21,18 @@ import re
 import statistics
 import subprocess
 import tempfile
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 
 SCHEMA_VERSION = "pcap-analysis-v1"
-PROFILE_ID = "tshark-evidence-v3"
+PROFILE_ID = "tshark-evidence-v4"
 RULEPACK_VERSION = "pcap-rules-v3"
 MAX_UPLOAD_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
 TOOL_TIMEOUT_SECONDS = int(os.getenv("PCAP_ANALYZER_TOOL_TIMEOUT_SECONDS", "300"))
@@ -42,7 +44,11 @@ MAX_EXPORTED_OBJECTS = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_OBJECTS", "500"
 MAX_OBJECT_HASH_INDEX = int(os.getenv("PCAP_ANALYZER_MAX_OBJECT_HASH_INDEX", "50000"))
 MAX_EXPORTED_OBJECT_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_OBJECT_BYTES", str(50 * 1024 * 1024)))
 MAX_EXPORTED_TOTAL_BYTES = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_TOTAL_BYTES", str(256 * 1024 * 1024)))
+MAX_EXPORTED_FILES = int(os.getenv("PCAP_ANALYZER_MAX_EXPORTED_FILES", "50000"))
 AUTH_TOKEN = os.getenv("PCAP_ANALYZER_TOKEN", "")
+# HTTP body hex can legitimately exceed the csv module's 128 KiB default.
+# The decoder output file is size-checked before parsing; never make it unbounded.
+csv.field_size_limit(MAX_TOOL_OUTPUT_BYTES)
 
 _PCAP_MAGICS = {
     bytes.fromhex("d4c3b2a1"): "pcap-le-microsecond",
@@ -76,7 +82,8 @@ EVENT_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
     "http_response": (
         "http.response",
         ("frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "tcp.dstport",
-         "tcp.stream", "http.response.code", "http.content_type", "http.content_length", "http.response_for.uri", "http.request_in"),
+         "tcp.stream", "http.response.code", "http.content_type", "http.content_length", "http.response_for.uri", "http.request_in",
+         "http.content_encoding", "http.transfer_encoding", "http.file_data"),
     ),
     "tls_client_hello": (
         "tls.handshake.type == 1",
@@ -181,6 +188,7 @@ def analyzer_manifest() -> dict[str, Any]:
             "max_object_hash_index": MAX_OBJECT_HASH_INDEX,
             "max_exported_object_bytes": MAX_EXPORTED_OBJECT_BYTES,
             "max_exported_total_bytes": MAX_EXPORTED_TOTAL_BYTES,
+            "max_exported_files": MAX_EXPORTED_FILES,
         },
         "requested_fields_sha256": hashlib.sha256("\n".join(requested).encode()).hexdigest(),
         "supported_profile_fields_sha256": hashlib.sha256(
@@ -264,6 +272,54 @@ async def analyze(
 
 class AnalyzerLimitError(RuntimeError):
     pass
+
+
+@app.post("/objects/{sha256}")
+async def recover_object(sha256: str, file: UploadFile = File(...), authorization: str | None = Header(default=None)) -> Response:
+    """Re-extract, never execute. The public API owns export permission and capture access."""
+    _authorize(authorization)
+    if not re.fullmatch(r"[a-f0-9]{64}", sha256):
+        raise HTTPException(400, "Invalid object SHA-256")
+    with tempfile.TemporaryDirectory(prefix="ag-object-") as temporary:
+        root = Path(temporary)
+        capture = root / "capture.bin"
+        total = 0
+        with capture.open("wb") as target:
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "Capture exceeds upload limit")
+                target.write(chunk)
+        with capture.open("rb") as source:
+            if total < 24 or source.read(4) not in _PCAP_MAGICS:
+                raise HTTPException(400, "Invalid capture")
+        try:
+            async with _ANALYSIS_SLOT:
+                content = await run_in_threadpool(_recover_object_bytes, root, capture, sha256)
+        except (subprocess.SubprocessError, AnalyzerLimitError, OSError) as exc:
+            raise HTTPException(422, "Object recovery failed or exceeded decoder limits") from exc
+        return Response(content, media_type="application/octet-stream", headers={
+            "Content-Disposition": f'attachment; filename="{sha256}.bin"',
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store",
+        })
+
+
+def _recover_object_bytes(root: Path, capture: Path, sha256: str) -> bytes:
+    inventory: dict[str, Any] = {}
+    objects, _ = _export_http_objects(root, capture, "", inventory=inventory)
+    item = next((a for a in [*objects, *inventory.get("compact_hash_index", [])] if a["sha256"] == sha256), None)
+    if not item:
+        raise HTTPException(404, "Object not recoverable within current extraction limits")
+    # Exported names are never accepted as a client-supplied path.
+    directory = (root / "http-objects").resolve()
+    for candidate in directory.iterdir():
+        if candidate.is_symlink() or not candidate.is_file() or candidate.stat().st_size != item["size_bytes"]:
+            continue
+        with candidate.open("rb") as source:
+            content = source.read(MAX_EXPORTED_OBJECT_BYTES + 1)
+        if len(content) <= MAX_EXPORTED_OBJECT_BYTES and hashlib.sha256(content).hexdigest() == sha256:
+            return content
+    raise HTTPException(409, "Recovered object hash mismatch")
 
 
 def _safe_tool_error(exc: subprocess.CalledProcessError) -> str:
@@ -370,6 +426,7 @@ def analyze_capture(
     identities = _build_identities(source_sha256, events)
     coverage["http_objects"] = {}
     artifacts, artifact_warnings = _export_http_objects(scratch, capture, source_sha256, inventory=coverage["http_objects"])
+    _bind_objects(artifacts, events)
     coverage["warnings"].extend(artifact_warnings)
     observables = _build_observables(source_sha256, endpoints, events, artifacts)
     # Compact overflow hashes stay available for enrichment even when richer
@@ -456,7 +513,12 @@ def _normalize_event(source_sha256: str, kind: str, index: int, row: dict[str, s
         "frame.number", "frame.time_epoch", "ip.src", "ipv6.src", "ip.dst", "ipv6.dst", "tcp.srcport", "udp.srcport",
         "tcp.dstport", "udp.dstport", "tcp.stream", "udp.stream",
     }
-    normalized["fields"] = {key: value for key, value in sorted(row.items()) if key not in transport_fields and value != ""}
+    normalized["fields"] = {key: value for key, value in sorted(row.items()) if key not in transport_fields and key != "http.file_data" and value != ""}
+    raw_body = row.get("http.file_data", "").replace(":", "")
+    if raw_body and len(raw_body) <= MAX_EXPORTED_OBJECT_BYTES * 2 and re.fullmatch(r"(?:[a-fA-F0-9]{2})+", raw_body):
+        body = bytes.fromhex(raw_body)
+        normalized["body_sha256"] = hashlib.sha256(body).hexdigest()
+        normalized["body_size_bytes"] = len(body)
     return normalized
 
 
@@ -694,21 +756,52 @@ def _build_identities(source_sha256: str, events: dict[str, list[dict[str, Any]]
     return result[:10000]
 
 
+def _run_object_export(root: Path, command: list[str], directory: Path) -> int:
+    """Watch export bytes/count while TShark runs, not only after disk writes."""
+    deadline = time.monotonic() + TOOL_TIMEOUT_SECONDS
+    with tempfile.TemporaryFile() as errors:
+        with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors, env=_tool_env(root), close_fds=True) as process:
+            try:
+                while True:
+                    files = [p for p in directory.iterdir() if p.is_file() and not p.is_symlink()]
+                    sizes = [p.stat().st_size for p in files]
+                    if len(files) > MAX_EXPORTED_FILES or sum(sizes) > MAX_EXPORTED_TOTAL_BYTES or any(s > MAX_EXPORTED_OBJECT_BYTES for s in sizes):
+                        raise AnalyzerLimitError("HTTP export stopped at configured disk/file budget; object inventory is incomplete")
+                    if errors.tell() > 1024 * 1024:
+                        raise AnalyzerLimitError("HTTP export stopped at diagnostic-output budget")
+                    if time.monotonic() > deadline:
+                        raise AnalyzerLimitError("HTTP export stopped at decoder timeout")
+                    if process.poll() is not None:
+                        return process.returncode
+                    try:
+                        process.wait(timeout=0.1)
+                    except subprocess.TimeoutExpired:
+                        pass
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+
 def _export_http_objects(root: Path, capture: Path, source_sha256: str, *, inventory: dict | None = None) -> tuple[list[dict[str, Any]], list[str]]:
     export_dir = root / "http-objects"
     export_dir.mkdir(mode=0o700, exist_ok=True)
     command = ["tshark", "-n", "-r", str(capture), "--export-objects", f"http,{export_dir}"]
-    completed = subprocess.run(
-        command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=TOOL_TIMEOUT_SECONDS, check=False,
-        env=_tool_env(root), close_fds=True,
-    )
     warnings: list[str] = []
-    if completed.returncode != 0:
+    try:
+        returncode = _run_object_export(root, command, export_dir)
+    except AnalyzerLimitError as exc:
+        if inventory is not None:
+            inventory.update(complete=False, export_status="budget-exceeded")
+        return [], [str(exc)]
+    if returncode != 0:
         warnings.append("HTTP object export failed; packet evidence remains available")
+        if inventory is not None:
+            inventory.update(complete=False, export_status="decoder-failed")
         return [], warnings
     unique: dict[str, dict[str, Any]] = {}
     total = 0
-    candidates = sorted((path for path in export_dir.iterdir() if path.is_file()), key=lambda path: path.name)
+    candidates = sorted((path for path in export_dir.iterdir() if path.is_file() and not path.is_symlink()), key=lambda path: path.name)
     hashed = 0
     for path in candidates:
         size = path.stat().st_size
@@ -720,9 +813,13 @@ def _export_http_objects(root: Path, capture: Path, source_sha256: str, *, inven
             continue
         total += size
         digest = hashlib.sha256()
+        sha1 = hashlib.sha1(usedforsecurity=False)
+        md5 = hashlib.md5(usedforsecurity=False)
         with path.open("rb") as source:
             for block in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(block)
+                sha1.update(block)
+                md5.update(block)
         sha256 = digest.hexdigest()
         hashed += 1
         if sha256 in unique:
@@ -741,6 +838,11 @@ def _export_http_objects(root: Path, capture: Path, source_sha256: str, *, inven
             "static_features": features,
             "size_bytes": size,
             "sha256": sha256,
+            "sha1": sha1.hexdigest(),
+            "md5": md5.hexdigest(),
+            "hash_scope": "exact exported bytes; may be partial or content-decoded, not necessarily the original server file",
+            "completeness": "unknown",
+            "evidence": [],
             "media_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
             "extraction_method": "tshark-http-export-objects",
             "content_retained_by_analyzer": False,
@@ -753,12 +855,43 @@ def _export_http_objects(root: Path, capture: Path, source_sha256: str, *, inven
     if omitted:
         warnings.append(f"HTTP object inventory omitted {omitted} unique hashes at metadata limit {MAX_EXPORTED_OBJECTS}")
     if inventory is not None:
-        inventory.update(exported_objects=len(candidates), hashed_objects=hashed, unique_hashes=len(unique), returned_unique_hashes=len(artifacts)+len(compact_index),
+        inventory.update(export_status="completed", exported_objects=len(candidates), hashed_objects=hashed, unique_hashes=len(unique), returned_unique_hashes=len(artifacts)+len(compact_index),
                          detailed_objects=len(artifacts), compact_hash_index=compact_index, compact_objects=len(compact_index),
                          omitted_unique_hashes=omitted, unhashed_objects=len(candidates)-hashed, hashed_bytes=total,
                          selection="content-classified first, then size descending, SHA256 tie-break; deduplicated by full hash; overflow retains a compact hash index",
                          complete=(not omitted and hashed == len(candidates)))
     return artifacts, warnings
+
+
+def _bind_objects(artifacts: list[dict[str, Any]], events: dict[str, list[dict[str, Any]]]) -> None:
+    """Join by full body hash, never filename, URL suffix, size alone, or stream alone."""
+    requests = {e["frame_number"]: e for e in events.get("http_request", [])}
+    by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in events.get("http_response", []):
+        if event.get("body_sha256"):
+            by_hash[event["body_sha256"]].append(event)
+    for artifact in artifacts:
+        transfers = []
+        for response in by_hash.get(artifact["sha256"], []):
+            request = _paired_request(response, requests)
+            fields = response["fields"]
+            declared = fields.get("http.content_length", "")
+            length_matches = (str(declared).isdigit() and int(declared) == artifact["size_bytes"]
+                              and not fields.get("http.content_encoding") and not fields.get("http.transfer_encoding"))
+            transfers.append({
+                "response_frame": response["frame_number"], "tcp_stream": response.get("tcp_stream"),
+                "request_frame": request["frame_number"] if request else None,
+                "url": request["fields"].get("http.request.full_uri", "") if request else "",
+                "server_ip": response.get("src_ip"), "client_ip": response.get("dst_ip"),
+                "status_code": fields.get("http.response.code"),
+                "match_basis": "exact-sha256-of-decoded-http-response-body",
+                "completeness": "matches-declared-content-length" if length_matches else "unknown",
+            })
+        artifact["transfers"] = transfers[:30]
+        artifact["transfers_truncated"] = len(transfers) > 30
+        artifact["evidence"] = [_evidence_ref(e) for e in by_hash.get(artifact["sha256"], [])[:30]]
+        # Do not claim complete capture or successful execution from body length.
+        artifact["completeness"] = "matches-declared-content-length" if transfers and all(t["completeness"] == "matches-declared-content-length" for t in transfers) else "unknown"
 
 
 def _object_features(path: Path) -> dict[str, Any]:
@@ -809,9 +942,10 @@ def _build_observables(
                 clean = str(ipaddress.ip_address(clean))
             except ValueError:
                 return
-        key = (observable_type, clean.lower())
+        identity = clean if observable_type in {"url", "user_agent"} else clean.lower()
+        key = (observable_type, identity)
         entry = items.setdefault(key, {
-            "observable_id": "observable-" + hashlib.sha256(f"{source_sha256}|{observable_type}|{clean.lower()}".encode()).hexdigest()[:24],
+            "observable_id": "observable-" + hashlib.sha256(f"{source_sha256}|{observable_type}|{identity}".encode()).hexdigest()[:24],
             "type": observable_type,
             "value": clean,
             "roles": set(),

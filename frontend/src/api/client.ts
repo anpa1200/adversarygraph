@@ -832,6 +832,34 @@ export interface LogPcapAnalysisResult {
   session_id?: string;
   semantic_sha256?: string;
   deterministic_result?: PcapDeterministicResult;
+  pcap_assessment?: PcapAssessment;
+  pcap_enrichment?: Record<string, unknown>;
+  artifact_download_available?: boolean;
+  source_tlp?: string;
+}
+
+export interface PcapAssessmentItem {
+  observable_id: string;
+  type: string;
+  value: string;
+  classification: string;
+  ioc_candidate: boolean;
+  enrichment_eligible: boolean;
+  enrichment_status: string;
+  provider_conflict: boolean;
+  roles: string[];
+  reasons: Array<Record<string, unknown>>;
+  signals: Array<{ source: string; status: string; verdict: string; basis: string; queried_at?: string; evidence?: Record<string, unknown> }>;
+}
+
+export interface PcapAssessment {
+  policy_version: string;
+  assessment_sha256: string;
+  items: PcapAssessmentItem[];
+  counts: Record<string, number>;
+  ioc_candidate_count: number;
+  summary: string;
+  limitations: string[];
 }
 
 export interface PcapEvidenceRef {
@@ -892,6 +920,10 @@ export interface PcapDeterministicResult {
     size_bytes: number;
     media_type?: string;
     evidence?: PcapEvidenceRef[];
+    sha1?: string;
+    md5?: string;
+    completeness?: string;
+    transfers?: Array<{ request_frame?: number; response_frame: number; url?: string; completeness: string }>;
   }>;
   observables: Array<{
     observable_id: string;
@@ -940,6 +972,10 @@ export interface PcapAnalysisResult {
   summary: string;
   report: string;
   result: PcapDeterministicResult;
+  assessment?: PcapAssessment;
+  enrichment?: Record<string, unknown>;
+  artifact_download_available?: boolean;
+  source_tlp?: string;
   context?: {
     schema_version: string;
     snapshot_sha256: string;
@@ -1396,6 +1432,10 @@ export const analyzeApi = {
 };
 
 export const pcapApi = {
+  enrich: (analysisId: string, observableIds: string[], providers: string[]): Promise<PcapAnalysisResult> =>
+    http.post(`/pcap/analyses/${analysisId}/enrich`, { observable_ids: observableIds, providers, consent: true }, { timeout: 120_000 }).then(r => r.data),
+  downloadArtifact: (analysisId: string, artifactId: string): Promise<Blob> =>
+    http.get(`/pcap/analyses/${analysisId}/artifacts/${artifactId}/download`, { responseType: 'blob', timeout: 360_000 }).then(r => r.data),
   analyze: (formData: FormData): Promise<PcapAnalysisResult> =>
     http.post('/pcap/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
   analyses: (limit = 50, offset = 0): Promise<PcapAnalysisCollection> =>
