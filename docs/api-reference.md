@@ -4,7 +4,7 @@
 
 - Version: **8.0.0-beta.1**
 - Modules: **31**
-Operations: **356**
+Operations: **358**
 
 Interactive contracts are available from a running deployment at `/docs`,
 `/redoc`, and `/openapi.json`. All platform operations use `/api`; protected
@@ -355,12 +355,14 @@ suite rather than by the live smoke command.
 
 ## PCAP Analysis
 
-3 operations.
+5 operations.
 
 | Method | Path | Operation | Success |
 |---|---|---|---|
 | `GET` | `/api/pcap/analyses` | List Analyses | 200 |
 | `GET` | `/api/pcap/analyses/{analysis_id}` | Get Analysis | 200 |
+| `GET` | `/api/pcap/analyses/{analysis_id}/artifacts/{artifact_id}/download` | Download Artifact | 200 |
+| `POST` | `/api/pcap/analyses/{analysis_id}/enrich` | Enrich Analysis | 200 |
 | `POST` | `/api/pcap/analyze` | Create Analysis | 200 |
 
 ## Report Review Gate

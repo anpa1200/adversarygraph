@@ -11,6 +11,7 @@ import { AddToInvestigationButton } from '@/components/AddToInvestigationButton'
 import type { ReportSession } from '@/types/attack';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
+import { PcapReputationPanel } from '@/components/PcapReputationPanel';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 type AnalysisMode = 'cti' | 'log-pcap';
@@ -393,6 +394,7 @@ export function Analyze() {
           {logPcapResult && (
             <LogPcapResultView
               result={logPcapResult}
+              onUpdated={value => setLogPcapResult(adaptPcapAnalysis(value))}
               domain={domain}
               addTechniques={addTechniques}
               addComparisonLayer={addComparisonLayer}
@@ -418,12 +420,14 @@ export function Analyze() {
 
 function LogPcapResultView({
   result,
+  onUpdated,
   domain,
   addTechniques,
   addComparisonLayer,
   navigate,
 }: {
   result: LogPcapAnalysisResult;
+  onUpdated: (value: PcapAnalysisResult) => void;
   domain: string;
   addTechniques: (ids: string[]) => void;
   addComparisonLayer: (layer: { name: string; techniqueIds: string[]; source?: string; color?: string }) => void;
@@ -432,11 +436,27 @@ function LogPcapResultView({
   const canExport = useHasPermission('export_data');
   const deterministic = result.deterministic_result;
   const ttpIds = result.techniques.filter(item => item.review_status !== 'rejected').map(item => item.attack_id);
-  const iocCandidates = result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ja3', 'ja4'].includes(item.type));
+  const iocCandidates = deterministic
+    ? (result.pcap_assessment?.items ?? []).filter(item => item.ioc_candidate).map(item => ({ value: item.value, type: item.type, description: `${item.classification}; analyst review required`, confidence: 0.5 }))
+    : result.observables.filter(item => ['ipv4', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ja3', 'ja4'].includes(item.type));
+  const [artifactError, setArtifactError] = useState('');
+  const [downloading, setDownloading] = useState<string | null>(null);
   // Packet identities and DNS names are not endpoint command-execution logs.
   // Only the decoder's frame-backed findings apply to deterministic captures.
   const expectedBehaviors = deterministic ? [] : buildExpectedSuspiciousBehaviors(result);
   const analysisId = getLogPcapAnalysisId(result);
+  const downloadArtifact = async (artifactId: string, sha256: string) => {
+    setArtifactError(''); setDownloading(artifactId);
+    try {
+      const blob = await pcapApi.downloadArtifact(analysisId, artifactId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `${sha256}.bin`; link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setArtifactError('File recovery failed. The capture must be retained and the recovered bytes must match the recorded hash. No unverified file was returned.');
+    } finally { setDownloading(null); }
+  };
   const sourceRef = result.filename || `log-pcap-${analysisId.slice(0, 8)}`;
   const addToMyTtps = () => addTechniques(ttpIds);
   const compareOnMatrix = () => {
@@ -496,6 +516,9 @@ function LogPcapResultView({
                       source_analysis_ref: `/api/pcap/analyses/${analysisId}`,
                       source_sha256: deterministic.capture.source_sha256,
                       semantic_sha256: deterministic.semantic_sha256,
+                      assessment_sha256: result.pcap_assessment?.assessment_sha256,
+                      ioc_candidate_count: result.pcap_assessment?.ioc_candidate_count ?? 0,
+                      reputation_snapshot_sha256: result.pcap_enrichment?.snapshot_sha256,
                       evidence_copy_scope: 'bounded-preview-full-evidence-retained-in-source-analysis',
                     } : {}),
                     actor_similarity_leads: result.apt_matches.slice(0, 10).map(item => ({
@@ -533,7 +556,8 @@ function LogPcapResultView({
                   })),
                   ...iocCandidates.slice(0, 100).map(item => ({
                     id: `ioc:${item.value}`,
-                    type: 'ioc',
+                    type: deterministic ? 'pcap-observable' : 'ioc',
+                    status: 'candidate-requires-review',
                     value: item.value,
                     ioc_type: item.type,
                     source_ref: sourceRef,
@@ -582,9 +606,15 @@ function LogPcapResultView({
                     source: 'deterministic-pcap-analysis',
                   })) ?? []),
                 ],
+                evidenceEdges: deterministic ? [
+                  ...deterministic.findings.slice(0, 100).map(item => ({ source: `log-pcap:${analysisId}`, target: item.finding_id, type: 'supports-rule-candidate', source_analysis_ref: `/api/pcap/analyses/${analysisId}` })),
+                  ...deterministic.artifacts.slice(0, 100).map(item => ({ source: `log-pcap:${analysisId}`, target: item.artifact_id, type: 'contains-exported-bytes', sha256: item.sha256 })),
+                  ...deterministic.identities.slice(0, 100).map(item => ({ source: `log-pcap:${analysisId}`, target: item.identity_id, type: 'records-identity-value' })),
+                  ...iocCandidates.slice(0, 100).map(item => ({ source: `log-pcap:${analysisId}`, target: `ioc:${item.value}`, type: 'has-review-candidate', interpretation: 'Not automatic maliciousness confirmation' })),
+                ] : [],
                 timelineEvent: `Added Log/PCAP analysis ${sourceRef}`.trim(),
               }}
-              disabled={!ttpIds.length && !iocCandidates.length}
+              disabled={!deterministic && !ttpIds.length && !iocCandidates.length}
               className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded"
             />
             <button onClick={addToMyTtps} disabled={!ttpIds.length} className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white px-3 py-1.5 rounded">+ My TTPs</button>
@@ -622,7 +652,7 @@ function LogPcapResultView({
             onOpenIoc={(value) => navigate(`/ioc-investigation?indicator=${encodeURIComponent(value)}`)}
           />}
 
-          <Panel title={`Suspicious / malicious findings (${result.suspicious_findings.length})`}>
+          <Panel title={`Behavior findings — analyst review required (${result.suspicious_findings.length})`}>
             {result.suspicious_findings.length ? result.suspicious_findings.map((finding, index) => (
               <div key={`${finding.category}-${index}`} className="border-t border-gray-800 p-3">
                 <div className="flex items-center gap-2">
@@ -657,7 +687,8 @@ function LogPcapResultView({
         </section>
 
         <aside className="space-y-4">
-          <Panel title={`Possible IOCs for enrichment (${iocCandidates.length})`}>
+          {deterministic && <PcapReputationPanel key={analysisId} result={result} onUpdated={onUpdated} />}
+          <Panel title={`IOC candidates for review (${iocCandidates.length})`}>
             <div className="max-h-[520px] overflow-y-auto">
               {iocCandidates.length ? iocCandidates.slice(0, 150).map((ioc, index) => (
                 <div key={`${ioc.value}-${index}`} className="border-t border-gray-800 p-3">
@@ -687,15 +718,21 @@ function LogPcapResultView({
             </div>
           </Panel>}
 
-          {deterministic && <Panel title={`Exported object hashes (${deterministic.artifacts.length})`}>
+          {deterministic && <Panel title={`Recovered HTTP objects (${deterministic.artifacts.length})`}>
+            <p className="p-3 text-xs text-amber-300">Treat downloaded files as untrusted. Never execute them on your workstation. Hashes describe exported bytes; completeness may be unknown.</p>
+            {artifactError && <p role="alert" className="p-3 text-xs text-red-400">{artifactError}</p>}
             <div className="max-h-72 overflow-y-auto">
               {deterministic.artifacts.slice(0, 100).map(artifact => (
                 <div key={artifact.artifact_id} className="border-t border-gray-800 p-3">
                   <div className="break-all text-xs text-gray-200">{artifact.filename}</div>
                   <div className="mt-1 break-all font-mono text-[9px] text-gray-500">{artifact.sha256}</div>
+                  <div className="mt-1 break-all font-mono text-[9px] text-gray-500">SHA-1: {artifact.sha1 || 'not recorded'} · MD5: {artifact.md5 || 'not recorded'}</div>
+                  <p className="mt-1 text-[10px] text-gray-400">Completeness: {artifact.completeness || 'unknown'} · {formatPcapEvidence(artifact.evidence || [])}</p>
+                  {artifact.transfers?.map((transfer, i) => <p key={i} className="break-all text-[10px] text-gray-500">Request {transfer.request_frame ?? 'unbound'} → response {transfer.response_frame}: {transfer.url || 'URL unbound'}</p>)}
                   <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-600">
                     <span>{artifact.size_bytes.toLocaleString()} bytes</span>
                     <button onClick={() => navigate(`/ioc-investigation?indicator=${artifact.sha256}`)} className="secondary-action text-[10px]">Investigate hash</button>
+                    <button disabled={!canExport || !result.artifact_download_available || downloading !== null} onClick={() => void downloadArtifact(artifact.artifact_id, artifact.sha256)} className="secondary-action text-[10px]">{downloading === artifact.artifact_id ? 'Recovering…' : 'Download verified bytes'}</button>
                   </div>
                 </div>
               ))}
@@ -1677,6 +1714,10 @@ function adaptPcapAnalysis(result: PcapAnalysisResult): LogPcapAnalysisResult {
     session_id: result.session_id,
     semantic_sha256: result.semantic_sha256,
     deterministic_result: result.result,
+    pcap_assessment: result.assessment,
+    pcap_enrichment: result.enrichment,
+    artifact_download_available: result.artifact_download_available,
+    source_tlp: result.source_tlp,
     observables: result.result.observables.map(item => ({
       value: item.value,
       type: item.type,

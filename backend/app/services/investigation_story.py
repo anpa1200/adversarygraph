@@ -22,7 +22,7 @@ from app.models.ioc import IOCInvestigationSession
 from app.models.pcap import PcapAnalysis
 from app.services import threat_hunting_ai
 
-PROMPT_VERSION = "investigation-story-v1"
+PROMPT_VERSION = "investigation-story-v2"
 MAX_SOURCE_CHARS = 320_000
 MAX_PROMPT_CHARS = 450_000
 DERIVED_TYPES = {"ai-summary", "investigation-summary", "investigation-report"}
@@ -85,6 +85,13 @@ context, not packet behavior. Keep these levels separate. ATT&CK catalog matches
 and provider TTP tags are NOT observed execution. Do not upgrade them. Include
 only source-present ATT&CK IDs, IOC values and identities, with their relevance
 and evidence. Quote the actual value/ID in at least one citation for each item.
+Do not copy the observable inventory into iocs. Include an IOC only when a
+cited behavior, exact intelligence match or direct provider verdict establishes
+why it merits investigation. Describe provider-reported maliciousness as a
+dated source assertion, not independent confirmation. Recovered-object hashes
+identify exported bytes; unknown completeness means the original server file
+may not have been recovered in full. MD5/SHA-1 are lookup identifiers, not
+collision-resistant integrity guarantees; prefer SHA-256 for integrity.
 Preserve host-account-IP associations; never merge different machines/accounts.
 
 An IP connection does not establish compromise. Shared hosting/CDN reputation,
@@ -208,6 +215,19 @@ async def build_pack(db, investigation, report_id: str) -> dict:
                 for candidate in result.get("attack_candidates", []):
                     pack.add(reference + "/attack_candidates", "rule_candidate", _compact_refs(candidate))
                 context = (source_session.source_provenance or {}).get("pcap_context", {}) if source_session else {}
+                enrichment = (source_session.source_provenance or {}).get("pcap_enrichment", {}) if source_session else {}
+                for artifact in result.get("artifacts", [])[:200]:
+                    pack.add(reference + "/artifacts/" + str(artifact.get("artifact_id", "")), "packet_fact", _compact_refs(artifact))
+                pack.add(reference + "/artifact-coverage", "packet_fact", {
+                    "available_detailed_objects": len(result.get("artifacts", [])),
+                    "included_in_story": min(200, len(result.get("artifacts", []))),
+                    "inventory_coverage": {k: v for k, v in result.get("coverage", {}).get("http_objects", {}).items() if k != "compact_hash_index"},
+                })
+                if enrichment:
+                    pack.add(reference + "/reputation", "intelligence_lead", {
+                        **_pick(enrichment, ("snapshot_sha256", "updated_at", "coverage", "items")),
+                        "scope": "Dated provider assertions about exact artifacts, not proof of execution, capture-time intent, observed ATT&CK behavior or actor attribution. No record/errors mean unknown. Do not transfer a file verdict to hosting IPs/domains.",
+                    })
                 pack.add(reference + "/context", "intelligence_lead", {
                     **_pick(context, ("snapshot_sha256", "created_at", "coverage", "interpretation", "matches", "source_actor_links", "cross_case_correlations")),
                     "techniques": [_pick(t, ("attack_id", "name", "status", "url")) for t in context.get("techniques", [])],

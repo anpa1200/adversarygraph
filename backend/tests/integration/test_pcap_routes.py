@@ -133,7 +133,10 @@ async def test_pcap_analysis_is_durable_and_retrievable(
     pcap_intake = next(item for item in intake.json() if item["analysis_session_id"] == payload["session_id"])
     assert pcap_intake["actor_ids"] == []
     assert pcap_intake["technique_ids"] == ["T1071.001"]
-    assert pcap_intake["indicators"][0]["value"] == "8.8.8.8"
+    # Merely sharing a finding's frame is not remote-peer evidence. A resolver
+    # must not become an IOC without an explicit request/peer binding.
+    assert pcap_intake["indicators"] == []
+    assert payload["assessment"]["ioc_candidate_count"] == 0
     assert pcap_intake["provenance"]["source_sha256"] == hashlib.sha256(PCAP).hexdigest()
 
     fetched = await client.get(f"/api/pcap/analyses/{payload['analysis_id']}")

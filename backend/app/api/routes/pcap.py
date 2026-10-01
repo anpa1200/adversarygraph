@@ -6,9 +6,11 @@ import hashlib
 import logging
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +30,8 @@ from app.models.analysis import AnalysisResult, AnalysisSession
 from app.models.operations import ReportIntake
 from app.models.pcap import PcapAnalysis
 from app.services.pcap_context import build_context
+from app.services.pcap_assessment import assess, assessment_report, review_candidates
+from app.services.pcap_reputation import enrich_capture
 from app.services.ai.base import ExtractedTechnique, ExtractionResult, technique_to_record
 from app.services.auth import TeamUser, audit, current_user, has_permission, require_permission
 from app.services.pcap_analyzer import (
@@ -38,6 +42,7 @@ from app.services.pcap_analyzer import (
     get_manifest,
     render_report,
     retain_capture,
+    recover_artifact,
     validate_capture_magic,
 )
 
@@ -193,6 +198,10 @@ class PcapAnalysisOut(BaseModel):
     # unknown-field removal. Validation belongs at ingestion, not serialization.
     result: dict[str, Any]
     context: dict[str, Any] = Field(default_factory=dict)
+    assessment: dict[str, Any] = Field(default_factory=dict)
+    enrichment: dict[str, Any] = Field(default_factory=dict)
+    artifact_download_available: bool = False
+    source_tlp: str = "TLP:AMBER+STRICT"
     techniques: list[TechniqueHit]
     apt_matches: list[AptMatch]
 
@@ -286,48 +295,18 @@ def _bind_report_evidence(extraction: ExtractionResult, report: str) -> None:
             technique.evidence_source = "source-text"
 
 
-def _review_indicator_candidates(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build report-local IOC candidates; canonical creation stays review-gated."""
-
-    candidates: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-
-    def add(kind: str, value: Any, *, roles: list[str], evidence: list[dict[str, Any]]) -> None:
-        clean = str(value or "").strip()
-        key = (kind, clean.casefold())
-        if not clean or key in seen or len(candidates) >= 200:
-            return
-        seen.add(key)
-        candidates.append({
-            "value": clean,
-            "type": kind,
-            "indicator_type": kind,
-            # Confidence describes faithful capture extraction, not a verdict
-            # that the observed value is malicious.
-            "confidence": 50,
-            "roles": roles[:20],
-            "evidence": evidence[:20],
-            "source": "deterministic-pcap-analysis",
-        })
-
-    # Reserve capacity for both transferred-object hashes and network IOCs;
-    # the Review Gate deliberately bounds one intake to 200 indicator claims.
-    for artifact in list(result.get("artifacts") or [])[:100]:
-        add("sha256", artifact.get("sha256"), roles=["exported-object"], evidence=[])
-    allowed = {"ipv4", "ipv6", "domain", "url", "md5", "sha1", "sha256", "ja3", "ja3s", "ja4"}
-    for item in list(result.get("observables") or [])[:500]:
-        kind = str(item.get("type") or "").lower()
-        if kind not in allowed:
-            continue
-        if kind in {"ipv4", "ipv6"} and item.get("is_private") is not False:
-            continue
-        add(kind, item.get("value"), roles=list(item.get("roles") or []), evidence=list(item.get("evidence") or []))
-    return candidates
+def _review_indicator_candidates(result: dict[str, Any], context: dict | None = None) -> list[dict[str, Any]]:
+    return review_candidates(assess(result, context))
 
 
 def _build_out(row: PcapAnalysis, session: AnalysisSession, result_row: AnalysisResult | None) -> PcapAnalysisOut:
     techniques = [TechniqueHit(**item) for item in (result_row.extracted_techniques if result_row else [])]
     apt_matches = [AptMatch(**item) for item in (result_row.apt_matches if result_row else [])]
+    provenance = session.source_provenance or {}
+    assessment = assess(row.result or {}, provenance.get("pcap_context"), provenance.get("pcap_enrichment"))
+    # Append the current assessment without changing stored source text, claim
+    # offsets, the provenance digest, or the immutable packet evidence.
+    report = (row.report_text or session.source_text or "") + "\n" + assessment_report(assessment, provenance.get("pcap_enrichment"))
     return PcapAnalysisOut(
         analysis_id=str(row.id),
         session_id=str(row.session_id),
@@ -339,9 +318,13 @@ def _build_out(row: PcapAnalysis, session: AnalysisSession, result_row: Analysis
         semantic_sha256=row.semantic_sha256,
         analyzer_manifest=row.analyzer_manifest or {},
         summary=(result_row.summary if result_row else "") or str((row.result or {}).get("summary") or ""),
-        report=row.report_text or session.source_text or "",
+        report=report,
         result=row.result or {},
         context=(session.source_provenance or {}).get("pcap_context", {}),
+        assessment=assessment,
+        enrichment=provenance.get("pcap_enrichment", {}),
+        artifact_download_available=bool(row.storage_path),
+        source_tlp=session.tlp or "TLP:AMBER+STRICT",
         techniques=techniques,
         apt_matches=apt_matches,
     )
@@ -485,7 +468,7 @@ async def create_analysis(
         stored.apt_matches = [item.model_dump() for item in apt_matches]
         stored.summary = extraction.summary
         stored.raw_response = canonical_result_reference(result)
-        indicator_candidates = _review_indicator_candidates(result)
+        indicator_candidates = _review_indicator_candidates(result, context)
         intake = await db.scalar(
             select(ReportIntake)
             .where(ReportIntake.analysis_session_id == session.id)
@@ -611,3 +594,79 @@ async def get_analysis(
     if row is None:
         raise HTTPException(404, "PCAP analysis not found")
     return await _load_out(db, row)
+
+
+class PcapEnrichmentIn(BaseModel):
+    observable_ids: list[str] = Field(min_length=1, max_length=10)
+    providers: list[str] = Field(default_factory=lambda: ["virustotal", "threatfox", "malwarebazaar"], min_length=1, max_length=3)
+    consent: Literal[True]
+
+
+@router.post("/analyses/{analysis_id}/enrich", response_model=PcapAnalysisOut)
+async def enrich_analysis(analysis_id: uuid.UUID, payload: PcapEnrichmentIn,
+                          db: AsyncSession = Depends(get_session), user: TeamUser = Depends(run_analysis)) -> PcapAnalysisOut:
+    if not has_permission(user, "export_data"):
+        raise HTTPException(403, "External reputation lookup requires export_data permission")
+    # Serialize updates to one capture's snapshot so concurrent clicks cannot
+    # silently discard another analyst's provider results.
+    row = await db.scalar(select(PcapAnalysis).where(PcapAnalysis.id == analysis_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "PCAP analysis not found")
+    if row.status != "completed":
+        raise HTTPException(409, "PCAP analysis is not complete")
+    session = await db.get(AnalysisSession, row.session_id)
+    if session is None:
+        raise HTTPException(409, "PCAP source session is missing")
+    if session.tlp != "TLP:CLEAR":
+        raise HTTPException(403, "External providers require a TLP:CLEAR source. An authorized analyst must review and change the source marking first.")
+    provenance = session.source_provenance or {}
+    try:
+        snapshot = await enrich_capture(db, row.result, observable_ids=payload.observable_ids, providers=payload.providers,
+                                        previous=provenance.get("pcap_enrichment"))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    session.source_provenance = {**provenance, "pcap_enrichment": snapshot}
+    await audit(db, user, "pcap.enrich", "pcap_analysis", str(row.id), {
+        "snapshot_sha256": snapshot["snapshot_sha256"], "observable_ids": payload.observable_ids,
+        "providers": payload.providers, "consent": True, "source_tlp": session.tlp,
+        "provider_lookups_started": snapshot["coverage"]["provider_lookups_started"], "payload_uploads": 0,
+    })
+    await db.commit()
+    return await _load_out(db, row)
+
+
+@router.get("/analyses/{analysis_id}/artifacts/{artifact_id}/download", response_class=Response,
+            responses={200: {"content": {"application/octet-stream": {}}, "description": "SHA-256 verified recovered bytes; untrusted attachment"}})
+async def download_artifact(analysis_id: uuid.UUID, artifact_id: str,
+                            db: AsyncSession = Depends(get_session), user: TeamUser = Depends(require_permission("export_data"))) -> Response:
+    row = await db.get(PcapAnalysis, analysis_id)
+    if row is None:
+        raise HTTPException(404, "PCAP analysis not found")
+    objects = [*(row.result or {}).get("artifacts", []), *(row.result or {}).get("coverage", {}).get("http_objects", {}).get("compact_hash_index", [])]
+    artifact = next((a for a in objects if a.get("artifact_id") == artifact_id), None)
+    if artifact is None:
+        raise HTTPException(404, "Artifact not found in this capture")
+    if not row.storage_path:
+        raise HTTPException(409, "Capture was not retained; re-upload with capture retention enabled to recover files")
+    path = await run_in_threadpool(_validated_capture_path, row.storage_path, row.source_sha256)
+    if path is None:
+        raise HTTPException(409, "Invalid retained capture location")
+    try:
+        content = await recover_artifact(path, row.source_sha256, artifact)
+    except PcapAnalyzerError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    await audit(db, user, "pcap.artifact.download", "pcap_analysis", str(row.id), {
+        "artifact_id": artifact_id, "sha256": artifact["sha256"], "size_bytes": len(content),
+    })
+    await db.commit()
+    return Response(content, media_type="application/octet-stream", headers={
+        "Content-Disposition": f'attachment; filename="{artifact["sha256"]}.bin"',
+        "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store", "Content-Security-Policy": "sandbox",
+        "X-Artifact-SHA256": artifact["sha256"],
+    })
+
+
+def _validated_capture_path(storage_path: str, source_sha256: str) -> Path | None:
+    root = Path(settings.pcap_storage_dir).resolve()
+    path = Path(storage_path)
+    return path if not path.is_symlink() and path.resolve() == root / f"{source_sha256}.pcap" else None

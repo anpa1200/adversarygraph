@@ -137,8 +137,11 @@ async def test_authoritative_pcap_bindings_preserve_different_hosts_and_missing_
         {"identity_id": "i2", "type": "account", "value": "bob", "ip_addresses": ["10.0.0.2"], "evidence": [{"frame_number": 10}]},
     ]
     pcap = SimpleNamespace(status="completed", semantic_sha256="a"*64, report_text=TEXT, session_id=sid,
-                           result={"capture": {}, "identities": identities, "findings": [], "attack_candidates": []})
-    records = {(PcapAnalysis, uid): pcap, (AnalysisSession, sid): SimpleNamespace(tlp="TLP:RED", source_provenance={})}
+                           result={"capture": {}, "identities": identities, "findings": [], "attack_candidates": [],
+                                   "artifacts": [{"artifact_id": "file1", "sha256": "b"*64, "completeness": "unknown"}]})
+    records = {(PcapAnalysis, uid): pcap, (AnalysisSession, sid): SimpleNamespace(tlp="TLP:RED", source_provenance={
+        "pcap_enrichment": {"snapshot_sha256": "c"*64, "items": [{"value": "b"*64, "signals": [{"verdict": "provider-reported-malicious"}]}]}
+    })}
     class DB:
         async def get(self, model, identifier, **kwargs):
             return records.get((model, identifier))
@@ -152,6 +155,10 @@ async def test_authoritative_pcap_bindings_preserve_different_hosts_and_missing_
     assert facts[1]["value"] == "bob" and facts[1]["ip_addresses"] == ["10.0.0.2"]
     assert facts[0]["evidence_total"] == 8 and len(facts[0]["evidence"]) == 3
     assert result["effective_tlp"] == "TLP:RED"
+    reputation = [s for s in result["sources"] if s["reference"].endswith('/reputation')]
+    assert reputation and all(s["kind"] == "intelligence_lead" for s in reputation)
+    assert 'not proof of execution' in reputation[0]["text"]
+    assert any('/artifacts/file1' in s['reference'] and s['kind'] == 'packet_fact' for s in result['sources'])
     records.clear()
     with pytest.raises(HTTPException) as exc:
         await story.build_pack(DB(), row, "r")

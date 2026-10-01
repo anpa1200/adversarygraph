@@ -55,7 +55,7 @@ manifest mismatches.
 
 ## Rule-pack boundary
 
-### Evidence profile and rule pack v3
+### Evidence profile v4 and rule pack v3
 
 The v2 manifest includes the analyzer source-code SHA-256. The API returns the
 original verified JSON object without Pydantic default insertion or field
@@ -86,8 +86,9 @@ and observation overlap with up to 50 prior completed captures. URL path case
 is preserved; a substring is not an exact match. These snapshots are outside
 the immutable packet result and do not promote indicators or attribute actors.
 Their limits are visible. Historical knowledge may postdate the incident.
-External provider calls remain explicit analyst actions in IOC Investigation;
-PCAP ingestion makes none. No match means unknown in the available corpus.
+External provider calls remain explicit analyst actions, now also available
+inside the PCAP result. PCAP ingestion makes none. No match means unknown in
+the available corpus.
 
 The shared AI extraction system prompt and legacy log/PCAP prompt separate
 facts, heuristics, source claims and hypotheses; reject instructions embedded
@@ -133,14 +134,95 @@ handled by existing governed components:
 | ATT&CK candidate | My TTPs, Navigator comparison, linked report | Suggested until reviewed and promoted |
 | Actor similarity | APT profile | TTP-overlap investigation lead, never attribution |
 | Identity, finding, observable | Investigation Evidence Graph | Preserves capture, analysis, rule, and frame lineage |
-| Exported-object artifact | Investigation Evidence Graph | Preserves capture/analysis lineage and object hash; TShark export does not supply an object-to-frame binding |
+| Exported-object artifact | Investigation Evidence Graph and authenticated file recovery | Exact body SHA-256 can bind a decoded HTTP response; unresolved bindings remain unknown |
 | Full report | internal-IR Review Gate | Promotion requires the normal claim/evidence governance path |
 
-Up to 200 public IP, domain, URL, network-fingerprint, and file-hash
-observations are staged as report-local indicator candidates. They enter the IOC Library and
-intelligence graph only after claim review and promotion; private IPs are kept
-in capture evidence but are not staged as threat IOCs. TTP-overlap actor leads
-are deliberately excluded from actor claims.
+Up to 200 evidence-qualified indicator candidates are staged at ingestion.
+Ordinary observations, standalone executable downloads, DNS failures and
+directory activity do not qualify on their own. They enter the IOC Library
+only after claim review and promotion; private/reserved IPs remain evidence,
+not threat IOC candidates. TTP-overlap actor leads are excluded from actor
+claims. Later provider snapshots do not overwrite approved claims or silently
+promote new indicators: review their candidate assessment and use the existing
+IOC Investigation / report-review workflows.
+
+### Evidence-backed reputation workflow
+
+Open a capture under **Analyze → Log / PCAP**. The assessment separates:
+
+- `observed`: no supporting maliciousness evidence; retained for investigation.
+- `suspicious`: a linked behavior/static feature or direct suspicious provider
+  report merits review; this is not confirmed malware.
+- `intelligence-match`: exact typed local IOC match; source quality and dates
+  still require review.
+- `provider-reported-malicious`: direct typed provider evidence for this exact
+  target; not independent confirmation, capture-time intent or actor attribution.
+
+The panel initially shows candidates and recovered hashes, not every network
+endpoint as an IOC. Select up to ten targets, up to three providers, and explicitly
+authorize disclosure. Source marking must be **TLP:CLEAR**, with `run_analysis`
+and `export_data` permissions. An authorized analyst can review/change the
+source marking through the existing linked-report editor. Consent cannot
+bypass a restricted marking. Public-looking enterprise domains may still be
+sensitive: the operator must review the selected values.
+
+`POST /api/pcap/analyses/{id}/enrich` accepts `observable_ids`, `providers`, and
+`consent: true`. It reuses existing IOC Investigation credentials/adapters for
+VirusTotal, ThreatFox, MalwareBazaar, OTX, urlscan, GreyNoise, AbuseIPDB, Shodan
+and Censys. Unsupported target/provider combinations are reported, not queried.
+No sample upload, scan submission, DNS resolution or request to an observed
+destination occurs. Private/reserved IPs, special-use domains, identities and
+full URLs cannot be automatically disclosed. Hashes are exact exported-byte
+identifiers, not proof that a complete server-side file was recovered.
+
+Only direct typed fields establish reputation: VirusTotal's target-bound engine
+counts; exact MalwareBazaar/ThreatFox records; target-bound GreyNoise
+classification; and AbuseIPDB confidence as a suspiciousness lead, not malware
+proof. Related-object detections, arbitrary threat-name text, graph size, DNS
+resolution and shared hosting do not transfer maliciousness. IP:port records
+are not treated as exact bare-IP verdicts. Context providers supply leads only.
+No detections, no record, no credentials, errors and rate limits never mean benign.
+Conflicting direct benign/malicious provider reports remain visible.
+
+Each signal has a query timestamp and available provider analysis/observation
+dates. The dated `pcap_enrichment` snapshot is stored in session provenance,
+outside the immutable packet result. Updates are serialized per capture and
+audited. A batch has a 90-second budget, each provider lookup at most 25 seconds;
+budget skips are explicit. The latest results for at most 200 targets are
+retained, with omission counts and a previous-snapshot hash. This is a bounded
+rolling snapshot, **not** an immutable archive of every previous response.
+Reports include the current assessment and snapshot identity without replacing
+the original source report or invalidating its citation offsets. Investigation
+graph handoffs link back to the authoritative capture, and the second-layer
+story fetches provider assertions as intelligence leads, never packet facts.
+
+### Verified file recovery
+
+Profile v4 calculates SHA-256, SHA-1 and MD5 over the exported bytes. It hashes
+decoded HTTP response bodies separately, removes body bytes from returned JSON,
+and links a response only on a full SHA-256 match. Request linkage additionally
+requires TShark's frame reference, matching stream, ordering and reversed peers.
+No filename-only or same-stream-only association is accepted. A matching
+declared Content-Length is reported narrowly, not as proof of complete capture,
+successful execution or original compressed/ranged server-file identity.
+
+**Download verified bytes** calls
+`GET /api/pcap/analyses/{id}/artifacts/{artifact_id}/download`. It requires
+`export_data` and a retained capture. The API validates the storage location
+and source hash, requests re-extraction from the isolated decoder, and checks
+returned size and SHA-256 independently. Responses are `application/octet-stream`,
+attachment-only, `nosniff`, `no-store`, with a SHA-256 `.bin` filename. User-supplied
+filenames are never filesystem paths. Export symlinks are ignored. Downloading
+does not execute or unpack anything; analysts must handle bytes in isolation.
+
+Exports are watched for file-count, single-file, total-byte, diagnostic-output
+and time budgets while TShark runs. Exceeding a budget discards that export
+inventory with an explicit warning; packet evidence remains available. The
+watcher checks every 100 ms, so this is not a hard filesystem quota: retain the
+container's resource limits. HTTP only is supported here; encrypted TLS without
+keys, missing packets, unsupported protocols and ambiguous bodies remain
+coverage limits. Existing captures need reanalysis to gain v4 hashes/bindings;
+old SHA-256 inventory remains readable.
 
 The Analyze UI adds bounded evidence nodes for these entities and exposes direct
 investigation, IOC, hash, Navigator, actor, and Review Gate pivots. The
