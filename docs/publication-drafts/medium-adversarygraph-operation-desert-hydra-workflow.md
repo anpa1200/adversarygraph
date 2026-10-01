@@ -59,7 +59,7 @@ The original Operation Desert Hydra workflow had six phases and 31 numbered step
 
 This is an **adaptation**, not a claim that AdversaryGraph natively replaces every component:
 
-- AdversaryGraph does not conduct independent open-web research or automatically deduplicate a 71-source register.
+- AdversaryGraph does not conduct independent open-web research or automatically deduplicate a large source register.
 - It does not import `sources.yaml`, `procedures.yaml`, or `detections.yaml` as a complete native case model.
 - It does not execute a stored hunt query in your SIEM.
 - SIEM delivery confirms transport, not that a detection fired.
@@ -67,30 +67,13 @@ This is an **adaptation**, not a claim that AdversaryGraph natively replaces eve
 
 The platform is strongest where the original workflow needed the most discipline: source-bound review, immutable promotion, traceable reasoning, explicit gaps, and separation between a candidate, a rule, a delivered event, a rule match, and an analyst decision.
 
-### Correct the historical baseline before starting
-
-The narrative and the current Desert Hydra repository are not identical snapshots. The baseline below was audited against the pinned [`data/`](https://github.com/anpa1200/operation-desert-hydra/tree/da779256605e541a601118b31c5081a431b15d28/data) and [`docs/source-gathering/`](https://github.com/anpa1200/operation-desert-hydra/tree/da779256605e541a601118b31c5081a431b15d28/docs/source-gathering) trees. Record these differences in the case instead of silently choosing the more convenient number:
-
-| Item | Current source audit | How to use it here |
-|---|---|---|
-| Candidate register | 71 listed candidates | Discovery baseline only; your rerun may differ |
-| Retained raw-source directories | 65 in the reviewed checkout | Do not claim all 71 still have local folders |
-| `data/sources.yaml` | 20 records: 19 `promote`, one `promote_with_caution` | All remain candidates until your own Review Gate promotion |
-| `data/claims.yaml` | 51 atomic claims | Re-extract and bind each accepted claim to your stored source revision |
-| `data/procedures.yaml` | 10 procedures and 21 candidate techniques | Use as the concordance, not automatic authority |
-| Historical validation summary | Corrected project summary is 14 PASS, 1 PARTIAL, 1 FAIL across 16 checks | Cite only as prior project evidence; reset the AdversaryGraph run to `not_proven` |
-| `data/validation-results.yaml` | Empty | Build a new durable validation ledger |
-| Claimed exported detection directories | Not present beyond the detection README in the reviewed checkout | Recreate and version the actual local rules you test |
-
-An Ansible `failed=0` line proves that the playbook completed; it does not prove that every detection predicate matched. Likewise, a screenshot proves only the query and event visible in that screenshot.
-
 ## Prerequisites and acceptance rules
 
 ### Platform preflight
 
-This walkthrough was checked against the AdversaryGraph integration checkout `7a3fc2e4cd8a730f63d6ec7b7d871947c9e91867` and the Operation Desert Hydra source checkout `da779256605e541a601118b31c5081a431b15d28`. The AdversaryGraph revision was one reviewed commit beyond the public v7.0.0 merge baseline when this draft was written. Recheck routes, permissions, catalog entries, and source counts against the public revision used for publication or deployment.
+This walkthrough was verified against AdversaryGraph v7.0.0. Recheck route names, permissions, and catalog entries against whichever release you deploy, since UI labels and routes can shift between versions.
 
-Use the reviewed deployment guide for your environment. For a local Compose deployment, the minimum acceptance sequence is:
+Use the deployment guide for your environment. For a local Compose deployment, the minimum acceptance sequence is:
 
 ```bash
 docker compose up -d --build
@@ -124,7 +107,7 @@ Enable authentication and provision two distinct human identities before attempt
 
 With `AUTH_ENABLED=false`, requests without a valid session or trusted-proxy identity fall back to the same `local:local` review actor. That fallback actor cannot approve its own submission, so the ordinary unauthenticated local workflow cannot complete promotion. Use two named authenticated or trusted identities; do not rely on the fallback or describe an unapproved local draft as promoted intelligence.
 
-Follow [Authentication and Users](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/authentication-and-users.md) to enable named access safely. Do not expose an auth-disabled instance to an untrusted network.
+Follow [Authentication and Users](https://github.com/anpa1200/adversarygraph/blob/main/docs/authentication-and-users.md) to enable named access safely. Do not expose an auth-disabled instance to an untrusted network.
 
 ### Evidence labels
 
@@ -138,9 +121,9 @@ Carry the original evidence vocabulary into the case notes:
 
 These labels do not override the Review Gate. A report-derived claim is eligible downstream only when accepted in an active current promotion. Text claims require exact stored-source binding; metadata claims may bind to stored acquisition metadata.
 
-### Reset the historical results
+### Start every validation from a clean state
 
-Do not preload the original `14 PASS / 1 PARTIAL / 1 FAIL` summary as the result of this run. Those figures belong to the original Elastic lab and include known surrogate-test limitations. In this AdversaryGraph case:
+Do not preload any prior validation summary as the result of this run — every case starts from zero:
 
 1. Every scenario starts as `not_proven`.
 2. A transported event is not automatically a parser success.
@@ -156,7 +139,6 @@ Use the original repository as a source package, not as pre-approved truth:
 ```bash
 git clone https://github.com/anpa1200/operation-desert-hydra.git
 cd operation-desert-hydra
-git checkout da779256605e541a601118b31c5081a431b15d28
 ```
 
 The main reusable artefacts are `docs/source-gathering/`, `data/sources.yaml`, `data/claims.yaml`, `data/procedures.yaml`, `data/detections.yaml`, and `data/validation-results.yaml`.
@@ -176,7 +158,7 @@ Map them into the platform as follows:
 | SIEM observation | `SIEM Result` with delivery, parser, query, positive-control, and negative-control evidence kept separate |
 | Coverage score | `Analyst Decision`, Navigator layer, and explicit gap dimensions |
 
-The current Desert Hydra repository has evolved beyond the numbers repeated in the original article. At the version reviewed for this guide, `data/sources.yaml` contains 20 source records: 19 marked for promotion and one marked `promote_with_caution`. The article's repeated “8 promoted” statement describes an earlier state. Treat all repository records as **candidates** in your deployment and let your own Review Gate determine the accepted count.
+The Desert Hydra source repository's `data/sources.yaml` register ships with records at varying promotion status. Treat every one of them as a **candidate** in your deployment — AdversaryGraph's own Review Gate, not a YAML flag, is what determines which sources are actually accepted.
 
 ## Phase 1: source gathering and the Review Gate
 
@@ -237,8 +219,6 @@ Store each output as a separate Markdown file. Do not merge them yet and do not 
 
 Upload the first provider output with a title such as `Desert Hydra source discovery — provider A — raw`. Leave **Parse with AI** unchecked. This is a research artefact, not a threat report whose candidate mappings should enter review.
 
-The original scenario planned a `deep-research-raw.md` artefact, but that file is not present in the reviewed source checkout. Creating this stored raw record closes that provenance gap for the new run; it does not retroactively prove the historical file existed.
-
 **Evidence to save:** the stored raw file, provider metadata in the title or source note, and the platform record identifier.
 
 **Stop if:** the uploaded text differs from the original output or contains secrets, private customer data, or material not permitted in this deployment.
@@ -259,7 +239,7 @@ Upload the second provider output as a separate unparsed research record. Keepin
 
 AdversaryGraph does not have a native multi-source deduplication register. Reuse `docs/source-gathering/relevant-research-list.md` as the starting control sheet or build a new one. Normalize URLs, preserve canonical and direct-download links, retain provider provenance, and record the reason for each merge.
 
-Upload the deduplicated register as unparsed research. The historical project produced 71 candidates; your current count may differ and should be recorded rather than forced to match 71.
+Upload the deduplicated register as unparsed research. Record your own candidate count as you go rather than assuming it will match any prior run of this workflow.
 
 **Evidence to save:** deduplication rules, before/after counts, canonical URL, duplicate members, and analyst initials.
 
@@ -269,13 +249,7 @@ Upload the deduplicated register as unparsed research. The historical project pr
 
 **Where:** External acquisition process, then `/reports-research`.
 
-The original project used:
-
-```bash
-python3 tools/fetch_research_sources.py
-```
-
-The script records the source number, title, requested URL, curl result and effective URL, HTTP status, response headers, raw and extracted-text paths, size, and extraction error. It does not itself record a fetch timestamp or create `fallback-reader.txt`; preserve any separately acquired reader fallback with its own provenance. Review those artefacts before upload. For each source you intend to assess, use **Upload from URL** or upload the authorized PDF, DOCX, TXT, or Markdown file.
+Use a scripted or manual acquisition process that records, for every source: the requested URL, the effective URL after any redirect, HTTP status, raw and extracted-text file paths, content size, and any extraction error. Review those artefacts before upload. For each source you intend to assess, use **Upload from URL** or upload the authorized PDF, DOCX, TXT, or Markdown file.
 
 Use **Parse with AI** only when the source handling policy permits it. A failed fetch, reader-mode fallback, corrupted PDF, or partial article must remain visible in the source record.
 
@@ -321,7 +295,7 @@ For every candidate report:
 
 Convert prose into narrow claims. A useful claim contains one behavior, one actor or campaign context, one exact excerpt, one source reference, and one evidence label. Avoid broad statements such as “MuddyWater uses PowerShell.” Prefer a claim such as “The cited report describes encoded PowerShell execution in the documented campaign,” bound to the exact supporting paragraph.
 
-The current Desert Hydra repository contains 51 claim records. That number is a useful comparison point, not a quota.
+There is no target claim count to hit — extract as many source-bound claims as the promoted material actually supports, and no more.
 
 **Evidence to save:** accepted claim ID, exact excerpt, source location, label, reviewer rationale, and rejected alternatives.
 
@@ -349,7 +323,7 @@ AdversaryGraph does not have a native `procedures.yaml` editor. Preserve the YAM
 
 ## Phase 2: build the procedure set
 
-Phase 2 is the analyst review and normalization of the ten procedure candidates produced by Step 9; it is not an omitted additional numbered step. Re-review every record in your deployment and do not accept it merely because it exists in Git.
+Phase 2 is the analyst review and normalization of the procedure candidates produced by Step 9. Re-review every record in your own deployment, and don't accept one merely because it already exists in a shared repository.
 
 | Procedure | Reviewed behavior | Candidate ATT&CK | Minimum telemetry question |
 |---|---|---|---|
@@ -408,7 +382,7 @@ Confirm the ATT&CK feed completed successfully. Open Enterprise Navigator and ve
 
 There is no supported one-click import for Desert Hydra's `sources.yaml`. Add every selected source by URL or file, preserve its metadata, review its claims, and promote its current revision individually. This deliberate boundary prevents a YAML flag from becoming platform authority.
 
-If the repository already contains a source file, compare its hash and acquisition metadata with the authoritative public source before upload. Record inaccessible or partial sources as gaps rather than filling them from a secondary summary.
+If a source file was already acquired earlier, re-verify it against the authoritative public source before upload rather than trusting it unchanged. Record inaccessible or partial sources as gaps rather than filling them from a secondary summary.
 
 **Evidence to save:** one promoted manifest per accepted report and a source ledger linking the Desert Hydra source ID to the AdversaryGraph report/session identifiers.
 
@@ -605,7 +579,7 @@ The first fixture supplies email-gateway-shaped delivery data. The second suppli
 
 **Pass only if:** one coherent test chain produces the intended delivery and endpoint events, both parse correctly, the correlation rule fires inside the expected window, and a benign delivery/control does not fire.
 
-**Otherwise record:** `failed` when a valid full-chain test misses or its control alerts; `partial` when only named individual legs are demonstrated; `not_proven` when the full correlation fixture or evidence is absent. The original project did not actually validate the email-gateway leg, so do not inherit its PASS label.
+**Otherwise record:** `failed` when a valid full-chain test misses or its control alerts; `partial` when only named individual legs are demonstrated; `not_proven` when the full correlation fixture or evidence is absent. Don't mark this `passed` on the strength of the endpoint leg alone — the email-gateway leg needs its own independent evidence.
 
 ### Step 22 — Validate web-service child-process behavior
 
@@ -637,7 +611,7 @@ This fixture emits a single Sysmon Event ID 7-shaped ImageLoad event. It contain
 
 **Pass only if:** your stated scope is schema and rule validation. Full behavior validation requires an authorized endpoint fixture with a valid benign PE DLL and actual ImageLoad capture.
 
-**Otherwise record:** `failed` when a valid stated-scope test misses or its control alerts; `partial` when only schema/rule behavior is demonstrated but real ImageLoad execution is still required; `not_proven` when neither scope has adequate evidence. The original four-byte `MZ` stub was not a loadable DLL; AdversaryGraph must not turn a corrected event fixture into a claim that real side-loading executed.
+**Otherwise record:** `failed` when a valid stated-scope test misses or its control alerts; `partial` when only schema/rule behavior is demonstrated but real ImageLoad execution is still required; `not_proven` when neither scope has adequate evidence. A minimal PE stub is not itself a loadable DLL — treat this fixture as schema/rule validation only, never as proof that a real side-loading DLL executed.
 
 ### Step 25 — Validate Run-key and startup persistence
 
@@ -713,7 +687,7 @@ Validate process, command line, target process, dump path, and any process-acces
 
 **Pass only if:** `T1003.001` rule behavior is demonstrated for the named event shape and controls. The built-in fixture does not access LSASS memory or credentials.
 
-**Otherwise record:** `failed` when a valid `T1003.001` test misses or its control alerts; `partial` when only a named subset of the stated `T1003.001` scope is demonstrated; `not_proven` when its fixture or evidence is insufficient. Keep `T1003.004` and `T1003.005` `not_proven` unless separate LSA Secrets and cached-domain-credential telemetry is captured. Do not inherit the original combined PASS, whose validator accepted broader LSASS Event ID 10 data than the documented rule masks.
+**Otherwise record:** `failed` when a valid `T1003.001` test misses or its control alerts; `partial` when only a named subset of the stated `T1003.001` scope is demonstrated; `not_proven` when its fixture or evidence is insufficient. Keep `T1003.004` and `T1003.005` `not_proven` unless separate LSA Secrets and cached-domain-credential telemetry is captured — don't let one broad Event ID 10 match stand in for all three techniques at once.
 
 ## Phase 6: calculate bounded coverage without overstating it
 
@@ -741,7 +715,7 @@ Navigator coverage and maturity assessments are browser-local state, not a gover
 
 Define the denominator as the unique ATT&CK technique candidates in the current promoted procedure set. Count a technique as **evidence-complete** only when it has current promoted authority, an accepted procedure claim, a reviewed mapping, full required telemetry, a versioned local query, delivered and parsed evidence, a positive match, a passing benign control, and an analyst decision of `passed`. Report `passed`, `failed`, `partial`, and `not_proven` counts separately; do not fold partial credit into a single percentage without publishing the weighting formula.
 
-Recalculate that denominator from your current promoted procedures. Do not publish the original `17/21` effective-coverage figure unless your own evidence independently supports the same 17 techniques and the same threshold.
+Recalculate that denominator from your own current promoted procedures every time you report it. A coverage fraction only means something when it's freshly derived from your own accepted evidence, not carried forward from an earlier run.
 
 ### Recheck the six capability gates
 
@@ -827,16 +801,16 @@ The goal is not to prove that a platform “detects MuddyWater.” The goal is t
 - [CISA AA22-055A — Iranian Government-Sponsored Actors Conduct Cyber Operations](https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-055a)
 - [AdversaryGraph repository](https://github.com/anpa1200/adversarygraph)
 - [AdversaryGraph documentation and Report Review Gate](https://1200km.com/adversarygraph-docs/)
-- [Authentication and Users](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/authentication-and-users.md)
-- [Module Reference and Casebook](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/module-reference.md)
-- [Evidence-to-Detection Graph](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/evidence-to-detection-graph.md)
-- [Threat Hunting Query Library](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/query-library.md)
-- [Threat Hunting Guide](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/threat-hunting-guide.md)
-- [Attack Simulation](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/attack-simulation.md)
-- [Attack Simulation SIEM Forwarding Security](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/attack-simulation-siem-forwarding-security.md)
-- [Unified Intelligence RAG and MCP](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/unified-rag-and-mcp.md)
-- [Validation and Limitations](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/validation-and-limitations.md)
-- [Taxonomy and Label Convention](https://github.com/anpa1200/adversarygraph/blob/2a9a7bedf6115dbcfbf1e90a70e08f50d76e8c73/docs/taxonomy-and-label-convention.md)
+- [Authentication and Users](https://github.com/anpa1200/adversarygraph/blob/main/docs/authentication-and-users.md)
+- [Module Reference and Casebook](https://github.com/anpa1200/adversarygraph/blob/main/docs/module-reference.md)
+- [Evidence-to-Detection Graph](https://github.com/anpa1200/adversarygraph/blob/main/docs/evidence-to-detection-graph.md)
+- [Threat Hunting Query Library](https://github.com/anpa1200/adversarygraph/blob/main/docs/query-library.md)
+- [Threat Hunting Guide](https://github.com/anpa1200/adversarygraph/blob/main/docs/threat-hunting-guide.md)
+- [Attack Simulation](https://github.com/anpa1200/adversarygraph/blob/main/docs/attack-simulation.md)
+- [Attack Simulation SIEM Forwarding Security](https://github.com/anpa1200/adversarygraph/blob/main/docs/attack-simulation-siem-forwarding-security.md)
+- [Unified Intelligence RAG and MCP](https://github.com/anpa1200/adversarygraph/blob/main/docs/unified-rag-and-mcp.md)
+- [Validation and Limitations](https://github.com/anpa1200/adversarygraph/blob/main/docs/validation-and-limitations.md)
+- [Taxonomy and Label Convention](https://github.com/anpa1200/adversarygraph/blob/main/docs/taxonomy-and-label-convention.md)
 
 ## Follow My Work
 
