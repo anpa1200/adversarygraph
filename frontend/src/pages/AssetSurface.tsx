@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { Edge, Node } from '@xyflow/react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/Layout/Header';
+import { EntityGraph } from '@/components/ui/graph';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { assetSurfaceApi, layersApi, threatRadarApi } from '@/api/client';
-import type { AssetIntelMatch, AssetRegistryItem, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatCompanySpace } from '@/api/client';
+import type { AssetIntelMatch, AssetRegistryItem, AssetSurfaceAnalysisResult, AssetSurfaceAsset, ThreatAssetIntelligence, ThreatCompanySpace, ThreatSpaceAsset } from '@/api/client';
 import { IocLink, TtpLink } from '@/utils/ctiLinks';
 import { useAppStore } from '@/store';
 import { safeInternalHref } from '@/utils/url';
@@ -57,6 +59,7 @@ export function AssetSurface() {
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [riskFilter, setRiskFilter] = useState('all');
   const [exposureFilter, setExposureFilter] = useState('all');
+  const [graphAssetId, setGraphAssetId] = useState('');
 
   const casesQuery = useQuery({
     queryKey: ['asset-surface-cases'],
@@ -180,6 +183,32 @@ export function AssetSurface() {
     ),
     [companyAssetsQuery.data?.items],
   );
+
+  useEffect(() => {
+    const assets = result?.assets ?? [];
+    if (!assets.length) {
+      setGraphAssetId('');
+      return;
+    }
+    if (!assets.some(asset => asset.asset_id === graphAssetId)) {
+      setGraphAssetId(assets[0].asset_id);
+    }
+  }, [graphAssetId, result?.assets]);
+
+  const graphAsset = useMemo(
+    () => (result?.assets ?? []).find(asset => asset.asset_id === graphAssetId),
+    [graphAssetId, result?.assets],
+  );
+  const registryAssetByInventoryId = useMemo(
+    () => new Map((assetsQuery.data ?? []).map(asset => [asset.inventory_asset_id.toLowerCase(), asset])),
+    [assetsQuery.data],
+  );
+  const graphRegistryAsset = graphAsset
+    ? registryAssetByInventoryId.get(graphAsset.asset_id.toLowerCase())
+    : undefined;
+  const graphCompanyAsset = graphAsset
+    ? companyAssetByInventoryId.get(graphAsset.asset_id.toLowerCase())
+    : undefined;
 
   const run = () => {
     if (!canManage || (files.length > 0 && !canUploadFiles)) return;
@@ -430,6 +459,36 @@ export function AssetSurface() {
                 </div>
               </section>
 
+              <Panel title="Asset Inventory Intelligence Graph">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div className="max-w-3xl">
+                    <p className="text-xs leading-5 text-gray-400">
+                      Select an analyzed asset to view its observed attack surface and the CVE, IOC, ATT&amp;CK technique,
+                      and threat-group leads already correlated by Threat Radar. Dashed relationships are hypotheses for
+                      analyst validation; inventory addresses and exposure fields are observations, not proof of compromise.
+                    </p>
+                  </div>
+                  <label className="min-w-[260px] text-xs text-gray-500">
+                    Asset
+                    <select className="field mt-1" value={graphAssetId} onChange={event => setGraphAssetId(event.target.value)}>
+                      {result.assets.map(asset => (
+                        <option key={asset.asset_id} value={asset.asset_id}>{asset.asset} · {asset.asset_id}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {graphAsset ? (
+                  <AssetInventoryIntelligenceGraph
+                    asset={graphAsset}
+                    companyAsset={graphCompanyAsset}
+                    companySpaceId={resultCompanySpaceId}
+                    registryAsset={graphRegistryAsset}
+                  />
+                ) : (
+                  <div className="rounded border border-gray-800 bg-gray-950 p-4 text-xs text-gray-500">No analyzed asset is available for graphing.</div>
+                )}
+              </Panel>
+
               <Panel title="Asset Retrohunt Matches">
                 <AssetIntelMatches matches={visibleMatches} loading={matchesQuery.isLoading || retrohunt.isPending} />
                 {retrohunt.data && (
@@ -489,6 +548,8 @@ export function AssetSurface() {
                               companySpaceId={resultCompanySpaceId}
                               companyAssetId={companyAsset?.id}
                               companyAssetLoading={companyAssetsQuery.isLoading}
+                              onShowGraph={() => setGraphAssetId(asset.asset_id)}
+                              selectedForGraph={graphAssetId === asset.asset_id}
                             />
                           );
                         })}
@@ -603,6 +664,223 @@ function LinkedRegistryAsset({
   );
 }
 
+function AssetInventoryIntelligenceGraph({
+  asset,
+  companyAsset,
+  companySpaceId,
+  registryAsset,
+}: {
+  asset: AssetSurfaceAsset;
+  companyAsset?: ThreatSpaceAsset;
+  companySpaceId: string;
+  registryAsset?: AssetRegistryItem;
+}) {
+  const intelligence = useQuery({
+    queryKey: ['threat-radar-asset-intelligence', companySpaceId, companyAsset?.id, 'asset-surface-graph'],
+    queryFn: () => threatRadarApi.assetIntelligence(companySpaceId, companyAsset!.id),
+    enabled: Boolean(companySpaceId && companyAsset?.id),
+  });
+  const registryMatches = useQuery({
+    queryKey: ['asset-intel-matches', registryAsset?.id, 'asset-surface-graph'],
+    queryFn: () => assetSurfaceApi.intelMatches({ asset_id: registryAsset!.id, limit: 200 }),
+    enabled: Boolean(registryAsset?.id),
+  });
+  const matches = registryMatches.data ?? [];
+  const graph = useMemo(
+    () => buildAssetGraph(asset, intelligence.data, matches),
+    [asset, intelligence.data, matches],
+  );
+  const threatRadarHref = companySpaceId && companyAsset?.id
+    ? `/threat-radar/assets/${encodeURIComponent(companySpaceId)}/${encodeURIComponent(companyAsset.id)}`
+    : '';
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <GraphMetric label="Attack surface" value={graph.counts.attackSurface} />
+        <GraphMetric label="CVEs" value={graph.counts.cves} />
+        <GraphMetric label="IOCs" value={graph.counts.iocs} />
+        <GraphMetric label="TTPs" value={graph.counts.ttps} />
+        <GraphMetric label="Groups" value={graph.counts.groups} />
+        <GraphMetric label="Graph edges" value={graph.edges.length} />
+      </div>
+      {(intelligence.isLoading || registryMatches.isLoading) && (
+        <div className="rounded border border-cyan-900/60 bg-cyan-950/20 p-3 text-xs text-cyan-200">
+          Loading Threat Radar intelligence for {asset.asset}…
+        </div>
+      )}
+      {(intelligence.error || registryMatches.error) && (
+        <div className="rounded border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-200">
+          Some correlation sources could not be loaded. The graph still shows the deterministic inventory observations and ATT&amp;CK candidates.
+        </div>
+      )}
+      {!companyAsset && (
+        <div className="rounded border border-gray-800 bg-gray-950 p-3 text-xs leading-5 text-gray-500">
+          This asset was not synchronized to a Threat Radar company space. Direct inventory observations, TTP candidates,
+          and registry retrohunt matches are shown. Select a company space and rerun the analysis to add Threat Radar CVE,
+          IOC, alert, and assessment correlations.
+        </div>
+      )}
+      <div className="h-[620px]">
+        <EntityGraph nodes={graph.nodes} edges={graph.edges} />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-500">
+        <div className="flex flex-wrap gap-2">
+          <GraphLegend color="#155e75" label="Observed asset / exposure" />
+          <GraphLegend color="#7c2d12" label="CVE candidate" />
+          <GraphLegend color="#164e63" label="IOC / observable" />
+          <GraphLegend color="#4c1d95" label="ATT&CK candidate" />
+          <GraphLegend color="#713f12" label="Threat group lead" />
+        </div>
+        {threatRadarHref && <Link className="text-mitre-accent hover:underline" to={threatRadarHref}>Open full Threat Radar asset intelligence →</Link>}
+      </div>
+      <p className="text-[11px] leading-5 text-amber-200/70">
+        {intelligence.data?.evidence_boundary
+          ?? 'CVE, IOC, TTP, and group relationships are relevance leads. Validate affected versions, reachability, source evidence, and telemetry before treating any relationship as confirmed.'}
+      </p>
+    </div>
+  );
+}
+
+type AssetGraphResult = {
+  nodes: Node[];
+  edges: Edge[];
+  counts: { attackSurface: number; cves: number; iocs: number; ttps: number; groups: number };
+};
+
+function buildAssetGraph(
+  asset: AssetSurfaceAsset,
+  intelligence: ThreatAssetIntelligence | undefined,
+  matches: AssetIntelMatch[],
+): AssetGraphResult {
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  const rootId = `asset:${asset.asset_id}`;
+  const cves = uniqueBy(
+    intelligence?.cves ?? matches.filter(match => match.source_type === 'cve').map(match => ({
+      cve_id: match.source_id,
+      description: match.title,
+      severity: match.severity,
+      evidence_level: 'registry-retrohunt',
+    })),
+    row => row.cve_id.toUpperCase(),
+  );
+  const iocs = uniqueBy(intelligence?.iocs ?? [], row => `${row.indicator_type}:${row.value.toLowerCase()}`);
+  const ttps: Array<{ attack_id: string; name: string }> = uniqueBy(
+    intelligence?.ttps?.map(ttp => ({ attack_id: ttp.attack_id, name: ttp.name }))
+      ?? asset.ttp_candidates.map(ttp => ({ attack_id: ttp.attack_id, name: ttp.name })),
+    row => row.attack_id.toUpperCase(),
+  );
+  const groups = uniqueBy(
+    matches.filter(match => match.source_type === 'actor'),
+    match => match.source_id.toUpperCase(),
+  );
+  const attackSurface = unique([
+    `Exposure: ${asset.exposure}`,
+    ...asset.attack_surface,
+    ...asset.likely_entry_points,
+    ...asset.ports.map(port => `TCP/${port}`),
+  ]);
+  const observables = unique([...asset.domains, ...asset.ip_addresses]);
+
+  nodes.push(graphNode(rootId, `ASSET\n${asset.asset}\n${asset.risk_level.toUpperCase()} · ${asset.risk_score}/100`, 0, 240, '#155e75', '#67e8f9', 190));
+  addGraphColumn(nodes, edges, rootId, attackSurface.slice(0, 12), {
+    idPrefix: 'surface', x: -520, color: '#0f3f46', border: '#2dd4bf', relation: 'observed / candidate surface', dashed: false,
+  });
+  addGraphColumn(nodes, edges, rootId, observables.slice(0, 12), {
+    idPrefix: 'ioc-observed', x: -260, color: '#164e63', border: '#22d3ee', relation: 'inventory identity', dashed: false,
+  });
+  addGraphColumn(nodes, edges, rootId, cves.slice(0, 12).map(row => `${row.cve_id}\n${row.severity || 'severity unknown'}`), {
+    idPrefix: 'cve', x: 260, color: '#4c1d1d', border: '#fb7185', relation: 'may be affected by', dashed: true,
+  });
+  addGraphColumn(nodes, edges, rootId, iocs.slice(0, 12).map(row => `${row.indicator_type.toUpperCase()}\n${row.value}`), {
+    idPrefix: 'ioc', x: 520, color: '#164e63', border: '#22d3ee', relation: 'correlated IOC', dashed: true,
+  });
+  addGraphColumn(nodes, edges, rootId, ttps.slice(0, 12).map(row => `${row.attack_id}\n${row.name || 'ATT&CK technique'}`), {
+    idPrefix: 'ttp', x: 780, color: '#4c1d95', border: '#c084fc', relation: 'technique candidate', dashed: true,
+  });
+  addGraphColumn(nodes, edges, rootId, groups.slice(0, 10).map(row => `${row.source_id}\n${row.title || 'Threat group'}`), {
+    idPrefix: 'group', x: 1040, color: '#713f12', border: '#fbbf24', relation: 'relevance lead', dashed: true,
+  });
+
+  return {
+    nodes,
+    edges,
+    counts: {
+      attackSurface: attackSurface.length + observables.length,
+      cves: cves.length,
+      iocs: iocs.length,
+      ttps: ttps.length,
+      groups: groups.length,
+    },
+  };
+}
+
+function addGraphColumn(
+  nodes: Node[],
+  edges: Edge[],
+  rootId: string,
+  labels: string[],
+  options: { idPrefix: string; x: number; color: string; border: string; relation: string; dashed: boolean },
+) {
+  const spacing = 92;
+  const startY = 240 - ((labels.length - 1) * spacing) / 2;
+  labels.forEach((label, index) => {
+    const id = `${options.idPrefix}:${index}:${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)}`;
+    nodes.push(graphNode(id, label, options.x, startY + index * spacing, options.color, options.border));
+    edges.push({
+      id: `${rootId}->${id}`,
+      source: rootId,
+      target: id,
+      label: options.relation,
+      style: { stroke: options.border, strokeDasharray: options.dashed ? '6 5' : undefined, opacity: 0.8 },
+      labelStyle: { fill: '#94a3b8', fontSize: 9 },
+    });
+  });
+}
+
+function graphNode(id: string, label: string, x: number, y: number, background: string, border: string, width = 180): Node {
+  return {
+    id,
+    position: { x, y },
+    data: { label },
+    style: {
+      width,
+      border: `1px solid ${border}`,
+      borderRadius: 8,
+      background,
+      color: '#f8fafc',
+      fontSize: 10,
+      lineHeight: 1.35,
+      whiteSpace: 'pre-line',
+      overflowWrap: 'anywhere',
+      padding: 8,
+    },
+  };
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)));
+}
+
+function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter(value => {
+    const identity = key(value);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
+function GraphMetric({ label, value }: { label: string; value: number }) {
+  return <div className="rounded border border-gray-800 bg-gray-950 p-3"><div className="text-xl font-semibold text-white">{value}</div><div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div></div>;
+}
+
+function GraphLegend({ color, label }: { color: string; label: string }) {
+  return <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{label}</span>;
+}
+
 function RegistryField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-gray-800 bg-gray-950 p-3">
@@ -630,11 +908,15 @@ function AssetRow({
   companySpaceId,
   companyAssetId,
   companyAssetLoading,
+  onShowGraph,
+  selectedForGraph,
 }: {
   asset: AssetSurfaceAsset;
   companySpaceId: string;
   companyAssetId?: string;
   companyAssetLoading: boolean;
+  onShowGraph: () => void;
+  selectedForGraph: boolean;
 }) {
   const assetHref = companySpaceId && companyAssetId
     ? `/threat-radar/assets/${encodeURIComponent(companySpaceId)}/${encodeURIComponent(companyAssetId)}`
@@ -671,6 +953,13 @@ function AssetRow({
               {companyAssetLoading ? 'Linking saved company asset…' : 'Company asset link unavailable; rerun this inventory analysis.'}
             </div>
           )}
+          <button
+            type="button"
+            onClick={onShowGraph}
+            className={`mt-2 inline-flex min-h-8 items-center rounded border px-2.5 text-[11px] ${selectedForGraph ? 'border-cyan-500 bg-cyan-950/40 text-cyan-200' : 'border-gray-700 text-gray-400 hover:border-cyan-700 hover:text-cyan-200'}`}
+          >
+            {selectedForGraph ? 'Shown in graph' : 'Show intelligence graph'}
+          </button>
         </td>
         <td className="py-3 pr-3"><RiskBadge level={asset.risk_level} score={asset.risk_score} /></td>
         <td className="py-3 pr-3"><Chip>{asset.exposure}</Chip></td>

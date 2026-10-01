@@ -231,6 +231,70 @@ test('a company-synced matrix asset links directly to its active assessment', as
       filters: {},
     }),
   }));
+  await page.route(`**/api/threat-radar/spaces/${spaceId}/assets/${companyAssetId}/intelligence`, route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      space: { id: spaceId, name: 'My Company', slug: 'my-company' },
+      asset: companyAsset,
+      summary: {
+        risk_score: 82,
+        risk_level: 'high',
+        alerts: 1,
+        cves: 1,
+        known_exploited_cves: 1,
+        ttps: 1,
+        iocs: 1,
+        direct_ioc_matches: 1,
+        assessments: 1,
+        latest_open_services: 2,
+      },
+      cves: [{
+        cve_id: 'CVE-2026-7000',
+        description: 'Fixture CVE relevant to the saved product.',
+        severity: 'HIGH',
+        score: '8.1',
+        known_exploited: true,
+        references: [],
+        status: 'candidate',
+        evidence_level: 'inventory-name-candidate',
+        evidence: [],
+        verification_required: true,
+      }],
+      ttps: [{
+        attack_id: 'T1190',
+        name: 'Exploit Public-Facing Application',
+        description: 'Fixture technique.',
+        url: '',
+        platforms: ['Linux'],
+        data_sources: [],
+        evidence_level: 'inventory-analysis-candidate',
+        evidence: [],
+        verification_required: true,
+      }],
+      iocs: [{
+        id: '7000',
+        value: '1200km.com',
+        indicator_type: 'domain',
+        source_id: 'fixture',
+        source_url: '',
+        confidence: 80,
+        last_seen: '',
+        malware_family: '',
+        campaign: '',
+        technique_ids: ['T1190'],
+        status: 'candidate',
+        evidence_level: 'exact-inventory-identity',
+        matched_on: ['1200km.com'],
+        verification_required: true,
+        note: 'Exact inventory identity match.',
+      }],
+      alerts: [],
+      recent_scans: [],
+      evidence_boundary: 'Relationships are investigation leads and require analyst validation.',
+      generated_at: '2026-08-12T10:00:00Z',
+    }),
+  }));
   await page.route('**/api/asset-surface/assets', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -263,5 +327,13 @@ test('a company-synced matrix asset links directly to its active assessment', as
   await expect(page.getByRole('link', { name: 'Open asset & scan' })).toHaveAttribute(
     'href',
     `/threat-radar/assets/${spaceId}/${companyAssetId}#active-assessment`,
+  );
+  await expect(page.getByText('Asset Inventory Intelligence Graph')).toBeVisible();
+  await expect(page.getByText('CVE-2026-7000', { exact: false })).toBeVisible();
+  await expect(page.getByText('T1190', { exact: false })).toBeVisible();
+  await expect(page.getByText('1200km.com', { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: /Open full Threat Radar asset intelligence/ })).toHaveAttribute(
+    'href',
+    `/threat-radar/assets/${spaceId}/${companyAssetId}`,
   );
 });

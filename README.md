@@ -51,6 +51,39 @@ The client now uses React Router 7, and the reviewed lockfile passes the
 required npm audit. Treat that as point-in-time release evidence and repeat the
 audit for every candidate; see [Security Policy](SECURITY.md#known-security-limitations).
 
+### MalwareGraph dependency security notice
+
+On 2026-08-08, current-development source builds began failing the
+MalwareGraph UI security gate after npm reported a high-severity denial-of-
+service issue in `nanoid` (`GHSA-2v37-7h3g-55p8`; affected versions before
+3.3.17). The same lockfile patch also pinned a PostCSS version affected by
+`GHSA-fxqj-rqcc-2cmp`. Pull request
+[#30](https://github.com/anpa1200/adversarygraph/pull/30) fixes the build by
+updating `nanoid` to 3.3.18 and PostCSS to 8.5.26 while retaining
+`npm audit --audit-level=high` as a blocking image-build check.
+
+No published tag contains the faulty lockfile patch: it was introduced after
+the latest published `v6.0.0` tag. However, the `v4.0.0` through `v6.0.0`
+source Dockerfiles resolve MalwareGraph from the moving upstream `main` branch,
+so rebuilding those tags can select dependency state that differs from the
+original release build. Existing image contents must be checked directly; tag
+history alone cannot prove whether a previously built image contains an
+affected package.
+
+For current source installations, update `main` and rebuild the MalwareGraph
+image before starting the service:
+
+```bash
+git pull --ff-only origin main
+docker compose build --no-cache malwaregraph
+docker compose up -d malwaregraph
+```
+
+Confirm the build completes the high-severity npm audit and reports `nanoid`
+3.3.18 and PostCSS 8.5.26. Two upstream moderate-severity React Router findings
+may still be reported; they are separate from this fixed high-severity build
+failure.
+
 ## What It Does
 
 AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerability context, malware-analysis leads, asset inventories, and validation telemetry into reviewed ATT&CK/ATLAS mappings and detection engineering work items.
