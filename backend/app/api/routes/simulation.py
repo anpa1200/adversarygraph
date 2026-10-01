@@ -5,14 +5,15 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.models.simulation import SimulationAttackFlow, SimulationSiemDestination
-from app.services import external_simulation
+from app.models.simulation import SimulationAttackFlow, SimulationSiemDestination, SyntheticEvidenceRun
+from app.services import external_simulation, synthetic_evidence
+from app.services.synthetic_evidence import SyntheticEvidenceError
 from app.services.auth import TeamUser, audit, require_permission
 
 router = APIRouter(prefix="/simulation", tags=["Attack Simulation"])
@@ -137,6 +138,17 @@ class AttackFlowResendRequest(BaseModel):
     payload_format: str = Field(default="per_event", pattern="^(raw_lines|per_event|json_lines|envelope)$")
 
 
+class SyntheticScenarioRequest(BaseModel):
+    scenario_yaml: str = Field(..., min_length=1, max_length=262_144)
+
+
+class SyntheticGenerateRequest(SyntheticScenarioRequest):
+    scenario_name: str = Field(default="Synthetic evidence exercise", min_length=1, max_length=255)
+    target: str = Field(default="default", pattern="^(default|sof-elk|splunk)$")
+    formats: list[str] = Field(default_factory=list, max_length=32)
+    technique_ids: list[str] = Field(default_factory=list, max_length=24)
+
+
 @router.get("/catalog")
 async def catalog(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
     return external_simulation.list_simulations()
@@ -150,6 +162,140 @@ async def targets(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]
 @router.get("/ai-assistant/scenarios")
 async def ai_assistant_scenarios(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
     return external_simulation.list_ai_assistant_scenarios()
+
+
+@router.get("/synthetic/status")
+async def synthetic_status(_: TeamUser = Depends(run_simulation)) -> dict[str, Any]:
+    try:
+        return await synthetic_evidence.status()
+    except SyntheticEvidenceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.get("/synthetic/templates")
+async def synthetic_templates(_: TeamUser = Depends(run_simulation)) -> list[dict[str, Any]]:
+    try:
+        return await synthetic_evidence.templates()
+    except SyntheticEvidenceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.post("/synthetic/validate")
+async def synthetic_validate(
+    payload: SyntheticScenarioRequest,
+    _: TeamUser = Depends(run_simulation),
+) -> dict[str, Any]:
+    try:
+        return await synthetic_evidence.validate_scenario(payload.scenario_yaml)
+    except SyntheticEvidenceError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.get("/synthetic/runs")
+async def synthetic_runs(
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_simulation),
+) -> list[dict[str, Any]]:
+    result = await session.execute(
+        select(SyntheticEvidenceRun).order_by(SyntheticEvidenceRun.created_at.desc()).limit(20)
+    )
+    return [
+        {
+            "id": str(row.id),
+            "run_id": row.run_id,
+            "scenario_name": row.scenario_name,
+            "engine": row.engine,
+            "engine_version": row.engine_version,
+            "engine_ref": row.engine_ref,
+            "scenario_sha256": row.scenario_sha256,
+            "target": row.output_target,
+            "technique_ids": row.technique_ids,
+            "artifact_count": row.artifact_count,
+            "quality": row.quality,
+            "quality_passed": row.quality_passed,
+            "synthetic_only": True,
+            "created_at": row.created_at,
+        }
+        for row in result.scalars().all()
+    ]
+
+
+@router.get("/synthetic/runs/{run_id}/bundle")
+async def synthetic_bundle(
+    run_id: str = Path(pattern=r"^synthetic-[0-9a-f-]{36}$"),
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(run_simulation),
+) -> Response:
+    existing = await session.execute(
+        select(SyntheticEvidenceRun).where(SyntheticEvidenceRun.run_id == run_id)
+    )
+    if existing.scalar_one_or_none() is None:
+        raise HTTPException(404, "Synthetic evidence run not found")
+    try:
+        content = await synthetic_evidence.download_bundle(run_id)
+    except SyntheticEvidenceError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{run_id}.zip"'},
+    )
+
+
+@router.post("/synthetic/runs")
+async def synthetic_generate(
+    payload: SyntheticGenerateRequest,
+    session: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(run_simulation),
+) -> dict[str, Any]:
+    try:
+        manifest = await synthetic_evidence.generate(
+            payload.scenario_yaml,
+            target=payload.target,
+            formats=payload.formats,
+        )
+    except SyntheticEvidenceError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    quality = manifest.get("quality") if isinstance(manifest.get("quality"), dict) else {}
+    quality_passed = quality.get("acceptance_passed") is True
+    row = SyntheticEvidenceRun(
+        run_id=str(manifest.get("run_id") or ""),
+        scenario_name=payload.scenario_name,
+        scenario_sha256=str(manifest.get("scenario_sha256") or ""),
+        engine=str(manifest.get("engine") or "EvidenceForge"),
+        engine_version=str(manifest.get("engine_version") or ""),
+        engine_ref=str(manifest.get("engine_ref") or ""),
+        output_target=payload.target,
+        technique_ids=payload.technique_ids,
+        manifest=manifest,
+        quality=quality,
+        quality_passed=quality_passed,
+        artifact_count=int(manifest.get("artifact_count") or 0),
+        synthetic_only=True,
+        created_by=user.name,
+    )
+    session.add(row)
+    await audit(
+        session,
+        user,
+        "simulation.synthetic_generate",
+        "synthetic_evidence_run",
+        row.run_id,
+        details={
+            "scenario_sha256": row.scenario_sha256,
+            "engine_ref": row.engine_ref,
+            "artifact_count": row.artifact_count,
+            "quality_passed": quality_passed,
+            "synthetic_only": True,
+        },
+    )
+    await session.commit()
+    return {
+        **manifest,
+        "quality_passed": quality_passed,
+        "validation_ready": quality_passed,
+        "evidence_boundary": "Synthetic training evidence; not observed production telemetry.",
+    }
 
 
 @router.get("/attack-flows", response_model=list[AttackFlowOut])

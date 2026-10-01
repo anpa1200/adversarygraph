@@ -173,6 +173,22 @@ class Settings(BaseSettings):
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 5
 
+    # Optional Apache SkyWalking OAP query integration. This is a read-only
+    # observability source used to enrich runtime dependency investigations.
+    # The endpoint is operator-controlled; it is never accepted from a request.
+    skywalking_enabled: bool = False
+    skywalking_graphql_url: str = "http://skywalking-oap:12800/graphql"
+    skywalking_auth_token: str = ""
+    skywalking_timeout_seconds: float = Field(default=8.0, ge=1.0, le=60.0)
+    skywalking_verify_tls: bool = True
+    skywalking_max_topology_nodes: int = Field(default=500, ge=10, le=5_000)
+    skywalking_runtime_retention_days: int = Field(default=30, ge=1, le=3_650)
+    skywalking_sync_interval_minutes: int = Field(default=5, ge=1, le=60)
+    evidenceforge_enabled: bool = False
+    evidenceforge_url: str = "http://evidenceforge:8091"
+    evidenceforge_timeout_seconds: int = Field(default=240, ge=10, le=1800)
+    evidenceforge_max_scenario_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
+
     @model_validator(mode="after")
     def validate_rag_settings(self):
         if self.rag_chunk_overlap_chars >= self.rag_chunk_chars:

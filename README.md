@@ -47,9 +47,9 @@ Core capabilities:
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
 - Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories, with strict `namespace:value` labels for products, suppliers, dependencies, technologies, sectors, CVEs, TTPs, risk, and exposure.
 - Malware Analysis workflow backed by the isolated MalwareGraph service for static triage, strings, unpacking/deobfuscation support, debugger-style review, and AI summaries.
-- Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
+- Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, deterministic quality-gated EvidenceForge datasets, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
 - Evidence-to-Detection Graph for preserving the full reasoning chain from evidence to claims, behavior, ATT&CK, required telemetry, detection candidates, rules, validation scenarios, SIEM results, and analyst decisions.
-- Observability dashboard with API request metrics, recent traces, redacted log tails, Prometheus-compatible metrics, and health/self-test views.
+- Observability dashboard with API request metrics, recent traces, redacted log tails, Prometheus-compatible metrics, health/self-test views, and optional Apache SkyWalking runtime intelligence: governed service/call persistence, Asset Inventory candidates, RAG/MCP retrieval, and Evidence Graph promotion.
 - Operations, Pipeline, detection backlog, investigation reports, exports, and API workflows.
 
 ## What It Is Not
@@ -191,7 +191,7 @@ business.” Review every cited record and warning. A second request such as
 the verified IDs requires explicit Add/Replace confirmation and still does not
 save a named layer.
 
-The MCP integration is a separate, optional stdio process. It exposes four
+The MCP integration is a separate, optional stdio process. It exposes five
 bounded read-only/advisory tools and cannot confirm a proposal, save a layer,
 reindex data, or execute a response action. See the [MCP server guide](docs/mcp-server.md)
 for dedicated-account and client configuration.
@@ -236,6 +236,7 @@ for dedicated-account and client configuration.
 | Admin guide | [docs/admin-guide.md](docs/admin-guide.md) |
 | Authentication and user management | [docs/authentication-and-users.md](docs/authentication-and-users.md) |
 | Observability and security validation | [docs/observability-security-validation.md](docs/observability-security-validation.md) |
+| Apache SkyWalking runtime investigation | [docs/skywalking-runtime-investigation.md](docs/skywalking-runtime-investigation.md) |
 | Attack Simulation | [docs/attack-simulation.md](docs/attack-simulation.md) |
 | SIEM forwarding security | [docs/attack-simulation-siem-forwarding-security.md](docs/attack-simulation-siem-forwarding-security.md) |
 | Asset Attack Surface Mapping | [docs/asset-attack-surface.md](docs/asset-attack-surface.md) |

@@ -1,7 +1,8 @@
 import os
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter, sleep
+from time import monotonic, perf_counter, sleep
 from typing import Any
 
 import httpx
@@ -17,9 +18,12 @@ from app.models.auth import UserAccount
 from app.models.cve import CVEActorLink, CVEIOCLink, CVERecord, CVESource, CVETechniqueLink
 from app.models.ioc import IOCIndicator, IOCSource
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
+from app.models.runtime_intelligence import RuntimeCall, RuntimeService, RuntimeTopologySnapshot
 from app.services.auth import TeamUser, audit, require_permission
 from app.services.cve_intel import ensure_cve_sources
 from app.services.startup_status import startup_status
+from app.services import skywalking, synthetic_evidence
+from app.services.synthetic_evidence import SyntheticEvidenceError
 from app.services.taxonomy_migration import normalize_existing_taxonomy, taxonomy_normalization_status
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -40,6 +44,11 @@ class SelfTestResult(BaseModel):
     checked_at: str
     duration_ms: int
     checks: list[SelfTestCheck]
+
+
+_SELFTEST_CACHE_TTL_SECONDS = 5 * 60.0
+_selftest_cache: tuple[float, SelfTestResult] | None = None
+_selftest_lock = asyncio.Lock()
 
 
 @router.get("/startup")
@@ -90,6 +99,55 @@ def _overall_selftest_status(checks: list[SelfTestCheck]) -> str:
     if any(check.status in {"warning", "degraded"} for check in checks):
         return "degraded"
     return "ok"
+
+
+async def _skywalking_readiness_check() -> SelfTestCheck:
+    result = await skywalking.health()
+    if not result["enabled"]:
+        return _check_status(
+            "skywalking",
+            "ok",
+            "Optional Apache SkyWalking runtime topology integration is disabled.",
+            result,
+        )
+    if result["connected"]:
+        return _check_status(
+            "skywalking",
+            "ok",
+            "Apache SkyWalking OAP query endpoint is connected and healthy.",
+            result,
+        )
+    return _check_status(
+        "skywalking",
+        "warning",
+        "Apache SkyWalking is configured but its OAP query endpoint is unavailable or unhealthy.",
+        result,
+    )
+
+
+async def _evidenceforge_readiness_check() -> SelfTestCheck:
+    if not settings.evidenceforge_enabled:
+        return _check_status(
+            "synthetic_evidence",
+            "ok",
+            "Optional EvidenceForge synthetic-evidence generator is disabled.",
+        )
+    try:
+        result = await synthetic_evidence.status()
+    except SyntheticEvidenceError as exc:
+        return _check_status(
+            "synthetic_evidence",
+            "error",
+            f"EvidenceForge synthetic-evidence service is unavailable: {exc}",
+        )
+    return _check_status(
+        "synthetic_evidence",
+        "ok" if result.get("ok") else "error",
+        "EvidenceForge deterministic synthetic-evidence service is ready."
+        if result.get("ok")
+        else "EvidenceForge service responded but its generator CLI is not ready.",
+        result,
+    )
 
 
 def _api_key_check() -> SelfTestCheck:
@@ -574,7 +632,25 @@ def _memory_usage_details(
 
 
 @router.get("/selftest", response_model=SelfTestResult)
-async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
+async def selftest(
+    refresh: bool = False,
+    _: TeamUser = Depends(run_selftest),
+) -> SelfTestResult:
+    global _selftest_cache
+    now = monotonic()
+    if not refresh and _selftest_cache and now - _selftest_cache[0] < _SELFTEST_CACHE_TTL_SECONDS:
+        return _selftest_cache[1]
+
+    async with _selftest_lock:
+        now = monotonic()
+        if not refresh and _selftest_cache and now - _selftest_cache[0] < _SELFTEST_CACHE_TTL_SECONDS:
+            return _selftest_cache[1]
+        result = await _run_selftest()
+        _selftest_cache = (monotonic(), result)
+        return result
+
+
+async def _run_selftest() -> SelfTestResult:
     started = perf_counter()
     checks: list[SelfTestCheck] = []
 
@@ -836,6 +912,37 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
                     )
                 )
 
+            runtime_services = int(
+                await session.scalar(select(func.count()).select_from(RuntimeService)) or 0
+            )
+            runtime_calls = int(
+                await session.scalar(select(func.count()).select_from(RuntimeCall)) or 0
+            )
+            runtime_snapshots = int(
+                await session.scalar(select(func.count()).select_from(RuntimeTopologySnapshot)) or 0
+            )
+            runtime_status = (
+                "warning"
+                if settings.skywalking_enabled and runtime_snapshots == 0
+                else "ok"
+            )
+            checks.append(_check_status(
+                "runtime_intelligence",
+                runtime_status,
+                "Runtime intelligence storage is ready."
+                if runtime_status == "ok"
+                else "SkyWalking is enabled but no governed runtime snapshot has been synchronized.",
+                {
+                    "enabled": settings.skywalking_enabled,
+                    "services": runtime_services,
+                    "calls": runtime_calls,
+                    "snapshots": runtime_snapshots,
+                    "rag_source_type": "runtime_service",
+                    "retention_days": settings.skywalking_runtime_retention_days,
+                    "sync_interval_minutes": settings.skywalking_sync_interval_minutes,
+                },
+            ))
+
             await ensure_cve_sources(session)
             cve_source_rows = (await session.execute(select(CVESource))).scalars().all()
             cve_total = int(await session.scalar(select(func.count()).select_from(CVERecord)) or 0)
@@ -896,7 +1003,7 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
         checks.append(_check("redis", False, f"Redis self-test failed: {type(exc).__name__}: {exc}"))
 
     try:
-        cpu_details = _cpu_usage_details()
+        cpu_details = await asyncio.to_thread(_cpu_usage_details)
         checks.append(
             _check(
                 "cpu_usage",
@@ -938,6 +1045,8 @@ async def selftest(_: TeamUser = Depends(run_selftest)) -> SelfTestResult:
         )
     )
     checks.append(await _malwaregraph_health_check())
+    checks.append(await _skywalking_readiness_check())
+    checks.append(await _evidenceforge_readiness_check())
 
     status = _overall_selftest_status(checks)
     return SelfTestResult(

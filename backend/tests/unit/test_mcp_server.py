@@ -122,7 +122,7 @@ def test_endpoint_policy_contains_no_confirmation_or_mutation_route():
 
 
 @pytest.mark.asyncio
-async def test_stable_sdk_registers_four_tools_with_security_annotations():
+async def test_stable_sdk_registers_runtime_search_with_security_annotations():
     if mcp_server.mcp is None:
         pytest.skip("MCP SDK dependencies are not installed in this diagnostic environment")
 
@@ -132,15 +132,33 @@ async def test_stable_sdk_registers_four_tools_with_security_annotations():
         "search_intelligence",
         "ask_intelligence",
         "get_indexed_entity",
+        "search_runtime_dependencies",
         "propose_navigator_layer",
     }
     assert tools["search_intelligence"].annotations.readOnlyHint is True
     assert tools["get_indexed_entity"].annotations.readOnlyHint is True
+    assert tools["search_runtime_dependencies"].annotations.readOnlyHint is True
     assert tools["ask_intelligence"].annotations.destructiveHint is False
     assert tools["propose_navigator_layer"].annotations.destructiveHint is False
     assert all(tool.annotations.openWorldHint is False for tool in tools.values())
     assert tools["search_intelligence"].inputSchema["properties"]["query"]["maxLength"] == 2_000
     assert tools["search_intelligence"].inputSchema["properties"]["limit"]["maximum"] == 25
+
+
+@pytest.mark.asyncio
+async def test_runtime_dependency_search_is_scoped_and_preserves_boundary(monkeypatch, local_api):
+    captured = {}
+
+    async def fake_request(endpoint, **kwargs):
+        captured.update({"endpoint": endpoint, **kwargs})
+        return {"retrieval_mode": "fts", "warnings": [], "items": []}
+
+    monkeypatch.setattr(mcp_server, "_request_json", fake_request)
+    result = await mcp_server.search_runtime_dependencies("checkout calls", limit=5)
+
+    assert captured["endpoint"] is mcp_server._Endpoint.SEARCH
+    assert captured["body"]["source_types"] == ["runtime_service"]
+    assert "not proof" in result["evidence_boundary"]
 
 
 @pytest.mark.asyncio

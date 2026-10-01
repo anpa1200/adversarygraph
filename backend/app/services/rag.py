@@ -40,6 +40,7 @@ from app.models.evidence_graph import EvidenceGraphNode
 from app.models.ioc import IOCIndicator
 from app.models.knowledge import KnowledgeArticle
 from app.models.rag import RAGChunk, RAGDocument, RAGIndexRun
+from app.models.runtime_intelligence import RuntimeCall, RuntimeService
 from app.models.sector import ActorIntelObservation, ClientProfile
 from app.models.threat_radar import ThreatHuntRequest, ThreatSignal
 
@@ -57,6 +58,7 @@ SUPPORTED_SOURCE_TYPES: tuple[str, ...] = (
     "threat_hunt",
     "evidence_node",
     "asset",
+    "runtime_service",
 )
 
 _TLP_VALUES = {
@@ -586,6 +588,7 @@ async def collect_source_records(db: AsyncSession, source_types: Sequence[str] |
         "threat_hunt": _collect_threat_hunts,
         "evidence_node": _collect_evidence_nodes,
         "asset": _collect_assets,
+        "runtime_service": _collect_runtime_services,
     }
     records: list[SourceRecord] = []
     for source_type in selected:
@@ -655,7 +658,7 @@ async def reconcile_corpus(
                     run.documents_updated += 1
 
             if changed:
-                document.chunks = _new_chunks(
+                document.chunks = _refresh_chunks(
                     document,
                     record,
                     embedding_requested=bool(
@@ -1753,6 +1756,66 @@ async def _collect_assets(db: AsyncSession) -> list[SourceRecord]:
     ]
 
 
+async def _collect_runtime_services(db: AsyncSession) -> list[SourceRecord]:
+    """Index allowlisted runtime metadata, never spans, logs, or payload bodies."""
+    services = list((await db.execute(
+        select(RuntimeService).order_by(RuntimeService.last_observed_at, RuntimeService.id)
+    )).scalars().all())
+    calls = list((await db.execute(
+        select(RuntimeCall).order_by(RuntimeCall.last_observed_at, RuntimeCall.id)
+    )).scalars().all())
+    outgoing: dict[Any, list[str]] = {}
+    incoming: dict[Any, list[str]] = {}
+    service_names = {row.id: row.name for row in services}
+    for call in calls:
+        outgoing.setdefault(call.source_service_id, []).append(
+            service_names.get(call.target_service_id, str(call.target_service_id))
+        )
+        incoming.setdefault(call.target_service_id, []).append(
+            service_names.get(call.source_service_id, str(call.source_service_id))
+        )
+    return [
+        SourceRecord(
+            source_type="runtime_service",
+            source_id=str(service.id),
+            source_version="current",
+            logical_key=service.external_id,
+            title=f"Runtime service: {service.name}"[:700],
+            body=_compose_sections(
+                (
+                    ("Service", service.name),
+                    ("Technology", service.technology),
+                    ("Layers", _safe_values(service.layers)),
+                    ("Observed callers", _safe_values(incoming.get(service.id, []))),
+                    ("Observed dependencies", _safe_values(outgoing.get(service.id, []))),
+                    ("First observed", _iso(service.first_observed_at)),
+                    ("Last observed", _iso(service.last_observed_at)),
+                    ("Observation count", int(service.observation_count or 0)),
+                    ("Evidence boundary", "Runtime telemetry; not proof of malicious activity or attribution."),
+                    ("Tags", _safe_values(service.tags)),
+                )
+            ),
+            canonical_route=f"/observability?runtime_service={service.id}",
+            tlp=normalize_tlp(service.tlp, default="TLP:AMBER+STRICT"),
+            source_updated_at=service.updated_at,
+            metadata={
+                "external_id": service.external_id,
+                "technology": service.technology,
+                "layers": _safe_values(service.layers),
+                "callers": _safe_values(incoming.get(service.id, [])),
+                "dependencies": _safe_values(outgoing.get(service.id, [])),
+                "observation_count": int(service.observation_count or 0),
+                "tags": _safe_values(service.tags),
+                "evidence_kind": "runtime_observation",
+            },
+            legal_sensitive=True,
+            sanitized=True,
+        )
+        for service in services
+        if str(service.name or "").strip()
+    ]
+
+
 async def _load_existing_documents(db: AsyncSession, source_types: Sequence[str]) -> list[RAGDocument]:
     if not source_types:
         return []
@@ -1824,6 +1887,42 @@ def _new_chunks(
         )
         for ordinal, content in enumerate(chunks)
     ]
+
+
+def _refresh_chunks(
+    document: RAGDocument,
+    record: SourceRecord,
+    *,
+    embedding_requested: bool = True,
+) -> list[RAGChunk]:
+    """Update chunks in place so ordinal uniqueness never depends on delete order."""
+    desired = chunk_text(record.rendered_text) or [record.title]
+    existing = {chunk.ordinal: chunk for chunk in document.chunks}
+    refreshed: list[RAGChunk] = []
+    for ordinal, content in enumerate(desired):
+        content_hash = checksum(content)
+        chunk = existing.get(ordinal)
+        if chunk is None:
+            chunk = RAGChunk(document=document, ordinal=ordinal)
+        content_changed = chunk.content_hash != content_hash
+        chunk.content = content
+        chunk.content_hash = content_hash
+        chunk.token_count = len(_TOKEN_RE.findall(content))
+        chunk.metadata_ = {
+            "source_type": record.source_type,
+            "source_id": record.source_id,
+            "source_version": record.source_version,
+            "ordinal": ordinal,
+        }
+        if content_changed:
+            chunk.embedding = None
+            chunk.embedding_provider = ""
+            chunk.embedding_model = ""
+            chunk.embedding_dimensions = None
+            chunk.embedding_status = "pending" if embedding_requested else "not_requested"
+            chunk.embedding_error = ""
+        refreshed.append(chunk)
+    return refreshed
 
 
 def _embedding_needed(chunk: RAGChunk) -> bool:

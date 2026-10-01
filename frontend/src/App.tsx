@@ -23,6 +23,7 @@ const InvestigationReport = lazy(() => import('@/pages/InvestigationReport').the
 const Operations = lazy(() => import('@/pages/Operations').then(module => ({ default: module.Operations })));
 const Pipeline = lazy(() => import('@/pages/Pipeline').then(module => ({ default: module.Pipeline })));
 const Observability = lazy(() => import('@/pages/Observability').then(module => ({ default: module.Observability })));
+const DataIntelligence = lazy(() => import('@/pages/DataIntelligence').then(module => ({ default: module.DataIntelligence })));
 const Statistics = lazy(() => import('@/pages/Statistics').then(module => ({ default: module.Statistics })));
 const ThreatRadar = lazy(() => import('@/pages/ThreatRadar').then(module => ({ default: module.ThreatRadar })));
 const ThreatRadarAssets = lazy(() => import('@/pages/ThreatRadarAssets').then(module => ({ default: module.ThreatRadarAssets })));
@@ -119,7 +120,8 @@ function AppShell() {
                   <Route path="/report" element={<RoleGate permission="run_analysis"><InvestigationReport /></RoleGate>} />
                   <Route path="/operations" element={<RoleGate permission="run_analysis"><Operations /></RoleGate>} />
                   <Route path="/pipeline" element={<RoleGate permission="run_analysis"><Pipeline /></RoleGate>} />
-                  <Route path="/observability" element={<RoleGate permission="view_audit"><Observability /></RoleGate>} />
+                  <Route path="/observability" element={<RoleGate permission="read"><Observability /></RoleGate>} />
+                  <Route path="/observability/data-logic" element={<RoleGate permission="read"><DataIntelligence /></RoleGate>} />
                   <Route path="/statistics" element={<RoleGate permission="run_analysis"><Statistics /></RoleGate>} />
                   <Route path="/threat-radar" element={<RoleGate permission="run_analysis"><ThreatRadar /></RoleGate>} />
                   <Route path="/threat-radar/assets" element={<RoleGate permission="run_analysis"><ThreatRadarAssets /></RoleGate>} />

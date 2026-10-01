@@ -1,0 +1,82 @@
+{{- if .Values.evidenceforge.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-evidenceforge
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+    app.kubernetes.io/component: evidenceforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "adversarygraph.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: evidenceforge
+  template:
+    metadata:
+      labels:
+        {{- include "adversarygraph.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: evidenceforge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: evidenceforge
+          image: {{ include "adversarygraph.componentImage" .Values.evidenceforge.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8091
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: runs
+              mountPath: /data/runs
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.evidenceforge.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: runs
+          persistentVolumeClaim:
+            claimName: {{ include "adversarygraph.fullname" . }}-evidenceforge
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-evidenceforge
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "adversarygraph.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: evidenceforge
+  ports:
+    - name: http
+      port: 8091
+      targetPort: http
+{{- end }}

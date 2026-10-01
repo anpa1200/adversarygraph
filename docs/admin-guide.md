@@ -682,6 +682,34 @@ For cloud deployments, scrape `/api/observability/metrics` through an
 authenticated reverse proxy or a trusted service identity. Do not expose raw API
 telemetry endpoints to the public internet.
 
+### Apache SkyWalking runtime intelligence
+
+AdversaryGraph can connect to an operator-managed Apache SkyWalking OAP GraphQL
+endpoint—or run the optional pinned `runtime-observability` Compose profile—and
+persist a governed runtime dependency graph:
+
+```dotenv
+SKYWALKING_ENABLED=true
+SKYWALKING_GRAPHQL_URL=https://skywalking-oap.internal/graphql
+SKYWALKING_AUTH_TOKEN=REDACTED_SCOPED_TOKEN
+SKYWALKING_TIMEOUT_SECONDS=8
+SKYWALKING_VERIFY_TLS=true
+SKYWALKING_MAX_TOPOLOGY_NODES=500
+SKYWALKING_RUNTIME_RETENTION_DAYS=30
+SKYWALKING_SYNC_INTERVAL_MINUTES=5
+```
+
+Keep OAP private and use a scoped read credential. The API, worker, and Beat
+services need the same non-secret configuration; the bearer token belongs in
+the deployment secret. Confirm the `skywalking` self-test check, then use
+**Observability → Sync into AdversaryGraph** for the first governed snapshot.
+For a local integrated deployment, set `SKYWALKING_ENABLED=true` and run
+`make runtime-observability-up`; its OAP ingestion and HTTP ports are
+loopback-bound by default.
+See [Apache SkyWalking runtime dependency investigation](skywalking-runtime-investigation.md)
+for the storage model, RAG/MCP integration, audit events, permissions, and
+evidence limitations.
+
 Security validation:
 
 ```bash

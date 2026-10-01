@@ -250,6 +250,19 @@ test('auditor permission opens observability without an analyst role', async ({ 
 
   await page.goto('/observability');
   await expect(page.getByText('Operational telemetry boundary')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Observability' })).toBeVisible();
+  await expect(page.getByText('Intelligence, API, runtime and evidence mesh')).toBeVisible();
+  await expect(page.getByText('IOC records')).toBeVisible();
+  await expect(page.getByText('CVE ↔ IOC')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Runtime Intelligence/ })).toBeVisible();
   await expect(page.getByText('Access unavailable')).toHaveCount(0);
+});
+
+test('data logic dashboard explains the governed intelligence and AI path', async ({ page }) => {
+  await page.goto('/observability/data-logic');
+  await expect(page.getByRole('heading', { name: 'From feeds to governed AI assistance' })).toBeVisible();
+  await expect(page.getByText('End-to-end data path')).toBeVisible();
+  await expect(page.getByText('IOC and CVE enrichment coverage')).toBeVisible();
+  await expect(page.getByText('MCP trust boundary')).toBeVisible();
+  await expect(page.getByText('AI assistant provider and grounding flow')).toBeVisible();
+  await expect(page.getByText('Normalize + deduplicate')).toBeVisible();
 });

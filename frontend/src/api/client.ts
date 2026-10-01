@@ -164,6 +164,195 @@ export interface ObservabilitySummary {
   log_file: { path: string; exists: boolean; size_bytes: number };
 }
 
+export interface SkyWalkingStatus {
+  enabled: boolean;
+  connected: boolean;
+  status: 'disabled' | 'unavailable' | 'degraded' | 'ok';
+  version?: string;
+  health_score?: number;
+  message: string;
+}
+
+export interface RuntimeTopologyNode {
+  id: string;
+  label: string;
+  node_type: 'runtime_service';
+  technology: string;
+  layers: string[];
+  observed: boolean;
+  source: 'apache_skywalking';
+  evidence_kind: 'runtime_observation';
+}
+
+export interface RuntimeTopologyEdge {
+  id: string;
+  source: string;
+  target: string;
+  edge_type: 'runtime_call';
+  source_components: string[];
+  target_components: string[];
+  detect_points: string[];
+  source_system: 'apache_skywalking';
+  evidence_kind: 'runtime_observation';
+}
+
+export interface RuntimeTopology {
+  source: 'apache_skywalking';
+  scope: string;
+  query: string;
+  window_minutes: number;
+  nodes: RuntimeTopologyNode[];
+  edges: RuntimeTopologyEdge[];
+  counts: { nodes: number; edges: number };
+  truncated: boolean;
+  provenance: {
+    classification: 'runtime_observation';
+    retrieved_at: string;
+    statement: string;
+  };
+}
+
+export interface PersistedRuntimeNode {
+  id: string;
+  external_id: string;
+  label: string;
+  technology: string;
+  layers: string[];
+  tags: string[];
+  first_observed_at: string;
+  last_observed_at: string;
+  observation_count: number;
+  tlp: string;
+}
+
+export interface PersistedRuntimeGraph {
+  source: 'adversarygraph_runtime_store';
+  nodes: PersistedRuntimeNode[];
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    source_components: string[];
+    target_components: string[];
+    detect_points: string[];
+    last_observed_at: string;
+    observation_count: number;
+  }>;
+  counts: { nodes: number; edges: number };
+  asset_links: Array<{
+    runtime_service_id: string;
+    asset_id: string;
+    asset_name: string;
+    match_basis: string;
+    confidence: number;
+    review_status: string;
+    route: string;
+  }>;
+}
+
+export interface PlatformArchitectureSnapshot {
+  generated_at: string;
+  window_minutes: number;
+  nodes: Array<{
+    id: string;
+    label: string;
+    layer: 'experience' | 'application' | 'intelligence' | 'telemetry' | 'runtime' | 'storage';
+    kind: string;
+    status: string;
+    metric: number | null;
+    metric_label: string;
+    source: string;
+    observed: boolean;
+    technology: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    kind: string;
+    label: string;
+    count: number | null;
+    observed: boolean;
+    evidence: string;
+  }>;
+  counts: Record<string, { label: string; value: number | null; status: string }>;
+  correlations: Array<{ id: string; label: string; count: number | null; status: string; source: string }>;
+  streams: {
+    ioc: { configured: number | null; enabled: number | null; degraded: number | null; latest_sync: string | null; records: number | null };
+    cve: { configured: number | null; enabled: number | null; degraded: number | null; latest_sync: string | null; records: number | null; known_exploited: number | null };
+    rag: { documents: number | null; chunks: number | null };
+  };
+  data_logic: {
+    stages: Array<{ id: string; label: string; detail: string }>;
+    coverage: {
+      ioc_tagged: number | null;
+      ioc_ttp_tagged: number | null;
+      cve_tagged: number | null;
+      cve_cwe: number | null;
+      cve_cpe: number | null;
+    };
+    rag: {
+      source_types: Array<{ source_type: string; documents: number }>;
+      latest_run: {
+        status: string;
+        documents_seen: number;
+        documents_created: number;
+        documents_updated: number;
+        documents_removed: number;
+        chunks_created: number;
+        embeddings_created: number;
+        embeddings_failed: number;
+        started_at: string | null;
+        completed_at: string | null;
+      } | null;
+      documents: number | null;
+      chunks: number | null;
+      assistance_records: number | null;
+      embedding_enabled: boolean;
+      embedding_provider: string | null;
+    };
+    mcp: {
+      transport: string;
+      tool_count: number;
+      api_operations: string[];
+      advisory_only: boolean;
+      database_credentials_exposed: boolean;
+    };
+    ai: {
+      enabled: boolean;
+      cloud_enabled: boolean;
+      providers: Array<{
+        id: string;
+        label: string;
+        model: string;
+        configured: boolean;
+        available: boolean;
+        status: string;
+        remote: boolean;
+      }>;
+      configured_count: number;
+      assistance_records: number | null;
+      human_review_required: boolean;
+    };
+    boundaries: string[];
+  };
+  api: ObservabilitySummary;
+  logs: {
+    path: string;
+    exists: boolean;
+    sampled_lines: number;
+    levels: Record<string, number>;
+    recent?: string[];
+  };
+  skywalking: { health: SkyWalkingStatus; topology_counts: { nodes: number; edges: number } | null };
+  provenance: {
+    measured: string[];
+    observed: string[];
+    configured: string[];
+    boundary: string;
+  };
+}
+
 export const observabilityApi = {
   summary: (): Promise<ObservabilitySummary> =>
     http.get('/observability/summary').then(r => r.data),
@@ -173,6 +362,32 @@ export const observabilityApi = {
     http.get('/observability/logs', { params: { limit } }).then(r => r.data),
   metrics: (): Promise<string> =>
     http.get('/observability/metrics', { responseType: 'text' }).then(r => r.data),
+  architecture: (minutes = 60): Promise<PlatformArchitectureSnapshot> =>
+    http.get('/observability/architecture', { params: { minutes } }).then(r => r.data),
+  skywalkingStatus: (): Promise<SkyWalkingStatus> =>
+    http.get('/observability/skywalking/status').then(r => r.data),
+  skywalkingTopology: (params: { minutes?: number; service?: string; layer?: string } = {}): Promise<RuntimeTopology> =>
+    http.get('/observability/skywalking/topology', { params }).then(r => r.data),
+  skywalkingInvestigate: (params: { query: string; minutes?: number; service?: string; layer?: string }): Promise<RuntimeTopology> =>
+    http.get('/observability/skywalking/investigate', { params }).then(r => r.data),
+  syncSkywalking: (payload: { minutes: number; service?: string; layer?: string; tlp?: string }): Promise<{
+    snapshot_id: string;
+    services_created: number;
+    services_updated: number;
+    calls_created: number;
+    calls_updated: number;
+    asset_links_created: number;
+    rag: { status: string; documents_seen: number; documents_created: number; documents_updated: number };
+  }> => http.post('/observability/skywalking/sync', payload).then(r => r.data),
+  storedRuntimeGraph: (params: { query?: string; limit?: number } = {}): Promise<PersistedRuntimeGraph> =>
+    http.get('/observability/runtime-graph', { params }).then(r => r.data),
+  promoteRuntimeEvidence: (serviceIds: string[]): Promise<{
+    nodes_created: number;
+    edges_created: number;
+    review_status: string;
+    route: string;
+    boundary: string;
+  }> => http.post('/observability/runtime-graph/promote', { service_ids: serviceIds }).then(r => r.data),
 };
 
 export interface StatPoint {
@@ -1442,8 +1657,8 @@ export interface TroubleshootingAssistantResponse {
 }
 
 export const systemApi = {
-  selftest: (): Promise<SelfTestResult> =>
-    http.get('/system/selftest').then(r => r.data),
+  selftest: (refresh = false): Promise<SelfTestResult> =>
+    http.get('/system/selftest', { params: refresh ? { refresh: true } : undefined }).then(r => r.data),
   normalizeTaxonomy: (): Promise<{ rows_changed: number; tables: Record<string, unknown> }> =>
     http.post('/system/taxonomy/normalize').then(r => r.data),
   startup: (): Promise<StartupStatus> =>
@@ -3143,6 +3358,38 @@ export interface AttackSimulationManualResult {
   note: string;
 }
 
+export interface SyntheticEvidenceTemplate {
+  id: string;
+  name: string;
+  description: string;
+  scenario_yaml: string;
+  source: string;
+  synthetic_only: true;
+}
+
+export interface SyntheticEvidenceResult {
+  run_id: string;
+  synthetic_only: true;
+  engine: string;
+  engine_version: string;
+  engine_ref: string;
+  scenario_sha256: string;
+  target: 'default' | 'sof-elk' | 'splunk';
+  duration_ms: number;
+  artifact_count: number;
+  artifacts: Array<{ path: string; size_bytes: number; sha256: string }>;
+  quality: {
+    available?: boolean;
+    acceptance_passed?: boolean | null;
+    overall_score?: number | null;
+    total_records?: number;
+    flags?: string[];
+  };
+  quality_passed: boolean;
+  validation_ready: boolean;
+  evidence_boundary: string;
+}
+
 export const simulationApi = {
   catalog: (): Promise<AttackSimulationCatalogItem[]> =>
     http.get('/simulation/catalog').then(r => r.data),
@@ -3150,6 +3397,20 @@ export const simulationApi = {
     http.get('/simulation/targets').then(r => r.data),
   aiAssistantScenarios: (): Promise<AttackSimulationAiAssistantScenario[]> =>
     http.get('/simulation/ai-assistant/scenarios').then(r => r.data),
+  syntheticStatus: (): Promise<{ ok: boolean; engine: string; engine_version: string; engine_ref: string; synthetic_only: true }> =>
+    http.get('/simulation/synthetic/status').then(r => r.data),
+  syntheticTemplates: (): Promise<SyntheticEvidenceTemplate[]> =>
+    http.get('/simulation/synthetic/templates').then(r => r.data),
+  validateSyntheticScenario: (scenario_yaml: string): Promise<{ valid: boolean; output: string; scenario_sha256: string }> =>
+    http.post('/simulation/synthetic/validate', { scenario_yaml }).then(r => r.data),
+  generateSyntheticEvidence: (payload: {
+    scenario_name: string;
+    scenario_yaml: string;
+    target: 'default' | 'sof-elk' | 'splunk';
+    formats: string[];
+    technique_ids: string[];
+  }): Promise<SyntheticEvidenceResult> =>
+    http.post('/simulation/synthetic/runs', payload).then(r => r.data),
   plan: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationPlan> =>
     http.post('/simulation/plan', payload).then(r => r.data),
   run: (payload: { simulation_id: string; target_id: string; analyst_note?: string }): Promise<AttackSimulationRun> =>

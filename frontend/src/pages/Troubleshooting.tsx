@@ -76,7 +76,7 @@ export function Troubleshooting() {
   const [notes, setNotes] = useState('');
   const [selftest, setSelftest] = useState<SelfTestResult | null>(null);
   const selftestMutation = useMutation({
-    mutationFn: systemApi.selftest,
+    mutationFn: () => systemApi.selftest(true),
     onSuccess: setSelftest,
   });
   const assistantMutation = useMutation({

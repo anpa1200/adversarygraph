@@ -67,6 +67,7 @@ not become unrestricted because it was returned through MCP.
 |---|---|---|
 | `search_intelligence` | `run_analysis` | Hybrid exact, PostgreSQL full-text, and vector retrieval with source provenance |
 | `ask_intelligence` | `run_analysis` | Citation-bound local RAG answer; no operational action |
+| `search_runtime_dependencies` | `run_analysis` | Search persisted SkyWalking service/dependency observations with an explicit runtime-evidence boundary |
 | `get_indexed_entity` | `run_analysis` | One sanitized indexed entity with bounded chunks and hashes |
 | `propose_navigator_layer` | `run_analysis` | Expiring evidence-backed suggestion; never confirms, applies, or saves it |
 
@@ -169,7 +170,7 @@ rules.
 
 ## Configuration
 
-The MCP subprocess reads only these four settings; it does not require or load
+The MCP subprocess reads only these four connection settings; it does not require or load
 database, Redis, feed, or provider credentials:
 
 ```dotenv

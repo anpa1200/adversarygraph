@@ -585,7 +585,7 @@ async def test_successful_cited_assistance_persists_provenance_and_proposal_only
     assert assistance.provider == "local"
     assert assistance.model == "test-local-model"
     assert assistance.retrieval_mode == "hybrid"
-    assert assistance.prompt_version == "unified-intelligence-rag-v1"
+    assert assistance.prompt_version == "unified-intelligence-rag-v2"
     assert len(assistance.query_checksum) == 64
     assert len(assistance.output_checksum) == 64
     assert assistance.filters == {

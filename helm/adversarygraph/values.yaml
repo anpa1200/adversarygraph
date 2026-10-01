@@ -109,6 +109,24 @@ malwaregraph:
       cpu: "2"
       memory: 2Gi
 
+evidenceforge:
+  enabled: true
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-evidenceforge
+    tag: "1.13.0"
+    digest: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  storageSize: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
 persistence:
   attckDataSize: 10Gi
   logsSize: 20Gi
@@ -171,6 +189,7 @@ secrets:
   openctiUrl: ""
   openctiToken: ""
   malwaregraphApiKey: ""
+  skywalkingAuthToken: ""
 
 config:
   # Set true in reviewed production values. This enables fail-closed Helm
@@ -232,4 +251,15 @@ config:
   ragRetentionMaxBatches: "20"
   ragRetentionHour: "4"
   ragRetentionMinute: "45"
+  skywalkingEnabled: "false"
+  skywalkingGraphqlUrl: "http://skywalking-oap:12800/graphql"
+  skywalkingTimeoutSeconds: "8"
+  skywalkingVerifyTls: "true"
+  skywalkingMaxTopologyNodes: "500"
+  skywalkingRuntimeRetentionDays: "30"
+  skywalkingSyncIntervalMinutes: "5"
+  evidenceforgeEnabled: "true"
+  evidenceforgeUrl: ""
+  evidenceforgeTimeoutSeconds: "240"
+  evidenceforgeMaxScenarioBytes: "262144"
   malwaregraphMaxUploadBytes: "268435456"

@@ -81,6 +81,49 @@ AdversaryGraph produces two types of telemetry during attack simulation. Analyst
 
 For SIEM forwarding security details see [attack-simulation-siem-forwarding-security.md](attack-simulation-siem-forwarding-security.md).
 
+## Deterministic Synthetic Evidence
+
+Attack Simulation can use the isolated
+[Cisco Talos EvidenceForge](https://github.com/Cisco-Talos/EvidenceForge)
+engine to generate correlated security telemetry for threat-hunting exercises
+and detection validation. Open **Attack Simulation**, select a TTP, and choose
+**Synthetic Evidence**.
+
+1. Load the reviewed upstream branch-office template or provide scenario YAML.
+2. Review its fictional users, hosts, network segments, sensors, baseline, and storyline.
+3. Select the default, Splunk, or SOF-ELK output target.
+4. Validate the schema and cross-references without generating events.
+5. Generate the deterministic dataset.
+6. Run EvidenceForge's parseability, plausibility, causality, and timing evaluation.
+7. Use it for validation only when the hard acceptance criteria pass.
+
+The generator is pinned to EvidenceForge `1.13.0` at commit
+`a68836bc10ea55971e2ce984b9e47eb4d01b7246`. It runs as a non-root user in a
+read-only container on an internal Docker network. The API accepts scenario
+content, output target, and allowlisted format names; it never accepts a shell
+command or an out-of-band callback host.
+
+Each run records the engine version and revision, scenario SHA-256, output
+target, ATT&CK technique IDs, artifact hashes, quality report, and operator
+identity. Scenario and generated files remain in the dedicated
+`evidenceforge_runs` volume.
+
+> Every generated package is marked `synthetic_only`. Synthetic telemetry is
+> training evidence, not an observation from a production endpoint or network.
+> A failed quality gate remains available for troubleshooting but is not
+> labelled validation-ready.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/simulation/synthetic/status` | Verify the pinned generator |
+| `GET` | `/api/simulation/synthetic/templates` | Load reviewed scenario templates |
+| `POST` | `/api/simulation/synthetic/validate` | Validate YAML and references |
+| `POST` | `/api/simulation/synthetic/runs` | Generate, evaluate, hash, and record a dataset |
+| `GET` | `/api/simulation/synthetic/runs` | Review recent synthetic run provenance |
+
+All routes require `run_attack_simulation`. SIEM delivery remains a separate,
+explicit action governed by `forward_siem`.
+
 ## Visual Walkthrough
 
 ### TTP-First Simulation Matrix

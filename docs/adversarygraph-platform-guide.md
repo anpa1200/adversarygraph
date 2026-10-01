@@ -78,7 +78,7 @@ AI assistant should remain traceable back to evidence.
 |---|---|
 | Discover | Start workspace, monitor platform state, open common CTI workflows, inspect selected TTP counts, actor context, and recent intelligence entry points. |
 | Navigator | Explore Enterprise, Mobile, ICS ATT&CK and ATLAS matrices; select TTPs; review technique detail; overlay actors; track coverage; export Navigator JSON and backlog data. |
-| Intelligence RAG Assistant | Search normalized IOC, CVE, TTP, actor, campaign, report, Knowledge, Threat Radar, Threat Hunting, Evidence Graph, and sanitized asset context; apply a saved business profile; generate citation-bound answers; preview and explicitly confirm expiring Navigator proposals. |
+| Intelligence RAG Assistant | Search normalized IOC, CVE, TTP, actor, campaign, report, Knowledge, Threat Radar, Threat Hunting, Evidence Graph, sanitized asset context, and governed runtime dependency observations; apply a saved business profile; generate citation-bound answers; preview and explicitly confirm expiring Navigator proposals. |
 | ATT&CK Group Library | Search actor profiles, aliases, campaigns, techniques, reports, source-backed IOCs, and push actor TTPs into Navigator or comparisons. |
 | AI Analysis | Paste text or upload PDF/DOCX/TXT; choose Claude, OpenAI, Gemini, MiniMax, or local OpenAI-compatible LLM; extract mapping candidates; review evidence and add accepted TTPs. |
 | Compare | Compare current TTP layers, reports, groups, and campaigns; inspect overlap, matrix diff, tactic breakdown, and gap analysis. |

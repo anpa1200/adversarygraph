@@ -87,7 +87,8 @@ const navSections: NavSection[] = [
     label: 'Platform',
     items: [
       { to: '/feeds', label: 'Feeds Management', icon: '≋', permission: 'manage_feeds' },
-      { to: '/observability', label: 'Observability', icon: '◌', permission: 'view_audit' },
+      { to: '/observability', label: 'Runtime Intelligence', icon: '◌', permission: 'read' },
+      { to: '/observability/data-logic', label: 'Data Logic', icon: '⇉', permission: 'read' },
       { to: '/admin', label: 'Admin Panel', icon: '⚙', anyPermission: ['manage_users', 'manage_auth', 'view_audit'] },
     ],
   },

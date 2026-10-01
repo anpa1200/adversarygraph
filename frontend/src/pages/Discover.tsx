@@ -2,7 +2,16 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { aptApi, attackApi, iocApi, simulationApi, syncApi, systemApi, type SelfTestResult } from '@/api/client';
+import {
+  aptApi,
+  attackApi,
+  iocApi,
+  observabilityApi,
+  simulationApi,
+  syncApi,
+  systemApi,
+  type SelfTestResult,
+} from '@/api/client';
 import { loadReportIndex } from '@/config/intelligence';
 import { useAppStore } from '@/store';
 import { Header } from '@/components/Layout/Header';
@@ -43,8 +52,17 @@ export function Discover() {
     staleTime: 5 * 60 * 1000,
   });
   const { data: sources = [] } = useQuery({ queryKey: ['discover-ioc-sources'], queryFn: iocApi.sources });
-  const { data: syncStatus } = useQuery({ queryKey: ['discover-sync-status'], queryFn: syncApi.status });
-  const selfTest = useMutation({ mutationFn: systemApi.selftest });
+  const { data: syncStatus } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: syncApi.status,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: runtimeStatus } = useQuery({
+    queryKey: ['discover-skywalking-status'],
+    queryFn: observabilityApi.skywalkingStatus,
+    refetchInterval: 30000,
+  });
+  const selfTest = useMutation({ mutationFn: () => systemApi.selftest(true) });
 
   const uniqueReports = useMemo(() => {
     const seen = new Set<string>();
@@ -113,6 +131,13 @@ export function Discover() {
                 {canRunAnalysis && <Start title="Map asset surface" text="Upload CMDB, scanner, or cloud inventory and map exposed assets to ATT&CK." onClick={() => navigate('/asset-surface')} />}
                 {canRunSimulation && <Start title="Attack simulation" text="Choose a TTP, configure an approved target, and prepare validation plans." onClick={() => navigate('/attack-simulation')} />}
                 {canRunAnalysis && <Start title="Evidence graph" text="Trace evidence to claims, behavior, ATT&CK, telemetry, detections, validation, and decisions." onClick={() => navigate('/evidence-graph')} />}
+                <Start
+                  title="Runtime intelligence"
+                  text={runtimeStatus?.connected
+                    ? `SkyWalking ${runtimeStatus.version ?? ''} connected. Investigate live service dependencies.`
+                    : 'Open the SkyWalking runtime dependency graph and integration status.'}
+                  onClick={() => navigate('/observability')}
+                />
                 <Start title="Compare behavior" text="Rank group, campaign, and stored-report overlap." onClick={() => navigate('/compare')} />
                 {canRunAnalysis && <Start title="Statistics" text="Compare actors, reports, sectors, TTP usage, CVEs, and IOC datasets." onClick={() => navigate('/statistics')} />}
                 <Start title="Review coverage" text="Prioritize selected techniques without coverage." onClick={() => navigate('/navigator')} />
@@ -158,6 +183,33 @@ export function Discover() {
             <Metric label="Workspaces" value={workspaces.length} />
           </div>
 
+          <Panel title="AdversaryGraph architecture">
+            <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-6">
+              <ArchitectureStage title="1. Evidence sources" detail="Reports, IOC/CVE feeds, assets, malware, ATT&CK, telemetry." tone="neutral" />
+              <ArchitectureStage title="2. Normalize and link" detail="Typed records, TLP, provenance, tags, deduplication, relationships." tone="neutral" />
+              <ArchitectureStage
+                title="3. Runtime topology"
+                detail={runtimeStatus?.connected
+                  ? `SkyWalking ${runtimeStatus.version ?? ''} connected and ready for service-call evidence.`
+                  : runtimeStatus?.enabled
+                    ? 'SkyWalking enabled but not currently ready.'
+                    : 'SkyWalking is optional and currently disabled.'}
+                tone={runtimeStatus?.connected ? 'ok' : runtimeStatus?.enabled ? 'warning' : 'muted'}
+              />
+              <ArchitectureStage title="4. RAG and MCP" detail="Governed exact, full-text, relationship, and vector retrieval." tone="neutral" />
+              <ArchitectureStage title="5. Evidence Graph" detail="Promote reviewed observations into explicit evidence and claims." tone="neutral" />
+              <ArchitectureStage title="6. Analyst outcomes" detail="Investigations, hunts, detections, validation, and handoff." tone="neutral" />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-800 p-3">
+              <p className="text-xs text-gray-500">
+                Runtime calls are telemetry observations—not proof of compromise, exploitation, ownership, or attribution.
+              </p>
+              <button type="button" className="primary-action" onClick={() => navigate('/observability')}>
+                Open Runtime Intelligence
+              </button>
+            </div>
+          </Panel>
+
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             <Panel title="Action launcher">
               <div className="grid gap-2 p-2 md:grid-cols-2 xl:grid-cols-3">
@@ -168,6 +220,7 @@ export function Discover() {
                 {canRunAnalysis && <ActionLink label="Asset attack surface" detail="Normalize inventories, score exposure, map entry points to ATT&CK, and save TTP layers." onClick={() => navigate('/asset-surface')} />}
                 {canRunSimulation && <ActionLink label="Attack Simulation" detail="Choose a TTP first, then configure target validation and evidence capture." onClick={() => navigate('/attack-simulation')} />}
                 {canRunAnalysis && <ActionLink label="Evidence-to-Detection Graph" detail="Preserve the full reasoning path from evidence through SIEM result and analyst decision." onClick={() => navigate('/evidence-graph')} />}
+                <ActionLink label="Runtime Intelligence" detail="Investigate SkyWalking service dependencies, synchronize governed runtime evidence, and promote reviewed nodes." onClick={() => navigate('/observability')} />
                 {canRunAnalysis && <ActionLink label="Malware Analysis" detail="Upload malware safely, review first analysis, hashes, files, strings, IOCs, TTPs, and family leads." onClick={() => navigate('/malware-analysis')} />}
                 {canRunAnalysis && <ActionLink label="String Analyzer" detail="Extract strings, commands, URLs, registry keys, APIs, and IOC/TTP leads from samples." onClick={() => navigate('/string-analyzer')} />}
                 {canRunAnalysis && <ActionLink label="Decompilation & Debug IDE" detail="Step through functions, inspect pseudocode/disassembly, and get AI explanations per function." onClick={() => navigate('/malware-debug')} />}
@@ -192,7 +245,7 @@ export function Discover() {
                   className="rounded border border-gray-800 bg-gray-950/40 p-3 text-left hover:border-mitre-accent hover:bg-gray-900 disabled:cursor-wait disabled:opacity-60"
                 >
                   <b className="block text-sm text-white">{selfTest.isPending ? 'Running self-test...' : 'Run self-test'}</b>
-                  <span className="mt-1 block text-xs leading-5 text-gray-500">Check API, database, Redis, ATT&CK data, API keys, and IOC sync.</span>
+                  <span className="mt-1 block text-xs leading-5 text-gray-500">Check API, database, RAG, runtime storage, SkyWalking, Redis, ATT&amp;CK data, keys, and feeds.</span>
                 </button>
                 {!canRunAnalysis && (
                   <PermissionNotice permission="run_analysis" action="run the platform self-test" compact />
@@ -371,6 +424,30 @@ function ActionLink({ label, detail, onClick }: { label: string; detail: string;
   );
 }
 
+function ArchitectureStage({
+  title,
+  detail,
+  tone,
+}: {
+  title: string;
+  detail: string;
+  tone: 'neutral' | 'ok' | 'warning' | 'muted';
+}) {
+  const color = tone === 'ok'
+    ? 'border-emerald-800/70 bg-emerald-950/20'
+    : tone === 'warning'
+      ? 'border-amber-800/70 bg-amber-950/20'
+      : tone === 'muted'
+        ? 'border-gray-800 bg-gray-950/30'
+        : 'border-sky-900/60 bg-sky-950/10';
+  return (
+    <article className={`rounded border p-3 ${color}`}>
+      <b className="block text-xs text-white">{title}</b>
+      <span className="mt-2 block text-[11px] leading-5 text-gray-400">{detail}</span>
+    </article>
+  );
+}
+
 function SelfTestReportPopup({
   result,
   error,
@@ -386,6 +463,8 @@ function SelfTestReportPopup({
 }) {
   const apiCheck = result?.checks.find(check => check.name === 'api_keys');
   const syncCheck = result?.checks.find(check => check.name === 'ioc_sync');
+  const runtimeCheck = result?.checks.find(check => check.name === 'runtime_intelligence');
+  const skywalkingCheck = result?.checks.find(check => check.name === 'skywalking');
   const providers = getProviderEntries(apiCheck?.details.providers);
   const configuredProviders = providers
       .filter(([, value]) => value.configured)
@@ -444,6 +523,29 @@ function SelfTestReportPopup({
                 <ReportMetric label="Runtime" value={`${result.duration_ms} ms`} />
                 <ReportMetric label="Version" value={result.version} />
               </div>
+
+              <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Runtime intelligence architecture</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Persistent runtime graph, RAG source, scheduler, and Apache SkyWalking OAP readiness.
+                    </p>
+                  </div>
+                  <button type="button" className="secondary-action" onClick={() => window.location.assign('/observability')}>
+                    Open Runtime Intelligence
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {[runtimeCheck, skywalkingCheck].map(check => check && (
+                    <div key={check.name} className="rounded border border-gray-800 bg-gray-950/50 p-3 text-xs">
+                      <span className={checkStatusClass(check.status)}>{checkStatusLabel(check.status)}</span>
+                      <b className="ml-2 font-mono text-gray-200">{check.name}</b>
+                      <p className="mt-2 leading-5 text-gray-500">{check.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
               <section className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
                 <h3 className="text-sm font-semibold text-white">Configured integrations</h3>

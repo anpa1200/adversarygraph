@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 
 import logging
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -23,6 +24,9 @@ manage_sync_feeds = require_permission("manage_feeds")
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sync", tags=["MITRE Sync"])
+_SYNC_STATUS_CACHE_TTL_SECONDS = 5 * 60.0
+_sync_status_cache: tuple[float, "SyncStatusOut"] | None = None
+_sync_status_lock = asyncio.Lock()
 
 
 class DomainStatusOut(BaseModel):
@@ -155,11 +159,30 @@ async def _get_attck_statuses():
 
 
 @router.get("/status", response_model=SyncStatusOut)
-async def sync_status(session: AsyncSession = Depends(get_session), _: TeamUser = Depends(current_user)):
+async def sync_status(
+    refresh: bool = False,
+    session: AsyncSession = Depends(get_session),
+    _: TeamUser = Depends(current_user),
+):
     """
     Check each configured domain: what version is in the DB vs latest on GitHub.
     The GitHub check is a lightweight API call (no download).
     """
+    global _sync_status_cache
+    now = monotonic()
+    if not refresh and _sync_status_cache and now - _sync_status_cache[0] < _SYNC_STATUS_CACHE_TTL_SECONDS:
+        return _sync_status_cache[1]
+
+    async with _sync_status_lock:
+        now = monotonic()
+        if not refresh and _sync_status_cache and now - _sync_status_cache[0] < _SYNC_STATUS_CACHE_TTL_SECONDS:
+            return _sync_status_cache[1]
+        result = await _build_sync_status(session)
+        _sync_status_cache = (monotonic(), result)
+        return result
+
+
+async def _build_sync_status(session: AsyncSession) -> SyncStatusOut:
     try:
         statuses = await _get_attck_statuses()
 

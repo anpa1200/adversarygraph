@@ -22,6 +22,7 @@ import type {
   AttackSimulationPlan,
   AttackSimulationRun,
   AttackSimulationSiemDestination,
+  SyntheticEvidenceResult,
 } from '@/api/client';
 import { TtpLink } from '@/utils/ctiLinks';
 import { DataTable } from '@/components/ui/data-table';
@@ -95,18 +96,60 @@ export function AttackSimulation() {
   const [matrixSearch, setMatrixSearch] = useState('');
   const [matrixPlatform, setMatrixPlatform] = useState('');
   const [showOnlyRunnable, setShowOnlyRunnable] = useState(false);
+  const [showSyntheticEvidence, setShowSyntheticEvidence] = useState(false);
+  const [syntheticScenario, setSyntheticScenario] = useState('');
+  const [syntheticTarget, setSyntheticTarget] = useState<'default' | 'sof-elk' | 'splunk'>('default');
+  const [syntheticValidation, setSyntheticValidation] = useState<{ valid: boolean; output: string } | null>(null);
+  const [syntheticResult, setSyntheticResult] = useState<SyntheticEvidenceResult | null>(null);
 
   const catalogQuery = useQuery({ queryKey: ['simulation-catalog'], queryFn: simulationApi.catalog });
   const targetsQuery = useQuery({ queryKey: ['simulation-targets'], queryFn: simulationApi.targets });
   const aiScenariosQuery = useQuery({ queryKey: ['simulation-ai-assistant-scenarios'], queryFn: simulationApi.aiAssistantScenarios });
   const siemHistoryQuery = useQuery({ queryKey: ['simulation-siem-destinations'], queryFn: simulationApi.siemDestinations, retry: false, enabled: canForwardSiem });
   const attackFlowsQuery = useQuery({ queryKey: ['simulation-attack-flows'], queryFn: simulationApi.attackFlows, retry: false });
+  const syntheticStatusQuery = useQuery({
+    queryKey: ['simulation-synthetic-status'],
+    queryFn: simulationApi.syntheticStatus,
+    retry: false,
+  });
+  const syntheticTemplatesQuery = useQuery({
+    queryKey: ['simulation-synthetic-templates'],
+    queryFn: simulationApi.syntheticTemplates,
+    retry: false,
+    enabled: showSyntheticEvidence,
+  });
   const matrixData = useAttackMatrix(domain, version);
   const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
   const targets = useMemo(() => targetsQuery.data ?? [], [targetsQuery.data]);
   const aiScenarios = useMemo(() => aiScenariosQuery.data ?? [], [aiScenariosQuery.data]);
   const selectedSimulation = catalog.find(item => item.id === simulationId);
   const selectedTarget = targets.find(item => item.id === targetId);
+  useEffect(() => {
+    if (!syntheticScenario && syntheticTemplatesQuery.data?.[0]?.scenario_yaml) {
+      setSyntheticScenario(syntheticTemplatesQuery.data[0].scenario_yaml);
+    }
+  }, [syntheticScenario, syntheticTemplatesQuery.data]);
+
+  const validateSyntheticMutation = useMutation({
+    mutationFn: () => simulationApi.validateSyntheticScenario(syntheticScenario),
+    onSuccess: result => setSyntheticValidation(result),
+  });
+  const generateSyntheticMutation = useMutation({
+    mutationFn: () => simulationApi.generateSyntheticEvidence({
+      scenario_name: selectedSimulation
+        ? `${selectedSimulation.technique_id} ${selectedSimulation.name} synthetic exercise`
+        : 'Synthetic evidence exercise',
+      scenario_yaml: syntheticScenario,
+      target: syntheticTarget,
+      formats: [],
+      technique_ids: selectedSimulation ? [selectedSimulation.technique_id] : [],
+    }),
+    onSuccess: result => {
+      setSyntheticResult(result);
+      setSyntheticValidation({ valid: true, output: 'Scenario validated before generation.' });
+      qc.invalidateQueries({ queryKey: ['simulation-synthetic-runs'] });
+    },
+  });
   const simulationByTechnique = useMemo(() => {
     const map = new Map<string, AttackSimulationCatalogItem>();
     for (const item of catalog) {
@@ -664,11 +707,114 @@ export function AttackSimulation() {
         </aside>
 
         <main className="min-h-0 overflow-y-auto p-6">
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => setShowSyntheticEvidence(value => !value)} className="secondary-action">
+              Synthetic Evidence
+            </button>
             <button type="button" onClick={openAiAssistant} className="primary-action">
               AI Assistant Attack
             </button>
           </div>
+          {showSyntheticEvidence && (
+            <section className="mb-5 rounded border border-cyan-900/70 bg-gray-950 p-5" aria-labelledby="synthetic-evidence-title">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 id="synthetic-evidence-title" className="text-lg font-semibold text-white">
+                    EvidenceForge synthetic evidence
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-400">
+                    Generate deterministic, causally correlated training telemetry. All artifacts are labelled synthetic and remain separate from observed production evidence.
+                  </p>
+                </div>
+                <span className={`rounded border px-2 py-1 text-xs ${
+                  syntheticStatusQuery.data?.ok
+                    ? 'border-green-800 bg-green-950/30 text-green-300'
+                    : 'border-amber-800 bg-amber-950/30 text-amber-300'
+                }`}>
+                  {syntheticStatusQuery.data?.ok
+                    ? `ready · ${syntheticStatusQuery.data.engine_version}`
+                    : syntheticStatusQuery.isLoading ? 'checking service' : 'service unavailable'}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div>
+                  <label className="label" htmlFor="synthetic-scenario">Scenario YAML</label>
+                  <textarea
+                    id="synthetic-scenario"
+                    className="field mt-1 min-h-[280px] resize-y font-mono text-[11px] leading-5"
+                    value={syntheticScenario}
+                    onChange={event => {
+                      setSyntheticScenario(event.target.value);
+                      setSyntheticValidation(null);
+                      setSyntheticResult(null);
+                    }}
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label className="label" htmlFor="synthetic-target">Output target</label>
+                  <select
+                    id="synthetic-target"
+                    className="field"
+                    value={syntheticTarget}
+                    onChange={event => setSyntheticTarget(event.target.value as typeof syntheticTarget)}
+                  >
+                    <option value="default">Default</option>
+                    <option value="splunk">Splunk</option>
+                    <option value="sof-elk">SOF-ELK</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="secondary-action w-full"
+                    disabled={!syntheticScenario || validateSyntheticMutation.isPending}
+                    onClick={() => validateSyntheticMutation.mutate()}
+                  >
+                    {validateSyntheticMutation.isPending ? 'Validating…' : 'Validate scenario'}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-action w-full"
+                    disabled={!syntheticStatusQuery.data?.ok || !syntheticScenario || generateSyntheticMutation.isPending}
+                    onClick={() => generateSyntheticMutation.mutate()}
+                  >
+                    {generateSyntheticMutation.isPending ? 'Generating and evaluating…' : 'Generate synthetic evidence'}
+                  </button>
+                  {syntheticValidation && (
+                    <div className={`rounded border p-3 text-xs ${
+                      syntheticValidation.valid
+                        ? 'border-green-900 bg-green-950/20 text-green-300'
+                        : 'border-red-900 bg-red-950/20 text-red-300'
+                    }`}>
+                      <b>{syntheticValidation.valid ? 'Scenario valid' : 'Validation failed'}</b>
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-gray-400">
+                        {syntheticValidation.output}
+                      </pre>
+                    </div>
+                  )}
+                  {(validateSyntheticMutation.error || generateSyntheticMutation.error) && (
+                    <div className="rounded border border-red-900 bg-red-950/20 p-3 text-xs text-red-300">
+                      {String(validateSyntheticMutation.error || generateSyntheticMutation.error)}
+                    </div>
+                  )}
+                  {syntheticResult && (
+                    <div className="rounded border border-cyan-900 bg-cyan-950/20 p-3 text-xs leading-5 text-cyan-100">
+                      <b className="block">Synthetic run recorded</b>
+                      <span>{syntheticResult.artifact_count} artifacts · {syntheticResult.quality.total_records ?? 0} records</span>
+                      <span className="block">Quality gate: {syntheticResult.quality_passed ? 'passed' : 'not passed'}</span>
+                      <span className="block font-mono text-[10px] text-cyan-400">{syntheticResult.run_id}</span>
+                      <a
+                        className="secondary-action mt-2 inline-flex"
+                        href={`/api/simulation/synthetic/runs/${syntheticResult.run_id}/bundle`}
+                        download
+                      >
+                        Download dataset
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
           {!plan && !run && (
             <div className="mx-auto mt-16 max-w-3xl rounded border border-gray-800 bg-gray-950 p-6">
               <h2 className="text-lg font-semibold text-white">Configure the target and generate an attack simulation plan.</h2>

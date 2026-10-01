@@ -16,7 +16,7 @@ import { useHasPermission } from '@/hooks/useCurrentUser';
 
 type ApplyMode = 'add' | 'replace';
 type RequestKind = 'search' | 'assist';
-type SourceFilter = 'ioc' | 'cve' | 'technique' | 'actor' | 'report' | 'asset';
+type SourceFilter = 'ioc' | 'cve' | 'technique' | 'actor' | 'report' | 'asset' | 'runtime';
 
 export interface RAGAssistantProps {
   domain: string;
@@ -99,6 +99,7 @@ const SOURCE_OPTIONS: Array<{ id: SourceFilter; label: string; description: stri
   { id: 'actor', label: 'Actors', description: 'Threat groups and campaigns' },
   { id: 'report', label: 'Reports', description: 'Stored reports and research' },
   { id: 'asset', label: 'Assets', description: 'Sanitized asset and exposure context' },
+  { id: 'runtime', label: 'Runtime', description: 'Observed SkyWalking services and dependencies' },
 ];
 
 const SOURCE_TYPE_MAP: Record<SourceFilter, string[]> = {
@@ -108,6 +109,7 @@ const SOURCE_TYPE_MAP: Record<SourceFilter, string[]> = {
   actor: ['attack_group', 'attack_campaign', 'actor_intel'],
   report: ['analysis_report', 'knowledge', 'threat_signal', 'threat_hunt', 'evidence_node'],
   asset: ['asset'],
+  runtime: ['runtime_service'],
 };
 
 const FALLBACK_PROVIDERS: ProviderStatus[] = [

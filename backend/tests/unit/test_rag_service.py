@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -808,6 +809,35 @@ async def test_reconciliation_is_idempotent_and_reuses_unchanged_chunks(monkeypa
     assert second.chunks_created == 0
     assert tuple(document.chunks) == original_chunks
     assert document.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_updates_changed_chunks_in_place(monkeypatch: pytest.MonkeyPatch):
+    db = _ReconcileDB()
+    run = RAGIndexRun(created_by="test")
+    original = _record()
+    document = rag._new_document(original, rag.datetime.now(rag.timezone.utc))
+    document.id = uuid4()
+    document.chunks = rag._new_chunks(document, original, embedding_requested=False)
+    original_chunk_id = document.chunks[0].id = uuid4()
+    changed = replace(original, body=f"{original.body}\n\nMaterially changed evidence.")
+
+    async def collect(_db, _types):
+        return [changed]
+
+    async def load(_db, _types):
+        return [document]
+
+    monkeypatch.setattr(rag, "collect_source_records", collect)
+    monkeypatch.setattr(rag, "_load_existing_documents", load)
+    monkeypatch.setattr(settings, "rag_embedding_enabled", False)
+
+    result = await rag.reconcile_corpus(db, run, ["attack_technique"], include_embeddings=False)
+
+    assert result.documents_updated == 1
+    assert document.chunks[0].id == original_chunk_id
+    assert "Materially changed evidence." in document.chunks[-1].content
+    assert len({chunk.ordinal for chunk in document.chunks}) == len(document.chunks)
 
 
 @pytest.mark.asyncio

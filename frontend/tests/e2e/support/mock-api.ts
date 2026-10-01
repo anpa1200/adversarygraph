@@ -240,6 +240,60 @@ export async function mockApi(page: Page) {
         cve_known_exploited: 0,
       });
     }
+    if (path === '/observability/architecture') {
+      return json({
+        generated_at: '2026-07-29T12:00:00Z',
+        window_minutes: 60,
+        nodes: [
+          { id: 'api', label: 'AdversaryGraph API', layer: 'application', kind: 'api', status: 'observed', metric: 42, metric_label: 'requests since start', source: 'api_middleware', observed: true, technology: 'FastAPI' },
+          { id: 'ioc', label: 'IOC intelligence', layer: 'intelligence', kind: 'stream', status: 'measured', metric: 109787, metric_label: 'indicators', source: 'database_count', observed: true, technology: '' },
+        ],
+        edges: [{ id: 'api:ioc', source: 'api', target: 'ioc', kind: 'api_traffic', label: 'measured requests', count: 12, observed: true, evidence: 'api_middleware' }],
+        counts: {
+          attack: { label: 'ATT&CK techniques', value: 656, status: 'measured' },
+          actors: { label: 'ATT&CK groups', value: 160, status: 'measured' },
+        },
+        correlations: [{ id: 'cve_ioc', label: 'CVE ↔ IOC', count: 24, status: 'measured', source: 'cve_ioc_links' }],
+        streams: {
+          ioc: { configured: 6, enabled: 6, degraded: 0, latest_sync: '2026-07-29T11:55:00Z', records: 109787 },
+          cve: { configured: 31, enabled: 8, degraded: 1, latest_sync: '2026-07-29T11:50:00Z', records: 8263, known_exploited: 1653 },
+          rag: { documents: 118000, chunks: 240000 },
+        },
+        data_logic: {
+          stages: [
+            { id: 'collect', label: 'Collect', detail: 'Collect source records.' },
+            { id: 'parse', label: 'Parse', detail: 'Parse allowlisted fields.' },
+            { id: 'normalize', label: 'Normalize + deduplicate', detail: 'Normalize identity.' },
+            { id: 'tag', label: 'Tag + correlate', detail: 'Build source-backed links.' },
+            { id: 'store', label: 'Persist', detail: 'Store canonical records.' },
+            { id: 'rag', label: 'RAG reconcile', detail: 'Build governed chunks.' },
+            { id: 'mcp', label: 'MCP tools', detail: 'Expose bounded tools.' },
+            { id: 'assist', label: 'AI assistant', detail: 'Return cited suggestions.' },
+          ],
+          coverage: { ioc_tagged: 80000, ioc_ttp_tagged: 15000, cve_tagged: 7000, cve_cwe: 6000, cve_cpe: 5000 },
+          rag: {
+            source_types: [{ source_type: 'ioc', documents: 109787 }, { source_type: 'cve', documents: 8263 }],
+            latest_run: { status: 'completed', documents_seen: 118000, documents_created: 10, documents_updated: 20, documents_removed: 0, chunks_created: 30, embeddings_created: 0, embeddings_failed: 0, started_at: '2026-07-29T11:00:00Z', completed_at: '2026-07-29T11:01:00Z' },
+            documents: 118000, chunks: 240000, assistance_records: 12, embedding_enabled: false, embedding_provider: null,
+          },
+          mcp: { transport: 'stdio', tool_count: 5, api_operations: ['RAG search', 'RAG assist', 'indexed entity lookup'], advisory_only: true, database_credentials_exposed: false },
+          ai: {
+            enabled: true, cloud_enabled: true, configured_count: 2, assistance_records: 12, human_review_required: true,
+            providers: [{ id: 'local', label: 'Local / private', model: 'qwen3:8b', configured: true, available: true, status: 'ready', remote: false }],
+          },
+          boundaries: ['MCP and AI output remains advisory and requires human review.'],
+        },
+        api: { uptime_seconds: 100, requests_total: 42, requests_by_status: { '2xx': 40, '5xx': 2 }, top_routes: [{ route: '/api/ioc/search', count: 12 }], latency: { avg_ms: 18, max_ms: 120 }, last_error: null, recent_traces: [] },
+        logs: { path: '/app/logs/adversarygraph-api.log', exists: true, sampled_lines: 20, levels: { info: 18, warning: 1, error: 1 }, recent: [] },
+        skywalking: { health: { enabled: true, connected: true, status: 'ok', message: 'Connected.' }, topology_counts: { nodes: 2, edges: 1 } },
+        provenance: {
+          measured: ['database counts'],
+          observed: ['SkyWalking topology'],
+          configured: ['deployment dependencies'],
+          boundary: 'Runtime telemetry and correlations are operational evidence, not proof of compromise or attribution.',
+        },
+      });
+    }
     if (path === '/apt/groups') return json([]);
     if (path === '/attack/tactics') {
       return json([{ attack_id: 'TA0043', shortname: 'reconnaissance', name: 'Reconnaissance' }]);
@@ -259,6 +313,16 @@ export async function mockApi(page: Page) {
         expected_telemetry: ['access log', 'event_id=AG-WEB-1595'],
       }]);
     }
+    if (path === '/simulation/synthetic/status') {
+      return json({
+        ok: true,
+        engine: 'EvidenceForge',
+        engine_version: '1.13.0',
+        engine_ref: 'a68836bc10ea55971e2ce984b9e47eb4d01b7246',
+        synthetic_only: true,
+      });
+    }
+    if (path === '/simulation/synthetic/templates') return json([]);
     if (path === '/simulation/targets') {
       return json([{
         id: 'lab-web-01',

@@ -87,6 +87,17 @@ data:
   RAG_RETENTION_MAX_BATCHES: {{ .Values.config.ragRetentionMaxBatches | quote }}
   RAG_RETENTION_HOUR: {{ .Values.config.ragRetentionHour | quote }}
   RAG_RETENTION_MINUTE: {{ .Values.config.ragRetentionMinute | quote }}
+  SKYWALKING_ENABLED: {{ .Values.config.skywalkingEnabled | quote }}
+  SKYWALKING_GRAPHQL_URL: {{ .Values.config.skywalkingGraphqlUrl | quote }}
+  SKYWALKING_TIMEOUT_SECONDS: {{ .Values.config.skywalkingTimeoutSeconds | quote }}
+  SKYWALKING_VERIFY_TLS: {{ .Values.config.skywalkingVerifyTls | quote }}
+  SKYWALKING_MAX_TOPOLOGY_NODES: {{ .Values.config.skywalkingMaxTopologyNodes | quote }}
+  SKYWALKING_RUNTIME_RETENTION_DAYS: {{ .Values.config.skywalkingRuntimeRetentionDays | quote }}
+  SKYWALKING_SYNC_INTERVAL_MINUTES: {{ .Values.config.skywalkingSyncIntervalMinutes | quote }}
+  EVIDENCEFORGE_ENABLED: {{ .Values.config.evidenceforgeEnabled | quote }}
+  EVIDENCEFORGE_URL: {{ default (printf "http://%s-evidenceforge:8091" (include "adversarygraph.fullname" .)) .Values.config.evidenceforgeUrl | quote }}
+  EVIDENCEFORGE_TIMEOUT_SECONDS: {{ .Values.config.evidenceforgeTimeoutSeconds | quote }}
+  EVIDENCEFORGE_MAX_SCENARIO_BYTES: {{ .Values.config.evidenceforgeMaxScenarioBytes | quote }}
   MALWAREGRAPH_MAX_UPLOAD_BYTES: {{ .Values.config.malwaregraphMaxUploadBytes | quote }}
   ATTCK_DATA_DIR: /app/data/attck
   LOG_DIR: /app/logs

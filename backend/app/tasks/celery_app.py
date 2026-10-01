@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.retrohunt",
         "app.tasks.rag",
         "app.tasks.rag_retention",
+        "app.tasks.runtime_intelligence",
     ],
 )
 
@@ -73,6 +74,11 @@ celery_app.conf.beat_schedule = {
             hour=settings.rag_retention_hour,
             minute=settings.rag_retention_minute,
         ),
+        "options": {"queue": "celery"},
+    },
+    "skywalking-runtime-sync": {
+        "task": "runtime_intelligence.sync_skywalking",
+        "schedule": crontab(minute=f"*/{settings.skywalking_sync_interval_minutes}"),
         "options": {"queue": "celery"},
     },
 }

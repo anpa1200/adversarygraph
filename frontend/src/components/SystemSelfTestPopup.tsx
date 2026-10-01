@@ -127,6 +127,8 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
   const apiCheck = checkByName(result, 'api_keys');
   const syncCheck = checkByName(result, 'ioc_sync');
   const cveSyncCheck = checkByName(result, 'cve_sync');
+  const runtimeCheck = checkByName(result, 'runtime_intelligence');
+  const skywalkingCheck = checkByName(result, 'skywalking');
   const providers = configuredProviders(apiCheck);
   const llmProviders = providers.filter(provider => provider.category === 'llm');
   const feedProviders = providers.filter(provider => provider.category === 'feed');
@@ -139,6 +141,31 @@ function SelfTestDetails({ result }: { result: SelfTestResult }) {
 
   return (
     <div className="space-y-3 text-xs">
+      <div className="rounded border border-sky-400/20 bg-sky-950/20 p-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="font-semibold">Runtime Intelligence architecture</p>
+            <p className="mt-1 text-[11px] leading-4 opacity-70">
+              SkyWalking OAP → persistent runtime graph → Asset/RAG/MCP correlation → reviewed Evidence Graph promotion.
+            </p>
+          </div>
+          <a className="rounded border border-white/20 px-2 py-1 font-semibold hover:bg-white/10" href="/observability">
+            Open
+          </a>
+        </div>
+        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+          {[runtimeCheck, skywalkingCheck].map(check => check && (
+            <div key={check.name} className="rounded bg-black/20 px-2 py-1.5">
+              <p>
+                <span className={checkStatusClass(check.status)}>{checkStatusLabel(check.status)}</span>
+                <span className="ml-2 font-mono">{check.name}</span>
+              </p>
+              <p className="mt-1 text-[11px] leading-4 opacity-70">{check.message}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="rounded border border-white/10 bg-black/15 p-2">
           <p className="font-semibold">Configured LLM credentials / endpoints</p>
@@ -245,8 +272,9 @@ export function SystemSelfTestPopup() {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['system-selftest'],
-    queryFn: systemApi.selftest,
+    queryFn: () => systemApi.selftest(),
     enabled: canRunSelfTest,
+    staleTime: 5 * 60 * 1000,
     retry: 8,
     retryDelay: attempt => Math.min(2000 + attempt * 1500, 8000),
     refetchOnWindowFocus: false,
@@ -408,7 +436,10 @@ export function SystemSelfTestPopup() {
           <button
             type="button"
             className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"
-            onClick={() => query.refetch()}
+            onClick={async () => {
+              const result = await systemApi.selftest(true);
+              queryClient.setQueryData(['system-selftest'], result);
+            }}
           >
             Run Again
           </button>

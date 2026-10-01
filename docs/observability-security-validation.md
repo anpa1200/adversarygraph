@@ -1,5 +1,9 @@
 # Observability, Security Scanning, And Validation Evidence
 
+For runtime service dependency investigation backed by an existing Apache
+SkyWalking deployment, see
+[Apache SkyWalking runtime dependency investigation](skywalking-runtime-investigation.md).
+
 AdversaryGraph now exposes an operator-facing observability layer for controlled self-hosted deployments. The goal is to make production readiness measurable: health checks, request traces, API metrics, safe log review, and repeatable security scans.
 
 ## Runtime Observability

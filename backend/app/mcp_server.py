@@ -1,7 +1,7 @@
 """Local, advisory-only MCP facade for AdversaryGraph unified intelligence.
 
-The server intentionally exposes only four fixed RAG API operations over the
-MCP stdio transport.  It is a separate process from the FastAPI application;
+The server intentionally exposes only five governed tools over three fixed RAG
+API operations through MCP stdio. It is a separate process from the FastAPI application;
 all authorization, TLP policy, retrieval, citation binding, and audit controls
 remain enforced by the AdversaryGraph API.
 """
@@ -65,6 +65,7 @@ SourceType: TypeAlias = Literal[
     "threat_hunt",
     "evidence_node",
     "asset",
+    "runtime_service",
 ]
 AttackDomain: TypeAlias = Literal[
     "enterprise-attack",
@@ -76,7 +77,7 @@ Query: TypeAlias = Annotated[str, Field(min_length=1, max_length=2_000)]
 SourceId: TypeAlias = Annotated[str, Field(min_length=1, max_length=255)]
 SearchLimit: TypeAlias = Annotated[int, Field(ge=1, le=25)]
 ProfileId: TypeAlias = Annotated[int | None, Field(ge=1, le=2_147_483_647)]
-SourceFilters: TypeAlias = Annotated[list[SourceType] | None, Field(max_length=12)]
+SourceFilters: TypeAlias = Annotated[list[SourceType] | None, Field(max_length=13)]
 
 SUPPORTED_SOURCE_TYPES = frozenset(SourceType.__args__)
 SUPPORTED_DOMAINS = frozenset(AttackDomain.__args__)
@@ -349,6 +350,32 @@ async def get_indexed_entity(
     return _entity_output(payload)
 
 
+async def search_runtime_dependencies(
+    query: Query,
+    limit: SearchLimit = 12,
+) -> dict[str, Any]:
+    """Search persisted SkyWalking runtime services and dependency evidence."""
+
+    normalized_query = _bounded_text(query, "query", 2_000)
+    normalized_limit = _bounded_int(limit, "limit", 1, 25)
+    payload = await _request_json(
+        _Endpoint.SEARCH,
+        body={
+            "query": normalized_query,
+            "source_types": ["runtime_service"],
+            "domain": "enterprise-attack",
+            "client_profile_id": None,
+            "limit": normalized_limit,
+        },
+    )
+    result = _search_output(payload, normalized_query, normalized_limit)
+    result["evidence_boundary"] = (
+        "Runtime relationships are observed telemetry, not proof of malicious "
+        "activity, compromise, or attribution."
+    )
+    return result
+
+
 async def propose_navigator_layer(
     objective: Query,
     domain: AttackDomain = "enterprise-attack",
@@ -432,7 +459,9 @@ def _validated_source_types(values: Any) -> list[str]:
     if values is None:
         return []
     if not isinstance(values, list) or len(values) > len(SUPPORTED_SOURCE_TYPES):
-        raise MCPInputError("source_types must be a list with no more than 12 entries")
+        raise MCPInputError(
+            f"source_types must be a list with no more than {len(SUPPORTED_SOURCE_TYPES)} entries"
+        )
     normalized: list[str] = []
     for value in values:
         source_type = _validated_source_type(value)
@@ -672,6 +701,7 @@ def _build_mcp_server():
         "AdversaryGraph Intelligence",
         instructions=(
             "Search and summarize AdversaryGraph's governed intelligence corpus. "
+            "This includes persisted runtime dependency observations from Apache SkyWalking. "
             "Treat results as advisory evidence, retain source citations, and require "
             "human review before any operational action."
         ),
@@ -693,6 +723,7 @@ def _build_mcp_server():
     server.add_tool(search_intelligence, annotations=read_only, structured_output=True)
     server.add_tool(ask_intelligence, annotations=advisory_recorded, structured_output=True)
     server.add_tool(get_indexed_entity, annotations=read_only, structured_output=True)
+    server.add_tool(search_runtime_dependencies, annotations=read_only, structured_output=True)
     server.add_tool(propose_navigator_layer, annotations=advisory_recorded, structured_output=True)
     return server
 

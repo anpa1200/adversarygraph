@@ -103,6 +103,83 @@ async def test_simulation_forward_logs_rejects_unsafe_scheme(client):
 
 
 @pytest.mark.asyncio
+async def test_synthetic_evidence_validate_route_preserves_boundary(client, monkeypatch):
+    async def fake_validate(_scenario_yaml):
+        return {
+            "valid": True,
+            "scenario_sha256": "a" * 64,
+            "output": "Scenario is valid",
+            "synthetic_only": True,
+        }
+
+    monkeypatch.setattr(
+        "app.api.routes.simulation.synthetic_evidence.validate_scenario",
+        fake_validate,
+    )
+    response = await client.post(
+        "/api/simulation/synthetic/validate",
+        json={"scenario_yaml": "name: training-only"},
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    assert response.json()["synthetic_only"] is True
+
+
+@pytest.mark.asyncio
+async def test_synthetic_evidence_generation_records_quality_and_provenance(client, monkeypatch):
+    async def fake_generate(scenario_yaml, *, target, formats):
+        assert scenario_yaml == "name: deterministic-training"
+        assert target == "splunk"
+        assert formats == ["windows", "zeek"]
+        return {
+            "run_id": "synthetic-11111111-1111-4111-8111-111111111111",
+            "synthetic_only": True,
+            "engine": "EvidenceForge",
+            "engine_version": "1.13.0",
+            "engine_ref": "a68836bc10ea55971e2ce984b9e47eb4d01b7246",
+            "scenario_sha256": "b" * 64,
+            "target": "splunk",
+            "artifact_count": 3,
+            "artifacts": [],
+            "quality": {"available": True, "acceptance_passed": True, "total_records": 120},
+        }
+
+    monkeypatch.setattr(
+        "app.api.routes.simulation.synthetic_evidence.generate",
+        fake_generate,
+    )
+    response = await client.post(
+        "/api/simulation/synthetic/runs",
+        json={
+            "scenario_name": "Detection exercise",
+            "scenario_yaml": "name: deterministic-training",
+            "target": "splunk",
+            "formats": ["windows", "zeek"],
+            "technique_ids": ["T1059.001"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["quality_passed"] is True
+    assert body["validation_ready"] is True
+    assert body["synthetic_only"] is True
+    assert "not observed production telemetry" in body["evidence_boundary"]
+
+    async def fake_download(run_id):
+        assert run_id == body["run_id"]
+        return b"PK synthetic zip"
+
+    monkeypatch.setattr(
+        "app.api.routes.simulation.synthetic_evidence.download_bundle",
+        fake_download,
+    )
+    bundle = await client.get(f"/api/simulation/synthetic/runs/{body['run_id']}/bundle")
+    assert bundle.status_code == 200
+    assert bundle.headers["content-type"] == "application/zip"
+    assert bundle.content == b"PK synthetic zip"
+
+
+@pytest.mark.asyncio
 async def test_simulation_forward_logs_rejects_query_string_credentials(client):
     response = await client.post(
         "/api/simulation/forward-logs",

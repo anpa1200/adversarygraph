@@ -16,6 +16,24 @@ spec:
       storage: {{ .Values.postgresql.storageSize | quote }}
 ---
 {{- end }}
+{{- if .Values.evidenceforge.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-evidenceforge
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.evidenceforge.accessModes | nindent 4 }}
+  {{- if .Values.evidenceforge.storageClassName }}
+  storageClassName: {{ .Values.evidenceforge.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.evidenceforge.storageSize | quote }}
+{{- end }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

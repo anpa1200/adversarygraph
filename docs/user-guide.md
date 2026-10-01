@@ -13,6 +13,7 @@ Published walkthrough and visual reference:
 - Threat hunting guide: [`threat-hunting-guide.md`](threat-hunting-guide.md)
 - Unified intelligence RAG and MCP guide: [`unified-rag-and-mcp.md`](unified-rag-and-mcp.md)
 - MCP client setup: [`mcp-server.md`](mcp-server.md)
+- Runtime dependency investigation: [`skywalking-runtime-investigation.md`](skywalking-runtime-investigation.md)
 - v5 Attack Simulation screenshot manifest: [`assets/attack-simulation-v5/manifest.md`](assets/attack-simulation-v5/manifest.md)
 - Tagged v6.0.0 UI screenshot evidence: [`assets/adversarygraph-v6/manifest.md`](assets/adversarygraph-v6/manifest.md)
 - v6 reproducible case studies: [`case-studies-v6.md`](case-studies-v6.md)

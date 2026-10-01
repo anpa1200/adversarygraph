@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added an isolated, pinned Cisco Talos EvidenceForge integration to Attack
+  Simulation for deterministic synthetic telemetry, scenario validation,
+  four-pillar quality evaluation, artifact hashing, provenance records,
+  self-test readiness, and an explicit synthetic-evidence boundary.
+- Integrated Apache SkyWalking runtime topology as governed AdversaryGraph
+  intelligence: bounded OAP collection, normalized persistent services and
+  calls, reviewed Asset Inventory candidates, immediate lexical RAG indexing,
+  scheduled vector reconciliation, a read-only MCP dependency-search tool,
+  Evidence Graph promotion, audit events, retention, self-test coverage, role
+  enforcement, and an optional loopback-bound OAP/BanyanDB Compose profile.
+  Runtime observations remain telemetry evidence, not proof of malicious
+  activity, asset ownership, exploitation, or compromise.
 - Added a production Threat Hunting Query Library with more than thirty
   reviewed Sigma and YARA-L examples, normalized tags and ATT&CK links,
   provenance and parser state, server-side fielded search, typed autocomplete,

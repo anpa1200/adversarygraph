@@ -67,3 +67,24 @@ class SimulationAttackFlow(Base):
     created_by: Mapped[str] = mapped_column(String(255), default="local")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SyntheticEvidenceRun(Base):
+    __tablename__ = "synthetic_evidence_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    scenario_name: Mapped[str] = mapped_column(String(255), default="")
+    scenario_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    engine: Mapped[str] = mapped_column(String(80), default="EvidenceForge")
+    engine_version: Mapped[str] = mapped_column(String(40), default="")
+    engine_ref: Mapped[str] = mapped_column(String(80), default="")
+    output_target: Mapped[str] = mapped_column(String(30), default="default")
+    technique_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    manifest: Mapped[dict] = mapped_column(JSONB, default=dict)
+    quality: Mapped[dict] = mapped_column(JSONB, default=dict)
+    quality_passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    artifact_count: Mapped[int] = mapped_column(Integer, default=0)
+    synthetic_only: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(255), default="local")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

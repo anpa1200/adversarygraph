@@ -1,4 +1,4 @@
-.PHONY: up pull prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup local-ai-start local-ai-pull local-ai-up
+.PHONY: up pull prod prod-preflight down build logs shell-api shell-db ingest reset sync-atlas sync-atlas-release security-scan security-scan-strict backup local-ai-start local-ai-pull local-ai-up runtime-observability-up runtime-observability-logs
 
 LOCAL_AI_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local-ai.yml
 
@@ -61,3 +61,9 @@ local-ai-pull: local-ai-start
 
 local-ai-up: local-ai-pull
 	$(LOCAL_AI_COMPOSE) up -d --build api worker frontend
+
+runtime-observability-up:
+	docker compose --profile runtime-observability up -d skywalking-banyandb skywalking-oap api worker beat frontend
+
+runtime-observability-logs:
+	docker compose logs -f skywalking-banyandb skywalking-oap api worker beat

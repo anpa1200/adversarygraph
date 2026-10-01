@@ -7,6 +7,8 @@ from app.api.routes.system import (
     _overall_selftest_status,
     _storage_writable_check,
     _taxonomy_normalization_check,
+    _skywalking_readiness_check,
+    _evidenceforge_readiness_check,
 )
 
 
@@ -74,6 +76,13 @@ def test_overall_selftest_status_distinguishes_degraded_from_error():
     ) == "error"
 
 
+async def test_evidenceforge_readiness_is_optional_when_disabled(monkeypatch):
+    monkeypatch.setattr("app.api.routes.system.settings.evidenceforge_enabled", False)
+    check = await _evidenceforge_readiness_check()
+    assert check.name == "synthetic_evidence"
+    assert check.status == "ok"
+
+
 def test_auth_readiness_passes_with_local_auth_disabled_warning(monkeypatch):
     monkeypatch.setattr("app.api.routes.system.settings.auth_enabled", False)
 
@@ -139,3 +148,21 @@ def test_taxonomy_normalization_check_passes_when_clean():
     )
 
     assert check.status == "ok"
+
+
+async def test_skywalking_readiness_is_optional_when_disabled(monkeypatch):
+    async def disabled():
+        return {"enabled": False, "connected": False, "status": "disabled"}
+
+    monkeypatch.setattr("app.api.routes.system.skywalking.health", disabled)
+    check = await _skywalking_readiness_check()
+    assert check.status == "ok"
+
+
+async def test_skywalking_readiness_warns_when_configured_but_unavailable(monkeypatch):
+    async def unavailable():
+        return {"enabled": True, "connected": False, "status": "unavailable"}
+
+    monkeypatch.setattr("app.api.routes.system.skywalking.health", unavailable)
+    check = await _skywalking_readiness_check()
+    assert check.status == "warning"
