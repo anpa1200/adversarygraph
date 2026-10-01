@@ -16,6 +16,7 @@ const Discover = lazy(() => import('@/pages/Discover').then(module => ({ default
 const Navigator = lazy(() => import('@/pages/Navigator').then(module => ({ default: module.Navigator })));
 const APTLibrary = lazy(() => import('@/pages/APTLibrary').then(module => ({ default: module.APTLibrary })));
 const Analyze = lazy(() => import('@/pages/Analyze').then(module => ({ default: module.Analyze })));
+const PcapReport = lazy(() => import('@/pages/PcapReport').then(module => ({ default: module.PcapReport })));
 const LinkedReport = lazy(() => import('@/pages/LinkedReport').then(module => ({ default: module.LinkedReport })));
 const ReportsResearch = lazy(() => import('@/pages/ReportsResearch').then(module => ({ default: module.ReportsResearch })));
 const Compare = lazy(() => import('@/pages/Compare').then(module => ({ default: module.Compare })));
@@ -112,6 +113,7 @@ function AppShell() {
                   <Route path="/navigator" element={<RoleGate module="navigator"><Navigator /></RoleGate>} />
                   <Route path="/apt" element={<RoleGate module="apt_library"><APTLibrary /></RoleGate>} />
                   <Route path="/analyze" element={<RoleGate module="ai_analysis"><Analyze /></RoleGate>} />
+                  <Route path="/pcap/:analysisId/report" element={<RoleGate module="ai_analysis"><PcapReport /></RoleGate>} />
                   <Route path="/analyze/:sessionId/report" element={<RoleGate anyModule={['ai_analysis', 'reports_research', 'investigation']}><LinkedReport /></RoleGate>} />
                   <Route path="/reports-research" element={<RoleGate module="reports_research"><ReportsResearch /></RoleGate>} />
                   <Route path="/compare" element={<RoleGate module="compare"><Compare /></RoleGate>} />

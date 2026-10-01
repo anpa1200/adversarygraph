@@ -200,6 +200,7 @@ class PcapAnalysisOut(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     assessment: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
+    investigation_summary: dict[str, Any] | None = None
     artifact_download_available: bool = False
     source_tlp: str = "TLP:AMBER+STRICT"
     techniques: list[TechniqueHit]
@@ -300,6 +301,7 @@ def _review_indicator_candidates(result: dict[str, Any], context: dict | None = 
 
 
 def _build_out(row: PcapAnalysis, session: AnalysisSession, result_row: AnalysisResult | None) -> PcapAnalysisOut:
+    from app.services.pcap_story import snapshot
     techniques = [TechniqueHit(**item) for item in (result_row.extracted_techniques if result_row else [])]
     apt_matches = [AptMatch(**item) for item in (result_row.apt_matches if result_row else [])]
     provenance = session.source_provenance or {}
@@ -323,6 +325,7 @@ def _build_out(row: PcapAnalysis, session: AnalysisSession, result_row: Analysis
         context=(session.source_provenance or {}).get("pcap_context", {}),
         assessment=assessment,
         enrichment=provenance.get("pcap_enrichment", {}),
+        investigation_summary=snapshot(row, session),
         artifact_download_available=bool(row.storage_path),
         source_tlp=session.tlp or "TLP:AMBER+STRICT",
         techniques=techniques,
@@ -600,6 +603,108 @@ class PcapEnrichmentIn(BaseModel):
     observable_ids: list[str] = Field(min_length=1, max_length=10)
     providers: list[str] = Field(default_factory=lambda: ["virustotal", "threatfox", "malwarebazaar"], min_length=1, max_length=3)
     consent: Literal[True]
+
+
+class PcapStoryIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    provider: str = Field("openai", max_length=40)
+    model: str | None = Field(None, max_length=100)
+    cloud_processing_acknowledged: bool = False
+    expected_source_sha256: str | None = Field(None, min_length=64, max_length=64)
+
+
+async def _story_source(db, analysis_id):
+    row = await db.get(PcapAnalysis, analysis_id)
+    if row is None:
+        raise HTTPException(404, "PCAP analysis not found")
+    if row.status != "completed":
+        raise HTTPException(409, "Complete packet analysis before writing its summary")
+    session = await db.get(AnalysisSession, row.session_id)
+    if session is None:
+        raise HTTPException(409, "PCAP source session is missing")
+    return row, session
+
+
+@router.get("/analyses/{analysis_id}/summary/preflight")
+async def pcap_summary_preflight(analysis_id: uuid.UUID, db: AsyncSession = Depends(get_session),
+                                 _: TeamUser = Depends(require_permission("read"))):
+    from app.services import pcap_story, threat_hunting_ai
+    row, session = await _story_source(db, analysis_id)
+    pack = pcap_story.build_pack(row, session)
+    providers = threat_hunting_ai.provider_catalog()
+    for provider in providers:
+        if provider["remote"] and pack["effective_tlp"] in {"TLP:RED", "TLP:AMBER+STRICT"}:
+            provider.update(available=False, status="blocked_by_classification", reason="Source classification prohibits cloud disclosure")
+    return {"analysis_id": str(row.id), "source_sha256": pack["source_sha256"],
+        "filename": row.filename, "capture_sha256": row.source_sha256,
+        "effective_tlp": pack["effective_tlp"], "providers": providers,
+        "coverage": pack["coverage"], "prompt_version": pcap_story.PROMPT_VERSION,
+        "summary": pcap_story.snapshot(row, session),
+        "scope": "Read-only preflight; no model or reputation query was made"}
+
+
+@router.get("/analyses/{analysis_id}/summary")
+async def get_pcap_summary(analysis_id: uuid.UUID, db: AsyncSession = Depends(get_session),
+                           _: TeamUser = Depends(require_permission("read"))):
+    from app.services import pcap_story
+    row, session = await _story_source(db, analysis_id)
+    return {"analysis_id": str(row.id), "summary": pcap_story.snapshot(row, session)}
+
+
+@router.post("/analyses/{analysis_id}/summary")
+async def write_pcap_summary(analysis_id: uuid.UUID, body: PcapStoryIn,
+                             db: AsyncSession = Depends(get_session), user: TeamUser = Depends(run_analysis)):
+    from app.services import pcap_story, investigation_story, threat_hunting_ai
+    row, session = await _story_source(db, analysis_id)
+    if body.provider != "local" and not has_permission(user, "export_data"):
+        raise HTTPException(403, "Cloud report writing requires export_data permission")
+    pack = pcap_story.build_pack(row, session)
+    if body.expected_source_sha256 and body.expected_source_sha256 != pack["source_sha256"]:
+        raise HTTPException(409, "Evidence changed after preflight; review it again")
+    adapter = threat_hunting_ai.create_adapter(body.provider, body.model,
+        effective_tlp=pack["effective_tlp"], cloud_processing_acknowledged=body.cloud_processing_acknowledged)
+    await audit(db, user, "pcap.summary.attempt", "pcap_analysis", str(row.id), {
+        "source_sha256": pack["source_sha256"], "provider": adapter.provider, "requested_model": adapter.model})
+    await db.commit()
+    try:
+        summary = await pcap_story.generate(row, session, adapter)
+    except threat_hunting_ai.AIProviderTimeoutError:
+        await audit(db, user, "pcap.summary.provider_failed", "pcap_analysis", str(row.id), {"category": "timeout"})
+        await db.commit()
+        raise HTTPException(504, "Summary provider timed out; no report saved")
+    except threat_hunting_ai.AIProviderCallError as exc:
+        await audit(db, user, "pcap.summary.provider_failed", "pcap_analysis", str(row.id), {
+            "category": exc.category, "requested_model": adapter.model, "rate_details": exc.rate_details,
+            "prior_attempts": getattr(exc, "prior_attempts", [])})
+        await db.commit()
+        raise HTTPException(503 if exc.category in {"rate_limited", "quota_exhausted"} else 502,
+                            f"Report provider failed ({exc.category}); no report saved")
+    except ValueError as exc:
+        code = getattr(exc, "code", investigation_story.validation_error_code(exc))
+        await audit(db, user, "pcap.summary.validation_failed", "pcap_analysis", str(row.id), {
+            "code": code, "requested_model": adapter.model, "attempts": getattr(exc, "attempts", [])})
+        await db.commit()
+        raise HTTPException(502, f"Report did not pass evidence/length validation ({code}); no report saved")
+    # Match the enrichment write lock and re-read the source before append.
+    current = await db.scalar(select(PcapAnalysis).where(PcapAnalysis.id == analysis_id)
+        .with_for_update().execution_options(populate_existing=True))
+    if current is None:
+        raise HTTPException(409, "PCAP was removed during report generation")
+    current_session = await db.scalar(select(AnalysisSession).where(AnalysisSession.id == current.session_id)
+        .execution_options(populate_existing=True))
+    if current_session is None or pcap_story.fingerprint(current, current_session) != summary["source_sha256"]:
+        raise HTTPException(409, "Evidence or classification changed; regenerate the report")
+    provenance = current_session.source_provenance or {}
+    history = list(provenance.get("pcap_summary_history", []))
+    if provenance.get("pcap_investigation_summary"):
+        history.append(provenance["pcap_investigation_summary"])
+    current_session.source_provenance = {**provenance, "pcap_investigation_summary": summary,
+                                        "pcap_summary_history": history[-5:]}
+    await audit(db, user, "pcap.summary.created", "pcap_analysis", str(current.id), {
+        "summary_id": summary["id"], "requested_model": summary["requested_model"], "model": summary["model"],
+        "source_sha256": summary["source_sha256"], "word_count": summary["word_count"], "token_usage": summary["token_usage"]})
+    await db.commit()
+    return summary
 
 
 @router.post("/analyses/{analysis_id}/enrich", response_model=PcapAnalysisOut)

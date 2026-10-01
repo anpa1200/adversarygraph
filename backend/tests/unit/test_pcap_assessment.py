@@ -32,6 +32,18 @@ def test_unusual_file_extension_and_public_ip_are_not_iocs():
     assert result == original
 
 
+@pytest.mark.parametrize("url,expected", [("http://public.example/picture.png?q=1", True),
+    ("http://public.example/installer.exe", False), ("http://[invalid/picture.png", False)])
+def test_pe_disguised_as_image_qualifies_exact_hash_not_host(url, expected):
+    result = {"observables": [observation("sha256", "a"*64), observation("ipv4", "9.9.9.9", "peer")],
+        "artifacts": [{"artifact_id": "file", "sha256": "a"*64, "filename": "not-authoritative.png", "static_features": {"content_kind": "pe"},
+            "transfers": [{"url": url, "server_ip": "9.9.9.9", "response_frame": 7, "match_basis": "exact-sha256-of-decoded-http-response-body"}]}]}
+    rows = assess(result)["items"]
+    assert rows[0]["ioc_candidate"] is expected
+    assert not rows[1]["ioc_candidate"]
+    assert rows[0]["classification"] != "provider-reported-malicious"
+
+
 def test_remote_http_peer_is_candidate_but_resolver_and_victim_are_not():
     result = {
         "observables": [observation("ipv4", "8.8.8.8"), observation("ipv4", "9.9.9.9", "remote"), observation("ipv4", "10.0.0.5", "victim"), observation("domain", "callback.net", "host")],

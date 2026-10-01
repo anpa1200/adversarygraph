@@ -54,8 +54,33 @@ class OpenAIAdapter(LLMAdapter):
                 return [wire_schema(v) for v in value]
             return value
 
+        schema = wire_schema(story_response_schema())
+        citation_ids = getattr(self, "story_citation_ids", None)
+        if isinstance(citation_ids, list) and 0 < len(citation_ids) <= 1000:
+            schema["$defs"]["Citation"]["properties"]["source_id"]["enum"] = citation_ids
+        iocs = getattr(self, "story_ioc_allowlist", None)
+        if isinstance(iocs, list):
+            values = sorted({value for kind, value in iocs})
+            if values:
+                schema["$defs"]["Indicator"]["properties"]["value"]["enum"] = values
+            else:
+                schema["properties"]["iocs"]["maxItems"] = 0
+        for attribute, section, definition, field in (
+            ("story_identity_allowlist", "identities", "Identity", "value"),
+            ("story_technique_allowlist", "ttps", "Technique", "attack_id"),
+        ):
+            values = getattr(self, attribute, None)
+            if isinstance(values, list):
+                if values:
+                    schema["$defs"][definition]["properties"][field]["enum"] = sorted(set(values))
+                else:
+                    schema["properties"][section]["maxItems"] = 0
+        limits = getattr(self, "story_section_limits", {})
+        for section, limit in limits.items() if isinstance(limits, dict) else []:
+            if section in schema["properties"] and isinstance(limit, int) and limit >= 0:
+                schema["properties"][section]["maxItems"] = min(limit, schema["properties"][section].get("maxItems", limit))
         self._story_response_format = {"type": "json_schema", "json_schema": {
-            "name": "investigation_story", "strict": True, "schema": wire_schema(story_response_schema())}}
+            "name": "investigation_story", "strict": True, "schema": schema}}
 
     async def _raw_complete(self, system: str, user: str) -> str:
         if hasattr(self, "_story_response_format"):
@@ -77,6 +102,10 @@ class OpenAIAdapter(LLMAdapter):
         )
         self.story_usage = resp.usage.model_dump() if resp.usage is not None else None
         self.story_finish_reason = resp.choices[0].finish_reason
+        # Requested aliases can differ from the provider's serving snapshot.
+        # Preserve both rather than labeling a run from a default constant.
+        self.story_response_model = getattr(resp, "model", None)
+        self.story_response_id = getattr(resp, "id", None)
         return resp.choices[0].message.content or ""
 
     async def _stream_complete(self, system: str, user: str) -> AsyncIterator[str]:

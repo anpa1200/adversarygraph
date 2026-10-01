@@ -141,6 +141,10 @@ def validation_error_code(exc: ValueError) -> str:
         ("uncited literal identifier", "uncited_identifier"),
         ("exceeds 600 words", "word_budget"),
         ("exceeds 240 words", "word_budget"),
+        ("exceeds 320 words", "word_budget"),
+        ("exceeds 130 words", "word_budget"),
+        ("omits required high-value", "missing_material_transfer"),
+        ("T1105 lacks", "ttp_transfer_binding"),
     ):
         if fragment in message:
             return code
@@ -200,8 +204,15 @@ def cited_passages(pack: dict) -> tuple[dict, dict]:
                 bindings[identifier] = {"source_id": source["source_id"], "quote": quote}
             passages.append({"citation_id": identifier if unique else None, "text": fragment})
             start = end
+        alias = None
+        if len(passages) == 1 and passages[0]["citation_id"] is not None:
+            # The shown source ID is also an unambiguous exact quotation when
+            # this source fits one passage. Never guess a span for larger sources.
+            alias = source["source_id"]
+            bindings[alias] = dict(bindings[passages[0]["citation_id"]])
         groups.append({"source_id": source["source_id"], "kind": source["kind"],
-                       "reference": source["reference"], "passages": passages})
+                       "reference": source["reference"], "passages": passages,
+                       "single_passage_citation_alias": alias})
     projected = {**pack, "sources": groups,
                  "citation_scope": "Every source text character is retained in ordered passages. Only non-null citation IDs may be selected. The server rebinds them to exact original text; this does not prove semantic entailment."}
     if len(canonical(projected)) > MAX_PROMPT_CHARS:
@@ -209,7 +220,7 @@ def cited_passages(pack: dict) -> tuple[dict, dict]:
     return projected, bindings
 
 
-def bind_passages(raw: str, bindings: dict) -> str:
+def bind_passages(raw: str, bindings: dict, *, optional_omissions: list | None = None) -> str:
     """Reconstitute trusted quotations before the unchanged claim validator."""
     if len(raw) > 32_000:
         raise ValueError("Summary output exceeds its size limit")
@@ -219,22 +230,77 @@ def bind_passages(raw: str, bindings: dict) -> str:
         value = json.loads(cleaned)
         if not isinstance(value, dict):
             raise ValueError("Invalid summary structure")
-        for claims in value.values():
+        for section, claims in value.items():
             if not isinstance(claims, list):
                 raise ValueError("Invalid summary structure")
-            for claim in claims:
-                if not isinstance(claim, dict) or not isinstance(claim.get("evidence"), list):
-                    raise ValueError("Invalid summary structure")
-                for index, citation in enumerate(claim["evidence"]):
-                    if not isinstance(citation, dict) or set(citation) != {"source_id"}:
-                        raise ValueError("Invalid summary citation structure")
-                    identifier = citation["source_id"]
-                    if not isinstance(identifier, str) or identifier not in bindings:
-                        raise ValueError("Unknown summary evidence reference")
-                    claim["evidence"][index] = dict(bindings[identifier])
+            retained = []
+            for index, claim in enumerate(claims):
+                try:
+                    if not isinstance(claim, dict) or not isinstance(claim.get("evidence"), list):
+                        raise ValueError("Invalid summary structure")
+                    rebound = []
+                    for citation in claim["evidence"]:
+                        if not isinstance(citation, dict) or set(citation) != {"source_id"}:
+                            raise ValueError("Invalid summary citation structure")
+                        identifier = citation["source_id"]
+                        if not isinstance(identifier, str) or identifier not in bindings:
+                            raise ValueError("Unknown summary evidence reference")
+                        rebound.append(dict(bindings[identifier]))
+                    claim["evidence"] = rebound
+                except ValueError as exc:
+                    if optional_omissions is None or section not in {"identities", "iocs", "ttps", "next_steps"}:
+                        raise
+                    optional_omissions.append({"section": section, "index": index, "stage": "citation_binding",
+                        "action": "optional-claim-omitted", "reason": validation_error_code(exc)})
+                    continue
+                retained.append(claim)
+            value[section] = retained
     except (TypeError, KeyError) as exc:
         raise ValueError("Invalid summary structure") from exc
     return canonical(value)
+
+
+def repair_diagnostics(raw: str, bindings: dict, pack: dict) -> dict:
+    """Bounded, server-derived repair hints; never echo free-form model text."""
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        return {"hint": "Return a JSON object matching the unchanged output schema"}
+    if not isinstance(value, dict):
+        return {}
+    issues = []
+    kinds = {s["source_id"]: s["kind"] for s in pack["sources"]}
+    for section, claims in value.items():
+        if section not in Story.model_fields or not isinstance(claims, list):
+            continue
+        for index, claim in enumerate(claims[:8]):
+            if not isinstance(claim, dict):
+                continue
+            evidence_rows = claim.get("evidence", [])
+            evidence_rows = evidence_rows if isinstance(evidence_rows, list) else []
+            ids = [c.get("source_id") for c in evidence_rows if isinstance(c, dict)]
+            refs = [bindings[i] for i in ids if isinstance(i, str) and i in bindings]
+            quoted = " ".join(r["quote"] for r in refs)
+            text = claim.get("text", "")
+            if not isinstance(text, str):
+                continue
+            literals = re.findall(r"\b(?:T\d{4}(?:\.\d{3})?|(?:\d{1,3}\.){3}\d{1,3}|[a-fA-F0-9]{64})\b", text)
+            identifier = claim.get("value") or claim.get("attack_id")
+            if isinstance(identifier, str):
+                literals.append(identifier)
+            for literal in sorted(set(literals)):
+                if literal not in quoted:
+                    matches = [key for key, ref in bindings.items() if literal in ref["quote"]]
+                    # Only identifiers already present in source evidence.
+                    issues.append({"section": section, "claim": index,
+                        "identifier": literal[:200] if matches else "unsupported identifier; remove it",
+                        "matching_citation_ids": matches[:8]})
+            if claim.get("basis") == "observed" and {kinds.get(r["source_id"]) for r in refs} != {"packet_fact"}:
+                issues.append({"section": section, "claim": index, "hint": "This claim cites non-packet sources; use assessment/reported or cite actual packet facts"})
+    return {"issues": issues[:24], "required_narrative_evidence_ids": pack.get("required_narrative_evidence_ids", []),
+        "file_transfer_citation_ids": [key for key, ref in bindings.items() if any(s["source_id"] == ref["source_id"] and "#artifact/" in s["reference"] for s in pack["sources"])][:20],
+        "technique_hint": "For T1105, cite both a passage containing the technique ID and a packet file-transfer passage. Otherwise omit this optional TTP entry.",
+        "hint": "Use a separate short claim for each supported statement. All identifiers in that claim must be present in its own selected citation passages. Do not change or invent evidence."}
 
 
 class EvidencePack:
@@ -540,8 +606,18 @@ def render_story(story: dict) -> str:
     return "\n".join(lines)
 
 
-async def generate_story(pack: dict, adapter) -> dict:
+async def generate_story(pack: dict, adapter, *, system: str = SYSTEM,
+                         prompt_version: str = PROMPT_VERSION,
+                         validator=validate_story, renderer=render_story,
+                         omit_invalid_optional_citations: bool = False) -> dict:
     projected, bindings = cited_passages(pack)
+    # Trusted server-issued IDs, not a schema supplied by evidence content.
+    # Adapters with strict schema support can prevent unknown citations at
+    # generation time while the local quote/identifier validator stays final.
+    adapter.story_citation_ids = sorted(bindings)
+    adapter.story_ioc_allowlist = pack.get("pcap_ioc_allowlist")
+    adapter.story_identity_allowlist = pack.get("pcap_identity_allowlist")
+    adapter.story_technique_allowlist = pack.get("pcap_technique_allowlist")
     prompt = canonical({"output_schema": story_response_schema(), "untrusted_evidence": projected})
     started = time.monotonic()
     attempts = []
@@ -558,19 +634,22 @@ async def generate_story(pack: dict, adapter) -> dict:
                 remaining = previous_started + spacing - time.monotonic()
         prepare = getattr(adapter, "prepare_investigation_story", None)
         if prepare is not None:
-            await prepare(SYSTEM, request_prompt)
+            await prepare(system, request_prompt)
         previous_started = time.monotonic()
         try:
-            raw = await threat_hunting_ai.complete(adapter, SYSTEM, request_prompt, timeout_seconds=settings.investigation_story_timeout_seconds)
+            raw = await threat_hunting_ai.complete(adapter, system, request_prompt, timeout_seconds=settings.investigation_story_timeout_seconds)
         except (threat_hunting_ai.AIProviderCallError, threat_hunting_ai.AIProviderTimeoutError) as exc:
             exc.prior_attempts = attempts
             raise
         usage = getattr(adapter, "story_usage", None)
+        binding_adjustments = []
         try:
-            result = validate_story(bind_passages(raw, bindings), pack)
+            result = validator(bind_passages(raw, bindings,
+                optional_omissions=binding_adjustments if omit_invalid_optional_citations else None), pack)
         except ValueError as exc:
             code = validation_error_code(exc)
             attempts.append({"attempt": attempt + 1, "validation": code, "token_usage": usage,
+                             "provider_returned_model": getattr(adapter, "story_response_model", None),
                              "finish_reason": getattr(adapter, "story_finish_reason", None)})
             if attempt:
                 raise StoryValidationError(code, attempts) from exc
@@ -579,20 +658,27 @@ async def generate_story(pack: dict, adapter) -> dict:
             request_prompt = canonical({"original_request": json.loads(prompt),
                 "repair_instruction": "Generate the JSON once more to satisfy the unchanged evidence and schema rules. The first attempt failed the diagnostic below. Remove unsupported claims; never change evidence or upgrade its status. Select only supplied passage citation IDs and recheck every literal identifier and evidence level before responding.",
                 "validation_failure": code})
+            repair = json.loads(request_prompt)
+            repair["repair_diagnostics"] = repair_diagnostics(raw, bindings, pack)
+            request_prompt = canonical(repair)
             continue
         attempts.append({"attempt": attempt + 1, "validation": "passed", "token_usage": usage,
+                         "provider_returned_model": getattr(adapter, "story_response_model", None),
                          "finish_reason": getattr(adapter, "story_finish_reason", None)})
         break
     token_usage = None
     if all(isinstance(a["token_usage"], dict) for a in attempts):
         token_usage = {key: sum(a["token_usage"].get(key, 0) for a in attempts)
                        for key in ("prompt_tokens", "completion_tokens", "total_tokens")}
+    returned_model = getattr(adapter, "story_response_model", None)
+    returned_model = returned_model if isinstance(returned_model, str) and returned_model else None
     output = {
         "id": f"investigation-summary:{uuid.uuid4()}", "type": "investigation-summary",
-        "label": "Investigation summary — Tell the story", "content": render_story(result),
+        "label": "Investigation summary — Tell the story", "content": renderer(result),
         "summary": " ".join(c["text"] for c in result["what_happened"]),
-        "structured": result, "provider": adapter.provider, "model": adapter.model,
-        "created_at": datetime.now(timezone.utc).isoformat(), "prompt_version": PROMPT_VERSION,
+        "structured": result, "provider": adapter.provider, "model": returned_model or adapter.model,
+        "requested_model": adapter.model, "provider_returned_model": returned_model,
+        "created_at": datetime.now(timezone.utc).isoformat(), "prompt_version": prompt_version,
         "status": "analyst-review-required", "authoritative": False,
         "report_id": pack["report_id"], "source_sha256": pack["source_sha256"],
         "source_manifest": [{k: v for k, v in s.items() if k != "text"} for s in pack["sources"]],
@@ -601,12 +687,14 @@ async def generate_story(pack: dict, adapter) -> dict:
         "token_usage": token_usage, "generation_attempts": attempts,
         "token_usage_note": "Provider-reported counts when available; never estimated from character length.",
         "validation": "schema-and-exact-quote-binding; not semantic proof",
+        "binding_adjustments": binding_adjustments,
     }
     output["content"] += (
         "\n\n## Generation record\n\n"
         f"- Source snapshot: `{pack['source_sha256']}`\n"
         f"- Full report: {_safe(pack['report_id'])}\n"
-        f"- Model: {_safe(adapter.provider)} / {_safe(adapter.model)}\n"
+        f"- Model: {_safe(adapter.provider)} / {_safe(output['model'])}\n"
+        f"- Requested model: {_safe(adapter.model)}\n"
         f"- Generated: {output['created_at']}\n"
         f"- Generation time: {output['generation_seconds']} seconds\n"
         f"- Token usage: {_safe(canonical(output['token_usage'])) if output['token_usage'] else 'unavailable; not estimated'}.\n"

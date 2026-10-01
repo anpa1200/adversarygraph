@@ -12,6 +12,7 @@ import type { ReportSession } from '@/types/attack';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
 import { PcapReputationPanel } from '@/components/PcapReputationPanel';
+import { PcapSummaryPanel } from '@/components/PcapSummaryPanel';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
 type AnalysisMode = 'cti' | 'log-pcap';
@@ -508,7 +509,14 @@ function LogPcapResultView({
                     source_ref: sourceRef,
                     analysis_id: analysisId,
                     summary: result.summary,
-                    report: result.report,
+                    // The authoritative packet report is retained server-side.
+                    // Copying it into a graph node exceeded request limits and
+                    // turned a concise investigation into an object inventory.
+                    report: deterministic
+                      ? (result.investigation_summary && !result.investigation_summary.stale
+                        ? result.investigation_summary.content
+                        : `# PCAP evidence summary\n\n${result.summary}\n\nFull packet evidence: /api/pcap/analyses/${analysisId}\n\nWrite the concise investigation summary after enrichment.`)
+                      : result.report,
                     observables: result.observables.slice(0, 100),
                     observable_count: result.observables.length,
                     observables_truncated: result.observables.length > 100,
@@ -639,6 +647,8 @@ function LogPcapResultView({
         </div>
       </div>
 
+      {deterministic && <div className="px-6 pt-5"><PcapSummaryPanel analysisId={analysisId} revision={String(result.pcap_enrichment?.snapshot_sha256 ?? '')}
+        onWritten={() => { void pcapApi.analysis(analysisId).then(onUpdated).catch(() => { /* Summary remains saved; reload the analysis to refresh the handoff. */ }); }} /></div>}
       <div className="grid gap-4 p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="space-y-4">
           {deterministic && (
@@ -1730,6 +1740,7 @@ function adaptPcapAnalysis(result: PcapAnalysisResult): LogPcapAnalysisResult {
     deterministic_result: result.result,
     pcap_assessment: result.assessment,
     pcap_enrichment: result.enrichment,
+    investigation_summary: result.investigation_summary,
     artifact_download_available: result.artifact_download_available,
     source_tlp: result.source_tlp,
     observables: result.result.observables.map(item => ({

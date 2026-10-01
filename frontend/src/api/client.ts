@@ -834,6 +834,7 @@ export interface LogPcapAnalysisResult {
   deterministic_result?: PcapDeterministicResult;
   pcap_assessment?: PcapAssessment;
   pcap_enrichment?: Record<string, unknown>;
+  investigation_summary?: PcapInvestigationSummary | null;
   artifact_download_available?: boolean;
   source_tlp?: string;
 }
@@ -977,6 +978,7 @@ export interface PcapAnalysisResult {
   result: PcapDeterministicResult;
   assessment?: PcapAssessment;
   enrichment?: Record<string, unknown>;
+  investigation_summary?: PcapInvestigationSummary | null;
   artifact_download_available?: boolean;
   source_tlp?: string;
   context?: {
@@ -1434,7 +1436,57 @@ export const analyzeApi = {
     http.get(`/analyze/sessions/${sessionId}/review/history`).then(r => Array.isArray(r.data) ? r.data : (r.data?.items ?? [])),
 };
 
+export interface PcapSummaryClaim {
+  text: string;
+  basis: 'observed' | 'reported' | 'assessment';
+  value?: string;
+  kind?: string;
+  attack_id?: string;
+  status?: string;
+  evidence: Array<{ source_id: string; quote: string; reference: string; source_sha256: string }>;
+}
+
+export interface PcapInvestigationSummary {
+  id: string;
+  analysis_id: string;
+  filename: string;
+  capture_sha256: string;
+  content: string;
+  summary: string;
+  structured: Record<'what_happened' | 'identities' | 'ttps' | 'iocs' | 'uncertainties' | 'next_steps', PcapSummaryClaim[]>;
+  status: string;
+  model: string;
+  requested_model: string;
+  provider_returned_model?: string | null;
+  provider: string;
+  prompt_version: string;
+  created_at: string;
+  source_sha256: string;
+  word_count: number;
+  validation_adjustments?: Array<{ section: string; index: number; action: string; reason?: string; basis?: string }>;
+  stale: boolean;
+  generation_seconds: number;
+  token_usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  coverage: Record<string, unknown>;
+}
+
+export interface PcapSummaryPreflight {
+  analysis_id: string;
+  filename: string;
+  capture_sha256: string;
+  effective_tlp: string;
+  source_sha256: string;
+  prompt_version: string;
+  providers: Array<{ id: string; label: string; model: string; available: boolean; remote: boolean; reason: string }>;
+  summary: PcapInvestigationSummary | null;
+  coverage: Record<string, unknown>;
+}
+
 export const pcapApi = {
+  summaryPreflight: (analysisId: string): Promise<PcapSummaryPreflight> =>
+    http.get(`/pcap/analyses/${analysisId}/summary/preflight`).then(r => r.data),
+  writeSummary: (analysisId: string, body: { provider: string; cloud_processing_acknowledged: boolean; expected_source_sha256: string }): Promise<PcapInvestigationSummary> =>
+    http.post(`/pcap/analyses/${analysisId}/summary`, body, { timeout: 360_000 }).then(r => r.data),
   enrich: (analysisId: string, observableIds: string[], providers: string[]): Promise<PcapAnalysisResult> =>
     http.post(`/pcap/analyses/${analysisId}/enrich`, { observable_ids: observableIds, providers, consent: true }, { timeout: 120_000 }).then(r => r.data),
   downloadArtifact: (analysisId: string, artifactId: string): Promise<Blob> =>

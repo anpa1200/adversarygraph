@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from urllib.parse import urlsplit
+from pathlib import PurePosixPath
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -15,7 +17,7 @@ from typing import Any
 from app.services.pcap_context import observable_key
 from app.services.pcap_analyzer import canonical_json
 
-POLICY_VERSION = "pcap-assessment-v2"
+POLICY_VERSION = "pcap-assessment-v3"
 NETWORK_TYPES = {"ipv4", "ipv6", "domain", "url"}
 HASH_TYPES = {"md5", "sha1", "sha256"}
 # These rules support investigation, not an unconditional malicious verdict.
@@ -51,6 +53,13 @@ def disclosure_allowed(kind: str, value: str) -> bool:
 
 def _integer(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _non_executable_url(value: str) -> bool:
+    try:
+        return PurePosixPath(urlsplit(value).path).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".css", ".html"}
+    except (ValueError, TypeError):
+        return False
 
 
 def enrichment_state(signals: list[dict]) -> str:
@@ -175,6 +184,15 @@ def assess(result: dict, context: dict | None = None, enrichment: dict | None = 
             features = {f.get("feature") for f in artifact.get("static_features", {}).get("features", [])}
             if "encoded-command" in features or {"powershell-download", "dynamic-evaluation"} <= features:
                 reasons.append({"kind": "static-review", "artifact_id": artifact["artifact_id"], "features": sorted(features), "interpretation": "Suspicious static features, not execution or malware proof"})
+            if artifact.get("static_features", {}).get("content_kind") == "pe":
+                disguised = [t for t in artifact.get("transfers", [])
+                    if t.get("match_basis") == "exact-sha256-of-decoded-http-response-body"
+                    and _non_executable_url(t.get("url", ""))]
+                if disguised:
+                    reasons.append({"kind": "static-review", "artifact_id": artifact["artifact_id"],
+                        "features": ["pe-bytes-under-non-executable-url-extension"],
+                        "frames": [t.get("response_frame") for t in disguised[:3]],
+                        "interpretation": "A transfer-bound PE is served under a non-executable URL extension. Investigate the exact recovered hash; this is not proof of execution or a transitive hosting-IP verdict."})
         for match in local[(kind, value)][:10]:
             reasons.append({"kind": "local-intelligence", "indicator_id": match.get("indicator_id"), "source_id": match.get("source_id"), "source_url": match.get("source_url"), "interpretation": "Exact local match; review source quality and dates"})
         entry = providers.get((kind, value), {})
