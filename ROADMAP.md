@@ -2,7 +2,7 @@
 
 Latest stable release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
 
-Current source candidate: **v8.0.0-beta.1** — Reviewed intelligence and durable workflow authority (2026-08-25)
+Current source candidate: **v8.1.0-beta.2** — Reviewed intelligence and durable workflow authority (2026-08-25)
 
 For the full history through the current beta see [CHANGELOG.md](CHANGELOG.md).
 

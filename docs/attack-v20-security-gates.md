@@ -1,23 +1,19 @@
-# ATT&CK v20 rollout: security gate follow-up
+# ATT&CK v20 and preserved local beta validation
 
-The ATT&CK update is PR #36. Deployment remains subject to the existing CI security thresholds; none are disabled or relaxed. Findings below were observed on 19 October 2026.
+The 8.1.0-beta.2 source candidate reconciles the reviewed ATT&CK changes with the running 8.1 investigation source. It is an unpublished local beta, not a public release. Existing audit severity thresholds, secret scans, database safety rules, authentication and disclosure settings remain enforced.
 
-## Compatible fixes included
+## Dependency fixes
 
-- Backend urllib3 2.7.0 → 2.8.0 resolves PYSEC-2026-4175, PYSEC-2026-4176 and PYSEC-2026-4177.
-- Backend and scanner MCP 1.28.1 → 1.30.0 resolves CVE-2026-59951 while retaining the v1 API.
-- Frontend brace-expansion 5.0.12 and DOMPurify 3.4.16 plus compatible lockfile refresh reduce the npm audit findings from 14 to 7.
-- The pinned stable-alpine nginx digest is refreshed consistently in Compose, CI, release scanning and validation scripts. The inspected image contains nginx 1.30.6-r1 and OpenSSL libraries 3.5.9-r0. The unchanged site configuration passes nginx -t in an isolated container.
+- Backend/scanner urllib3 2.8.0 and MCP 1.30.0 retain their supported compatible API lines.
+- Frontend uses Tailwind 4.3.3 with its PostCSS adapter and retained theme configuration; compatible axios patches clear the audit.
+- The pinned malwaregraph UI migration uses Tailwind 4 and React Router 7.18.4. Its backend source was compared with the running integration before changes.
+- Docusaurus stays on supported 3.10.2; TinyPool 2.2.0 and selector-parser 7.1.6 resolve their advisories. The complete clean build and dependency audit pass.
+- Upstream braces 3.0.3 has no fixed release for CVE-2026-93687. The clearly named local @adversarygraph/braces-guard package retains the upstream MIT source and guards every public recursive entry point. Tests reject excessive nesting, long strings, excessive/cyclic ASTs and preserve ordinary glob behavior. This is a repository-maintained mitigation, not an upstream fix. See vendor/braces-guard/SECURITY.md for limits and residual risk; do not expose build glob APIs to network-supplied patterns. No advisory is ignored.
+- Patched Redis/nginx Dockerfiles start from immutable official image digests and install exact supported Alpine security package revisions. CI builds and scans those derived images with the unchanged high/critical failure threshold. Production registry overrides must still be immutable digests; local builds use local tags.
+- Nuclei remains on its pinned official source, with Go 1.26.9 and fixed transitive modules; the runtime Debian security refresh has an explicit cache epoch. Module/version assertions and image scans fail closed.
 
-Validation: backend 1,486 passed / 180 skipped (71.79% coverage); scanner 8 passed; frontend build and 19 browser tests passed. Backend and scanner requirement audits report zero advisories. The final documentation clean install, production build and image-size boundary test pass. The TLS test stub supports urllib3's tuple result while retaining hostname and certificate verification assertions.
+## Validation
 
-## Remaining release decisions
+Full reconciled backend: 1639 passed, 180 skipped, 72.51% coverage. The investigation fixtures now follow the running image's timeout and passage-citation protocol; provider caches are isolated between tests. Production validators are unchanged. Frontend full browser run: 70 passed and four conditional skips; the one ambiguous locator was corrected to assert the actual Navigator link, and its affected test file passes. Source module/version checks pass. Final image scan and hosted CI receipts accompany deployment evidence.
 
-- Frontend audit still reports 5 high and 2 moderate findings. The braces advisory GHSA-vfj7-8cjw-p6xm affects every published braces version. The vulnerable chain includes Tailwind 3, chokidar, fast-glob and micromatch. npm recommends Tailwind 4.3.3 as a semver-major migration. This needs a deliberate CSS migration and visual regression review, not an audit bypass.
-- The separately bundled malwaregraph UI fails its Compose build at its own npm audit. Its source is pinned to upstream commit 79f604c6b59522cc993c82d32e081e8357bba98a and has a related Tailwind 3 dependency chain. Update and validate that integration independently.
-- The anomaly documentation application has a separate vulnerable dependency tree. The initial hosted audit reported 66 findings (17 critical, 28 high, 21 moderate); npm's complete remediation proposes a breaking Docusaurus change. Compatible-only fixes reduce this to 47 (15 critical, 19 high, 13 moderate), including a Docusaurus patch update from 3.10.1 to 3.10.2 and ip-address 10.7.4; do not force a framework migration without build and content regression validation.
-- The available Redis 7-alpine/7.4.11-alpine digest 858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 still contains OpenSSL 3.3.7-r1; the reported fixed package revision for CVE-2026-84782 is r2. Therefore this change does not claim that the currently published replacement resolves all Redis image findings. The existing Redis pin is retained pending a fixed compatible image.
-
-## Existing deployment baseline
-
-The running local deployment reports 8.1.0-beta.1 and uses investigation image builds and Compose overlays outside this clean checkout. It already has official ATT&CK 20.0 current in all three domains (Enterprise 706, Mobile 125, ICS 104), with historical snapshots preserved. The PR's main-branch baseline is 8.0.0-beta.1. Reconcile this newer deployment's source and overlays before applying this PR to that runtime; replacing it directly would overwrite unrelated work. No production reingestion or database mutation is necessary for the version update.
+No production ATT&CK reimport is needed: all three runtime domains already contain official v20 snapshots, with history retained. The update preserves existing volumes and uses recoverable image/config/database backups.

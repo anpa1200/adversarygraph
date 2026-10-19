@@ -189,9 +189,9 @@ for key in "${custom_image_keys[@]}"; do
 done
 
 declare -A third_party_image_defaults=(
-  [REDIS_IMAGE]='redis:7.4.11-alpine@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7'
+  [REDIS_IMAGE]=''
   [BUSYBOX_IMAGE]='busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662'
-  [NGINX_DOCS_IMAGE]='nginx:stable-alpine@sha256:ef8676b33d681f272ba429b27658bdd7e640963279714c96bddf1dc76307f7b6'
+  [NGINX_DOCS_IMAGE]=''
 )
 for key in "${!third_party_image_defaults[@]}"; do
   value="$(effective_value "$key" "${third_party_image_defaults[$key]}")"

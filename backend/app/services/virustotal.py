@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import ipaddress
 import re
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -20,6 +22,18 @@ VT_BASE_URL = "https://www.virustotal.com/api/v3"
 
 class VirusTotalNotFoundError(ValueError):
     """An absent object, distinct from malformed input or provider failure."""
+
+
+def retry_after_seconds(value: str | None) -> int:
+    """Honor both Retry-After forms without retaining provider request URLs."""
+    try:
+        seconds = int(value or "300")
+    except ValueError:
+        try:
+            seconds = int((parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError):
+            seconds = 300
+    return max(1, min(seconds, 86400))
 
 
 ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b", re.IGNORECASE)
@@ -175,16 +189,22 @@ async def lookup_virustotal_ioc(
                 return await _search_lookup_result(session, search_target, search_response, domain)
             raise
         mitre_response: dict[str, Any] | None = None
+        behavior_coverage = {"status": "not-applicable"}
         if target.type == "hash":
             try:
                 mitre_response = await _vt_get(client, f"/files/{target.value}/behaviour_mitre_trees")
+                behavior_coverage = {"status": "ok"}
             except VirusTotalNotFoundError:
                 # An absent optional behavior tree must not discard the
                 # successful file reputation / metadata response.
-                pass
+                behavior_coverage = {"status": "not_found"}
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code not in {400, 404}:
-                    raise
+                status = exc.response.status_code
+                behavior_coverage = {"status": "unavailable", "http_status": status}
+                if status == 429:
+                    behavior_coverage["retry_after_seconds"] = retry_after_seconds(exc.response.headers.get("retry-after"))
+            except httpx.RequestError:
+                behavior_coverage = {"status": "unavailable", "error_category": "transport"}
 
     attributes = object_response.get("data", {}).get("attributes", {})
     ttp_evidence = _extract_ttp_evidence(attributes, "object attributes")
@@ -221,6 +241,7 @@ async def lookup_virustotal_ioc(
         "whois": _short_text(attributes.get("whois", ""), 1200),
         "network": _network_metadata(attributes),
         "context": _context(attributes, mitre_response, context_text),
+        "behavior_coverage": behavior_coverage,
     }
 
 
@@ -228,20 +249,14 @@ async def _vt_get(client: httpx.AsyncClient, endpoint: str) -> dict[str, Any]:
     response = await client.get(endpoint)
     if response.status_code == 404:
         raise VirusTotalNotFoundError("Indicator was not found in VirusTotal.")
-    if response.status_code == 401:
-        raise RuntimeError("VirusTotal API key was rejected.")
-    if response.status_code == 429:
-        raise RuntimeError("VirusTotal API rate limit exceeded.")
     response.raise_for_status()
     return response.json()
 
 
 async def _vt_search(client: httpx.AsyncClient, query: str) -> dict[str, Any]:
     response = await client.get("/search", params={"query": query})
-    if response.status_code == 401:
-        raise RuntimeError("VirusTotal API key was rejected.")
-    if response.status_code == 429:
-        raise RuntimeError("VirusTotal API rate limit exceeded.")
+    if response.status_code in {401, 429}:
+        response.raise_for_status()
     if response.status_code in {400, 403}:
         raise ValueError(
             "This value is not a direct IOC and VirusTotal search rejected it. "

@@ -562,6 +562,8 @@ jobs:
           SECURE_COOKIES: "true"
           AUTO_IOC_FULL_SYNC_ON_STARTUP: "false"
           ATTCK_DOMAINS: enterprise-attack
+          REDIS_IMAGE: example.invalid/adversarygraph-redis@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          NGINX_DOCS_IMAGE: example.invalid/adversarygraph-nginx@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_POSTGRES_IMAGE: example.invalid/adversarygraph-postgres@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_BACKEND_IMAGE: example.invalid/adversarygraph-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ADVERSARYGRAPH_SCANNER_MCP_IMAGE: example.invalid/adversarygraph-scanner-mcp@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -1025,12 +1027,21 @@ jobs:
       matrix:
         image:
           - name: redis
-            ref: redis:7.4.11-alpine@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
+            ref: adversarygraph-redis:scan
+            file: docker/redis/Dockerfile
           - name: busybox-tools
             ref: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
           - name: anomaly-docs-nginx
-            ref: nginx:stable-alpine@sha256:ef8676b33d681f272ba429b27658bdd7e640963279714c96bddf1dc76307f7b6
+            ref: adversarygraph-nginx:scan
+            file: docker/nginx/Dockerfile
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Build patched image from immutable upstream base
+        if: ${{ matrix.image.file != '' }}
+        env:
+          PATCH_DOCKERFILE: ${{ matrix.image.file }}
+          PATCH_IMAGE: ${{ matrix.image.ref }}
+        run: docker build --file "$PATCH_DOCKERFILE" --tag "$PATCH_IMAGE" .
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image.ref }}

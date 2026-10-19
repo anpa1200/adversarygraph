@@ -20,14 +20,16 @@ async def create(client, report=True):
 
 def install_fake_provider(monkeypatch, mutate=None):
     monkeypatch.setattr("app.services.threat_hunting_ai.create_adapter", lambda *a, **k: SimpleNamespace(provider="local", model="test-only"))
-    async def complete(adapter, system, user):
+    async def complete(adapter, system, user, *, timeout_seconds=None):
+        assert timeout_seconds is not None and timeout_seconds > 0
         assert "UNTRUSTED DATA" in system
         pack = json.loads(user)["untrusted_evidence"]
-        assert pack["sources"][0]["text"] == REPORT
+        assert "".join(p["text"] for p in pack["sources"][0]["passages"]) == REPORT
         if mutate:
             await mutate()
         def claim(text, quote):
-            return {"text": text, "basis": "reported", "evidence": [{"source_id": "S0001", "quote": quote}]}
+            passage = next(p for p in pack["sources"][0]["passages"] if quote in p["text"])
+            return {"text": text, "basis": "reported", "evidence": [{"source_id": passage["citation_id"]}]}
         return json.dumps({"what_happened": [claim("Repeated outbound requests were reported.", "The workstation sent repeated POST requests.")],
             "identities": [], "ttps": [], "iocs": [], "next_steps": [],
             "uncertainties": [claim("Initial access remains unknown.", "Initial access is not established.")]})
@@ -84,7 +86,7 @@ async def test_changed_source_never_saves_a_stale_summary(client, monkeypatch):
 async def test_invalid_model_output_is_not_saved_or_exposed(client, monkeypatch):
     row = await create(client)
     install_fake_provider(monkeypatch)
-    async def bad(*args):
+    async def bad(*args, **kwargs):
         return '{"provider_secret":"must not be exposed"}'
     monkeypatch.setattr("app.services.threat_hunting_ai.complete", bad)
     response = await client.post(f"/api/operations/investigations/{row['id']}/summary", json={"report_id": "full-report"})
@@ -129,7 +131,7 @@ async def test_timeout_is_sanitized(client, monkeypatch):
     from app.services.threat_hunting_ai import AIProviderTimeoutError
     row = await create(client)
     install_fake_provider(monkeypatch)
-    async def timed_out(*args):
+    async def timed_out(*args, **kwargs):
         raise AIProviderTimeoutError("sensitive provider details")
     monkeypatch.setattr("app.services.threat_hunting_ai.complete", timed_out)
     response = await client.post(f"/api/operations/investigations/{row['id']}/summary", json={"report_id": "full-report"})

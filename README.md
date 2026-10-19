@@ -12,7 +12,7 @@
 
 Latest stable release: **v7.0.0**.
 
-Current source candidate: **v8.0.0-beta.1**. This manual-testing prerelease adds
+Current source candidate: **v8.1.0-beta.2**. This manual-testing prerelease adds
 the deterministic Report Review Gate, durable research/workflow authority,
 transactional outbox and receipt fencing, formal Alembic migration gates,
 promotion-bound downstream evidence, and end-to-end worker/orchestrator

@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # providers for a bounded structured response. The provider adapter still
     # has an independent 180-second transport ceiling.
     threat_hunting_ai_timeout_seconds: float = 120.0
+    investigation_story_timeout_seconds: float = 120.0
+    investigation_story_repair_interval_seconds: float = 65.0
     threat_hunting_ai_source_char_limit: int = 40_000
     threat_hunting_ai_max_candidates: int = 3
 

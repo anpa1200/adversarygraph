@@ -330,7 +330,7 @@ test('a company-synced matrix asset links directly to its active assessment', as
   );
   await expect(page.getByText('Asset Inventory Intelligence Graph')).toBeVisible();
   await expect(page.getByText('CVE-2026-7000', { exact: false })).toBeVisible();
-  await expect(page.getByText('T1190', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'T1190', exact: true })).toBeVisible();
   await expect(page.getByText('1200km.com', { exact: false }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Open full Threat Radar asset intelligence/ })).toHaveAttribute(
     'href',

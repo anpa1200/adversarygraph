@@ -20,6 +20,7 @@ WORKDIR /app
 
 # Refresh base-image packages before installing runtime dependencies so that
 # published images include Debian security updates available at build time.
+ARG SECURITY_PATCH_EPOCH=20261019
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
@@ -44,3 +45,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/ready || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/anpa1200/adversarygraph" \
+      org.opencontainers.image.version="8.1.0-beta.2" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}"

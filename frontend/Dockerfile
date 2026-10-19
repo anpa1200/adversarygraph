@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: serve the built dist/ with nginx
-FROM nginx:alpine
+FROM nginx:stable-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
 
 RUN apk upgrade --no-cache
 
@@ -41,3 +41,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
+
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/anpa1200/adversarygraph" \
+      org.opencontainers.image.version="8.1.0-beta.2" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}"
