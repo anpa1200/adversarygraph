@@ -1,6 +1,6 @@
 # AdversaryGraph Platform Guide
 
-> The checked-out source is v8.1.0. Deploy published immutable image digests
+> The checked-out source is v8.1.1. Deploy published immutable image digests
 > and retain acceptance evidence for the exact tag and configured environment;
 > see [8.1 readiness](release-readiness-v8.1.md). AdversaryGraph assists analysts:
 > AI mappings, similarity scores, enrichment, malware triage and generated

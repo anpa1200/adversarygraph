@@ -1,6 +1,19 @@
 # Changelog
 
-## v8.1.0 - 2026-10-19
+## v8.1.1 - 2026-10-19
+
+- Carry the reviewed ATT&CK v20 and evidence/workflow source changes below into
+  the next stable patch candidate after the v8.1.0 registry upload failed.
+- Retry transient registry upload failures with the same scanned image identity,
+  bounded attempts and backoff; retain all source-binding, scan, anonymous
+  digest-verification and immutable-tag gates.
+
+## v8.1.0 - 2026-10-19 (unpublished candidate)
+
+The protected tag is retained. A GHCR unknown-blob upload error interrupted the
+nine-image publication; no GitHub release or complete digest manifest was
+published. Partial registry artifacts are not a supported release family.
+
 
 - Support MITRE ATT&CK v20.0 for Enterprise, Mobile and ICS while retaining
   historical snapshots and keeping MITRE ATLAS independently versioned.

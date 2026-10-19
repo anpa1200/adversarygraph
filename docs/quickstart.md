@@ -2,7 +2,7 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
-The checked-out source is v8.1.0. Use the protected release's digest manifest
+The checked-out source is v8.1.1. Use the protected release's digest manifest
 for immutable deployment artifacts, and use public, synthetic or otherwise
 approved evaluation data. Successful startup does not certify optional external
 providers or complete deployment acceptance; see [8.1 readiness](release-readiness-v8.1.md).

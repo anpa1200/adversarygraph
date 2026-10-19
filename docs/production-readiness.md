@@ -1,13 +1,13 @@
 # Production Readiness
 
 AdversaryGraph is a self-hosted analyst platform for controlled deployments.
-The checked-out source is v8.1.0, described in [the changelog](../CHANGELOG.md).
+The checked-out source is v8.1.1, described in [the changelog](../CHANGELOG.md).
 Every deployment review must record the exact tag/commit and artifact digests;
 evidence from a different revision cannot substitute for current acceptance.
 
 ## Current Status
 
-The v8.1.0 source and its published digest-pinned artifacts support:
+The v8.1.1 source and its published digest-pinned artifacts support:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
@@ -17,7 +17,7 @@ The v8.1.0 source and its published digest-pinned artifacts support:
   build, scan, configuration, backup, restore, and acceptance evidence for the
   exact deployed artifacts
 
-The protected v8.1.0 tag workflow must build, scan and verify the nine-image
+The protected v8.1.1 tag workflow must build, scan and verify the nine-image
 family and attach `adversarygraph-images.env` before publication. Review
 [8.1 acceptance](release-readiness-v8.1.md); optional provider, embedding,
 SIEM and operational integrations remain deployment-specific. Historical beta

@@ -1093,10 +1093,27 @@ jobs:
               exit 1
             fi
           done
+          push_release_image() {
+            local version_ref="$1"
+            local attempt output
+            for attempt in 1 2 3; do
+              if output="$(docker push "$version_ref" 2>&1)"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              printf '%s\n' "$output" >&2
+              if [[ "$attempt" == 3 ]] || ! grep -Eqi 'unknown blob|blob unknown|connection reset|i/o timeout|TLS handshake timeout|unexpected status.*5[0-9][0-9]' <<< "$output"; then
+                return 1
+              fi
+              echo "Transient registry upload failure; retrying the same scanned image ($attempt/3)." >&2
+              sleep "$((attempt * 5))"
+            done
+            return 1
+          }
           for image in "${images[@]}"; do
             repository="ghcr.io/${REGISTRY_OWNER}/${image}"
             version_ref="${repository}:${RELEASE_VERSION}"
-            docker push "$version_ref"
+            push_release_image "$version_ref"
           done
 
           anonymous_docker_config="$(mktemp -d)"

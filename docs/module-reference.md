@@ -4,7 +4,7 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares v8.1.0. Immutable artifacts and their digest
+The checked-out source declares v8.1.1. Immutable artifacts and their digest
 manifest exist only after the matching protected tag workflow succeeds. Verify
 the exact tag/commit, release evidence and deployment-specific acceptance scope
 in [8.1 readiness](release-readiness-v8.1.md).
