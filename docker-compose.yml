@@ -252,7 +252,7 @@ services:
       context: .
       dockerfile: docker/malwaregraph/Dockerfile
       args:
-        MALWAREGRAPH_REF: ${MALWAREGRAPH_REF:-79f604c6b59522cc993c82d32e081e8357bba98a}
+        MALWAREGRAPH_REF: ${MALWAREGRAPH_REF:-cee0620f585c5353c75477b1b84df6f3258a5af0}
     restart: unless-stopped
     environment:
       HOME: /tmp
