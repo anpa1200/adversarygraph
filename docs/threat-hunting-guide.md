@@ -6,6 +6,14 @@
 > and v19.1 data. Revalidate ATT&CK mappings whenever the platform's ATT&CK
 > content is upgraded.
 
+> **ATT&CK update, 19 October 2026:** MITRE released v20.0 on 13 October.
+> The July review above is historical. For current mappings use the selected
+> domain/version and the [v20 release notes](https://attack.mitre.org/resources/updates/updates-october-2026/).
+> Mobile T1476 is active again; ICS T0807 and T0853 are deprecated. Preserve old
+> identifiers in historical hunt evidence; do not silently substitute T1701.
+> Detection Strategies, Analytics and Data Components predate v20. ATLAS keeps
+> its own release lineage. See [local validation](attack-v20-validation.md).
+
 Threat hunting is a disciplined search for adversary behavior that may not have
 triggered an alert. Its output is not just a list of matches. A defensible hunt
 connects a reason to hunt, a falsifiable hypothesis, an authorized scope,
@@ -361,8 +369,8 @@ ATT&CK changes over time. Every hunt should retain:
 - Detection Strategy, Analytic, and Data Component identifiers where used; and
 - the retrieval or review date.
 
-This guide uses the current ATT&CK v19 terminology. As reviewed on 18 July 2026,
-MITRE lists ATT&CK v19 as the current release and publishes v19.1 data. Consult
+This guide originally used ATT&CK v19 terminology. At its 18 July 2026 review,
+MITRE listed ATT&CK v19 as current and published v19.1 data. Consult
 the official [ATT&CK version history](https://attack.mitre.org/resources/versions/)
 (accessed 18 July 2026) and
 [ATT&CK v19 release notes](https://attack.mitre.org/resources/updates/updates-april-2026/)

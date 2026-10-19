@@ -9,34 +9,27 @@
 
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import type { NavigatorLayer } from '@/lib/navigatorLayer';
 
 interface Props {
-  onImport: (techniqueIds: string[], name: string) => void;
+  onImport: (techniqueIds: string[], name: string, layer: NavigatorLayer) => void;
+  expectedDomain?: string;
   onClose: () => void;
   title?: string;
   actionLabel?: string;
   targetLabel?: string;
 }
 
-interface NavigatorLayer {
-  name?: string;
-  domain?: string;
-  techniques?: Array<{
-    techniqueID: string;
-    enabled?: boolean;
-    color?: string;
-    score?: number;
-  }>;
-}
 
 export function LayerImport({
   onImport,
   onClose,
+  expectedDomain,
   title = 'Import Navigator Layer',
   actionLabel = 'Import',
   targetLabel = 'your TTP layer',
 }: Props) {
-  const [preview, setPreview] = useState<{ name: string; count: number; ids: string[] } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; count: number; ids: string[]; layer: NavigatorLayer } | null>(null);
   const [error, setError] = useState('');
 
   const parseLayer = useCallback((raw: string): string[] => {
@@ -44,10 +37,14 @@ export function LayerImport({
     if (!Array.isArray(parsed.techniques)) {
       throw new Error('No "techniques" array found in layer file.');
     }
-    return parsed.techniques
+    if (expectedDomain && parsed.domain && parsed.domain !== expectedDomain) {
+      throw new Error(`Layer domain ${parsed.domain} does not match ${expectedDomain}. Switch domains before importing.`);
+    }
+    if (parsed.techniques.some(t => !t || typeof t.techniqueID !== 'string')) throw new Error('Every layer entry requires a techniqueID.');
+    return [...new Set(parsed.techniques
       .filter((t) => t.enabled !== false && t.techniqueID)
-      .map((t) => t.techniqueID.toUpperCase());
-  }, []);
+      .map((t) => t.techniqueID.toUpperCase()))];
+  }, [expectedDomain]);
 
   const onDrop = useCallback(
     ([file]: File[]) => {
@@ -65,6 +62,7 @@ export function LayerImport({
             name: parsed.name ?? file.name,
             count: ids.length,
             ids,
+            layer: parsed,
           });
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Invalid layer file.');
@@ -83,7 +81,7 @@ export function LayerImport({
 
   const handleConfirm = () => {
     if (preview) {
-      onImport(preview.ids, preview.name);
+      onImport(preview.ids, preview.name, preview.layer);
       onClose();
     }
   };
