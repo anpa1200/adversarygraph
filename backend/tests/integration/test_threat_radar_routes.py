@@ -550,6 +550,16 @@ async def test_detection_engineer_cannot_mutate_cti_or_read_radar_audit(app, cli
 
 @pytest.mark.asyncio
 async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, monkeypatch):
+    from app.services import rag_queue
+    rag_dispatches = []
+
+    async def fake_queue_rag(session, source_types, *, created_by):
+        rag_dispatches.append((source_types, created_by))
+        return {"status": "queued", "queued": True, "run_id": "test-only-rag-run"}
+
+    # This route test mocks its database and scanners; broker dispatch must also
+    # stay isolated. RAG queue/retry behavior has dedicated service tests.
+    monkeypatch.setattr(rag_queue, "queue_rag_after_ingest", fake_queue_rag)
     from app.api.routes import threat_radar as threat_radar_route
 
     async def fake_mcp_catalog():
@@ -765,6 +775,7 @@ async def test_inventory_bound_asset_assessment_workflow(client: AsyncClient, mo
         },
     )
     assert response.status_code == 201
+    assert rag_dispatches == [(["asset"], "asset-scan")]
     scan = response.json()
     assert scan["status"] == "completed"
     assert scan["nmap_result"]["open_port_count"] == 1
