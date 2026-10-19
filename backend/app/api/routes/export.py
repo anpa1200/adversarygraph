@@ -187,6 +187,7 @@ async def export_analysis_pdf(
         "provider":   db_session.llm_provider,
         "model":      db_session.model,
         "domain":     db_session.domain,
+        "tlp":        db_session.tlp,
         "summary":    "\n".join(
             str(claim.get("statement") or "").strip()
             for claim in promoted_claims
@@ -204,6 +205,7 @@ async def export_analysis_pdf(
         "review_state": review["state"],
         "review": review,
         "authoritative": export_authorized,
+        "investigation": res.investigation or {},
         # Keep packet observations available in a clearly separated appendix;
         # candidate findings are not promoted intelligence or actor attribution.
         "packet_evidence_report": db_session.source_text

@@ -495,9 +495,15 @@ async def async_safe_get(
                 if total > max_bytes:
                     raise ResponseTooLargeError(f"Remote response exceeds the {max_bytes}-byte limit")
                 chunks.append(chunk)
+            # aiter_bytes() has already decoded Content-Encoding. Retaining
+            # gzip/deflate headers makes Response decode the plain body again.
+            decoded_headers = httpx.Headers(response.headers)
+            decoded_headers.pop("content-encoding", None)
+            decoded_headers.pop("transfer-encoding", None)
+            decoded_headers["content-length"] = str(total)
             return httpx.Response(
                 status_code=response.status_code,
-                headers=response.headers,
+                headers=decoded_headers,
                 content=b"".join(chunks),
                 request=response.request,
                 extensions=response.extensions,

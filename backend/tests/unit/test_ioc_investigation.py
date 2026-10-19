@@ -179,3 +179,14 @@ def test_graph_preserves_url_path_case_and_binds_normalized_domains():
 async def test_virustotal_not_found_is_not_provider_failure():
     result = await _safe_source('virustotal', AsyncMock(side_effect=investigation.VirusTotalNotFoundError('not found')))
     assert result['status'] == 'not_found'
+
+
+@pytest.mark.asyncio
+async def test_threatfox_skips_unsupported_sha1_without_a_network_request(monkeypatch):
+    monkeypatch.setattr(investigation.settings, 'threatfox_auth_key', 'test-key')
+    request = AsyncMock()
+    monkeypatch.setattr(investigation, '_post_json', request)
+    result = await investigation._threatfox_enrichment('a' * 40, 'hash')
+    assert result['status'] == 'skipped'
+    assert 'unsupported' in result['summary']
+    request.assert_not_called()

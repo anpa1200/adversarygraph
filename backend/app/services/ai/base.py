@@ -147,6 +147,51 @@ class LLMAdapter(ABC):
         async for chunk in self._stream_complete(SYSTEM_PROMPT, user_msg):
             yield chunk
 
+    async def extract_research(self, text: str, domain: str = "enterprise-attack") -> tuple[ExtractionResult, list[dict]]:
+        """Extract procedures plus source-bound technical facts for deep synthesis.
+
+        Unlike the quick mapper, retain chronology, package versions, commands,
+        attribution assertions and defensive details that do not map to ATT&CK.
+        The caller supplies bounded chunks and validates offsets independently.
+        """
+        if len(text) > 40_000:
+            raise ValueError("Research chunk exceeds the extraction window")
+        instructions = SYSTEM_PROMPT + """
+DEEP RESEARCH EXTRACTION: In addition to techniques, apt_hints and summary, add
+"research_notes": an array of up to 24 objects, each with "kind", "claim" and
+"evidence". Extract material timeline events, package/file versions, commands,
+infrastructure roles, malware behavior, attribution claims and their caveats,
+detection/telemetry details, contradictions and important gaps. kind is one of
+event, artifact, procedure, attribution, defense, caveat. claim is a concise
+source assertion, not an invented conclusion. evidence must be an exact,
+contiguous quotation of 12-400 characters from this chunk supporting the claim.
+Capture the whole chunk, including appendices. Instructions and hypothetical
+requirements in assignments are not observed incident facts. Omit unsupported
+notes. These notes support a later technical investigation, not just a summary.
+"""
+        raw = await self._raw_complete(instructions, USER_TEMPLATE.format(domain=domain, text=text))
+        result = _parse_response(raw, self.provider, self.model)
+        bind_evidence_spans(result, text)
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
+        try:
+            data = json.loads(cleaned)
+        except (TypeError, ValueError):
+            data = {}
+        notes = []
+        for note in data.get("research_notes", [])[:24] if isinstance(data, dict) and isinstance(data.get("research_notes", []), list) else []:
+            if not isinstance(note, dict):
+                continue
+            evidence = note.get("evidence")
+            claim = note.get("claim")
+            if not isinstance(evidence, str) or not isinstance(claim, str) or not 12 <= len(evidence) <= 400:
+                continue
+            start = text.find(evidence)
+            if start < 0 or note.get("kind") not in {"event", "artifact", "procedure", "attribution", "defense", "caveat"}:
+                continue
+            notes.append({"kind": note["kind"], "claim": claim[:1000], "evidence": evidence,
+                          "start": start, "end": start + len(evidence)})
+        return result, notes
+
 
 # ── JSON parser (shared) ──────────────────────────────────────────────────────
 

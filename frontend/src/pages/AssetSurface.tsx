@@ -685,10 +685,9 @@ function AssetInventoryIntelligenceGraph({
     queryFn: () => assetSurfaceApi.intelMatches({ asset_id: registryAsset!.id, limit: 200 }),
     enabled: Boolean(registryAsset?.id),
   });
-  const matches = registryMatches.data ?? [];
   const graph = useMemo(
-    () => buildAssetGraph(asset, intelligence.data, matches),
-    [asset, intelligence.data, matches],
+    () => buildAssetGraph(asset, intelligence.data, registryMatches.data ?? []),
+    [asset, intelligence.data, registryMatches.data],
   );
   const threatRadarHref = companySpaceId && companyAsset?.id
     ? `/threat-radar/assets/${encodeURIComponent(companySpaceId)}/${encodeURIComponent(companyAsset.id)}`

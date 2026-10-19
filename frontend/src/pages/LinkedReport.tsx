@@ -9,6 +9,7 @@ import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
 import { ReportReviewGate } from '@/components/ReportReview/ReportReviewGate';
 import { isReportReviewAssessment } from '@/components/ReportReview/reviewState';
+import { CtiInvestigationPanel } from '@/components/CtiInvestigationPanel';
 
 type InlineMatch = {
   start: number;
@@ -178,8 +179,9 @@ export function LinkedReport() {
                         <option value="local">Local LLM</option>
                       </select>}
                       {canManageIntel && <button type="button" onClick={reparseWithWarning} disabled={reparseMutation.isPending} className="secondary-action disabled:opacity-40">
-                        {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI'}
+                        {reparseMutation.isPending ? 'Reparsing...' : 'Reparse with AI (quick mapping)'}
                       </button>}
+                      {canRunAnalysis && report.source_text_available && <Link to={`/analyze?source_session=${encodeURIComponent(report.session_id)}`} className="secondary-action">Deep investigation from source</Link>}
                       {canExport && <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-raw.txt`, report.source_text || '', 'text/plain;charset=utf-8')} className="secondary-action">Download raw</button>}
                       {canExport && <button type="button" onClick={() => downloadText(`${slug(report.name || 'report')}-parsed.json`, JSON.stringify(buildParsedExport(report, reviewAssessment), null, 2), 'application/json;charset=utf-8')} className="secondary-action">Download candidate JSON</button>}
                       {canManageIntel && <button
@@ -217,6 +219,11 @@ export function LinkedReport() {
               </section>
 
               <ReportReviewGate sessionId={report.session_id} sourceText={report.source_text} canReview={canReviewReports} canPromote={canPromoteReports} />
+
+              {report.investigation?.schema_version && <details className="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-white">Deep CTI investigation · {report.investigation.status}</summary>
+                <div className="mt-4"><CtiInvestigationPanel investigation={report.investigation} /></div>
+              </details>}
 
               {editOpen && canManageIntel && (
                 <Panel title="Edit report">
@@ -488,6 +495,7 @@ function buildParsedExport(report: LinkedAnalysisReport, review?: ReportReviewAs
     entities: report.entities,
     report_images: report.report_images,
     report_intake: report.report_intake,
+    investigation: report.investigation,
     review: review ? {
       id: review.id,
       state: review.state,

@@ -41,7 +41,7 @@ class _Report(FPDF):
             return
         self.set_font("Helvetica", "B", 8)
         self.set_text_color(*_RED)
-        self.cell(0, 7, "AdversaryGraph - Threat Intelligence Report", align="R")
+        self.cell(0, 7, "AdversaryGraph - Threat Intelligence Report", align="R", new_x="LMARGIN", new_y="NEXT")
         self.ln(1)
         self.set_draw_color(*_RED)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -94,7 +94,46 @@ def generate_analysis_report(data: dict[str, Any]) -> bytes:
     if data.get("packet_evidence_report"):
         _packet_evidence(pdf, data["packet_evidence_report"])
 
+    if data.get("investigation"):
+        _investigation_appendix(pdf, data["investigation"])
+
     return bytes(pdf.output())
+
+
+def _investigation_appendix(pdf: _Report, investigation: dict) -> None:
+    """Advisory assessment stays separate from accepted/promoted intelligence."""
+    pdf.add_page()
+    _heading(pdf, "CTI Investigation - Draft Appendix")
+    pdf.set_font("Helvetica", "", 9)
+    lines = [
+        "AI-generated research and observable candidates. Analyst validation is required.",
+        f"Investigation status: {investigation.get('status', 'unknown')}",
+        f"Marking: {investigation.get('tlp', 'TLP:AMBER+STRICT')}",
+        "This appendix does not grant promotion, attribution, or detection approval.",
+        "",
+        *investigation.get("warnings", []),
+        "",
+        investigation.get("report") or "Technical synthesis unavailable.",
+        "",
+        "SOURCE REGISTER",
+    ]
+    for source in investigation.get("sources", []):
+        lines.extend([
+            f"[{source.get('id', '')}] {source.get('title', '')}",
+            source.get("url") or "Submitted document",
+            f"Acquired: {source.get('retrieved_at', '')}; included characters: {source.get('included_chars', 0)}",
+            f"SHA-256: {source.get('sha256', '')}",
+        ])
+    lines.extend(["", "OBSERVABLE CANDIDATES - NOT VALIDATED MALICIOUS INDICATORS"])
+    for item in investigation.get("indicators", []):
+        if item.get("role") == "reference":
+            continue
+        sources = ", ".join(sorted({e.get("source_id", "") for e in item.get("evidence", [])}))
+        lines.append(f"{item.get('indicator_type', '')}: {item.get('value', '')} [{sources}] "
+                     f"local lookup: {item.get('enrichment', {}).get('status', 'not_run')}")
+    lines.extend(["", "COVERAGE LIMITS", *investigation.get("limitations", [])])
+    for line in "\n".join(str(line) for line in lines).splitlines():
+        pdf.multi_cell(0, 4.5, line or " ", new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
 
 
 def generate_layer_report(
@@ -180,11 +219,15 @@ def _cover(pdf: _Report, data: dict) -> None:
         ("Provider",  "provider"),
         ("Model",     "model"),
         ("Domain",    "domain"),
+        ("TLP",       "tlp"),
         ("Session ID","session_id"),
         ("Review state", "review_state"),
         ("Generated", None),
     ]:
         val = _now() if key is None else str(data.get(key, "—"))
+        if key == "tlp":
+            local_marking = (data.get("investigation") or {}).get("tlp")
+            val = "TLP:RED" if local_marking == "TLP:RED" else str(data.get("tlp") or local_marking or "TLP:AMBER+STRICT")
         _meta_row(pdf, label, val)
 
     if data.get("authoritative") is not True:

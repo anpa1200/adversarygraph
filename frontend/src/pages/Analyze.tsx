@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import { analyzeApi, exportApi, pcapApi, reportsApi } from '@/api/client';
@@ -11,6 +11,7 @@ import { AddToInvestigationButton } from '@/components/AddToInvestigationButton'
 import type { ReportSession } from '@/types/attack';
 import { PermissionNotice } from '@/components/PermissionNotice';
 import { useHasPermission } from '@/hooks/useCurrentUser';
+import { CtiInvestigationPanel } from '@/components/CtiInvestigationPanel';
 import { PcapReputationPanel } from '@/components/PcapReputationPanel';
 
 type Provider = 'claude' | 'openai' | 'gemini' | 'minimax' | 'local';
@@ -42,9 +43,17 @@ export function Analyze() {
   const canExport = useHasPermission('export_data');
   const canUploadFiles = useHasPermission('upload_files');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sourceSession = searchParams.get('source_session');
+  const [sourceLoadError, setSourceLoadError] = useState('');
   const queryClient = useQueryClient();
 
   const [provider, setProvider] = useState<Provider>('claude');
+  const [deepAnalysis, setDeepAnalysis] = useState(true);
+  const [followReferences, setFollowReferences] = useState(true);
+  const [externalEnrichment, setExternalEnrichment] = useState(false);
+  const [publicIntelligence, setPublicIntelligence] = useState(false);
+  const [referenceUrls, setReferenceUrls] = useState('');
   const [mode, setMode] = useState<AnalysisMode>('cti');
   const [text,     setText]     = useState('');
   const [file,     setFile]     = useState<File | null>(null);
@@ -53,9 +62,30 @@ export function Analyze() {
   const [logPcapHistory, setLogPcapHistory] = useState<LogPcapHistoryItem[]>(() => loadLogPcapHistory());
   const [activeLogPcapHistoryId, setActiveLogPcapHistoryId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!sourceSession || !canRunAnalysis) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceSession)) {
+      setSourceLoadError('Invalid source session ID.');
+      return;
+    }
+    let active = true;
+    setSourceLoadError('');
+    analyzeApi.linkedReport(sourceSession).then(report => {
+      if (!active) return;
+      const primary = report.investigation?.sources[0];
+      const source = typeof primary?.start === 'number' && typeof primary?.end === 'number'
+        ? report.source_text.slice(primary.start, primary.end) : report.source_text;
+      setText(source);
+      setFile(null);
+      setMode('cti');
+      setDeepAnalysis(true);
+    }).catch(() => { if (active) setSourceLoadError('The stored report source could not be loaded.'); });
+    return () => { active = false; };
+  }, [sourceSession, canRunAnalysis]);
+
   // result: populated by the server-side "result" SSE event (includes group-similarity leads)
   // tokens: raw LLM token stream shown live while waiting
-  const { tokens, result, error, streaming, run, abort, reset } = useSseStream<AnalysisResult>();
+  const { tokens, result, error, streaming, progress, run, abort, reset } = useSseStream<AnalysisResult>();
   const activeResult = result ?? loadedResult;
 
   const { data: previousReports = [], isLoading: historyLoading } = useQuery({
@@ -154,8 +184,16 @@ export function Analyze() {
       else logPcapMutation.mutate(fd);
       return;
     }
-    await run(signal => analyzeApi.stream(fd, signal));
-  }, [canRunAnalysis, canUploadFiles, provider, domain, file, text, reset, mode, logPcapMutation, pcapMutation, run]);
+    if (deepAnalysis) {
+      fd.append('follow_references', String(followReferences));
+      fd.append('external_enrichment', String(externalEnrichment));
+      fd.append('public_intelligence', String(publicIntelligence));
+      fd.append('reference_urls', referenceUrls);
+      await run(signal => analyzeApi.investigate(fd, signal));
+    } else {
+      await run(signal => analyzeApi.stream(fd, signal));
+    }
+  }, [canRunAnalysis, canUploadFiles, provider, domain, file, text, reset, mode, logPcapMutation, pcapMutation, run, deepAnalysis, followReferences, externalEnrichment, publicIntelligence, referenceUrls]);
 
   const onDrop = useCallback(([f]: File[]) => { if (canRunAnalysis && canUploadFiles && f) { setFile(f); setText(''); } }, [canRunAnalysis, canUploadFiles]);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -171,7 +209,7 @@ export function Analyze() {
   });
 
   const analysisPending = logPcapMutation.isPending || pcapMutation.isPending;
-  const analysisError = error || logPcapMutation.error || pcapMutation.error || loadPcapMutation.error;
+  const analysisError = sourceLoadError || error || logPcapMutation.error || pcapMutation.error || loadPcapMutation.error;
   const canSubmit = canRunAnalysis && (!!text.trim() || (!!file && canUploadFiles)) && !streaming && !analysisPending;
 
   return (
@@ -181,7 +219,7 @@ export function Analyze() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left: input panel ─────────────────────────────────────────────── */}
-        <div className="w-[380px] shrink-0 border-r border-gray-700 flex flex-col">
+        <div className="w-[380px] shrink-0 border-r border-gray-700 flex flex-col overflow-y-auto">
 
           {/* Provider selector */}
           <div className="p-4 border-b border-gray-800">
@@ -223,6 +261,23 @@ export function Analyze() {
                 Log / PCAP
               </button>
             </div>
+            {mode === 'cti' && (
+              <div className="mb-3 space-y-2 rounded border border-cyan-800/50 bg-cyan-950/20 p-3 text-xs text-gray-300">
+                <label className="flex items-center gap-2"><input type="checkbox" checked={deepAnalysis} onChange={e => setDeepAnalysis(e.target.checked)} disabled={streaming} />Deep CTI investigation</label>
+                <p className="text-[11px] leading-5 text-gray-400">Acquire sources, extract IOCs, check local intelligence, and write a cited technical assessment. Uses multiple model calls. Uncheck for quick ATT&CK mapping.</p>
+                {deepAnalysis && <details>
+                  <summary className="cursor-pointer text-cyan-200">Sources and enrichment options</summary>
+                  <div className="mt-2 space-y-2">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={followReferences} onChange={e => setFollowReferences(e.target.checked)} disabled={streaming} />Retrieve up to 3 public report links</label>
+                  <textarea aria-label="Reference report URLs" value={referenceUrls} onChange={e => setReferenceUrls(e.target.value)} rows={2} maxLength={6000} disabled={streaming} placeholder="Optional report URLs, one per line. Overrides automatic link selection." className="w-full rounded border border-gray-700 bg-gray-900 p-2 text-[11px]" />
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={externalEnrichment} onChange={e => setExternalEnrichment(e.target.checked)} disabled={streaming} />Public registration context (RDAP)</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={publicIntelligence} onChange={e => setPublicIntelligence(e.target.checked)} disabled={streaming} />Passive threat intelligence lookups</label>
+                  <p className="text-[10px] leading-4 text-gray-500">Uses configured VirusTotal, ThreatFox and OTX access for up to 6 public-source hash/domain/IP candidates. No sample upload or active scan.</p>
+                  <p className="text-[10px] leading-4 text-gray-500">Local IOC matching runs automatically. RDAP sends up to 10 domain/IP candidates from retrieved public reports to a registration service.</p>
+                  </div>
+                </details>}
+              </div>
+            )}
             {mode === 'log-pcap' && (
               <div className="mb-3 rounded border border-cyan-700/40 bg-cyan-950/20 p-3 text-[11px] leading-5 text-cyan-100">
                 {file && isPacketCaptureFile(file)
@@ -361,7 +416,7 @@ export function Analyze() {
             <div className="border-b border-gray-800 bg-gray-900/50">
               <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
                 <div className="w-2 h-2 rounded-full bg-mitre-accent animate-pulse" />
-                <span className="text-xs text-gray-400">Analysing…</span>
+                <span className="text-xs text-gray-400">{progress || 'Analysing…'}</span>
               </div>
               <pre className="text-[10px] font-mono text-gray-400 px-4 py-3 max-h-40 overflow-y-auto whitespace-pre-wrap">
                 {tokens || ' '}
@@ -988,11 +1043,12 @@ function ResultsView({
 }) {
   const canManageIntel = useHasPermission('manage_intel');
   const canExport = useHasPermission('export_data');
-  const [tab, setTab] = useState<'techniques' | 'groups' | 'raw'>('techniques');
+  const [tab, setTab] = useState<'investigation' | 'techniques' | 'groups' | 'raw'>(result.investigation?.schema_version ? 'investigation' : 'techniques');
   const [displayResult, setDisplayResult] = useState(result);
 
   useEffect(() => {
     setDisplayResult(result);
+    setTab(result.investigation?.schema_version ? 'investigation' : 'techniques');
   }, [result]);
 
   const reviewMutation = useMutation({
@@ -1179,6 +1235,9 @@ function ResultsView({
 
       {/* Tabs */}
       <div className="flex gap-4 px-6 py-2 border-b border-gray-800 text-xs">
+        {displayResult.investigation?.schema_version && <TabBtn active={tab === 'investigation'} onClick={() => setTab('investigation')}>
+          Investigation · {displayResult.investigation.status} · {displayResult.investigation.indicators.length} observables
+        </TabBtn>}
         <TabBtn active={tab === 'techniques'} onClick={() => setTab('techniques')}>
           Techniques ({displayResult.techniques.length})
         </TabBtn>
@@ -1191,6 +1250,7 @@ function ResultsView({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {tab === 'investigation' && displayResult.investigation?.schema_version && <CtiInvestigationPanel investigation={displayResult.investigation} />}
         {tab === 'techniques' && (
           <div className="space-y-4">
             {displayResult.techniques.length === 0 && <p className="text-gray-500 text-sm">No techniques extracted.</p>}

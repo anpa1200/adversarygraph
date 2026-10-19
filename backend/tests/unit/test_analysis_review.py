@@ -29,7 +29,7 @@ class _TechniqueValidationSession:
         self.calls += 1
         if self.calls == 1:
             return _ScalarResult(self.version_id)
-        return _ScalarResult(rows=[(attack_id,) for attack_id in self.known_ids])
+        return _ScalarResult(rows=[(attack_id, "Canonical technique name") for attack_id in self.known_ids])
 
 
 def _extraction(*attack_ids: str) -> ExtractionResult:
@@ -70,6 +70,7 @@ async def test_validate_technique_ids_marks_only_catalog_matches_verified():
     await _validate_technique_ids(result, "enterprise-attack", session)
 
     assert [item.llm_verified for item in result.techniques] == [True, False]
+    assert result.techniques[0].name == "Canonical technique name"
 
 
 def test_update_extracted_technique_review_sets_status_and_note():

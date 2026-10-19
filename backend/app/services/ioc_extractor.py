@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from app.services.ioc_intel import IOCImportItem
@@ -74,7 +76,8 @@ def extract_iocs_from_text(
     url_domains = {_domain_from_url(item.value) for item in findings.values() if item.indicator_type == "url"}
     for value in DOMAIN_RE.findall(text):
         clean = _clean_value(value).lower()
-        if clean in COMMON_FALSE_DOMAINS or clean in url_domains or _looks_like_file(clean):
+        if (clean in COMMON_FALSE_DOMAINS or clean in url_domains or _looks_like_file(clean)
+                or _looks_like_code_symbol(clean) or not _has_domain_suffix(clean)):
             continue
         _add(findings, clean, "domain", actor_attack_id, actor_name, source_id, source_url, confidence)
     return sorted(findings.values(), key=lambda item: (item.indicator_type, item.value))
@@ -162,7 +165,8 @@ def _has_ja3_context(text: str, value: str) -> bool:
 def _is_private_ipv4(value: str) -> bool:
     parts = [int(part) for part in value.split(".")]
     return (
-        parts[0] == 10
+        parts[0] == 0
+        or parts[0] == 10
         or parts[0] == 127
         or (parts[0] == 172 and 16 <= parts[1] <= 31)
         or (parts[0] == 192 and parts[1] == 168)
@@ -176,4 +180,31 @@ def _domain_from_url(value: str) -> str:
 
 
 def _looks_like_file(value: str) -> bool:
-    return value.endswith((".dll", ".exe", ".txt", ".pdf", ".docx", ".zip", ".json", ".xml"))
+    return value.endswith((".dll", ".exe", ".txt", ".pdf", ".docx", ".zip", ".json", ".xml",
+                           ".js", ".py", ".sh", ".vbs", ".ps1", ".md", ".toml", ".yml", ".yaml", ".git"))
+
+
+def _looks_like_code_symbol(value: str) -> bool:
+    return bool(re.fullmatch(
+        r"fs\.(?:unlink|rename|copyfilesync|existssync|writefilesync)|"
+        r"os\.(?:arch|type|platform|release|tmpdir)|process\.env(?:\.[a-z_]+)?|wscript\.shell|objshell\.run",
+        value, re.I,
+    ))
+
+
+@lru_cache(maxsize=1)
+def public_domain_suffixes() -> frozenset[str]:
+    """Offline IANA root snapshot; never trigger network access during extraction."""
+    path = Path(__file__).resolve().parents[1] / "data" / "iana-tlds.txt"
+    return frozenset(line.strip().lower() for line in path.read_text().splitlines()
+                     if line.strip() and not line.startswith("#"))
+
+
+def is_public_domain(value: str) -> bool:
+    return value.lower().rstrip(".").rsplit(".", 1)[-1] in public_domain_suffixes()
+
+
+def _has_domain_suffix(value: str) -> bool:
+    # Preserve reserved example/internal observables for offline investigations,
+    # but is_public_domain() excludes them from external provider submission.
+    return is_public_domain(value) or value.rsplit(".", 1)[-1] in {"test", "example", "invalid", "localhost"}

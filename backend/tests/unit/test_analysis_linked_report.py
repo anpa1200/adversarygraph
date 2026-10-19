@@ -173,3 +173,28 @@ def test_fallback_report_text_redacts_historical_source_url_secrets():
     assert "intake-secret" not in text
     assert "token=REDACTED" in text
     assert "api_key=REDACTED" in text
+
+
+def test_article_survives_void_tags_and_layout_modifiers_without_related_post_contamination():
+    parsed = _extract_html_report('''
+    <html><head><title>Main incident</title><meta name="description" content="Main report"></head>
+    <body><div class="page-wrapper with-nav-info-banner"><nav><img src="/logo.png"><a>Menu</a></nav>
+    <main><article><div class="blog-post-header"><h1>Main incident</h1><time datetime="2026-03-30">March 30, 2026</time></div>
+    <div class="blog-post-rich-text w-richtext"><p>Early attack timeline and malicious package version 1.14.1.</p>
+    <img src="/report/diagram.png"><br><p>Late report IOC sfrclak.com and technical analysis.</p></div></article>
+    <section><div class="w-richtext"><h2>Explore Related Posts</h2><p>Unrelated Tensorlake attack in July 2026.</p></div></section>
+    </main></div></body></html>''', 'https://vendor.example/blog/report')
+    assert 'March 30, 2026' in parsed['text']
+    assert 'Early attack timeline' in parsed['text']
+    assert 'Late report IOC' in parsed['text']
+    assert 'Tensorlake' not in parsed['text']
+    assert len(parsed['images']) == 1
+
+
+def test_largest_article_is_selected_instead_of_combining_unrelated_article_cards():
+    parsed = _extract_html_report('''<html><body><main>
+    <article><p>Unrelated teaser</p></article>
+    <article><h1>Real incident</h1><p>Observed execution of malicious software and command and control traffic. Detailed evidence and a complete attack timeline are provided in this primary incident report.</p></article>
+    <article><p>Another unrelated teaser</p></article></main></body></html>''', 'https://vendor.example/report')
+    assert 'Real incident' in parsed['text']
+    assert 'teaser' not in parsed['text']

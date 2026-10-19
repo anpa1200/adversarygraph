@@ -793,6 +793,25 @@ export const iocApi = {
 
 // ── Analysis ──────────────────────────────────────────────────────────────────
 
+export interface CtiInvestigation {
+  tlp?: string;
+  schema_version: string;
+  status: 'complete' | 'partial' | 'stale';
+  created_at: string;
+  report: string;
+  sources: Array<{ id: string; title: string; url: string; sha256: string; included_sha256: string; included_chars: number; original_chars: number; retrieved_at: string; start?: number; end?: number }>;
+  stages: Record<string, { status: string; reason?: string; analyzed_chars?: number; source_chars?: number; matched?: number; checked?: number }>;
+  indicators: Array<{
+    value: string; indicator_type: string; role: string; confidence: number;
+    evidence: Array<{ source_id: string; start: number; end: number; excerpt: string; source_url: string }>;
+    enrichment: { status: string; queried_at?: string; matches?: Array<{ source_id: string; malware_family: string; first_seen: string | null; last_seen: string | null; tlp?: string }> };
+    registration?: { status: string; name?: string; country?: string; queried_at: string };
+    public_intelligence?: Array<{ source: string; status: string; summary?: string; queried_at: string }>;
+  }>;
+  warnings: string[];
+  limitations: string[];
+}
+
 export interface AnalysisResult {
   session_id: string;
   provider: string;
@@ -816,6 +835,7 @@ export interface AnalysisResult {
   apt_matches: Array<{ group_attack_id: string; group_name: string; similarity: number; shared_count: number; shared_techniques: string[] }>;
   apt_hints: string[];
   raw_response?: string;
+  investigation?: CtiInvestigation;
 }
 
 export interface LogPcapAnalysisResult {
@@ -1227,6 +1247,7 @@ export interface LinkedAnalysisReport {
   entities: LinkedReportEntity[];
   report_images: Array<{ url: string; alt: string; caption: string; source: string }>;
   report_intake: Record<string, unknown> | null;
+  investigation?: CtiInvestigation;
 }
 
 export interface ReportCollectionTag {
@@ -1294,6 +1315,9 @@ export const analyzeApi = {
   /** Streaming: returns a native EventSource-compatible fetch stream */
   stream: (formData: FormData, signal?: AbortSignal): Promise<Response> =>
     fetch('/api/analyze/stream', { method: 'POST', body: formData, signal }),
+
+  investigate: (formData: FormData, signal?: AbortSignal): Promise<Response> =>
+    fetch('/api/analyze/investigate/stream', { method: 'POST', body: formData, signal }),
 
   /** Single-turn chat with SSE streaming */
   chat: (payload: { message: string; provider: string; model?: string; context?: string; system_prompt?: string }, signal?: AbortSignal): Promise<Response> =>

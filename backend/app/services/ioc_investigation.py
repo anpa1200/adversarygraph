@@ -386,6 +386,12 @@ async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str,
 async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     if not settings.threatfox_auth_key:
         return _not_configured("threatfox", "THREATFOX_AUTH_KEY")
+    # ThreatFox's search_hash contract supports MD5 and SHA-256, not SHA-1.
+    # https://threatfox.abuse.ch/api/#search-hash
+    if artifact_type == "hash" and not re.fullmatch(r"[a-fA-F0-9]{32}|[a-fA-F0-9]{64}", value):
+        return {"source": "threatfox", "status": "skipped",
+                "summary": "ThreatFox hash lookup supports MD5 and SHA-256; this hash type is unsupported.",
+                "relationships": [], "technique_ids": [], "actors": [], "raw": {}}
     query = "search_ioc" if artifact_type != "hash" else "search_hash"
     key = "search_term" if query == "search_ioc" else "hash"
     payload = await _post_json(

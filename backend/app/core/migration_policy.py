@@ -16,7 +16,7 @@ MIGRATION_OWNED_TABLES = frozenset(
         "outbox_delivery_attempts",
     }
 )
-REQUIRED_SCHEMA_REVISION = "20260824_0004"
+REQUIRED_SCHEMA_REVISION = "20261014_0005"
 # SHA-256 of the canonical PostgreSQL catalog facts for the complete
 # migration-owned authority schema.  Startup recomputes this from columns,
 # constraints, indexes, triggers, and referenced trigger functions.  Keeping
