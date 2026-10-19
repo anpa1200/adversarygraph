@@ -29,28 +29,17 @@ class AnomalyDocsDockerfileTests(unittest.TestCase):
         self.assertEqual(locked["version"], TAR_VERSION)
         self.assertEqual(locked["integrity"], TAR_INTEGRITY)
 
-    def test_image_replaces_and_verifies_npm_bundled_tar(self) -> None:
-        remove = "rm -rf /usr/local/lib/node_modules/npm/node_modules/tar"
-        copy = "cp -R node_modules/tar /usr/local/lib/node_modules/npm/node_modules/tar"
-        verify = (
-            "require('/usr/local/lib/node_modules/npm/node_modules/tar/package.json')"
-        )
+    def test_image_installs_integrity_checked_npm_and_verifies_bundled_tar(self) -> None:
         for expected in (
-            remove,
-            copy,
-            verify,
-            f"p.version !== '{TAR_VERSION}'",
+            "https://registry.npmjs.org/npm/-/npm-12.2.0.tgz",
+            "sha512sum -c -",
+            "$(npm --version)",
+            "require('/usr/local/lib/node_modules/npm/node_modules/tar/package.json')",
+            f"s.gte(p.version, '{TAR_VERSION}')",
             "RUN npm run build",
         ):
             self.assertIn(expected, self.dockerfile)
-        self.assertLess(
-            self.dockerfile.index("RUN npm ci"), self.dockerfile.index(remove)
-        )
-        self.assertLess(self.dockerfile.index(remove), self.dockerfile.index(copy))
-        self.assertLess(self.dockerfile.index(copy), self.dockerfile.index(verify))
-        self.assertLess(
-            self.dockerfile.index(verify), self.dockerfile.index("RUN npm run build")
-        )
+        self.assertLess(self.dockerfile.index("sha512sum -c -"), self.dockerfile.index("RUN npm run build"))
 
 
 if __name__ == "__main__":

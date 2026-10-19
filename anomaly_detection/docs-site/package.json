@@ -46,7 +46,9 @@
     "uuid": "11.1.1",
     "tinypool": "$tinypool",
     "postcss-selector-parser": "7.1.6",
-    "braces": "$braces"
+    "braces": "$braces",
+    "undici": "6.28.1",
+    "webpack-dev-middleware": "7.4.6"
   },
   "browserslist": {
     "production": [

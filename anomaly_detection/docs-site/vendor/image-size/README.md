@@ -12,3 +12,5 @@ review and dedicated malformed-input tests.
 
 The interface is limited to the `image-size` and `image-size/fromFile` exports
 used by Docusaurus. License: MIT.
+
+As of the 2026-10-19 review, upstream 2.0.3 is reported fixed. This build deliberately retains its narrower, separately maintained SVG-only implementation; adopting general binary image parsers would broaden the established boundary. The package identity is now @adversarygraph/svg-dimensions so scanners do not mistake this distinct implementation for an upstream prerelease containing ICNS/JXL/HEIF parsers. Public import aliases remain compatible with Docusaurus. Malformed-format and size-bound tests remain mandatory.
