@@ -818,7 +818,7 @@ def _build_identities(source_sha256: str, events: dict[str, list[dict[str, Any]]
                 "bindings": [],
                 "raw_values": set(),
             })
-            if ip and ip != "0.0.0.0":
+            if ip and _ip_version(ip) and not ipaddress.ip_address(ip).is_unspecified:
                 entry["ip_addresses"].add(ip)
             if mac and not str(mac).startswith(("ff:", "01:")):
                 entry["mac_addresses"].add(str(mac).lower())
