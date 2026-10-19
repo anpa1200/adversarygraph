@@ -7,3 +7,5 @@ Four recorded Compose overlays no longer existed at their labeled paths. Effecti
 Before replacement, backups include a full Git bundle, tracked/untracked source archives, running-source snapshots, rollback image tags, PostgreSQL custom-format dump, and private archives of ATT&CK/PCAP/malwaregraph/logs/Redis volumes. Original data volumes are reused, not recreated. A disposable no-network database is used to validate dump restoration.
 
 Only the selected seven application/cache services are replaced; unrelated PCAP analyzer, evidenceforge, observability and PostgreSQL containers remain in place. Rollback uses the private plan with original image IDs and original configuration. No new persistent credentials or security settings are introduced.
+
+Migration commands are transaction-atomic: if a later downgrade safety gate refuses, preceding revision/column changes roll back with it. The CTI-column downgrade additionally refuses populated investigation evidence. This corrects an observed partial-downgrade regression; no production downgrade is performed during the local image update.

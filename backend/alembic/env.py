@@ -46,7 +46,9 @@ def _run_sync_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        transaction_per_migration=True,
+        # A refused later revision must roll back the complete command,
+        # including any preceding CTI-column/revision changes.
+        transaction_per_migration=False,
         include_name=include_migration_name,
         include_object=include_migration_object,
     )

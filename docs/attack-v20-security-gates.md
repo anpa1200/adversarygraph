@@ -14,6 +14,6 @@ The 8.1.0-beta.2 source candidate reconciles the reviewed ATT&CK changes with th
 
 ## Validation
 
-Full reconciled backend: 1639 passed, 180 skipped, 72.51% coverage. The investigation fixtures now follow the running image's timeout and passage-citation protocol; provider caches are isolated between tests. Production validators are unchanged. Frontend full browser run: 70 passed and four conditional skips; the one ambiguous locator was corrected to assert the actual Navigator link, and its affected test file passes. Source module/version checks pass. Final image scan and hosted CI receipts accompany deployment evidence.
+Full reconciled backend: 1639 passed, 180 skipped, 72.51% coverage. The investigation fixtures now follow the running image's timeout and passage-citation protocol; provider caches are isolated between tests. Runtime security controls and production image-immutability requirements remain enforced. Frontend full browser run: 70 passed and four conditional skips; the one ambiguous locator was corrected to assert the actual Navigator link, and its affected test file passes. Source module/version checks pass. Final image scan and hosted CI receipts accompany deployment evidence.
 
 No production ATT&CK reimport is needed: all three runtime domains already contain official v20 snapshots, with history retained. The update preserves existing volumes and uses recoverable image/config/database backups.

@@ -30,4 +30,10 @@ def downgrade() -> None:
         return
     if not any(column["name"] == "investigation" for column in inspector.get_columns("analysis_results")):
         return
+    op.execute("LOCK TABLE analysis_results IN ACCESS EXCLUSIVE MODE")
+    populated = op.get_bind().scalar(sa.text(
+        "SELECT count(*) FROM analysis_results WHERE investigation IS NOT NULL AND investigation <> '{}'::jsonb"
+    ))
+    if populated:
+        raise RuntimeError("Refusing to discard stored CTI investigation evidence")
     op.drop_column("analysis_results", "investigation")

@@ -45,6 +45,15 @@ async def test_cti_column_upgrade_handles_fresh_and_preserves_legacy_rows():
             await connection.run_sync(apply)
             row = (await connection.execute(text("SELECT summary, investigation FROM analysis_results WHERE id=1"))).one()
             assert tuple(row) == ("preserved legacy summary", {"coverage": "preserved"})
+
+            def downgrade(sync_connection):
+                with Operations.context(MigrationContext.configure(sync_connection)):
+                    module.downgrade()
+
+            with pytest.raises(RuntimeError, match="Refusing to discard stored CTI"):
+                await connection.run_sync(downgrade)
+            row = (await connection.execute(text("SELECT summary, investigation FROM analysis_results WHERE id=1"))).one()
+            assert tuple(row) == ("preserved legacy summary", {"coverage": "preserved"})
         finally:
             await transaction.rollback()
     await engine.dispose()
