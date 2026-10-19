@@ -1,7 +1,7 @@
 import asyncio
 import socket
 import ssl
-from types import SimpleNamespace
+from collections import namedtuple
 
 import httpcore
 import httpx
@@ -258,7 +258,7 @@ def test_sync_https_retains_original_hostname_for_tls(monkeypatch):
 
     def wrap_socket(**kwargs):
         wrapped.update(kwargs)
-        return SimpleNamespace(socket=object(), is_verified=True)
+        return namedtuple("WrappedTLS", ["socket", "is_verified"])(object(), True)
 
     monkeypatch.setattr(safe_http.urllib3_connection, "_ssl_wrap_socket_and_match_hostname", wrap_socket)
 

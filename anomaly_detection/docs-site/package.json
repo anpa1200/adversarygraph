@@ -15,7 +15,7 @@
     "@docusaurus/preset-classic": "latest",
     "@mdx-js/react": "latest",
     "clsx": "latest",
-    "ip-address": "10.3.1",
+    "ip-address": "10.7.4",
     "prism-react-renderer": "latest",
     "react": "latest",
     "react-dom": "latest",
@@ -23,7 +23,7 @@
     "tar": "7.5.22"
   },
   "overrides": {
-    "brace-expansion": "5.0.9",
+    "brace-expansion": "5.0.12",
     "fast-uri": "4.1.2",
     "gray-matter": {
       "js-yaml": "3.15.1"

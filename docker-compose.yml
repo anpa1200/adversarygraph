@@ -881,7 +881,7 @@ services:
         condition: service_completed_successfully
 
   atlas-docs:
-    image: ${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46}
+    image: ${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5}
     restart: unless-stopped
     volumes:
       - type: volume
