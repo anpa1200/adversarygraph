@@ -23,7 +23,9 @@
     "react-dom": "latest",
     "tar": "7.5.22",
     "tinypool": "2.2.0",
-    "braces": "file:vendor/braces-guard"
+    "braces": "file:vendor/braces-guard",
+    "undici": "6.28.1",
+    "http-cache-semantics": "4.3.0"
   },
   "overrides": {
     "brace-expansion": "5.0.12",
@@ -47,8 +49,9 @@
     "tinypool": "$tinypool",
     "postcss-selector-parser": "7.1.6",
     "braces": "$braces",
-    "undici": "6.28.1",
-    "webpack-dev-middleware": "7.4.6"
+    "undici": "$undici",
+    "webpack-dev-middleware": "7.4.6",
+    "http-cache-semantics": "$http-cache-semantics"
   },
   "browserslist": {
     "production": [

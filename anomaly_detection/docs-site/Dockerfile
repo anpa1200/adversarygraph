@@ -15,7 +15,13 @@ RUN wget -qO /tmp/npm.tgz https://registry.npmjs.org/npm/-/npm-12.2.0.tgz \
 WORKDIR /seed
 COPY anomaly_detection/docs-site/package.json anomaly_detection/docs-site/package-lock.json ./
 COPY anomaly_detection/docs-site/vendor/ ./vendor/
-RUN npm ci && npm cache clean --force
+# Overlay compatible fixed dependencies from this integrity-checked lockfile
+# into npm's separately bundled tree; project audits do not cover global npm.
+RUN npm ci \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/undici /usr/local/lib/node_modules/npm/node_modules/http-cache-semantics \
+    && cp -R node_modules/brace-expansion node_modules/undici node_modules/http-cache-semantics /usr/local/lib/node_modules/npm/node_modules/ \
+    && node -e "for (const [name,version] of Object.entries({'brace-expansion':'5.0.12','undici':'6.28.1','http-cache-semantics':'4.3.0'})) { if(require('/usr/local/lib/node_modules/npm/node_modules/'+name+'/package.json').version !== version) process.exit(1); }" \
+    && npm cache clean --force
 
 COPY anomaly_detection/docs-site/ /seed/
 COPY scripts/sync-anomaly-atlas.sh /usr/local/bin/sync-anomaly-atlas

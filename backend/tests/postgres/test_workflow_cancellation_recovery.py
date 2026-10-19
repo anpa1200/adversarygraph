@@ -19,6 +19,7 @@ import pytest_asyncio
 from sqlalchemy import event, func, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.migration_policy import REQUIRED_SCHEMA_REVISION
 from app.core.database import async_session_factory, engine
 from app.models.research_workflow import (
     OutboxDeliveryAttempt,
@@ -82,7 +83,7 @@ async def _require_fresh_contract_head_and_dispose_pool():
     await engine.dispose()
     async with engine.connect() as connection:
         revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-    assert revision == "20260824_0004"
+    assert revision == REQUIRED_SCHEMA_REVISION
     try:
         yield
     finally:
