@@ -1,16 +1,13 @@
 # Production Readiness
 
-AdversaryGraph is a production-oriented self-hosted analyst platform for
-controlled deployments. The checked-out source is the `v8.0.0-beta.1`
-manual-testing pre-release described in [the changelog](../CHANGELOG.md), while
-`v7.0.0` remains the latest stable release. This document tracks the checked-out
-repository, so every production review must record the exact tag or commit and
-must not transfer evidence from a different revision.
+AdversaryGraph is a self-hosted analyst platform for controlled deployments.
+The checked-out source is v8.1.0, described in [the changelog](../CHANGELOG.md).
+Every deployment review must record the exact tag/commit and artifact digests;
+evidence from a different revision cannot substitute for current acceptance.
 
 ## Current Status
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
-`v7.0.0` remains the latest stable release. The beta source is suitable for:
+The v8.1.0 source and its published digest-pinned artifacts support:
 
 - local CTI labs
 - controlled self-hosted analyst workspaces
@@ -20,12 +17,11 @@ The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
   build, scan, configuration, backup, restore, and acceptance evidence for the
   exact deployed artifacts
 
-Historical release evidence does not validate this source. The beta remains a
-pre-release until the protected `v8.0.0-beta.1` tag workflow publishes and
-verifies the nine-image family and attached `adversarygraph-images.env`.
-Automated publication does not complete the manual matrix in
-[`release-readiness-v8.md`](release-readiness-v8.md) or authorize a stable
-claim.
+The protected v8.1.0 tag workflow must build, scan and verify the nine-image
+family and attach `adversarygraph-images.env` before publication. Review
+[8.1 acceptance](release-readiness-v8.1.md); optional provider, embedding,
+SIEM and operational integrations remain deployment-specific. Historical beta
+matrices are retained as historical records and are not relabelled as passed.
 
 AdversaryGraph is not a managed public SaaS. The default deployment is suitable
 for controlled self-hosted use; public internet exposure still requires a

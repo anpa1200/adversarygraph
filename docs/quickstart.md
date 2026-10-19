@@ -2,10 +2,10 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
-`v7.0.0` remains the latest stable release. Use only public, synthetic, or
-otherwise approved data during beta evaluation, and record unresolved tests as
-pending rather than treating successful startup as stable acceptance.
+The checked-out source is v8.1.0. Use the protected release's digest manifest
+for immutable deployment artifacts, and use public, synthetic or otherwise
+approved evaluation data. Successful startup does not certify optional external
+providers or complete deployment acceptance; see [8.1 readiness](release-readiness-v8.1.md).
 
 For the public capability walkthrough with screenshots and infographics, use
 the 1200km mirror or Medium publication:

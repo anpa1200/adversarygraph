@@ -4,11 +4,10 @@ This is the detailed operational reference for the modules exposed by the
 current AdversaryGraph source tree. It is derived from the backend module
 catalog, frontend routes, API tags, and in-application help definitions.
 
-The checked-out source declares the `8.0.0-beta.1` manual-testing pre-release;
-`7.0.0` remains the latest stable release. Immutable beta artifacts and their
-digest manifest exist only after the matching protected tag workflow succeeds.
-Verify the exact tag or commit, corresponding release evidence, and pending v8
-manual acceptance before using this document as acceptance evidence.
+The checked-out source declares v8.1.0. Immutable artifacts and their digest
+manifest exist only after the matching protected tag workflow succeeds. Verify
+the exact tag/commit, release evidence and deployment-specific acceptance scope
+in [8.1 readiness](release-readiness-v8.1.md).
 
 The examples and case studies below are reproducible workflows or clearly
 labelled illustrative scenarios. They are not customer testimonials, adoption

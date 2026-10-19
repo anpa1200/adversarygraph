@@ -37,9 +37,10 @@ This guide is for security researchers, package curators, and tool evaluators wh
 
 ## What this tool is
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release.
-v7.0.0 remains the latest stable release; do not describe the beta as stable or
-fully manually validated while its readiness matrix remains pending.
+The checked-out source is v8.1.0. Review the matching protected release,
+immutable digest manifest and [8.1 acceptance scope](release-readiness-v8.1.md).
+Optional external integrations require deployment-specific evidence; a source
+release does not certify every configured provider or operational workflow.
 
 AdversaryGraph is a **self-hosted AI-assisted CTI workbench** for:
 
