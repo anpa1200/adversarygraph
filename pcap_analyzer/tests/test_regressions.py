@@ -22,9 +22,12 @@ def test_keepalive_responses_use_frame_links_not_last_request():
 def test_response_pairing_fails_closed(change):
     request = event(1)
     reply = event(2, src='10.0.0.2', dst='10.0.0.5', **{'http.request_in': '1'})
-    if change == 'missing': reply['fields'] = {}
-    if change == 'wrong_stream': reply['tcp_stream'] = 2
-    if change == 'wrong_direction': reply['src_ip'] = '10.0.0.3'
+    if change == 'missing':
+        reply['fields'] = {}
+    if change == 'wrong_stream':
+        reply['tcp_stream'] = 2
+    if change == 'wrong_direction':
+        reply['src_ip'] = '10.0.0.3'
     assert analyzer._paired_request(reply, {1: request}) is None
 
 
@@ -85,7 +88,8 @@ def test_payloads_survive_callback_metadata_flood(tmp_path, monkeypatch):
 def test_truncated_inventory_is_explicit(tmp_path, monkeypatch):
     directory = tmp_path / 'http-objects'
     directory.mkdir()
-    for n in range(3): (directory / str(n)).write_text(str(n))
+    for n in range(3):
+        (directory / str(n)).write_text(str(n))
     monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
     monkeypatch.setattr(analyzer, 'MAX_EXPORTED_OBJECTS', 1)
     monkeypatch.setattr(analyzer, 'MAX_OBJECT_HASH_INDEX', 0)
@@ -98,7 +102,8 @@ def test_truncated_inventory_is_explicit(tmp_path, monkeypatch):
 def test_compact_index_preserves_hashes_beyond_rich_metadata_cap(tmp_path, monkeypatch):
     directory = tmp_path / 'http-objects'
     directory.mkdir()
-    for n in range(3): (directory / str(n)).write_text(str(n))
+    for n in range(3):
+        (directory / str(n)).write_text(str(n))
     monkeypatch.setattr(analyzer, '_run_object_export', lambda *a: 0)
     monkeypatch.setattr(analyzer, 'MAX_EXPORTED_OBJECTS', 1)
     inventory = {}
@@ -170,6 +175,7 @@ def test_object_binding_requires_exact_body_hash_and_valid_request_link():
 
 
 def test_all_hashes_and_recovery_reject_symlinks(tmp_path, monkeypatch):
+    monkeypatch.setattr(analyzer, '_run_event_fields', lambda *a: {kind: ([], False) for kind in analyzer.EVENT_QUERIES})
     directory = tmp_path / 'http-objects'
     directory.mkdir()
     content = b'not executable, just a fixture'
@@ -190,3 +196,34 @@ def test_case_sensitive_urls_are_separate_observables():
     requests = [event(1, **{'http.request.full_uri': 'http://host.test/A'}), event(2, **{'http.request.full_uri': 'http://host.test/a'})]
     objects = analyzer._build_observables('a'*64, [], {'http_request': requests}, [])
     assert len(objects) == 2 and objects[0]['observable_id'] != objects[1]['observable_id']
+
+
+def test_body_features_redact_secrets_and_bound_input():
+    secret = 'synthetic-secret-do-not-copy'
+    body = f'ComputerName: LABHOST\npassword={secret}\n'.encode() + b'x' * (300 * 1024)
+    features = analyzer._body_features(body)
+    assert features['credential_record_present']
+    assert features['truncated'] and features['inspected_bytes'] == 256 * 1024
+    assert secret not in str(features)
+    assert features['identities'][0]['value'] == 'LABHOST'
+
+
+def test_conflicting_tcp_bytes_refuse_fallback_extraction():
+    segments = [(10, b'first', event(1)), (12, b'conflict', event(2))]
+    with pytest.raises(analyzer.AnalyzerLimitError, match='Conflicting TCP overlap'):
+        analyzer._contiguous_runs(segments)
+
+
+def test_embedded_base64_is_inert_bounded_and_provenance_bound(tmp_path):
+    import base64
+    directory = tmp_path / 'http-objects'
+    directory.mkdir()
+    content = b'MZ' + b'fixture-only' * 30
+    parent = b'prefix ' + base64.b64encode(content) + b' suffix'
+    (directory / 'container').write_bytes(parent)
+    artifacts, warnings = analyzer._supplemental_objects(tmp_path, Path('unused'), 'a' * 64, {}, [])
+    assert not warnings and len(artifacts) == 1
+    assert artifacts[0]['sha256'] == hashlib.sha256(content).hexdigest()
+    assert artifacts[0]['parent_sha256'] == hashlib.sha256(parent).hexdigest()
+    assert artifacts[0]['extraction_method'] == 'embedded-base64-static'
+    assert artifacts[0]['completeness'] == 'complete-base64-value-original-file-unknown'
