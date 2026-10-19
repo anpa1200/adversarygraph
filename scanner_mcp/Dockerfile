@@ -106,5 +106,5 @@ CMD ["uvicorn", "scanner_mcp.server:app", "--host", "0.0.0.0", "--port", "8200",
 
 ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/anpa1200/adversarygraph" \
-      org.opencontainers.image.version="8.1.0-beta.2" \
+      org.opencontainers.image.version="8.1.0" \
       org.opencontainers.image.revision="${SOURCE_REVISION}"

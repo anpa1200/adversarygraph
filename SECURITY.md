@@ -2,18 +2,26 @@
 
 ## Supported Versions
 
-AdversaryGraph **v7.0.0** remains the latest stable release for controlled
-self-hosted deployments. **v8.0.0-beta.1** is a manual-testing prerelease and
-must not be treated as the stable production line.
-The project is a self-hosted/internal analyst workbench, not a hardened multi-tenant SaaS.
-Security fixes are applied to the latest `main` branch and the latest tagged release.
+AdversaryGraph **v8.1.0** is the current stable release source for controlled
+self-hosted deployments. Use only published digest-pinned release artifacts.
+The project is an internal analyst workbench, not a hardened multi-tenant SaaS.
+Security fixes target the latest `main` branch and the latest tagged release.
 
 | Version | Supported |
 |---|---|
-| `v8.0.0-beta.1` candidate | Testing and security evaluation only |
-| latest stable (`v7.0.0`) | Yes |
+| latest stable (`v8.1.0`) | Yes |
 | latest `main` | Security fixes, not an immutable release |
-| older tags (`v4.x` and below) | Best effort |
+| historical beta tags | Testing records; upgrade to the stable line |
+| older stable tags | Best effort |
+
+Stable Debian base packages can retain advisories with no distribution fix.
+Release scans retain their established blocking policy for fixed HIGH/CRITICAL
+findings; a passing gate is not a vulnerability-free claim. Review advisory
+preconditions and deployment applicability, keep base images patched, and do
+not add privileged shell operations or arbitrary scanner bytecode inputs.
+The documentation build's bounded braces wrapper is a locally maintained
+mitigation, not an upstream fix or a general expansion sandbox; see its vendor
+SECURITY documentation.
 
 ## Reporting a Vulnerability
 

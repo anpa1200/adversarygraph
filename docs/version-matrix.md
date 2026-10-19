@@ -2,45 +2,25 @@
 
 This file is the canonical reference for AdversaryGraph release history and feature gates.
 
-## Current Pre-release
+## Current Stable Release Source
 
 | Field | Value |
 |---|---|
-| Version | v8.0.0-beta.1 |
-| Release date | 2026-08-25 |
-| Theme | Governed report promotion and durable workflow authority |
-| Status | Manual-testing pre-release; automated and deployment-specific acceptance evidence remains required |
+| Version | v8.1.0 |
+| Source date | 2026-10-19 |
+| Theme | ATT&CK v20, deterministic evidence and governed workflows |
+| Publication | Protected tag workflow and digest manifest required |
 
-Immutable beta artifacts and their digest manifest exist only after the
-protected `v8.0.0-beta.1` tag workflow succeeds. Historical screenshots and v7
-test records are not beta runtime evidence. The beta must not be represented as
-stable or manually accepted while the v8 readiness matrices remain pending.
-
-### v8 Beta Capability Evaluation
-
-v8.0.0-beta.1 adds the five-gate Report Review Gate, source-bound claims,
-two-person approval, promotion/revocation authority, durable research projects,
-transactional workflow/outbox processing, Alembic revisions 0001-0004, blocking
-Compose/Helm migration gates, React Router 7, and the new Operation Desert Hydra
-AdversaryGraph workflow draft. See the
-[beta release notes](release-notes/v8.0.0-beta.1.md) and
-[v8 readiness matrix](release-readiness-v8.md).
-
-## Latest Stable Release
-
-| Field | Value |
-|---|---|
-| Version | v7.0.0 |
-| Release date | 2026-08-12 |
-| Theme | Isolated assessment, governed intelligence, and data quality |
-
-v7.0.0 remains the latest stable release. Its release notes and historical
-readiness record are not rewritten to describe v8 behavior.
+See [8.1 release notes](release-notes/v8.1.0.md) and the
+[acceptance record](release-readiness-v8.1.md). Historical beta readiness
+records remain historical evidence; optional external integrations require
+operator-specific acceptance.
 
 ## Release History
 
 | Version | Theme | Key additions |
 |---|---|---|
+| v8.1.0 | ATT&CK v20 and deterministic evidence | Enterprise/Mobile/ICS, historical catalogs, Navigator round trips, CTI investigations, PCAP evidence, atomic migrations and dependency maintenance |
 | v8.0.0-beta.1 | Governed Report Promotion and Durable Workflow Authority | Manual-testing pre-release: five-gate Review Gate, two-person promotion, downstream evidence authority, research workflow runtime, transactional outbox, Alembic 0001-0004, Compose/Helm migration gates, React Router 7, and Desert Hydra workflow draft |
 | v7.0.0 | Isolated Assessment, Governed Intelligence, and Data Quality | Private scanner MCP boundary, verified assessment traces, production RAG/MCP readiness, governed local AI adapter, stronger intelligence relationships, closed taxonomy, self-maintaining catalogs, self-test data inventory, and eight-image release publication |
 | v6.5.0 | Governed Intelligence, Hunting, Exposure Assessment, and SOC Operations | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization across 31 workspaces, complete API contracts, and post-v6 platform hardening |
