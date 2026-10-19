@@ -3,11 +3,11 @@
 This guide covers the current Docker Compose upgrade path and the tested
 procedure for moving from v5 releases to v6.0.0 and later releases.
 
-## Upgrading to 8.1.0
+## Upgrading to 8.1.1
 
 Back up PostgreSQL and evidence volumes, verify restoration and retain the
 previous image/configuration digests before replacement. Run `alembic upgrade
-head` from the exact 8.1.0 backend artifact before serving requests. The required
+head` from the exact 8.1.1 backend artifact before serving requests. The required
 head is `20261014_0005`; upgrade handles fresh schemas and existing CTI metadata.
 Migration chains are atomic, and downgrading populated investigation metadata
 is refused. Do not bypass that refusal by stamping revisions or dropping data.

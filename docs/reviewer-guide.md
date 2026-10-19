@@ -37,7 +37,7 @@ This guide is for security researchers, package curators, and tool evaluators wh
 
 ## What this tool is
 
-The checked-out source is v8.1.0. Review the matching protected release,
+The checked-out source is v8.1.1. Review the matching protected release,
 immutable digest manifest and [8.1 acceptance scope](release-readiness-v8.1.md).
 Optional external integrations require deployment-specific evidence; a source
 release does not certify every configured provider or operational workflow.
