@@ -3,7 +3,7 @@ global:
 
 image:
   repository: ghcr.io/anpa1200/adversarygraph-backend
-  tag: "8.0.0-beta.1"
+  tag: "8.1.0"
   # Set to a reviewed sha256:... value in production. When present, digest
   # takes precedence over tag without requiring a chart change.
   digest: ""
@@ -11,7 +11,7 @@ image:
 frontend:
   image:
     repository: ghcr.io/anpa1200/adversarygraph-frontend
-    tag: "8.0.0-beta.1"
+    tag: "8.1.0"
     digest: ""
   replicas: 1
   service:
@@ -107,8 +107,8 @@ postgresql:
 
 redis:
   enabled: true
-  image: redis:7-alpine
-  imageDigest: sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+  image: redis:7.4.11-alpine
+  imageDigest: sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
   resources:
     requests:
       cpu: 100m
@@ -121,7 +121,7 @@ malwaregraph:
   enabled: true
   image:
     repository: ghcr.io/anpa1200/adversarygraph-malwaregraph
-    tag: "8.0.0-beta.1"
+    tag: "8.1.0"
     digest: ""
   storageClassName: ""
   accessModes:
@@ -139,7 +139,7 @@ scannerMcp:
   enabled: true
   image:
     repository: ghcr.io/anpa1200/adversarygraph-scanner-mcp
-    tag: "8.0.0-beta.1"
+    tag: "8.1.0"
     digest: ""
   service:
     port: 8200
@@ -165,14 +165,40 @@ scannerMcp:
       cpu: "2"
       memory: 2Gi
 
+pcapAnalyzer:
+  enabled: true
+  image:
+    repository: ghcr.io/anpa1200/adversarygraph-pcap-analyzer
+    tag: "8.1.0"
+    digest: ""
+  service:
+    port: 8300
+  maxUploadBytes: "536870912"
+  toolTimeoutSeconds: "300"
+  maxToolOutputBytes: "268435456"
+  apiTimeoutSeconds: "600"
+  retainUploads: "true"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
 persistence:
   attckDataSize: 10Gi
   logsSize: 20Gi
+  pcapDataSize: 100Gi
   attckData:
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
   logs:
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+  pcapData:
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
@@ -182,6 +208,10 @@ ingress:
   className: ""
   host: adversarygraph.example.com
   tlsSecretName: ""
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "520m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "650"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "650"
 
 networkPolicy:
   # Baseline ingress isolation is enabled by default. Egress remains open
@@ -195,6 +225,7 @@ networkPolicy:
     frontend: []
     malwaregraph: []
     scannerMcp: []
+    pcapAnalyzer: []
     postgres: []
     redis: []
     worker: []
@@ -231,6 +262,8 @@ secrets:
   # Independent capability token used only between the API and scanner MCP.
   # Use at least 24 random URL-safe characters and never reuse another secret.
   assetScannerMcpToken: ""
+  # Independent capability token used only between the API and PCAP analyzer.
+  pcapAnalyzerToken: ""
 
 config:
   # Set true in reviewed production values. This enables fail-closed Helm

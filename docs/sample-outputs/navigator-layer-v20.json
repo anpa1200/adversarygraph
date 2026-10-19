@@ -1,0 +1,45 @@
+{
+  "name": "AdversaryGraph v20 Example Layer",
+  "versions": {
+    "attack": "20",
+    "navigator": "5.0",
+    "layer": "4.5"
+  },
+  "domain": "enterprise-attack",
+  "description": "Synthetic example; identifiers verified against the pinned official ATT&CK 20.0 Enterprise snapshot. Not an execution or detection validation.",
+  "techniques": [
+    {
+      "techniqueID": "T1566.001",
+      "score": 95,
+      "comment": "accepted: phishing attachment evidence"
+    },
+    {
+      "techniqueID": "T1059.001",
+      "score": 94,
+      "comment": "accepted: encoded PowerShell evidence"
+    },
+    {
+      "techniqueID": "T1003.001",
+      "score": 93,
+      "comment": "accepted: LSASS evidence"
+    },
+    {
+      "techniqueID": "T1021.002",
+      "score": 78,
+      "comment": "accepted: SMB file server connection"
+    },
+    {
+      "techniqueID": "T1560.001",
+      "score": 76,
+      "comment": "accepted: compressed archive evidence"
+    }
+  ],
+  "gradient": {
+    "colors": [
+      "#ffffff",
+      "#70a7ff"
+    ],
+    "minValue": 0,
+    "maxValue": 100
+  }
+}

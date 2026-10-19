@@ -16,6 +16,7 @@ class Investigation(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(30), default="active")
     domain: Mapped[str] = mapped_column(String(50), default="enterprise-attack")
+    tlp: Mapped[str] = mapped_column(String(20), default="TLP:AMBER+STRICT", server_default="TLP:AMBER+STRICT")
     actor_ids: Mapped[list] = mapped_column(JSONB, default=list)
     technique_ids: Mapped[list] = mapped_column(JSONB, default=list)
     report_ids: Mapped[list] = mapped_column(JSONB, default=list)

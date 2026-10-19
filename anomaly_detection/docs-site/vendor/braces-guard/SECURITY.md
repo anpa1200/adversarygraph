@@ -1,0 +1,7 @@
+# Locally maintained input-bound mitigation
+
+Upstream braces 3.0.3 is MIT licensed and has no fixed release for CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm. This package explicitly retains upstream source and adds fail-closed limits before every public recursive API: 4096 input characters, 64 levels, 10000 AST nodes, no cyclic child graphs. Ordinary glob expansion is preserved. Deep or unusually long build glob patterns are deliberately rejected.
+
+This is a repository-maintained mitigation, not an upstream-fixed version. Its distinct package identity avoids misrepresenting it as an official release. The source remains auditable here; audit thresholds and advisory databases are unchanged. CI executes attack-pattern regression tests plus the complete documentation build. The dependency is used only in the documentation build, not served to browser clients. Reassess and remove this local maintenance burden when a supported upstream fix is released.
+
+Residual risk: these guards mitigate the reported recursive-walker stack exhaustion; they are not a general-purpose sandbox or proof against every combinatorial brace expansion. Build glob patterns remain trusted, version-controlled configuration. Never expose these APIs to network-supplied patterns or enable unrestricted expansion of attacker-controlled strings. The current call sites are Docusaurus file selection/watch utilities in the build process. Repository maintainers own review and regression testing until an upstream release replaces this mitigation.

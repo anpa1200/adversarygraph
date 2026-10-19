@@ -29,6 +29,7 @@ async def test_file_endpoints_require_upload_permission(
             ("/api/malwaregraph/analyses", {}),
             ("/api/malwaregraph/analyses/job-1/inject-file", {}),
             ("/api/ioc/report", {}),
+            ("/api/pcap/analyze", {}),
         )
         for path, data in file_only_requests:
             response = await client.post(path, data=data, files=upload)

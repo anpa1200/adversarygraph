@@ -92,7 +92,7 @@ def test_first_formal_revision_and_operator_config_are_present():
     assert "uq_workflow_run_cancel_request" in contract_migration
     assert "CREATE OR REPLACE FUNCTION ag_guard_outbox_delivery_authority()" in contract_migration
     assert "CREATE OR REPLACE FUNCTION ag_align_outbox_message_delivery_time()" in contract_migration
-    assert REQUIRED_SCHEMA_REVISION == "20260824_0004"
+    assert REQUIRED_SCHEMA_REVISION == "20261014_0005"
 
 
 def test_autogenerate_scope_never_treats_legacy_tables_as_owned():
@@ -346,3 +346,11 @@ def test_authority_schema_fingerprint_is_order_independent_and_definition_exact(
     assert _authority_schema_fingerprint(facts + [facts[0]]) != expected
     assert _authority_schema_fingerprint([{**facts[0], "definition": "CHECK (b >= 0)"}, facts[1]]) != expected
     assert _normalize_catalog_definition("one  \r\n two\r\n") == "one\n two"
+
+
+def test_startup_revision_matches_alembic_head():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    backend_root = Path(__file__).resolve().parents[2]
+    scripts = ScriptDirectory.from_config(Config(str(backend_root / "alembic.ini")))
+    assert scripts.get_heads() == [REQUIRED_SCHEMA_REVISION]

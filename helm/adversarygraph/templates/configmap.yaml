@@ -29,6 +29,9 @@
   {{- if and .Values.scannerMcp.enabled (empty .Values.scannerMcp.image.digest) -}}
     {{- fail "productionMode requires a reviewed scanner MCP image digest when scanner MCP is enabled" -}}
   {{- end -}}
+  {{- if and .Values.pcapAnalyzer.enabled (empty .Values.pcapAnalyzer.image.digest) -}}
+    {{- fail "productionMode requires a reviewed PCAP analyzer image digest when PCAP analysis is enabled" -}}
+  {{- end -}}
   {{- if and .Values.postgresql.enabled (or (empty .Values.postgresql.image.digest) (not (contains "adversarygraph-postgres" .Values.postgresql.image.repository))) -}}
     {{- fail "productionMode requires the remediated adversarygraph-postgres repository and reviewed digest" -}}
   {{- end -}}
@@ -94,6 +97,12 @@ data:
   ASSET_SCANNER_ENABLED: {{ .Values.scannerMcp.enabled | quote }}
   ASSET_SCANNER_MCP_URL: http://{{ include "adversarygraph.fullname" . }}-scanner-mcp:{{ .Values.scannerMcp.service.port }}/mcp
   ASSET_SCANNER_MCP_TIMEOUT_SECONDS: {{ .Values.config.assetScannerMcpTimeoutSeconds | quote }}
+  PCAP_ANALYZER_ENABLED: {{ .Values.pcapAnalyzer.enabled | quote }}
+  PCAP_ANALYZER_URL: http://{{ include "adversarygraph.fullname" . }}-pcap-analyzer:{{ .Values.pcapAnalyzer.service.port }}
+  PCAP_ANALYZER_TIMEOUT_SECONDS: {{ .Values.pcapAnalyzer.apiTimeoutSeconds | quote }}
+  PCAP_MAX_UPLOAD_BYTES: {{ .Values.pcapAnalyzer.maxUploadBytes | quote }}
+  PCAP_STORAGE_DIR: /app/data/pcap
+  PCAP_RETAIN_UPLOADS: {{ .Values.pcapAnalyzer.retainUploads | quote }}
   ATTCK_DATA_DIR: /app/data/attck
   LOG_DIR: /app/logs
   MALWAREGRAPH_URL: http://{{ include "adversarygraph.fullname" . }}-malwaregraph:8100

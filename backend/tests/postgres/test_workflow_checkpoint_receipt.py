@@ -22,6 +22,7 @@ import pytest_asyncio
 from sqlalchemy import event, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.migration_policy import REQUIRED_SCHEMA_REVISION
 from app.core.database import async_session_factory, engine
 from app.models.research_workflow import (
     OutboxDeliveryAttempt,
@@ -919,4 +920,4 @@ async def test_direct_workflow_checkpoint_is_fenced_before_sql():
 async def test_database_is_on_exact_contract_phase_revision():
     async with async_session_factory() as db:
         heads = tuple((await db.scalars(text("SELECT version_num FROM alembic_version ORDER BY version_num"))).all())
-    assert heads == ("20260824_0004",)
+    assert heads == (REQUIRED_SCHEMA_REVISION,)

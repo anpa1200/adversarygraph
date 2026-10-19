@@ -14,8 +14,26 @@ spec:
   resources:
     requests:
       storage: {{ .Values.postgresql.storageSize | quote }}
----
 {{- end }}
+{{- if .Values.pcapAnalyzer.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adversarygraph.fullname" . }}-pcap-data
+  labels:
+    {{- include "adversarygraph.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.pcapData.accessModes | nindent 4 }}
+  {{- if .Values.persistence.pcapData.storageClassName }}
+  storageClassName: {{ .Values.persistence.pcapData.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.pcapDataSize | quote }}
+{{- end }}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -47,7 +65,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.logsSize | quote }}
-{{- if .Values.malwaregraph.enabled }}
+{{ if .Values.malwaregraph.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

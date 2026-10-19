@@ -62,6 +62,7 @@ class AnalysisResult(Base):
     apt_matches: Mapped[list] = mapped_column(JSONB, default=list)
     summary: Mapped[str] = mapped_column(Text, default="")
     raw_response: Mapped[str] = mapped_column(Text, default="")
+    investigation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

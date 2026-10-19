@@ -1,10 +1,12 @@
-# Root-context images copy only the lab fixtures, PostgreSQL wrapper, Atlas
-# documentation source, and the three Atlas build helpers. Keep the rest of
+# Root-context images copy only the lab fixtures, PostgreSQL wrapper, PCAP
+# analyzer, Atlas documentation source, and the three Atlas build helpers. Keep the rest of
 # the repository (including local data, credentials, caches, and Git history)
 # out of the Docker build context.
 **
 !docker
 !docker/**
+!pcap_analyzer
+!pcap_analyzer/**
 !anomaly_detection
 !anomaly_detection/docs-site
 !anomaly_detection/docs-site/**

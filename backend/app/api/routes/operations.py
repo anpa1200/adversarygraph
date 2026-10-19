@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import Field
+from pydantic import Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from app.services.auth import TeamUser, analyst, audit, require_permission
 router = APIRouter(prefix="/operations", tags=["Operational Intelligence"])
 manage_operations_intel = require_permission("manage_intel")
 manage_operations_detections = require_permission("manage_detections")
+run_operations_analysis = require_permission("run_analysis")
 
 
 _REVIEW_GATE_DEFERRED = {
@@ -35,6 +37,18 @@ class InvestigationBody(BoundedPayloadModel):
     evidence_nodes: list[dict] = Field(default_factory=list, max_length=1000)
     evidence_edges: list[dict] = Field(default_factory=list, max_length=1000)
     timeline: list[dict] = Field(default_factory=list, max_length=1000)
+
+
+class InvestigationStoryBody(BoundedPayloadModel):
+    report_id: str = Field(..., min_length=1, max_length=200)
+    provider: str = Field("local", max_length=40)
+    model: str | None = Field(None, max_length=100)
+    cloud_processing_acknowledged: bool = False
+
+
+class InvestigationMarkingBody(BoundedPayloadModel):
+    tlp: Literal["TLP:CLEAR", "TLP:GREEN", "TLP:AMBER", "TLP:AMBER+STRICT", "TLP:RED"]
+    reason: str = Field(min_length=12, max_length=1000)
 
 
 class IntakeBody(BoundedPayloadModel):
@@ -105,7 +119,7 @@ async def investigations(
 
 @router.post("/investigations", status_code=201)
 async def create_investigation(body: InvestigationBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
-    row = Investigation(**body.model_dump())
+    row = Investigation(**body.model_dump(), tlp="TLP:AMBER+STRICT")
     db.add(row); await db.flush()
     await audit(db, user, "operations.create_investigation", "investigation", str(row.id), {"name": row.name})
     await db.commit(); await db.refresh(row)
@@ -121,11 +135,124 @@ async def update_investigation(item_id: str, body: InvestigationBody, db: AsyncS
     return out(row)
 
 
+@router.patch("/investigations/{item_id}/marking", dependencies=[Depends(require_permission("export_data"))])
+async def mark_investigation(item_id: str, body: InvestigationMarkingBody, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
+    row = await get_or_404(db, Investigation, item_id)
+    previous = row.tlp or "TLP:AMBER+STRICT"
+    row.tlp = body.tlp
+    await audit(db, user, "operations.investigation.marking", "investigation", item_id,
+                {"previous": previous, "tlp": body.tlp, "reason": body.reason,
+                 "scope": "Workspace only; linked source restrictions remain authoritative"})
+    await db.commit(); await db.refresh(row)
+    return out(row)
+
+
 @router.delete("/investigations/{item_id}", status_code=204)
 async def delete_investigation(item_id: str, db: AsyncSession = Depends(get_session), user: TeamUser = Depends(manage_operations_intel)):
     row = await get_or_404(db, Investigation, item_id)
     await audit(db, user, "operations.delete_investigation", "investigation", item_id)
     await db.delete(row); await db.commit()
+
+
+@router.get("/investigations/{item_id}/summary/preflight")
+async def summary_preflight(item_id: str, report_id: str = Query(min_length=1, max_length=200),
+                            db: AsyncSession = Depends(get_session), _: TeamUser = Depends(manage_operations_intel)):
+    from app.services import investigation_story, threat_hunting_ai
+    row = await get_or_404(db, Investigation, item_id)
+    pack = await investigation_story.build_pack(db, row, report_id)
+    providers = threat_hunting_ai.provider_catalog()
+    for provider in providers:
+        if provider["remote"] and pack["effective_tlp"] in {"TLP:AMBER+STRICT", "TLP:RED"}:
+            provider.update(available=False, status="blocked_by_classification", reason="Workspace or linked source prohibits cloud disclosure")
+    return {"effective_tlp": pack["effective_tlp"], "coverage": pack["coverage"],
+            "source_sha256": pack["source_sha256"], "providers": providers,
+            "scope": "No model call, provider lookup, or source reclassification was performed"}
+
+
+@router.post("/investigations/{item_id}/summary", dependencies=[Depends(run_operations_analysis)])
+async def summarize_investigation(
+    item_id: str,
+    body: InvestigationStoryBody,
+    db: AsyncSession = Depends(get_session),
+    user: TeamUser = Depends(manage_operations_intel),
+):
+    from app.services import investigation_story, threat_hunting_ai
+
+    row = await get_or_404(db, Investigation, item_id)
+    if len(row.evidence_nodes or []) >= 1000:
+        raise HTTPException(409, "Investigation has reached its evidence-node limit")
+    pack = await investigation_story.build_pack(db, row, body.report_id)
+    adapter = threat_hunting_ai.create_adapter(
+        body.provider, body.model, effective_tlp=pack["effective_tlp"],
+        cloud_processing_acknowledged=body.cloud_processing_acknowledged,
+    )
+    # Unknown workspace classification defaults to AMBER+STRICT. The adapter
+    # rejects remote egress before this point, even with client acknowledgement.
+    await audit(db, user, "operations.summary.attempt", "investigation", item_id, {
+        "report_id": body.report_id, "source_sha256": pack["source_sha256"],
+        "provider": adapter.provider, "model": adapter.model,
+    })
+    await db.commit()
+    try:
+        summary = await investigation_story.generate_story(pack, adapter)
+    except threat_hunting_ai.AIProviderTimeoutError:
+        raise HTTPException(504, "Summary provider timed out. No summary was saved.")
+    except threat_hunting_ai.AIProviderCallError as exc:
+        await audit(db, user, "operations.summary.provider_failed", "investigation", item_id,
+                    {"provider": adapter.provider, "model": adapter.model, "category": exc.category, "http_status": exc.status_code, "rate_details": exc.rate_details,
+                     "prior_attempts": getattr(exc, "prior_attempts", [])})
+        await db.commit()
+        raise HTTPException(503 if exc.category in {"rate_limited", "quota_exhausted"} else 502,
+                            f"Summary provider failed ({exc.category}). Quota details: {exc.rate_details}. No summary was saved.")
+    except ValueError as exc:
+        code = getattr(exc, "code", investigation_story.validation_error_code(exc))
+        await audit(db, user, "operations.summary.validation_failed", "investigation", item_id,
+                    {"provider": adapter.provider, "model": adapter.model, "code": code,
+                     "attempts": getattr(exc, "attempts", [])})
+        await db.commit()
+        raise HTTPException(502, f"Summary failed evidence or structure validation ({code}). No summary was saved; the original report is unchanged.")
+    # Do not hold a transaction/row lock across a slow provider call. Re-read
+    # after generation, then append under lock without replacing other work.
+    current = await db.scalar(select(Investigation).where(Investigation.id == uuid.UUID(item_id))
+                              .with_for_update().execution_options(populate_existing=True))
+    if current is None:
+        raise HTTPException(409, "Investigation was removed while its summary was generated")
+    current_pack = await investigation_story.build_pack(db, current, body.report_id)
+    if current_pack["source_sha256"] != pack["source_sha256"]:
+        raise HTTPException(409, "Investigation changed while summarizing. Generate a new summary from the updated evidence.")
+    nodes = [*(current.evidence_nodes or []), summary]
+    # Use the same aggregate limits as ordinary investigation writes.
+    try:
+        InvestigationBody(**{**{key: getattr(current, key) for key in InvestigationBody.model_fields}, "evidence_nodes": nodes})
+    except ValidationError:
+        raise HTTPException(409, "Summary would exceed investigation storage limits. Split the investigation first.")
+    current.evidence_nodes = nodes
+    await audit(db, user, "operations.summary.created", "investigation", item_id, {
+        "summary_id": summary["id"], "source_sha256": summary["source_sha256"],
+        "report_id": body.report_id, "provider": adapter.provider, "model": adapter.model,
+    })
+    await db.commit()
+    return summary
+
+
+@router.get("/investigations/{item_id}/summaries/{summary_id}")
+async def investigation_summary_snapshot(
+    item_id: str, summary_id: str,
+    db: AsyncSession = Depends(get_session), _: TeamUser = Depends(analyst),
+):
+    from app.services.investigation_story import build_pack
+
+    row = await get_or_404(db, Investigation, item_id)
+    nodes = [n for n in row.evidence_nodes or [] if n.get("type") == "investigation-summary" and n.get("id") == summary_id]
+    if len(nodes) != 1:
+        raise HTTPException(404, "Summary not found")
+    summary = nodes[0]
+    try:
+        pack = await build_pack(db, row, str(summary.get("report_id", "")))
+        stale = pack["source_sha256"] != summary.get("source_sha256")
+    except HTTPException:
+        stale = True
+    return {"summary": summary, "stale": stale, "status": "source-changed" if stale else "snapshot-current"}
 
 
 @router.get("/intake")

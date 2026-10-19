@@ -11,17 +11,17 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.version import APP_USER_AGENT
-from app.models.attack import AptGroup, Technique
+from app.models.attack import AptGroup, AttackVersion, Technique
 from app.models.ioc import IOCActorLink, IOCIndicator
 from app.services.ai.factory import get_adapter
 from app.services.taxonomy import TAXONOMY_SYSTEM_INSTRUCTIONS
-from app.services.virustotal import IndicatorTarget, classify_indicator, lookup_virustotal_ioc
+from app.services.virustotal import IndicatorTarget, VirusTotalNotFoundError, classify_indicator, lookup_virustotal_ioc
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ class InvestigationOptions:
 
 
 PASSIVE_ENRICHMENT_SOURCES = frozenset({
+    "threatfox",
+    "malwarebazaar",
     "local-db",
     "virustotal",
     "otx",
@@ -96,13 +98,16 @@ async def enrich_ioc_sources(
         raise ValueError("Artifact is empty")
     target = _classify_investigation_artifact(value)
     normalized = target.value
-    selected = list(dict.fromkeys(sources or sorted(PASSIVE_ENRICHMENT_SOURCES)))
+    # Preserve the pre-existing default set for other platform callers.
+    selected = list(dict.fromkeys(sources or sorted(PASSIVE_ENRICHMENT_SOURCES - {"threatfox", "malwarebazaar"})))
     unknown = sorted(set(selected) - PASSIVE_ENRICHMENT_SOURCES)
     if unknown:
         raise ValueError(f"Unsupported passive enrichment source(s): {', '.join(unknown)}")
     options = options or InvestigationOptions()
 
     runners = {
+        "threatfox": lambda: _threatfox_enrichment(normalized, target.type),
+        "malwarebazaar": lambda: _malwarebazaar_enrichment(normalized),
         "local-db": lambda: _local_enrichment(session, normalized, target.type, options.domain),
         "virustotal": lambda: _virustotal_enrichment(session, normalized, options.domain, target.type),
         "otx": lambda: _otx_enrichment(normalized, target.type),
@@ -186,6 +191,8 @@ async def investigate_ioc(
 
     pivot_results = [*tier2_results, *tier3_results]
     techniques = await _resolve_techniques(session, _collect_attack_ids(source_results, pivot_results), options.domain)
+    for technique in techniques:
+        technique["evidence_sources"] = _technique_evidence_sources(technique["attack_id"], source_results, pivot_results)
     actors = await _resolve_actors(session, source_results, pivot_results, options.domain)
     score = _suspicion_score(source_results, graph_nodes)
     for node in graph_nodes.values():
@@ -257,14 +264,31 @@ async def _expand_local_tier(
 
 async def _safe_source(name: str, fn) -> dict[str, Any]:
     try:
-        return await fn()
-    except Exception:
-        logger.warning("IOC enrichment source failed source=%s", name, exc_info=True)
+        result = await fn()
+        raw = result.get("raw") or {}
+        if isinstance(raw, dict) and raw.get("query_status") in {"no_result", "hash_not_found", "not_found"}:
+            result["status"] = "not_found"
+        return result
+    except Exception as exc:
+        # Provider URLs may contain query-string credentials. Never persist or
+        # log an exception traceback/request URL from this boundary.
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        if status == 404 or isinstance(exc, VirusTotalNotFoundError):
+            return {"source": name, "status": "not_found", "http_status": 404,
+                    "summary": f"{name} has no record for this lookup.", "relationships": [],
+                    "technique_ids": [], "actors": [], "raw": {"query_status": "not_found"}}
+        category = ('rate_limited' if status == 429 else 'authentication' if status in {401, 403}
+                    else 'timeout' if isinstance(exc, httpx.TimeoutException)
+                    else 'authentication' if isinstance(exc, RuntimeError) and 'rejected' in str(exc) and 'credentials' in str(exc)
+                    else 'provider_error')
+        logger.warning("IOC enrichment source failed source=%s category=%s exception_type=%s", name, category, type(exc).__name__)
         msg = f"{name} enrichment failed. See server logs."
         return {
             "source": name,
             "status": "error",
             "error": msg,
+            "error_category": category,
+            "http_status": status,
             "summary": msg,
             "relationships": [],
             "technique_ids": [],
@@ -275,23 +299,16 @@ async def _safe_source(name: str, fn) -> dict[str, Any]:
 
 async def _local_enrichment(session: AsyncSession, value: str, artifact_type: str, domain: str, tier: int = 1) -> dict[str, Any]:
     term = value.strip()
-    pattern = f"%{term}%"
+    expected_key = _exact_indicator_key(artifact_type, term)
     rows = await session.execute(
         select(IOCIndicator)
         .options(selectinload(IOCIndicator.actor_links))
-        .where(
-            or_(
-                IOCIndicator.value == term,
-                IOCIndicator.value.ilike(pattern),
-                IOCIndicator.description.ilike(pattern),
-                IOCIndicator.malware_family.ilike(pattern),
-                IOCIndicator.campaign.ilike(pattern),
-            )
-        )
+        .where(func.lower(IOCIndicator.value) == expected_key[1].lower())
         .order_by(IOCIndicator.updated_at.desc())
         .limit(30)
     )
-    indicators = list(rows.scalars().all())
+    indicators = [row for row in rows.scalars().all()
+                  if _exact_indicator_key(row.indicator_type, row.value) == expected_key]
     relationships: list[dict[str, Any]] = []
     technique_ids: list[str] = []
     actors: list[dict[str, Any]] = []
@@ -316,8 +333,29 @@ async def _local_enrichment(session: AsyncSession, value: str, artifact_type: st
         "relationships": relationships,
         "technique_ids": _dedupe(technique_ids),
         "actors": _dedupe_actors(actors),
-        "raw": {"matched_records": len(indicators), "artifact_type": artifact_type, "domain": domain},
+        "raw": {"matched_records": len(indicators), "artifact_type": artifact_type, "domain": domain,
+                "match_basis": "exact-normalized-type-and-value", "record_limit": 30},
     }
+
+
+def _exact_indicator_key(kind: str, value: str) -> tuple[str, str]:
+    kind = {'ip': 'ipv4', 'ip-dst': 'ipv4', 'ip-src': 'ipv4', 'domain-name': 'domain', 'hostname': 'domain'}.get(kind, kind)
+    if not kind or kind == 'hash':
+        if HASH_RE.fullmatch(value):
+            kind = {32:'md5', 40:'sha1', 64:'sha256'}[len(value)]
+        elif not kind:
+            kind = _classify_investigation_artifact(value).type
+    if kind in {'ip', 'ipv4', 'ipv6'}:
+        try:
+            address = ipaddress.ip_address(value)
+            return ('ipv4' if address.version == 4 else 'ipv6', str(address))
+        except ValueError:
+            pass
+    if kind == 'domain':
+        value = value.lower().rstrip('.')
+    elif kind in {'md5','sha1','sha256', *NETWORK_FINGERPRINT_TYPES}:
+        value = value.lower()
+    return kind, value
 
 
 async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str, artifact_type: str) -> dict[str, Any]:
@@ -348,6 +386,12 @@ async def _virustotal_enrichment(session: AsyncSession, value: str, domain: str,
 async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     if not settings.threatfox_auth_key:
         return _not_configured("threatfox", "THREATFOX_AUTH_KEY")
+    # ThreatFox's search_hash contract supports MD5 and SHA-256, not SHA-1.
+    # https://threatfox.abuse.ch/api/#search-hash
+    if artifact_type == "hash" and not re.fullmatch(r"[a-fA-F0-9]{32}|[a-fA-F0-9]{64}", value):
+        return {"source": "threatfox", "status": "skipped",
+                "summary": "ThreatFox hash lookup supports MD5 and SHA-256; this hash type is unsupported.",
+                "relationships": [], "technique_ids": [], "actors": [], "raw": {}}
     query = "search_ioc" if artifact_type != "hash" else "search_hash"
     key = "search_term" if query == "search_ioc" else "hash"
     payload = await _post_json(
@@ -355,6 +399,7 @@ async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any
         json_body={"query": query, key: value},
         headers={"Auth-Key": settings.threatfox_auth_key, "Accept": "application/json", "User-Agent": APP_USER_AGENT},
     )
+    _validate_query_status(payload, {"ok", "no_result"})
     rows = payload.get("data") or []
     relationships: list[dict[str, Any]] = []
     technique_ids: list[str] = []
@@ -368,7 +413,7 @@ async def _threatfox_enrichment(value: str, artifact_type: str) -> dict[str, Any
         "relationships": relationships,
         "technique_ids": _dedupe([item.upper() for item in technique_ids]),
         "actors": [],
-        "raw": _compact_raw(payload),
+        "raw": _registry_evidence(payload),
     }
 
 
@@ -378,7 +423,8 @@ async def _malwarebazaar_enrichment(value: str) -> dict[str, Any]:
     mb_headers: dict[str, str] = {"Accept": "application/json", "User-Agent": APP_USER_AGENT}
     if settings.threatfox_auth_key:
         mb_headers["Auth-Key"] = settings.threatfox_auth_key
-    payload = await _post_json("https://mb-api.abuse.ch/api/v1/", json_body={"query": "get_info", "hash": value}, headers=mb_headers)
+    payload = await _post_form("https://mb-api.abuse.ch/api/v1/", data={"query": "get_info", "hash": value}, headers=mb_headers)
+    _validate_query_status(payload, {"ok", "hash_not_found"})
     rows = payload.get("data") or []
     relationships: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
@@ -390,15 +436,26 @@ async def _malwarebazaar_enrichment(value: str) -> dict[str, Any]:
         "relationships": relationships,
         "technique_ids": _dedupe([match.upper() for match in ATTACK_ID_RE.findall(json.dumps(payload, default=str))]),
         "actors": [],
-        "raw": _compact_raw(payload),
+        "raw": _registry_evidence(payload),
     }
+
+
+def _registry_evidence(payload: dict) -> dict:
+    """Keep direct typed verdict fields even when verbose provider JSON is compacted."""
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return _compact_raw(payload)
+    keys = {"id", "ioc", "ioc_type", "sha256_hash", "sha1_hash", "md5_hash", "malware", "signature", "confidence_level", "first_seen", "last_seen", "reference"}
+    compact = [{k: (v[:1000] if isinstance(v, str) else v) for k, v in row.items()
+                if k in keys and isinstance(v, (str, int, float, bool, type(None)))} for row in rows[:50] if isinstance(row, dict)]
+    return {**_compact_raw(payload), "data": compact, "records_total": len(rows), "records_truncated": len(rows) > 50}
 
 
 async def _otx_enrichment(value: str, artifact_type: str) -> dict[str, Any]:
     if not settings.otx_api_key:
         return _not_configured("otx", "OTX_API_KEY")
     section = {
-        "ip": "IPv4",
+        "ip": "IPv6" if artifact_type == "ip" and ipaddress.ip_address(value).version == 6 else "IPv4",
         "domain": "domain",
         "url": "url",
         "hash": "file",
@@ -523,7 +580,9 @@ async def _urlscan_activity_analysis(
 def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     technique_ids: list[str] = []
-    raw_text = json.dumps({"value": value, "rows": rows, "payload": payload}, default=str).lower()
+    # Input hashes and echoed search queries are not scan observations. In
+    # particular a hex hash containing "c2" must not produce a C2 finding.
+    raw_text = json.dumps(rows, default=str).lower()
     verdict_hits = 0
     redirect_hosts: set[str] = set()
     submitted_hosts: set[str] = set()
@@ -534,7 +593,10 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
         task = row.get("task") or {}
         verdicts = row.get("verdicts") or {}
         stats = row.get("stats") or {}
-        if any(str(verdicts.get(key, {})).lower().find("malicious") >= 0 for key in ("overall", "urlscan", "engines", "community")):
+        # A field named "malicious" with value false is not a positive verdict.
+        # Strings, scores and keyword matches must not be promoted to booleans.
+        if any(isinstance(verdicts.get(key), dict) and verdicts[key].get("malicious") is True
+               for key in ("overall", "urlscan", "engines", "community")):
             verdict_hits += 1
         page_url = str(page.get("url") or "")
         task_url = str(task.get("url") or "")
@@ -562,7 +624,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
             "evidence": f"{verdict_hits} urlscan result(s) contain malicious verdict context",
             "rationale": "A malicious verdict is a source-backed signal requiring analyst review.",
         })
-        technique_ids.append("T1204")
+        # A reputation verdict does not prove a victim executed a file/link.
     if redirect_hosts - submitted_hosts:
         findings.append({
             "severity": "medium",
@@ -570,8 +632,8 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
             "evidence": f"observed page hosts differ from submitted hosts: {', '.join(sorted((redirect_hosts - submitted_hosts))[:5])}",
             "rationale": "Domain changes after submission may indicate redirect chains, compromised content, or external payload hosting.",
         })
-        technique_ids.append("T1189")
-    for term, pattern, technique in [
+        # Cross-host navigation alone does not establish drive-by compromise.
+    for term, pattern, _technique in [
         ("phish", "phishing-themed content", "T1566"),
         ("credential", "credential collection language", "T1056"),
         ("login", "login page or credential prompt", "T1056"),
@@ -586,7 +648,7 @@ def _urlscan_heuristic_analysis(value: str, rows: list[dict[str, Any]], payload:
                 "evidence": f"urlscan metadata contains '{term}'",
                 "rationale": "Keyword evidence is weak alone, but useful for triage when combined with verdicts and pivots.",
             })
-            technique_ids.append(technique)
+            # Preserve metadata as a triage lead, not a behavioral ATT&CK mapping.
 
     findings = _dedupe_findings(findings)
     summary = f"urlscan activity analysis found {len(findings)} suspicious pattern(s)." if findings else "urlscan activity analysis found no obvious suspicious pattern."
@@ -801,6 +863,20 @@ async def _post_json(url: str, *, json_body: dict[str, Any], headers: dict[str, 
         return response.json()
 
 
+async def _post_form(url: str, *, data: dict[str, str], headers: dict[str, str] | None = None) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.post(url, data=data, headers=headers or {})
+        response.raise_for_status()
+        return response.json()
+
+
+def _validate_query_status(payload: dict[str, Any], allowed: set[str]) -> None:
+    # abuse.ch can return application errors in HTTP 200 responses. Never
+    # report an invalid request as a successful zero-hit intelligence lookup.
+    if payload.get("query_status") not in allowed:
+        raise RuntimeError("Provider rejected the lookup request")
+
+
 def _credential_error_detail(url: str, response: httpx.Response) -> str:
     host = urlparse(url).netloc
     try:
@@ -825,7 +901,9 @@ async def _resolve_techniques(session: AsyncSession, attack_ids: list[str], doma
     rows = await session.execute(
         select(Technique)
         .options(selectinload(Technique.tactics))
-        .where(Technique.attack_id.in_(ids))
+        .join(AttackVersion)
+        .where(Technique.attack_id.in_(ids), Technique.domain == domain,
+               AttackVersion.is_latest.is_(True), Technique.is_deprecated.is_(False))
     )
     by_id = {tech.attack_id: tech for tech in rows.scalars().all()}
     output = []
@@ -859,10 +937,10 @@ async def _resolve_actors(session: AsyncSession, source_results: list[dict[str, 
         if rel.get("target_type") in {"tag", "report", "malware", "name"}
     ).lower()
     if actor_text:
-        rows = await session.execute(select(AptGroup).where(AptGroup.domain == domain).limit(300))
+        rows = await session.execute(select(AptGroup).join(AttackVersion).where(AptGroup.domain == domain, AttackVersion.is_latest.is_(True)).limit(300))
         for group in rows.scalars().all():
             terms = [group.name, *[str(alias) for alias in group.aliases or []]]
-            matched = [term for term in terms if len(term) >= 4 and term.lower() in actor_text]
+            matched = [term for term in terms if len(term) >= 4 and re.search(r'(?<!\w)' + re.escape(term.lower()) + r'(?!\w)', actor_text)]
             if matched:
                 actors.append({
                     "attack_id": group.attack_id,
@@ -870,6 +948,7 @@ async def _resolve_actors(session: AsyncSession, source_results: list[dict[str, 
                     "source": "local-actor-alias-match",
                     "confidence": 55,
                     "evidence": ", ".join(matched[:5]),
+                    "status": "alias-mention-investigation-lead-not-attribution",
                 })
     return _dedupe_actors(actors)
 
@@ -1085,6 +1164,8 @@ def _merge_graph(nodes: dict[str, dict[str, Any]], edges: list[dict[str, Any]], 
             continue
         tier = int(rel.get("tier") or default_tier)
         source_type = _infer_graph_source_type(source)
+        source = _exact_indicator_key(source_type, source)[1]
+        target = _exact_indicator_key(target_type, target)[1]
         suspicious = _relationship_suspicious_score(result, rel)
         _add_node(nodes, "artifact", source, source_type, tier=max(0, tier - 1), source=result.get("source", "unknown"), suspicious=suspicious)
         _add_node(nodes, "relationship", target, target_type, tier=tier, source=str(rel.get("evidence_source") or result.get("source") or "unknown"), suspicious=suspicious)
@@ -1103,7 +1184,10 @@ def _merge_graph(nodes: dict[str, dict[str, Any]], edges: list[dict[str, Any]], 
 def _add_node(nodes: dict[str, dict[str, Any]], kind: str, value: str, node_type: str, *, tier: int, source: str, suspicious: int = -1) -> None:
     if not value:
         return
-    key = f"{node_type}:{value}".lower()
+    # DNS names and hashes are case-insensitive; URL paths are not. Folding
+    # whole URLs merged distinct payload paths and left dangling graph edges.
+    value = _exact_indicator_key(node_type, value)[1]
+    key = f"{node_type}:{value}"
     existing = nodes.get(key)
     if existing:
         existing["tier"] = min(existing["tier"], tier)
@@ -1236,6 +1320,15 @@ def _collect_attack_ids(source_results: list[dict[str, Any]], tier2_results: lis
     return _dedupe([item.upper() for item in ids])
 
 
+def _technique_evidence_sources(attack_id: str, direct: list[dict[str, Any]], pivots: list[dict[str, Any]]) -> list[str]:
+    return _dedupe([
+        f"{result.get('source', 'unknown')} ({scope}; provider-reported lead, not packet execution proof)"
+        for scope, results in (("submitted indicator", direct), ("related local pivot", pivots))
+        for result in results
+        if attack_id in _collect_attack_ids([result], [])
+    ])
+
+
 def _suspicion_score(source_results: list[dict[str, Any]], nodes: dict[str, dict[str, Any]]) -> int:
     score = 0
     for result in source_results:
@@ -1263,7 +1356,7 @@ def _suspicion_score(source_results: list[dict[str, Any]], nodes: dict[str, dict
                 elif severity:
                     score += 3
         for term in ("c2", "botnet", "ransomware", "trojan", "stealer", "backdoor"):
-            if term in raw_text:
+            if re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", raw_text):
                 score += 8
         if "greynoise" == result.get("source") and "benign" in raw_text:
             score -= 15

@@ -29,12 +29,19 @@ _BLUE  = (59,  130, 246)
 
 
 class _Report(FPDF):
+    def normalize_text(self, text):
+        # Core PDF fonts cannot encode arbitrary packet/provider text. Preserve
+        # unsupported code points as explicit escapes instead of crashing or
+        # silently dropping evidence. JSON/Markdown retain the original Unicode.
+        text = str(text).encode("latin-1", "backslashreplace").decode("latin-1")
+        return super().normalize_text(text)
+
     def header(self):
         if self.page_no() == 1:
             return
         self.set_font("Helvetica", "B", 8)
         self.set_text_color(*_RED)
-        self.cell(0, 7, "AdversaryGraph - Threat Intelligence Report", align="R")
+        self.cell(0, 7, "AdversaryGraph - Threat Intelligence Report", align="R", new_x="LMARGIN", new_y="NEXT")
         self.ln(1)
         self.set_draw_color(*_RED)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -84,7 +91,49 @@ def generate_analysis_report(data: dict[str, Any]) -> bytes:
     if tactic_data:
         _tactic_coverage(pdf, tactic_data)
 
+    if data.get("packet_evidence_report"):
+        _packet_evidence(pdf, data["packet_evidence_report"])
+
+    if data.get("investigation"):
+        _investigation_appendix(pdf, data["investigation"])
+
     return bytes(pdf.output())
+
+
+def _investigation_appendix(pdf: _Report, investigation: dict) -> None:
+    """Advisory assessment stays separate from accepted/promoted intelligence."""
+    pdf.add_page()
+    _heading(pdf, "CTI Investigation - Draft Appendix")
+    pdf.set_font("Helvetica", "", 9)
+    lines = [
+        "AI-generated research and observable candidates. Analyst validation is required.",
+        f"Investigation status: {investigation.get('status', 'unknown')}",
+        f"Marking: {investigation.get('tlp', 'TLP:AMBER+STRICT')}",
+        "This appendix does not grant promotion, attribution, or detection approval.",
+        "",
+        *investigation.get("warnings", []),
+        "",
+        investigation.get("report") or "Technical synthesis unavailable.",
+        "",
+        "SOURCE REGISTER",
+    ]
+    for source in investigation.get("sources", []):
+        lines.extend([
+            f"[{source.get('id', '')}] {source.get('title', '')}",
+            source.get("url") or "Submitted document",
+            f"Acquired: {source.get('retrieved_at', '')}; included characters: {source.get('included_chars', 0)}",
+            f"SHA-256: {source.get('sha256', '')}",
+        ])
+    lines.extend(["", "OBSERVABLE CANDIDATES - NOT VALIDATED MALICIOUS INDICATORS"])
+    for item in investigation.get("indicators", []):
+        if item.get("role") == "reference":
+            continue
+        sources = ", ".join(sorted({e.get("source_id", "") for e in item.get("evidence", [])}))
+        lines.append(f"{item.get('indicator_type', '')}: {item.get('value', '')} [{sources}] "
+                     f"local lookup: {item.get('enrichment', {}).get('status', 'not_run')}")
+    lines.extend(["", "COVERAGE LIMITS", *investigation.get("limitations", [])])
+    for line in "\n".join(str(line) for line in lines).splitlines():
+        pdf.multi_cell(0, 4.5, line or " ", new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
 
 
 def generate_layer_report(
@@ -115,6 +164,26 @@ def generate_layer_report(
 
     _table(pdf, rows, col_widths=[22, 60, 55, 41])
     return bytes(pdf.output())
+
+
+def _packet_evidence(pdf: _Report, report: str) -> None:
+    pdf.add_page()
+    _heading(pdf, "Packet Evidence Appendix")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.multi_cell(
+        0, 5,
+        "Observed packet data and rule candidates. This appendix does not approve "
+        "ATT&CK mappings, maliciousness, or actor attribution.",
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 8)
+    # Render as plain text: packet-controlled Markdown is never interpreted.
+    for line in str(report).splitlines():
+        pdf.multi_cell(
+            0, 4, line.encode("latin-1", "backslashreplace").decode("latin-1") or " ",
+            new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+        )
 
 
 # ── Page builders ──────────────────────────────────────────────────────────────
@@ -150,11 +219,15 @@ def _cover(pdf: _Report, data: dict) -> None:
         ("Provider",  "provider"),
         ("Model",     "model"),
         ("Domain",    "domain"),
+        ("TLP",       "tlp"),
         ("Session ID","session_id"),
         ("Review state", "review_state"),
         ("Generated", None),
     ]:
         val = _now() if key is None else str(data.get(key, "—"))
+        if key == "tlp":
+            local_marking = (data.get("investigation") or {}).get("tlp")
+            val = "TLP:RED" if local_marking == "TLP:RED" else str(data.get("tlp") or local_marking or "TLP:AMBER+STRICT")
         _meta_row(pdf, label, val)
 
     if data.get("authoritative") is not True:
@@ -249,7 +322,7 @@ def _review_gate(pdf: _Report, review: dict[str, Any]) -> None:
         _heading2(pdf, "Promotion blockers")
         pdf.set_font("Helvetica", "", 9)
         for blocker in blockers[:20]:
-            pdf.multi_cell(0, 5, f"- {str(blocker)[:300]}")
+            pdf.multi_cell(0, 5, f"- {str(blocker)[:300]}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(4)
     pdf.set_font("Helvetica", "I", 8)

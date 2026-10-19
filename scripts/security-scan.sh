@@ -80,6 +80,9 @@ scanner_step pip-audit "Backend dependency audit (pip-audit)" bash -lc 'cd backe
 run_step "Scanner MCP lint (ruff)" bash -lc 'cd scanner_mcp && ruff check scanner_mcp tests'
 scanner_step bandit "Scanner MCP SAST (bandit)" bash -lc 'cd scanner_mcp && bandit -q -r scanner_mcp -x tests --severity-level medium --confidence-level medium'
 scanner_step pip-audit "Scanner MCP dependency audit (pip-audit)" bash -lc 'cd scanner_mcp && pip-audit -r requirements.txt'
+run_step "PCAP analyzer lint (ruff)" ruff check pcap_analyzer
+scanner_step bandit "PCAP analyzer SAST (bandit)" bandit -q -r pcap_analyzer -x pcap_analyzer/tests --severity-level medium --confidence-level medium
+scanner_step pip-audit "PCAP analyzer dependency audit (pip-audit)" pip-audit -r pcap_analyzer/requirements.txt
 run_step "Frontend dependency audit (npm audit)" bash -lc 'cd frontend && npm audit --audit-level=high'
 run_step "Anomaly docs image parser boundary" bash -lc 'cd anomaly_detection/docs-site && npm run test:image-size-boundary'
 run_step "Anomaly docs dependency audit (npm audit)" bash -lc 'cd anomaly_detection/docs-site && npm audit --audit-level=high'
@@ -96,22 +99,23 @@ scanner_step helm "Helm lint" helm lint helm/adversarygraph
 scanner_step helm "Helm render" bash -lc \
   'helm template adversarygraph helm/adversarygraph >/tmp/adversarygraph-security-rendered.yaml'
 scanner_step helm "Helm shared-storage render" bash -lc \
-  'helm template adversarygraph helm/adversarygraph --set "malwaregraph.accessModes={ReadWriteMany}" --set malwaregraph.storageClassName=shared-rwx --set "persistence.attckData.accessModes={ReadWriteMany}" --set persistence.attckData.storageClassName=shared-rwx --set "persistence.logs.accessModes={ReadWriteMany}" --set persistence.logs.storageClassName=shared-rwx >/tmp/adversarygraph-security-shared-storage.yaml'
+  'helm template adversarygraph helm/adversarygraph --set "malwaregraph.accessModes={ReadWriteMany}" --set malwaregraph.storageClassName=shared-rwx --set "persistence.attckData.accessModes={ReadWriteMany}" --set persistence.attckData.storageClassName=shared-rwx --set "persistence.logs.accessModes={ReadWriteMany}" --set persistence.logs.storageClassName=shared-rwx --set "persistence.pcapData.accessModes={ReadWriteMany}" --set persistence.pcapData.storageClassName=shared-rwx >/tmp/adversarygraph-security-shared-storage.yaml'
 scanner_step helm "Helm production render" bash -lc \
-  'helm template adversarygraph helm/adversarygraph --set-string config.productionMode=true --set postgresql.image.repository=example.invalid/adversarygraph-postgres --set-string postgresql.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 >/tmp/adversarygraph-security-production.yaml'
+  'helm template adversarygraph helm/adversarygraph --set-string config.productionMode=true --set postgresql.image.repository=example.invalid/adversarygraph-postgres --set-string postgresql.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string frontend.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string malwaregraph.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string scannerMcp.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 --set-string pcapAnalyzer.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 >/tmp/adversarygraph-security-production.yaml'
 
 if command -v trivy >/dev/null 2>&1; then
   scan_image postgres . docker/postgres/Dockerfile
   scan_image backend backend backend/Dockerfile
   scan_image scanner-mcp scanner_mcp scanner_mcp/Dockerfile
+  scan_image pcap-analyzer . pcap_analyzer/Dockerfile
   scan_image frontend frontend frontend/Dockerfile
   scan_image malwaregraph . docker/malwaregraph/Dockerfile
   scan_image attack-lab-web . docker/attack-lab-web/Dockerfile
   scan_image attack-lab-endpoint . docker/attack-lab-endpoint/Dockerfile
   scan_image anomaly-docs . anomaly_detection/docs-site/Dockerfile
-  scan_pinned_image redis "${REDIS_IMAGE:-redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99}"
+  scan_image redis . docker/redis/Dockerfile
   scan_pinned_image busybox-tools "${BUSYBOX_IMAGE:-busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662}"
-  scan_pinned_image anomaly-docs-nginx "${NGINX_DOCS_IMAGE:-nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46}"
+  scan_image anomaly-docs-nginx . docker/nginx/Dockerfile
 else
   printf '\n==> Container image scans\nSKIP: trivy is not installed.\n'
 fi

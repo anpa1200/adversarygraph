@@ -83,8 +83,15 @@ export function IOCInvestigation() {
   const result = rawResult?.session_id && deletedSessionIds.has(rawResult.session_id) ? null : rawResult;
   const techniqueIds = useMemo(() => result?.techniques.map(item => item.attack_id) ?? [], [result]);
   const resetIocMutation = mutation.reset;
+  const loadSavedInvestigation = loadInvestigation.mutate;
 
   useEffect(() => {
+    const sessionId = params.get('session');
+    if (sessionId) loadSavedInvestigation(sessionId);
+  }, [params, loadSavedInvestigation]);
+
+  useEffect(() => {
+    if (params.get('session')) return;
     const value = params.get('indicator')?.trim();
     if (value && value !== artifact) {
       setArtifact(value);
@@ -335,6 +342,25 @@ function PivotList({ pivots }: { pivots: PivotItem[] }) {
 
 function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IOCInvestigationResult; techniqueIds: string[]; onShowMatrix: () => void; onAddTtps: () => void }) {
   const navigate = useNavigate();
+  const sourceRef = `ioc-investigation:${result.session_id || result.artifact}`;
+  const previewNodes = result.relationships.nodes.slice(0, 120);
+  const nodeId = (id: string) => `${sourceRef}:node:${id}`;
+  const seenEdges = new Set<string>();
+  // Provider graph edges use observable values, while case graphs use node IDs.
+  // Keep only edges whose endpoints are in the bounded transferred preview.
+  const previewEdges = result.relationships.edges.flatMap((edge, index) => {
+    const source = previewNodes.find(node => node.value === edge.source);
+    const target = previewNodes.find(node => node.value === edge.target && node.type === edge.type);
+    const baseId = `${sourceRef}:edge:${source?.id}->${target?.id}:${edge.evidence_source}`;
+    const id = seenEdges.has(baseId) ? `${baseId}:evidence:${index}` : baseId;
+    seenEdges.add(baseId);
+    return source && target ? [{
+      ...edge,
+      id,
+      source: nodeId(source.id), target: nodeId(target.id), source_ref: sourceRef,
+      source_value: edge.source, target_value: edge.target,
+    }] : [];
+  }).slice(0, 200);
   return (
     <section className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
       <h3 className="text-sm font-semibold text-white">Actions</h3>
@@ -344,7 +370,9 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
             label: `IOC investigation ${result.artifact}`,
             domain: 'enterprise-attack',
             techniqueIds,
-            actorIds: result.actors.map(item => item.attack_id).filter(Boolean),
+            // Source assertions/alias matches remain reviewable leads. Adding
+            // an analytic result is not an analyst attribution decision.
+            actorIds: [],
             reportIds: result.session_id ? [result.session_id] : [],
             evidenceNodes: [
               {
@@ -358,6 +386,15 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
                 summary: result.summary,
                 source: 'ioc-investigation',
                 source_ref: `ioc-investigation:${result.session_id || result.artifact}`,
+                source_analysis_ref: result.session_id ? `/api/ioc/investigations/${result.session_id}` : undefined,
+                review_status: 'unreviewed-provider-context',
+                actor_leads: result.actors.slice(0, 50).map(actor => ({...actor, status: 'source-lead-not-attribution'})),
+                actor_lead_count: result.actors.length,
+                graph_node_count: result.relationships.nodes.length,
+                graph_edge_count: result.relationships.edges.length,
+                graph_preview_node_count: previewNodes.length,
+                graph_preview_edge_count: previewEdges.length,
+                graph_preview_truncated: previewNodes.length < result.relationships.nodes.length || previewEdges.length < result.relationships.edges.length,
                 sources: result.sources.map(source => ({ source: source.source, status: source.status, summary: source.summary })),
               },
               {
@@ -382,15 +419,14 @@ function Actions({ result, techniqueIds, onShowMatrix, onAddTtps }: { result: IO
                 evidence: item.evidence_sources?.join('; ') || result.summary,
                 references: item.evidence_sources ?? [],
               })),
-              ...result.relationships.nodes.slice(0, 120).map(node => ({
+              ...previewNodes.map(node => ({
                 ...node,
-                id: `ioc-node:${node.id}`,
+                id: nodeId(node.id),
+                source_ref: sourceRef,
+                review_status: 'unreviewed-provider-context',
               })),
             ],
-            evidenceEdges: result.relationships.edges.slice(0, 200).map(edge => ({
-              ...edge,
-              id: `ioc-edge:${edge.source}->${edge.target}:${edge.type}`,
-            })),
+            evidenceEdges: previewEdges,
             timelineEvent: `Added IOC investigation for ${result.artifact}`,
           }}
           disabled={!techniqueIds.length && !result.relationships.nodes.length}
@@ -639,9 +675,20 @@ function sourceConflicts(result: IOCInvestigationResult): ConflictItem[] {
   const ok = sources.filter(item => item.status === 'ok').map(item => item.source);
   const failed = sources.filter(item => ['error', 'failed'].includes(item.status)).map(item => item.source);
   const skipped = sources.filter(item => item.status === 'skipped').map(item => item.source);
-  const rawText = JSON.stringify(sources.map(item => ({ source: item.source, summary: item.summary, raw: item.raw }))).toLowerCase();
-  const hasBad = /malicious|ransom|phish|c2|botnet|trojan|abuse|suspicious/.test(rawText) || result.suspicion_score >= 60;
-  const hasBenign = /benign|known scanner|search engine|cdn|parking|clean/.test(rawText);
+  // Field names, negated summaries and input hashes are not positive verdicts.
+  const hasBad = sources.some(source => {
+    if (source.status !== 'ok') return false;
+    const stats = (source.raw.last_analysis_stats ?? {}) as Record<string, unknown>;
+    const abuse = (source.raw.data ?? {}) as Record<string, unknown>;
+    const activity = (source.raw.activity_analysis ?? {}) as {findings?: Array<{severity?: string}>};
+    return Number(stats.malicious ?? 0) > 0 || Number(stats.suspicious ?? 0) > 0
+      || source.raw.classification === 'malicious' || Number(abuse.abuseConfidenceScore ?? 0) > 0
+      || (activity.findings ?? []).some(finding => finding.severity === 'high');
+  });
+  const hasBenign = sources.some(source => {
+    const stats = (source.raw.last_analysis_stats ?? {}) as Record<string, unknown>;
+    return source.status === 'ok' && (source.raw.classification === 'benign' || Number(stats.harmless ?? 0) > 0);
+  });
   const conflicts: ConflictItem[] = [
     {
       label: 'Source coverage',
@@ -653,19 +700,19 @@ function sourceConflicts(result: IOCInvestigationResult): ConflictItem[] {
     conflicts.push({
       label: 'Mixed reputation',
       level: 'warning',
-      detail: 'At least one source contains suspicious/malicious wording while another contains benign/clean wording. Review source priority before conclusion.',
+      detail: 'Returned verdict data includes both flagged and harmless assessments. Review source scope and dates before conclusion.',
     });
   } else if (hasBad) {
     conflicts.push({
-      label: 'Suspicious consensus',
+      label: 'Provider review signals',
       level: result.suspicion_score >= 75 ? 'bad' : 'warning',
-      detail: `Suspicious context exists and the current score is ${result.suspicion_score}/100.`,
+      detail: `Structured provider verdicts warrant review. The heuristic score is ${result.suspicion_score}/100, not an attribution or probability.`,
     });
   } else {
     conflicts.push({
-      label: 'No strong malicious wording',
+      label: 'No positive structured verdict',
       level: 'ok',
-      detail: 'No strong malicious keyword signal was found in available source summaries.',
+      detail: 'No positive structured malicious verdict was found in available responses. This does not establish benignness.',
     });
   }
   if (failed.length) conflicts.push({ label: 'Failed sources', level: 'warning', detail: `${failed.join(', ')} did not complete. Missing sources can hide useful context.` });
@@ -701,29 +748,31 @@ function sourceReliability(source: string) {
 function collectDateStrings(value: unknown): string[] {
   const seen = new Set<string>();
   const dates: string[] = [];
-  const visit = (item: unknown) => {
+  const dateFields = new Set(['timestamp', 'time', 'date', 'created', 'modified', 'updated', 'published',
+    'created_at', 'updated_at', 'observed_at', 'first_seen', 'last_seen', 'first_seen_utc', 'last_seen_utc',
+    'first_submission_date', 'last_submission_date', 'last_analysis_date', 'last_modification_date',
+    'last_reported_at', 'lastreportedat', 'last_updated', 'last_updated_at', 'scan_date', 'scanned_at']);
+  const addDate = (epoch: number) => {
+    if (!Number.isFinite(epoch) || epoch < Date.UTC(2000, 0, 1) || epoch > Date.now() + 86_400_000) return;
+    const normalized = new Date(epoch).toISOString().slice(0, 19);
+    if (!seen.has(normalized)) { seen.add(normalized); dates.push(normalized); }
+  };
+  const visit = (item: unknown, key = '') => {
     if (dates.length > 80 || item == null) return;
-    if (typeof item === 'string') {
-      const matches = item.match(/\b20\d{2}-\d{2}-\d{2}(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d)?Z?)?\b/g) ?? [];
-      matches.forEach(match => {
-        const normalized = match.replace(' ', 'T');
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          dates.push(normalized);
-        }
-      });
+    if (typeof item === 'string' && dateFields.has(key.toLowerCase())) {
+      const normalized = item.trim().replace(/ UTC$/, 'Z').replace(' ', 'T');
+      // Provider metadata uses UTC; do not shift naive timestamps by the
+      // viewer's browser timezone. Original values remain in source evidence.
+      const utc = normalized.includes('T') && !/(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized) ? `${normalized}Z` : normalized;
+      if (/^20\d{2}-\d{2}-\d{2}(?:T.*)?$/.test(normalized)) addDate(Date.parse(utc));
       return;
     }
-    if (typeof item === 'number' && item > 946684800 && item < 4102444800) {
-      const normalized = new Date(item * 1000).toISOString().slice(0, 19);
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        dates.push(normalized);
-      }
+    if (typeof item === 'number' && dateFields.has(key.toLowerCase())) {
+      addDate(item > 100_000_000_000 ? item : item * 1000);
       return;
     }
-    if (Array.isArray(item)) item.slice(0, 80).forEach(visit);
-    else if (typeof item === 'object') Object.values(item as Record<string, unknown>).slice(0, 80).forEach(visit);
+    if (Array.isArray(item)) item.slice(0, 80).forEach(child => visit(child, key));
+    else if (typeof item === 'object') Object.entries(item as Record<string, unknown>).slice(0, 80).forEach(([field, child]) => visit(child, field));
   };
   visit(value);
   return dates;

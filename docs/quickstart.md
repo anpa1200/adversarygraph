@@ -2,10 +2,10 @@
 
 This guide starts a local AdversaryGraph Docker deployment for evaluation.
 
-The checked-out source is the `v8.0.0-beta.1` manual-testing pre-release;
-`v7.0.0` remains the latest stable release. Use only public, synthetic, or
-otherwise approved data during beta evaluation, and record unresolved tests as
-pending rather than treating successful startup as stable acceptance.
+The checked-out source is v8.1.0. Use the protected release's digest manifest
+for immutable deployment artifacts, and use public, synthetic or otherwise
+approved evaluation data. Successful startup does not certify optional external
+providers or complete deployment acceptance; see [8.1 readiness](release-readiness-v8.1.md).
 
 For the public capability walkthrough with screenshots and infographics, use
 the 1200km mirror or Medium publication:
@@ -191,17 +191,18 @@ administrator may use the one-shot
 make prod
 ```
 
-Production deployment from current-development source requires all eight
+Production deployment from current-development source requires all nine
 `ADVERSARYGRAPH_*_IMAGE` values
 from the exact release's attached `adversarygraph-images.env`. Each value is an
 immutable `repository@sha256:...` reference; `make prod` deliberately uses
 `--no-build` so the deployed artifacts remain the ones covered by the release
 scan evidence.
 
-The complete manifest now includes `ADVERSARYGRAPH_SCANNER_MCP_IMAGE`; it is not
-part of the historical `v6.0.0` artifact set and must not be inferred from a
-source tag. Do not invent digest values or transfer scan evidence from another
-build. Use the next successfully gated semantic release,
+The complete manifest now includes `ADVERSARYGRAPH_SCANNER_MCP_IMAGE` and
+`ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE`; neither is part of the historical
+`v6.0.0` artifact set and neither may be inferred from a source tag. Do not
+invent digest values or transfer scan evidence from another build. Use the
+next successfully gated semantic release,
 or retain an independently built, scanned, and pinned artifact set under an
 equivalent local release process.
 
@@ -287,7 +288,8 @@ docker compose ps
 The default checkout is a source-build stack. `docker compose pull` refreshes
 the pinned BusyBox, Redis, and Nginx runtime images and skips every buildable
 `adversarygraph-*:local-scan` target. The following `up --build` command builds
-the eight custom image families locally, including the isolated scanner MCP. It
+the nine custom image families locally, including the isolated scanner MCP and
+deterministic PCAP analyzer. It
 does not require Docker Hub
 repositories named `adversarygraph-*`.
 
@@ -299,7 +301,7 @@ logs and follow the [upgrade guide](upgrade-guide.md); never bypass it with
 `alembic stamp`.
 
 Do not point source installs at mutable GHCR `latest` tags. The historical
-`v6.0.0` release contains only five of the eight current image families and has
+`v6.0.0` release contains only five of the nine current image families and has
 no `adversarygraph-images.env` digest manifest. A prebuilt production rollout
 requires a later successfully gated release—or an independently built, scanned,
 and digest-pinned artifact set. The release workflow currently publishes

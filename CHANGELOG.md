@@ -1,8 +1,29 @@
 # Changelog
 
-## Unreleased
+## v8.1.0 - 2026-10-19
 
-No changes are recorded after the v8.0.0-beta.1 pre-release boundary.
+- Support MITRE ATT&CK v20.0 for Enterprise, Mobile and ICS while retaining
+  historical snapshots and keeping MITRE ATLAS independently versioned.
+- Exclude revoked/deprecated objects and relationships from current catalog
+  views; select an existing imported version atomically on reingestion.
+- Export the selected ATT&CK version and preserve Navigator annotations,
+  disabled entries and tactic-specific entries; validate STIX compatibility.
+- Preserve CTI investigation workflows and source-bound evidence integration.
+- Make Alembic migration chains atomic and refuse destructive downgrades when
+  investigation metadata is populated; support fresh and existing databases.
+- Update Python, frontend, documentation, scanner and MalwareGraph dependency
+  chains, migrate Tailwind 4, and rebuild patched Redis/Nginx images without
+  relaxing security gates.
+
+
+- Added isolated deterministic PCAP/PCAPNG decoding with a versioned TShark
+  manifest, canonical semantic hashes, durable content-addressed analyses,
+  normalized packet/event/flow/identity/artifact evidence, frame-bound rule
+  findings, and six-capture regression contracts.
+- Integrated packet-derived observables, object hashes, identities, ATT&CK
+  candidates, and explicitly non-attributive actor-overlap leads with IOC
+  Investigation, Investigation evidence, Navigator, linked reports, and the
+  internal-IR Review Gate.
 
 ## v8.0.0-beta.1 - 2026-08-25
 

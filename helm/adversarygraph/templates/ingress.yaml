@@ -5,6 +5,10 @@ metadata:
   name: {{ include "adversarygraph.fullname" . }}
   labels:
     {{- include "adversarygraph.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className | quote }}

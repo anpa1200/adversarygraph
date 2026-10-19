@@ -1,6 +1,6 @@
 {
-  "name": "image-size",
-  "version": "2.0.3-adversarygraph.1",
+  "name": "@adversarygraph/svg-dimensions",
+  "version": "1.0.0",
   "private": true,
   "description": "AdversaryGraph documentation-only SVG dimension reader",
   "license": "MIT",

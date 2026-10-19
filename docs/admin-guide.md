@@ -431,7 +431,7 @@ plugin; this procedure is validated on Compose 2.40.3.
 Review `CHANGELOG.md` before upgrading tagged releases.
 
 For production-like upgrades using the current architecture, check out the
-reviewed tag and load all eight
+reviewed tag and load all nine
 `ADVERSARYGRAPH_*_IMAGE` digest references from that release's
 `adversarygraph-images.env` attachment into `.env`, then deploy the prebuilt
 artifacts without rebuilding:

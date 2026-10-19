@@ -5,27 +5,28 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Candidate](https://img.shields.io/badge/candidate-v8.0.0--beta.1-orange)](VERSION)
+[![Release](https://img.shields.io/badge/release-v8.1.0-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Latest stable release: **v7.0.0**.
+Current release: **v8.1.0** (2026-10-19).
 
-Current source candidate: **v8.0.0-beta.1**. This manual-testing prerelease adds
-the deterministic Report Review Gate, durable research/workflow authority,
-transactional outbox and receipt fencing, formal Alembic migration gates,
-promotion-bound downstream evidence, and end-to-end worker/orchestrator
-integration. See the [v8 beta release notes](docs/release-notes/v8.0.0-beta.1.md),
-[release summary](docs/release-summary-v8.0.0-beta.1.md), and
-[release readiness guide](docs/release-readiness-v8.md).
+This release adds MITRE ATT&CK v20 support across Enterprise, Mobile and ICS,
+preserves historical catalogs, and carries source versions into Navigator
+exports. It also includes governed report promotion, durable research/workflow
+authority, deterministic PCAP evidence integration, investigation workflows,
+transactional outbox processing and database migration safety improvements.
+See the [8.1 release notes](docs/release-notes/v8.1.0.md),
+[release summary](docs/release-summary-v8.1.0.md) and
+[release acceptance record](docs/release-readiness-v8.1.md).
 
-The beta is not the latest stable release and is not a production-readiness
-claim. Immutable beta artifacts exist only after the protected
-`v8.0.0-beta.1` tag workflow builds, scans, publishes, and verifies the complete
-image family and attaches `adversarygraph-images.env`. After manual acceptance,
-stability fixes and a fresh full gate will produce a separate immutable
-`v8.0.0` commit and tag; the beta tag will never be moved.
+Deploy only the digest-pinned image family from the published release's
+`adversarygraph-images.env`. A source version is not proof of completed
+registry publication; the protected tag workflow builds, scans and verifies
+all nine images before creating the release. Historical beta tags remain
+immutable. Deployment-specific provider, embedding, SIEM and operational
+acceptance still requires the operator's own configuration and test inputs.
 
 ### MalwareGraph dependency security notice
 
@@ -51,6 +52,39 @@ The client now uses React Router 7, and the reviewed lockfile passes the
 required npm audit. Treat that as point-in-time release evidence and repeat the
 audit for every candidate; see [Security Policy](SECURITY.md#known-security-limitations).
 
+### MalwareGraph dependency security notice
+
+On 2026-08-08, current-development source builds began failing the
+MalwareGraph UI security gate after npm reported a high-severity denial-of-
+service issue in `nanoid` (`GHSA-2v37-7h3g-55p8`; affected versions before
+3.3.17). The same lockfile patch also pinned a PostCSS version affected by
+`GHSA-fxqj-rqcc-2cmp`. Pull request
+[#30](https://github.com/anpa1200/adversarygraph/pull/30) fixes the build by
+updating `nanoid` to 3.3.18 and PostCSS to 8.5.26 while retaining
+`npm audit --audit-level=high` as a blocking image-build check.
+
+No published tag contains the faulty lockfile patch: it was introduced after
+the latest published `v6.0.0` tag. However, the `v4.0.0` through `v6.0.0`
+source Dockerfiles resolve MalwareGraph from the moving upstream `main` branch,
+so rebuilding those tags can select dependency state that differs from the
+original release build. Existing image contents must be checked directly; tag
+history alone cannot prove whether a previously built image contains an
+affected package.
+
+For current source installations, update `main` and rebuild the MalwareGraph
+image before starting the service:
+
+```bash
+git pull --ff-only origin main
+docker compose build --no-cache malwaregraph
+docker compose up -d malwaregraph
+```
+
+Confirm the build completes the high-severity npm audit and reports `nanoid`
+3.3.18 and PostCSS 8.5.26. Two upstream moderate-severity React Router findings
+may still be reported; they are separate from this fixed high-severity build
+failure.
+
 ## What It Does
 
 AdversaryGraph helps analysts turn threat reports, IOC evidence, CVE vulnerability context, malware-analysis leads, asset inventories, and validation telemetry into reviewed ATT&CK/ATLAS mappings and detection engineering work items.
@@ -72,6 +106,10 @@ Core capabilities:
 - CVE Library with NVD and CISA KEV sync, CVSS score/CWE/CPE storage, and strict APT-TTP-IOC-CVE correlations.
 - Asset Attack Surface Mapping from CMDB, scanner, cloud, CSV, JSON, and hostname/IP inventories, with strict `namespace:value` labels for products, suppliers, dependencies, technologies, sectors, CVEs, TTPs, risk, and exposure.
 - Malware Analysis workflow backed by the isolated MalwareGraph service for static triage, strings, unpacking/deobfuscation support, debugger-style review, and AI summaries.
+- Deterministic saved-PCAP analysis through an internal-only TShark sidecar,
+  with content-addressed durable results, endpoints/flows/DNS/HTTP/TLS/identity
+  evidence, exported-object hashes, versioned frame-bound findings, and
+  governed IOC, ATT&CK, actor-overlap, investigation, and Review Gate pivots.
 - Attack Simulation for TTP-first lab scenarios, real attacked-server telemetry, SIEM forwarding, coherent AI-assisted kill-chain drills, and attack-chain graph review.
 - Evidence-to-Detection Graph for preserving the full reasoning chain from evidence to claims, behavior, ATT&CK, required telemetry, detection candidates, rules, validation scenarios, SIEM results, and analyst decisions.
 - Observability dashboard with API request metrics, recent traces, redacted log tails, Prometheus-compatible metrics, and health/self-test views.
@@ -128,10 +166,11 @@ This checkout is a source-build installation. Its custom
 only refreshes pinned third-party runtime images and intentionally skips those
 build targets. Do not replace the custom image variables with mutable `latest`
 tags. A prebuilt production deployment from current-development source requires
-all eight immutable image
+all nine immutable image
 digests from the exact release's `adversarygraph-images.env` attachment; the
 historical `v6.0.0` release does not contain that complete artifact set.
-The eighth family is the isolated scanner MCP image. Use a manifest only after
+The eighth family is the isolated scanner MCP image and the ninth is the
+deterministic PCAP analyzer. Use a manifest only after
 the matching tag workflow publishes and verifies that complete artifact set.
 The self-test waits up to fifteen minutes for first-boot ATT&CK/ATLAS reference
 ingestion; override this with `SELFTEST_TIMEOUT` when operating across a slower

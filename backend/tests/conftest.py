@@ -257,3 +257,10 @@ def _authenticated_route_user(request, monkeypatch, app):
     app.dependency_overrides[current_user] = test_user
     yield
     app.dependency_overrides.pop(current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def isolate_pcap_provider_cache(monkeypatch):
+    """Provider cache state belongs to one test, never a real Redis service."""
+    from app.services.pcap_provider_cache import ProviderCache
+    monkeypatch.setattr("app.services.pcap_reputation.cache", ProviderCache(""))

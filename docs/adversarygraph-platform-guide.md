@@ -1,12 +1,10 @@
 # AdversaryGraph Platform Guide
 
-> The checked-out source is the v8.0.0-beta.1 manual-testing pre-release;
-> v7.0.0 remains the latest stable release. Immutable beta artifacts exist only
-> after the matching protected tag workflow succeeds. Verify the exact tag or
-> commit and complete the v8 readiness matrix before using this source as
-> acceptance evidence. AdversaryGraph is an analyst-assistance system: AI
-> mappings, similarity scores, IOC enrichment, malware-analysis output, and
-> generated detections require human validation before operational use.
+> The checked-out source is v8.1.0. Deploy published immutable image digests
+> and retain acceptance evidence for the exact tag and configured environment;
+> see [8.1 readiness](release-readiness-v8.1.md). AdversaryGraph assists analysts:
+> AI mappings, similarity scores, enrichment, malware triage and generated
+> detections require human validation before operational use.
 
 ## Table of Contents
 

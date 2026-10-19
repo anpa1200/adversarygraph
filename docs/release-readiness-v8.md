@@ -53,7 +53,8 @@ The exact beta gate must verify at least:
   after the React Router 7 migration;
 - backend lint, full tests, coverage floor, Bandit, dependency audit, and secret
   scan;
-- scanner MCP checks and the existing strict eight-image release scan path; and
+- scanner MCP and deterministic PCAP analyzer checks plus the strict nine-image
+  release scan path; and
 - compiled scanner assertions for Go 1.26.7, `golang.org/x/mod` v0.40.0, and
   `golang.org/x/text` v0.41.0 before the fixed-finding image scan; and
 - documentation links, release metadata, and patch hygiene.

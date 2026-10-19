@@ -3,6 +3,17 @@
 This guide covers the current Docker Compose upgrade path and the tested
 procedure for moving from v5 releases to v6.0.0 and later releases.
 
+## Upgrading to 8.1.0
+
+Back up PostgreSQL and evidence volumes, verify restoration and retain the
+previous image/configuration digests before replacement. Run `alembic upgrade
+head` from the exact 8.1.0 backend artifact before serving requests. The required
+head is `20261014_0005`; upgrade handles fresh schemas and existing CTI metadata.
+Migration chains are atomic, and downgrading populated investigation metadata
+is refused. Do not bypass that refusal by stamping revisions or dropping data.
+Verify all three ATT&CK domains, historical catalogs, existing evidence and
+Navigator/PDF/STIX exports after the update. ATLAS retains its own version.
+
 ## Current Migration Model
 
 AdversaryGraph now uses Alembic for new research/workflow authority tables.
@@ -203,7 +214,7 @@ evidence.
 
 ## v5.5-v5.9.1 To A Post-v6 Hardened Release
 
-Older releases predate the immutable eight-image manifest required by the
+Older releases predate the immutable nine-image manifest required by the
 current production preflight. For a new production upgrade, use the latest
 successfully gated semantic release and this guarded path until formal
 migration tooling is introduced:
@@ -234,7 +245,7 @@ migration tooling is introduced:
    # independent RATE_LIMIT_PROXY_SECRET, explicit HTTPS
    # CORS_ALLOWED_ORIGINS, AUTH_ENABLED=true, and SECURE_COOKIES=true before
    # continuing. Set a bootstrap password/proxy secret for first rollout, and
-   # load all eight ADVERSARYGRAPH_*_IMAGE digest references from the release's
+   # load all nine ADVERSARYGRAPH_*_IMAGE digest references from the release's
    # adversarygraph-images.env attachment.
    AUTH_EXISTING_ADMIN_CONFIRMED=true ./scripts/validate-production-env.sh
    docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
@@ -329,7 +340,7 @@ If validation fails:
    ```
 
 2. Check out the previous known-good release tag and load its retained
-   eight-image
+   nine-image
    digest manifest into `.env`.
 3. Run the production preflight and redeploy that immutable image set with
    `--no-build`.

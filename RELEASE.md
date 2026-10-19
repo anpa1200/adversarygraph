@@ -96,7 +96,7 @@ retrieval smoke test. In a staging environment that matches production:
    release. It resumes an existing draft only when its title, notes, and sole
    manifest asset exactly match the regenerated release; otherwise it stops for
    explicit review and draft cleanup.
-5. Confirm all eight GHCR packages are public. The workflow uses a clean,
+5. Confirm all nine GHCR packages are public. The workflow uses a clean,
    unauthenticated Docker configuration to bind every public version manifest
    to the scanned local image before it creates the public GitHub release. A
    first publication can stop here if GitHub created a new package as private;
@@ -105,7 +105,7 @@ retrieval smoke test. In a staging environment that matches production:
    exactly matches the new source build; review and remove a mismatched partial
    registry version before retrying.
    Do not create or replace the release manually. Shared `latest` tags are not
-   advanced because an eight-image family cannot be updated atomically; deploy
+   advanced because a nine-image family cannot be updated atomically; deploy
    only from `adversarygraph-images.env`. Current artifacts target Linux/AMD64.
 6. Verify the workflow-generated GitHub release contains
    `adversarygraph-images.env`, and independently compare every recorded digest

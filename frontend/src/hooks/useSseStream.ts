@@ -15,6 +15,7 @@ interface SseState<T> {
   result: T | null;        // final parsed result (when "result" event arrives)
   error: string;
   streaming: boolean;
+  progress: string;
 }
 
 export function useSseStream<T>() {
@@ -23,6 +24,7 @@ export function useSseStream<T>() {
     result: null,
     error: '',
     streaming: false,
+    progress: '',
   });
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
@@ -33,7 +35,7 @@ export function useSseStream<T>() {
     abortRef.current = controller;
     const requestId = ++requestIdRef.current;
 
-    setState({ tokens: '', result: null, error: '', streaming: true });
+    setState({ tokens: '', result: null, error: '', streaming: true, progress: '' });
 
     try {
       const resp = await responseFactory(controller.signal);
@@ -78,7 +80,9 @@ export function useSseStream<T>() {
 
           try {
             const evt = JSON.parse(raw);
-            if (evt.type === 'token') {
+            if (evt.type === 'progress') {
+              setState(s => ({ ...s, progress: String(evt.message || evt.stage || '') }));
+            } else if (evt.type === 'token') {
               setState(s => ({ ...s, tokens: s.tokens + evt.content }));
             } else if (evt.type === 'result') {
               setState(s => ({ ...s, result: evt.data as T }));
@@ -122,7 +126,7 @@ export function useSseStream<T>() {
     abortRef.current?.abort();
     abortRef.current = null;
     requestIdRef.current += 1;
-    setState({ tokens: '', result: null, error: '', streaming: false });
+    setState({ tokens: '', result: null, error: '', streaming: false, progress: '' });
   }, []);
 
   useEffect(() => () => {

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://host.docker.internal:11434/v1"
     local_llm_api_key: str = "local"
     local_llm_model: str = "llama3.1:8b"
+    # Verified input+output capacity for non-Ollama investigation summaries.
+    # Zero means unknown, so the second-layer summary fails closed.
+    local_llm_context_tokens: int = 0
 
     # Threat Hunting AI is an advisory-only feature. Cloud processing remains
     # disabled until an operator explicitly enables it and the analyst confirms
@@ -41,6 +44,8 @@ class Settings(BaseSettings):
     # providers for a bounded structured response. The provider adapter still
     # has an independent 180-second transport ceiling.
     threat_hunting_ai_timeout_seconds: float = 120.0
+    investigation_story_timeout_seconds: float = 120.0
+    investigation_story_repair_interval_seconds: float = 65.0
     threat_hunting_ai_source_char_limit: int = 40_000
     threat_hunting_ai_max_candidates: int = 3
 
@@ -94,6 +99,17 @@ class Settings(BaseSettings):
     malwaregraph_long_timeout_seconds: int = 300
     malwaregraph_max_upload_bytes: int = 256 * 1024 * 1024
     malwaregraph_storage_dir: str = "/malwaregraph-storage"
+
+    # Deterministic packet-capture analysis runs in a dedicated, internally
+    # networked sidecar with no internet egress.  The API retains the immutable
+    # acquisition separately and stores only structured evidence in PostgreSQL.
+    pcap_analyzer_enabled: bool = True
+    pcap_analyzer_url: str = "http://pcap-analyzer:8300"
+    pcap_analyzer_token: str = ""
+    pcap_analyzer_timeout_seconds: int = Field(default=600, ge=30, le=3_600)
+    pcap_max_upload_bytes: int = Field(default=512 * 1024 * 1024, ge=1024, le=2 * 1024 * 1024 * 1024)
+    pcap_storage_dir: str = "/app/data/pcap"
+    pcap_retain_uploads: bool = True
 
     # ATT&CK ingestion
     attck_domains: str = "enterprise-attack,mobile-attack,ics-attack,atlas"

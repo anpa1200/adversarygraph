@@ -72,6 +72,7 @@ db_pass="$(effective_value DB_PASS)"
 redis_password="$(effective_value REDIS_PASSWORD)"
 rate_limit_proxy_secret="$(effective_value RATE_LIMIT_PROXY_SECRET)"
 asset_scanner_mcp_token="$(effective_value ASSET_SCANNER_MCP_TOKEN)"
+pcap_analyzer_token="$(effective_value PCAP_ANALYZER_TOKEN)"
 cors_origins="$(effective_value CORS_ALLOWED_ORIGINS)"
 auth_enabled="$(normalize "$(effective_value AUTH_ENABLED true)")"
 secure_cookies="$(normalize "$(effective_value SECURE_COOKIES true)")"
@@ -79,7 +80,7 @@ bootstrap_password="$(effective_value AUTH_BOOTSTRAP_ADMIN_PASSWORD)"
 proxy_secret="$(effective_value PROXY_SECRET)"
 existing_admin_confirmed="$(normalize "$(effective_value AUTH_EXISTING_ADMIN_CONFIRMED false)")"
 
-for key in DB_PASS REDIS_PASSWORD RATE_LIMIT_PROXY_SECRET ASSET_SCANNER_MCP_TOKEN; do
+for key in DB_PASS REDIS_PASSWORD RATE_LIMIT_PROXY_SECRET ASSET_SCANNER_MCP_TOKEN PCAP_ANALYZER_TOKEN; do
   value="$(effective_value "$key")"
   if [[ -z "$value" ]]; then
     errors+=("$key is required")
@@ -99,6 +100,11 @@ if [[ -n "$asset_scanner_mcp_token" &&
   errors+=("ASSET_SCANNER_MCP_TOKEN must not use the source-stack development value")
 fi
 
+if [[ -n "$pcap_analyzer_token" &&
+      "$pcap_analyzer_token" == "development-only-pcap-analyzer-token" ]]; then
+  errors+=("PCAP_ANALYZER_TOKEN must not use the source-stack development value")
+fi
+
 if [[ -n "$redis_password" && ! "$redis_password" =~ ^[A-Za-z0-9_-]+$ ]]; then
   errors+=("REDIS_PASSWORD may contain only letters, digits, underscore, and hyphen because it is embedded in a Redis URL")
 fi
@@ -108,8 +114,12 @@ if [[ -n "$db_pass" && -n "$redis_password" && "$db_pass" == "$redis_password" ]
    [[ -n "$redis_password" && -n "$rate_limit_proxy_secret" && "$redis_password" == "$rate_limit_proxy_secret" ]] ||
    [[ -n "$asset_scanner_mcp_token" && -n "$db_pass" && "$asset_scanner_mcp_token" == "$db_pass" ]] ||
    [[ -n "$asset_scanner_mcp_token" && -n "$redis_password" && "$asset_scanner_mcp_token" == "$redis_password" ]] ||
-   [[ -n "$asset_scanner_mcp_token" && -n "$rate_limit_proxy_secret" && "$asset_scanner_mcp_token" == "$rate_limit_proxy_secret" ]]; then
-  errors+=("DB_PASS, REDIS_PASSWORD, RATE_LIMIT_PROXY_SECRET, and ASSET_SCANNER_MCP_TOKEN must be different secrets")
+   [[ -n "$asset_scanner_mcp_token" && -n "$rate_limit_proxy_secret" && "$asset_scanner_mcp_token" == "$rate_limit_proxy_secret" ]] ||
+   [[ -n "$pcap_analyzer_token" && -n "$db_pass" && "$pcap_analyzer_token" == "$db_pass" ]] ||
+   [[ -n "$pcap_analyzer_token" && -n "$redis_password" && "$pcap_analyzer_token" == "$redis_password" ]] ||
+   [[ -n "$pcap_analyzer_token" && -n "$rate_limit_proxy_secret" && "$pcap_analyzer_token" == "$rate_limit_proxy_secret" ]] ||
+   [[ -n "$pcap_analyzer_token" && -n "$asset_scanner_mcp_token" && "$pcap_analyzer_token" == "$asset_scanner_mcp_token" ]]; then
+  errors+=("DB_PASS, REDIS_PASSWORD, RATE_LIMIT_PROXY_SECRET, ASSET_SCANNER_MCP_TOKEN, and PCAP_ANALYZER_TOKEN must be different secrets")
 fi
 
 bootstrap_is_strong=false
@@ -164,6 +174,7 @@ custom_image_keys=(
   ADVERSARYGRAPH_POSTGRES_IMAGE
   ADVERSARYGRAPH_BACKEND_IMAGE
   ADVERSARYGRAPH_SCANNER_MCP_IMAGE
+  ADVERSARYGRAPH_PCAP_ANALYZER_IMAGE
   ADVERSARYGRAPH_FRONTEND_IMAGE
   ADVERSARYGRAPH_MALWAREGRAPH_IMAGE
   ADVERSARYGRAPH_ATTACK_LAB_WEB_IMAGE
@@ -178,9 +189,9 @@ for key in "${custom_image_keys[@]}"; do
 done
 
 declare -A third_party_image_defaults=(
-  [REDIS_IMAGE]='redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99'
+  [REDIS_IMAGE]=''
   [BUSYBOX_IMAGE]='busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662'
-  [NGINX_DOCS_IMAGE]='nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46'
+  [NGINX_DOCS_IMAGE]=''
 )
 for key in "${!third_party_image_defaults[@]}"; do
   value="$(effective_value "$key" "${third_party_image_defaults[$key]}")"

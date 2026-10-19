@@ -465,3 +465,89 @@ existing reports, IOCs, CVEs, actors, techniques, and evidence nodes, then open
 the cited source before accepting a claim. Retrieval does not promote a report
 or turn an AI extraction into confirmed evidence. See
 [Unified Intelligence RAG and MCP](unified-rag-and-mcp.md).
+
+## Deep CTI investigation
+
+AI Analysis now defaults to **Deep CTI investigation**. Quick ATT&CK mapping
+remains available by clearing that option. Deep analysis uses multiple provider
+calls, so expect greater latency and token usage than quick mapping.
+
+The deep path performs these stages:
+
+1. Preserve the submitted text and acquire up to three public report references.
+   Automatic selection recognizes report/blog/advisory paths and PDF URLs, repairs
+   hyphenated PDF line wraps, and follows only one hop. Explicit reference URLs
+   override automatic selection. Credentials, query strings and unsafe targets
+   are excluded; DNS and redirects use the existing SSRF-safe HTTP transport.
+2. Build a composite source register with timestamps, text hashes and exact
+   evidence offsets. The combined budget is 240,000 characters. Individual
+   document parsers retain their existing 120,000-character cap. Limits and
+   retrieval failures are disclosed rather than presented as complete research.
+3. Analyze overlapping 28,000-character chunks, including text beyond the quick
+   mapper's 40,000-character window. Retain source-bound technical notes for
+   chronology, commands, versions, attribution assertions and defensive details.
+   Invented evidence quotes are discarded and generated techniques remain
+   suggestions subject to catalog validation and analyst review.
+4. Extract IOC/observable candidates deterministically, including common defanged
+   domains, URLs and IPv4 addresses. Preserve original evidence; normalize only
+   the candidate value. Keep publisher references separate from candidates.
+   Bare domains use a bundled [IANA root snapshot](https://data.iana.org/TLD/tlds-alpha-by-domain.txt),
+   with common filenames and JavaScript object/method names excluded. URL
+   hostnames remain available for domain enrichment. Reserved example/internal
+   names are never sent by public domain enrichment.
+5. Match candidates against the local IOC library automatically. Local match
+   details stay in the local evidence register and never enter model prompts.
+   Local source URLs are not copied into the assessment. Red or unmarked
+   local context raises the assessment marking to TLP:RED; the default remains
+   TLP:AMBER+STRICT. The UI and PDF preserve these markings. Optional RDAP
+   lookups process at most ten public-source domain/IP candidates. Optional
+   passive intelligence lookups use configured VirusTotal, ThreatFox and OTX
+   adapters for at most six public-source hash/domain/IP candidates within a
+   60-second stage budget. These are lookups, not sample uploads or active scans.
+   Uploaded-only indicators are never sent by these enrichment stages.
+   Provider capabilities are respected: [ThreatFox hash search](https://threatfox.abuse.ch/api/)
+   supports MD5/SHA-256; SHA-1 is reported as unsupported rather than submitted.
+6. Synthesize and check a cited technical investigation with the attack sequence, evidence,
+   defensive opportunities, source disagreements and gaps. Citation identifiers
+   must resolve to acquired sources; this check does not establish that every
+   model claim is correct. A second machine pass checks the draft against original
+   source text and canonical technique names. Mechanical checks reject unsupported
+   month/year claims, hashes and technique references, with at most one repair.
+   Parent technique references are allowed for extracted sub-techniques. The raw
+   text synthesis budget is 90,000 characters, with source-bound chunk notes for
+   the remainder. Human validation remains mandatory.
+7. Save report-local candidates and start the existing draft review. Successful
+   machine stages do not approve or promote intelligence. The UI distinguishes
+   complete, partial, skipped and failed work from pending analyst review.
+   Existing reports offer **Deep investigation from source**, which loads the
+   stored original into AI Analysis without automatically running a model.
+   Quick reparsing is explicitly labeled as quick mapping.
+
+Results include a source register, observable evidence and provider outcomes,
+plus downloadable evidence JSON for users with export permission. PDF exports
+include a clearly separated draft investigation appendix. Machine findings stay
+separate from accepted/promoted intelligence. Source edits mark the investigation
+stale; quick reparsing supersedes its deep assessment. Deep results participate in
+review fingerprints so changing them invalidates prior review authority.
+
+API: `POST /api/analyze/investigate/stream`, multipart fields `text` or `file`,
+`provider`, optional `model`, `domain`, `name`, `follow_references`,
+`reference_urls`, `external_enrichment` (RDAP), and `public_intelligence`.
+Progress events and ten-second SSE heartbeats accompany the final result.
+Disconnected requests cancel pending work and mark unfinished sessions failed.
+Stored results are returned by the existing session/result APIs with an
+`investigation` object. Legacy results return an empty object.
+
+The current workflow does not perform exhaustive internet search, OCR, malware
+execution, or telemetry validation. IOC candidates can include background
+infrastructure. A library/provider match is a dated source assertion; no match is
+unknown. Review extracted evidence and provider dates before defensive use.
+
+### Schema and deployment compatibility
+
+Deep results require Alembic revision `20261014_0005`. The application pins its
+required schema revision exactly. Back up the database, apply the migration with
+the matching application image, and start services built from that same source.
+An older image will reject the newer revision on startup. Downgrading removes
+the investigation JSON column, so preserve new evidence exports and a fresh
+backup before any rollback. Never stamp the schema to bypass the revision check.

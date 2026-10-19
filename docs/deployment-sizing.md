@@ -3,7 +3,7 @@
 This guide gives starting points for controlled self-hosted deployments. Actual
 requirements depend on feed volume, number of analysts, LLM provider latency,
 uploaded report size, RAG document/chunk count, embedding dimensions,
-malware-analysis workload, and Attack Simulation usage. The profiles below do
+malware-analysis workload, retained PCAP volume, and Attack Simulation usage. The profiles below do
 not include CPU/GPU/RAM for a separately deployed local chat or embedding model.
 
 ## Profiles
@@ -23,7 +23,15 @@ not include CPU/GPU/RAM for a separately deployed local chat or embedding model.
 | Worker | 1-2 vCPU / 2-3 GiB | 2-4 vCPU / 6-8 GiB | 6-8 vCPU / 16 GiB |
 | Redis | 0.5 vCPU / 512 MiB | 1 vCPU / 1 GiB | 2 vCPU / 2 GiB |
 | MalwareGraph | 1-2 vCPU / 2 GiB | 2-4 vCPU / 4-8 GiB | 4-8 vCPU / 16 GiB |
+| PCAP analyzer | 1-2 vCPU / 2 GiB | 2-4 vCPU / 4 GiB | 4-8 vCPU / 8 GiB |
 | Frontend | 0.5 vCPU / 256 MiB | 0.5 vCPU / 512 MiB | 1 vCPU / 1 GiB |
+
+The PCAP analyzer runs one TShark request per pod. Its temporary volume must
+hold the uploaded capture, bounded decoder output, and exported HTTP objects at
+the same time. The chart starts with a 1.5 GiB `emptyDir`, a 512 MiB upload cap,
+and a 2 GiB memory limit. Raise those limits together only after measuring
+representative captures; horizontal API scaling also requires a shared RWX
+`pcap_data` volume or disabled source retention.
 
 ## Unified RAG Capacity
 
@@ -74,6 +82,8 @@ Plan storage for:
   expiring proposals.
 - `adversarygraph_logs`: API logs, Attack Simulation logs, observability log tail.
 - `malwaregraph_storage`: uploaded samples, extracted artifacts, static-analysis output.
+- `pcap_data`: original captures when `PCAP_RETAIN_UPLOADS=true`; completed
+  structured results remain in PostgreSQL even when source retention is off.
 - `attck_data`: cached ATT&CK/ATLAS bundles.
 - Backups: at least 7-30 logical dumps, depending on retention.
 

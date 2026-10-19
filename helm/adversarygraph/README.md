@@ -41,6 +41,8 @@ keys:
   `GEMINI_API_KEY`, or `LOCAL_LLM_API_KEY`.
 - `ASSET_SCANNER_MCP_TOKEN`, a distinct random API-to-scanner capability token
   of at least 24 URL-safe characters, when `scannerMcp.enabled=true`.
+- `PCAP_ANALYZER_TOKEN`, a distinct random API-to-decoder capability token of
+  at least 24 URL-safe characters, when `pcapAnalyzer.enabled=true`.
 
 Other optional key names are listed in `templates/secret.yaml`. Missing optional
 keys are acceptable for the API, worker, and beat, which load the runtime Secret
@@ -72,6 +74,7 @@ kubectl -n adversarygraph create secret generic adversarygraph-runtime \
   --from-literal=REDIS_PASSWORD="$(openssl rand -hex 32)" \
   --from-literal=RATE_LIMIT_PROXY_SECRET="$(openssl rand -hex 32)" \
   --from-literal=ASSET_SCANNER_MCP_TOKEN="$(openssl rand -hex 32)" \
+  --from-literal=PCAP_ANALYZER_TOKEN="$(openssl rand -hex 32)" \
   --from-literal=AUTH_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 ```
 

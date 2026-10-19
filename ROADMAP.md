@@ -1,14 +1,21 @@
 # Roadmap
 
-Latest stable release: **v7.0.0** — Isolated assessment, governed intelligence, and data quality (2026-08-12)
+Current release: **v8.1.0** — ATT&CK v20, governed intelligence and deterministic evidence (2026-10-19)
 
-Current source candidate: **v8.0.0-beta.1** — Reviewed intelligence and durable workflow authority (2026-08-25)
+For the full history see [CHANGELOG.md](CHANGELOG.md).
 
-For the full history through the current beta see [CHANGELOG.md](CHANGELOG.md).
+## v8.1 — ATT&CK v20 and deterministic evidence
 
-## Unreleased
+- [x] Enterprise, Mobile and ICS v20 imports with historical catalog retention
+- [x] Selected-version Navigator exports preserving imported annotations
+- [x] Deterministic PCAP evidence and CTI investigation workflows
+- [x] Atomic migration chains and investigation-preserving downgrade guards
+- [x] Dependency and image maintenance with unchanged blocking security gates
+- [ ] Verify final stable tag publication and immutable nine-image digest manifest
 
-- [ ] Record manual beta findings and resolve accepted blockers before v8.0.0.
+The following beta checklist is retained as historical planning. Current stable
+acceptance and deployment-specific limits are recorded in
+[8.1 readiness](docs/release-readiness-v8.1.md).
 
 ## v8.0 beta — Reviewed Intelligence and Durable Workflow Authority
 

@@ -288,6 +288,8 @@ def analysis_fingerprint(result: AnalysisResult | None, session_status: str) -> 
             "apt_matches": result.apt_matches or [],
         },
     }
+    if result is not None and result.investigation:
+        payload["investigation"] = result.investigation
     return checksum_json(payload)
 
 
@@ -649,7 +651,10 @@ def _candidate_claims(context: ReviewContext) -> list[dict[str, Any]]:
             value = _clean_string(indicator.get("value") or indicator.get("indicator") or indicator.get("observable"), 2_000)
             if not value:
                 continue
-            evidence = _source_ref(context.source_text, value)
+            evidence = _source_ref(
+                context.source_text, indicator.get("evidence_text") or value,
+                indicator.get("evidence_start"), indicator.get("evidence_end"),
+            )
             claims.append(
                 {
                     "claim_key": _claim_key("indicator", indicator.get("type"), value),
@@ -949,6 +954,14 @@ async def start_review(
     # Core extraction binds evidence only inside ai.base's 40k input window.
     # Never claim full coverage merely because a result row exists.
     analyzed_chars = min(len(context.source_text), 40_000) if context.session.llm_provider != "none" and result_is_current else 0
+    investigation = context.result.investigation if context.result is not None else {}
+    if investigation and result_is_current:
+        extraction = investigation.get("stages", {}).get("extraction", {})
+        if investigation.get("source_sha256") == checksum_text(context.source_text):
+            value = extraction.get("analyzed_chars", 0)
+            analyzed_chars = min(len(context.source_text), value) if type(value) is int and value >= 0 else 0
+        else:
+            analyzed_chars = 0
     coverage_complete = analyzed_chars == len(context.source_text)
     review = ReportReview(
         id=uuid.uuid4(),

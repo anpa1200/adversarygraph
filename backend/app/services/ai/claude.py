@@ -39,6 +39,21 @@ class ClaudeAdapter(LLMAdapter):
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        self.story_response_model = getattr(msg, "model", None)
+        self.story_response_id = getattr(msg, "id", None)
+        self.story_finish_reason = getattr(msg, "stop_reason", None)
+        usage = getattr(msg, "usage", None)
+        self.story_usage = None
+        if usage is not None:
+            inputs = getattr(usage, "input_tokens", None)
+            outputs = getattr(usage, "output_tokens", None)
+            if isinstance(inputs, int) and isinstance(outputs, int):
+                cached = getattr(usage, "cache_read_input_tokens", 0) or 0
+                created = getattr(usage, "cache_creation_input_tokens", 0) or 0
+                prompt = inputs + cached + created
+                self.story_usage = {"prompt_tokens": prompt, "completion_tokens": outputs,
+                    "total_tokens": prompt + outputs, "uncached_input_tokens": inputs,
+                    "cache_read_input_tokens": cached, "cache_creation_input_tokens": created}
         text_parts = [
             text
             for block in msg.content

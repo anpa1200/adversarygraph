@@ -1,7 +1,7 @@
 import asyncio
 import socket
 import ssl
-from types import SimpleNamespace
+from collections import namedtuple
 
 import httpcore
 import httpx
@@ -258,7 +258,7 @@ def test_sync_https_retains_original_hostname_for_tls(monkeypatch):
 
     def wrap_socket(**kwargs):
         wrapped.update(kwargs)
-        return SimpleNamespace(socket=object(), is_verified=True)
+        return namedtuple("WrappedTLS", ["socket", "is_verified"])(object(), True)
 
     monkeypatch.setattr(safe_http.urllib3_connection, "_ssl_wrap_socket_and_match_hostname", wrap_socket)
 
@@ -450,3 +450,42 @@ async def test_upload_reader_enforces_actual_bytes_when_size_is_missing():
         await safe_http.read_upload_limited(Upload(), 5, chunk_size=4)
 
     assert exc.value.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_async_safe_http_decodes_compressed_report_once(monkeypatch):
+    import gzip
+    source = b'<article>Observed payload and IOC appendix.</article>' * 20
+    compressed = gzip.compress(source)
+
+    class EncodedBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield compressed
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, headers={'Content-Encoding': 'gzip', 'Content-Length': str(len(compressed)), 'Content-Type': 'text/html'},
+        stream=EncodedBody(),
+    ))
+    monkeypatch.setattr(safe_http, '_PinnedAsyncHTTPTransport', lambda: transport)
+    response = await safe_http.async_safe_get('https://vendor.example/blog/report', max_bytes=5000)
+    assert response.content == source
+    assert 'content-encoding' not in response.headers
+    assert response.headers['content-length'] == str(len(source))
+    assert response.headers['content-type'] == 'text/html'
+
+
+@pytest.mark.asyncio
+async def test_compressed_report_cannot_evade_decoded_size_budget(monkeypatch):
+    import gzip
+    compressed = gzip.compress(b'a' * 10000)
+
+    class EncodedBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield compressed
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, headers={'Content-Encoding': 'gzip', 'Content-Length': str(len(compressed))}, stream=EncodedBody(),
+    ))
+    monkeypatch.setattr(safe_http, '_PinnedAsyncHTTPTransport', lambda: transport)
+    with pytest.raises(safe_http.ResponseTooLargeError):
+        await safe_http.async_safe_get('https://vendor.example/blog/report', max_bytes=1000)
