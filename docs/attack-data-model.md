@@ -12,6 +12,29 @@ This keeps the product fast for matrix rendering, group similarity, campaign
 comparison, and detection engineering while still preserving the source STIX
 graph for audit, export, and future graph expansion.
 
+## ATT&CK v20 compatibility
+
+The 20.0 dataset is distinct from STIX `spec_version` 2.1, the ATT&CK schema's
+`x_mitre_attack_spec_version`, and each object's `x_mitre_version`. Keep each
+identity/version rather than using an object version as the dataset release.
+The legacy group field named `attack_version` contains that object's
+`x_mitre_version`; the catalog release comes from `attack_versions.version`.
+The v20 Enterprise snapshot contains 227 parent techniques and 479 sub-techniques;
+Mobile has 125 active technique entries and ICS has 104. Counts exclude revoked
+and deprecated objects and must remain domain scoped.
+
+Raw historical objects and relationships are preserved. Active projections exclude
+revoked/deprecated relationships as well as inactive endpoints. Reingesting a
+previously stored snapshot explicitly reselects it as current for its domain in
+the same transaction; other domains are unaffected. Validate any operational
+rollback in a disposable environment first. ATLAS remains separately versioned.
+
+Navigator exports declare the selected ATT&CK major release and layer format 4.5.
+Import/re-export in the same Navigator view preserves tactic-specific annotations,
+scores, comments, disabled entries and layer metadata. Saved internal TTP layers
+remain identifier selections; they do not store a full annotated Navigator document.
+See [release validation and reproduction](attack-v20-validation.md).
+
 ## Normalized Tables
 
 The normalized layer is the main runtime query model.

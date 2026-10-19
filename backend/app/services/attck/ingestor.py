@@ -75,10 +75,10 @@ def _is_stale(obj: dict) -> bool:
 
 
 def _detection_source_map(by_id: dict[str, dict], relationships: list[dict]) -> dict[str, list[str]]:
-    """Map attack-pattern STIX IDs to ATT&CK v19 detection analytic log-source labels."""
+    """Map attack-pattern STIX IDs to ATT&CK detection analytic log-source labels."""
     mapped: dict[str, list[str]] = {}
     for rel in relationships:
-        if rel.get("relationship_type") != "detects":
+        if _is_stale(rel) or rel.get("relationship_type") != "detects":
             continue
         target_ref = rel.get("target_ref")
         source_ref = rel.get("source_ref")
@@ -257,6 +257,8 @@ def parse_bundle(bundle_path: Path, domain: str = "enterprise-attack") -> dict:
     campaign_group_links: list[dict] = []
 
     for rel in relationships:
+        if _is_stale(rel):
+            continue
         rtype      = rel.get("relationship_type")
         source_ref = rel.get("source_ref", "")
         target_ref = rel.get("target_ref", "")
@@ -343,8 +345,8 @@ def ingest_domain(domain: str, bundle_path: Path, version: str) -> None:
 
         session.execute(
             update(AttackVersion)
-            .where(AttackVersion.domain == domain, AttackVersion.id != version_id)
-            .values(is_latest=False)
+            .where(AttackVersion.domain == domain)
+            .values(is_latest=(AttackVersion.id == version_id))
         )
 
         # ── Raw STIX preservation ─────────────────────────────────────────────

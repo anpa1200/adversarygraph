@@ -5,6 +5,7 @@ import { aptApi, attackApi, exportApi, simulationApi } from '@/api/client';
 import { useAttackMatrix } from '@/hooks/useAttackMatrix';
 import { AttackMatrix } from '@/components/Navigator/AttackMatrix';
 import { LayerControls } from '@/components/Navigator/LayerControls';
+import { buildNavigatorLayer, type NavigatorLayer } from '@/lib/navigatorLayer';
 import { LayerImport } from '@/components/Navigator/LayerImport';
 import { SaveLayerModal } from '@/components/Navigator/SaveLayerModal';
 import { LoadLayerModal } from '@/components/Navigator/LoadLayerModal';
@@ -34,6 +35,8 @@ export function Navigator() {
 
   // ── Panel state ────────────────────────────────────────────────────────────
   const [selectedAttackId, setSelectedAttackId] = useState<string | null>(null);
+  const [importedLayer, setImportedLayer] = useState<NavigatorLayer | null>(null);
+  useEffect(() => { setImportedLayer(null); }, [domain]);
   const [importOpen, setImportOpen]             = useState(false);
   const [importTarget, setImportTarget]         = useState<'selected' | 'overlay'>('selected');
   const [saveOpen,   setSaveOpen]               = useState(false);
@@ -126,8 +129,8 @@ export function Navigator() {
 
   // ── Exports ───────────────────────────────────────────────────────────────
   const exportNavigatorLayer = useCallback(() => {
-    downloadJson(buildNavigatorLayer(selectedTechniques, overlayTechniques, domain), 'adversarygraph-layer.json');
-  }, [selectedTechniques, overlayTechniques, domain]);
+    downloadJson(buildNavigatorLayer(selectedTechniques, overlayTechniques, domain, activeAttackVersion, importedLayer), 'adversarygraph-layer.json');
+  }, [selectedTechniques, overlayTechniques, domain, activeAttackVersion, importedLayer]);
 
   const exportJson = useCallback(() => {
     downloadJson({ techniques: Array.from(selectedTechniques).sort(), domain }, 'my-ttps.json');
@@ -250,11 +253,13 @@ export function Navigator() {
           title={importTarget === 'overlay' ? 'Import comparison layer' : 'Import Navigator Layer'}
           actionLabel={importTarget === 'overlay' ? 'Load as compare' : 'Import'}
           targetLabel={importTarget === 'overlay' ? 'the comparison overlay' : 'your TTP layer'}
-          onImport={(ids, name) => {
+          expectedDomain={domain}
+          onImport={(ids, name, layer) => {
             if (importTarget === 'overlay') {
               addComparisonLayer({ name: name || 'Imported comparison layer', techniqueIds: ids, source: 'import' });
             } else {
               addTechniques(ids);
+              setImportedLayer(layer);
             }
           }}
           onClose={() => setImportOpen(false)}
@@ -262,6 +267,7 @@ export function Navigator() {
       )}
       {coverageImportOpen && (
         <LayerImport
+          expectedDomain={domain}
           title="Import coverage layer"
           actionLabel="Import coverage"
           targetLabel="coverage"
@@ -322,41 +328,6 @@ function EmptyState() {
   );
 }
 
-function buildNavigatorLayer(
-  selectedTechniques: Set<string>,
-  overlayTechniques: Set<string>,
-  domain: string
-) {
-  const userIds = Array.from(selectedTechniques);
-  return {
-    name: 'AdversaryGraph Export',
-    versions: { attack: '19', navigator: '5.0', layer: '4.5' },
-    domain,
-    description: `Exported from AdversaryGraph. User TTPs: ${userIds.length}`,
-    techniques: [
-      ...userIds.map(id => ({
-        techniqueID: id,
-        color: overlayTechniques.has(id) ? '#f59e0b' : '#e94560',
-        comment: overlayTechniques.has(id) ? 'Shared with overlay' : 'My TTP',
-        enabled: true, score: 1, showSubtechniques: false,
-      })),
-      ...[...overlayTechniques].filter(id => !selectedTechniques.has(id)).map(id => ({
-        techniqueID: id,
-        color: '#3b82f6', comment: 'Overlay only',
-        enabled: true, score: 1, showSubtechniques: false,
-      })),
-    ],
-    gradient: { colors: ['#ffffff', '#e94560'], minValue: 0, maxValue: 1 },
-    legendItems: [
-      { color: '#e94560', label: 'My TTP' },
-      { color: '#3b82f6', label: 'Group-profile overlay' },
-      { color: '#f59e0b', label: 'Shared' },
-    ],
-    metadata: [],
-    hideDisabled: false,
-    layout: { layout: 'side', aggregateFunction: 'average', showID: true, showName: true },
-  };
-}
 
 function downloadJson(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

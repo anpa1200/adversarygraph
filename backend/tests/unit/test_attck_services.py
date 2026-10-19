@@ -411,3 +411,29 @@ def test_get_status_reports_current_latest_and_failures(monkeypatch):
         ),
         version_checker.DomainStatus("mobile-attack", None, "16.0", True, None),
     ]
+
+
+@pytest.mark.parametrize('flag', ['revoked', 'x_mitre_deprecated'])
+@pytest.mark.parametrize('kind', ['uses', 'attributed-to', 'detects'])
+def test_stale_relationships_preserved_but_excluded_from_active_mappings(tmp_path, flag, kind):
+    import json
+    objects = [
+        {'type': 'intrusion-set', 'id': 'intrusion-set--g', 'external_references': [{'source_name': 'mitre-attack', 'external_id': 'G9999'}]},
+        {'type': 'campaign', 'id': 'campaign--c', 'external_references': [{'source_name': 'mitre-attack', 'external_id': 'C9999'}]},
+        {'type': 'attack-pattern', 'id': 'attack-pattern--t', 'external_references': [{'source_name': 'mitre-attack', 'external_id': 'T9999'}]},
+        {'type': 'x-mitre-detection-strategy', 'id': 'x-mitre-detection-strategy--s', 'x_mitre_analytic_refs': ['x-mitre-analytic--a']},
+        {'type': 'x-mitre-analytic', 'id': 'x-mitre-analytic--a', 'x_mitre_log_source_references': [{'name': 'Process creation'}]},
+    ]
+    source, target = {'uses': ('intrusion-set--g', 'attack-pattern--t'), 'attributed-to': ('campaign--c', 'intrusion-set--g'), 'detects': ('x-mitre-detection-strategy--s', 'attack-pattern--t')}[kind]
+    relation = {'type': 'relationship', 'id': 'relationship--r', 'relationship_type': kind, 'source_ref': source, 'target_ref': target}
+    bundle = tmp_path / 'bundle.json'
+    bundle.write_text(json.dumps({'type': 'bundle', 'objects': objects + [relation]}))
+    active = parse_bundle(bundle)
+    assert active['usages'] or active['campaign_group_links'] or active['techniques'][0]['data_sources']
+    relation[flag] = True
+    bundle.write_text(json.dumps({'type': 'bundle', 'objects': objects + [relation]}))
+    stale = parse_bundle(bundle)
+    assert stale['usages'] == []
+    assert stale['campaign_group_links'] == []
+    assert stale['techniques'][0]['data_sources'] == []
+    assert stale['stix_relationships'][0]['raw'][flag] is True
