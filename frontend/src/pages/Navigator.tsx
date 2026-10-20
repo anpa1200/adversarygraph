@@ -13,7 +13,7 @@ import { TechniquePanel } from '@/components/Navigator/TechniquePanel';
 import { MatrixFilters } from '@/components/Navigator/MatrixFilters';
 import { RAGAssistant } from '@/components/Navigator/RAGAssistant';
 import { Header } from '@/components/Layout/Header';
-import type { TechniqueListItem } from '@/types/attack';
+import type { Domain, TechniqueListItem } from '@/types/attack';
 import { useSearchParams } from 'react-router-dom';
 import { useHasPermission } from '@/hooks/useCurrentUser';
 
@@ -21,7 +21,7 @@ export function Navigator() {
   const canExport = useHasPermission('export_data');
   const canRunSimulation = useHasPermission('run_attack_simulation');
   const {
-    domain, version,
+    domain, version, setDomain, setVersion,
     selectedTechniques, overlayTechniques,
     comparisonLayers,
     overlayGroupId, overlayGroupName,
@@ -34,9 +34,13 @@ export function Navigator() {
   } = useAppStore();
 
   // ── Panel state ────────────────────────────────────────────────────────────
-  const [selectedAttackId, setSelectedAttackId] = useState<string | null>(null);
-  const [importedLayer, setImportedLayer] = useState<NavigatorLayer | null>(null);
-  useEffect(() => { setImportedLayer(null); }, [domain]);
+  const context = `${domain}:${version ?? 'latest'}`;
+  const [panel, setPanel] = useState<{ id: string; context: string } | null>(null);
+  const selectedAttackId = panel?.context === context ? panel.id : null;
+  const setSelectedAttackId = (id: string | null) => setPanel(id ? { id, context } : null);
+  const [importedLayers, setImportedLayers] = useState<Record<string, NavigatorLayer>>({});
+  const importedLayer = importedLayers[context] ?? null;
+  const setImportedLayer = (layer: NavigatorLayer) => setImportedLayers(previous => ({ ...previous, [context]: layer }));
   const [importOpen, setImportOpen]             = useState(false);
   const [importTarget, setImportTarget]         = useState<'selected' | 'overlay'>('selected');
   const [saveOpen,   setSaveOpen]               = useState(false);
@@ -44,13 +48,25 @@ export function Navigator() {
   const [loadTarget, setLoadTarget]             = useState<'selected' | 'overlay'>('selected');
   const [coverageImportOpen, setCoverageImportOpen] = useState(false);
   const [params] = useSearchParams();
-  useEffect(() => { const id = params.get('technique'); if (id) setSelectedAttackId(id); }, [params]);
+  useEffect(() => {
+    const id = params.get('technique');
+    if (!id) return;
+    const requestedDomain = params.get('domain') ?? 'enterprise-attack';
+    if (!['enterprise-attack', 'mobile-attack', 'ics-attack', 'atlas'].includes(requestedDomain)) return;
+    const requestedVersion = params.get('version');
+    setDomain(requestedDomain as Domain);
+    setVersion(requestedVersion);
+    setPanel({ id: id.toUpperCase(), context: `${requestedDomain}:${requestedVersion ?? 'latest'}` });
+  }, [params, setDomain, setVersion]);
 
   // ── Filter state ───────────────────────────────────────────────────────────
   const [search, setSearch]                       = useState('');
   const [platform, setPlatform]                   = useState('');
   const [showOnlySelected, setShowOnlySelected]   = useState(false);
   const [showOnlyOverlay,  setShowOnlyOverlay]     = useState(false);
+  useEffect(() => {
+    setSearch(''); setPlatform(''); setShowOnlySelected(false); setShowOnlyOverlay(false);
+  }, [context]);
 
   // ── Matrix data ────────────────────────────────────────────────────────────
   const matrixData = useAttackMatrix(domain, version);
@@ -121,7 +137,7 @@ export function Navigator() {
       toggleTechnique(id);
       setSelectedAttackId(id);
     },
-    [toggleTechnique]
+    [toggleTechnique, context]
   );
 
   // ── Expand all ────────────────────────────────────────────────────────────

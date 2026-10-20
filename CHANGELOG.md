@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.1.2 - 2026-10-20
+
+- Keep Navigator detail requests bound to their domain and version; switching
+  from Enterprise T1699 to ICS no longer requests an Enterprise ID in ICS.
+- Preserve selected TTPs, overlays, expansion and imported layer annotations
+  separately across domain switches; reset filters when the catalog changes.
+- Include domain and explicit catalog version in copied technique links.
+- Retain the complete official v20 catalogs; no database migration is required.
+
 ## v8.1.1 - 2026-10-19
 
 - Carry the reviewed ATT&CK v20 and evidence/workflow source changes below into

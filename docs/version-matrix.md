@@ -6,12 +6,12 @@ This file is the canonical reference for AdversaryGraph release history and feat
 
 | Field | Value |
 |---|---|
-| Version | v8.1.1 |
-| Source date | 2026-10-19 |
+| Version | v8.1.2 |
+| Source date | 2026-10-20 |
 | Theme | ATT&CK v20, deterministic evidence and governed workflows |
 | Publication | Protected tag workflow and digest manifest required |
 
-See [8.1 release notes](release-notes/v8.1.1.md) and the
+See [8.1 release notes](release-notes/v8.1.2.md) and the
 [acceptance record](release-readiness-v8.1.md). Historical beta readiness
 records remain historical evidence; optional external integrations require
 operator-specific acceptance.
@@ -21,7 +21,7 @@ operator-specific acceptance.
 | Version | Theme | Key additions |
 |---|---|---|
 | v8.1.0 (unpublished) | Registry upload interrupted | Protected tag retained; no complete release family |
-| v8.1.1 | ATT&CK v20 and deterministic evidence | Enterprise/Mobile/ICS, historical catalogs, Navigator round trips, CTI investigations, PCAP evidence, atomic migrations and dependency maintenance |
+| v8.1.2 | ATT&CK v20 and deterministic evidence | Enterprise/Mobile/ICS, historical catalogs, Navigator round trips, CTI investigations, PCAP evidence, atomic migrations and dependency maintenance |
 | v8.0.0-beta.1 | Governed Report Promotion and Durable Workflow Authority | Manual-testing pre-release: five-gate Review Gate, two-person promotion, downstream evidence authority, research workflow runtime, transactional outbox, Alembic 0001-0004, Compose/Helm migration gates, React Router 7, and Desert Hydra workflow draft |
 | v7.0.0 | Isolated Assessment, Governed Intelligence, and Data Quality | Private scanner MCP boundary, verified assessment traces, production RAG/MCP readiness, governed local AI adapter, stronger intelligence relationships, closed taxonomy, self-maintaining catalogs, self-test data inventory, and eight-image release publication |
 | v6.5.0 | Governed Intelligence, Hunting, Exposure Assessment, and SOC Operations | Threat Hunting and Query Library workflows, unified RAG/MCP, saved-asset intelligence, inventory-bound passive/Nmap/web assessment, persistent SOC groups, module-level API/UI authorization across 31 workspaces, complete API contracts, and post-v6 platform hardening |

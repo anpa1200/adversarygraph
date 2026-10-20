@@ -5,20 +5,20 @@
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
 
 [![CI](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/adversarygraph/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v8.1.1-blue)](VERSION)
+[![Release](https://img.shields.io/badge/release-v8.1.2-blue)](VERSION)
 [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
 [![License](https://img.shields.io/badge/license-personal%20use%20only-orange)](LICENSE)
 
-Current release: **v8.1.1** (2026-10-19).
+Current release: **v8.1.2** (2026-10-20).
 
 This release adds MITRE ATT&CK v20 support across Enterprise, Mobile and ICS,
 preserves historical catalogs, and carries source versions into Navigator
 exports. It also includes governed report promotion, durable research/workflow
 authority, deterministic PCAP evidence integration, investigation workflows,
 transactional outbox processing and database migration safety improvements.
-See the [8.1 release notes](docs/release-notes/v8.1.1.md),
-[release summary](docs/release-summary-v8.1.1.md) and
+See the [8.1 release notes](docs/release-notes/v8.1.2.md),
+[release summary](docs/release-summary-v8.1.2.md) and
 [release acceptance record](docs/release-readiness-v8.1.md).
 
 Deploy only the digest-pinned image family from the published release's

@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-AdversaryGraph **v8.1.1** is the current stable release source for controlled
+AdversaryGraph **v8.1.2** is the current stable release source for controlled
 self-hosted deployments. Use only published digest-pinned release artifacts.
 The project is an internal analyst workbench, not a hardened multi-tenant SaaS.
 Security fixes target the latest `main` branch and the latest tagged release.
 
 | Version | Supported |
 |---|---|
-| latest stable (`v8.1.1`) | Yes |
+| latest stable (`v8.1.2`) | Yes |
 | latest `main` | Security fixes, not an immutable release |
 | historical beta tags | Testing records; upgrade to the stable line |
 | older stable tags | Best effort |
