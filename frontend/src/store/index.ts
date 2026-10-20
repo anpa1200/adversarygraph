@@ -100,9 +100,27 @@ const persist = (state: Partial<AppState>) => {
   }
 };
 
+type DomainLayerState = Pick<AppState, 'version' | 'selectedTechniques' | 'overlayGroupId' | 'overlayGroupName' | 'overlayTechniques' | 'comparisonLayers' | 'expandedTechniques'>;
+const domainLayers = new Map<Domain, DomainLayerState>();
+function layerState(state?: AppState): DomainLayerState {
+  return {
+    version: state?.version ?? null,
+    selectedTechniques: new Set(state?.selectedTechniques),
+    overlayGroupId: state?.overlayGroupId ?? null,
+    overlayGroupName: state?.overlayGroupName ?? '',
+    overlayTechniques: new Set(state?.overlayTechniques),
+    comparisonLayers: [...(state?.comparisonLayers ?? [])],
+    expandedTechniques: new Set(state?.expandedTechniques),
+  };
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   domain: 'enterprise-attack',
-  setDomain: (domain) => set({ domain }),
+  setDomain: (domain) => set(state => {
+    if (domain === state.domain) return {};
+    domainLayers.set(state.domain, layerState(state));
+    return { domain, ...(domainLayers.get(domain) ?? layerState()) };
+  }),
 
   version: null,
   setVersion: (version) => set({ version }),

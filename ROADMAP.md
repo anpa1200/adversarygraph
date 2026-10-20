@@ -1,6 +1,6 @@
 # Roadmap
 
-Current release: **v8.1.1** — ATT&CK v20, governed intelligence and deterministic evidence (2026-10-19)
+Current release: **v8.1.2** — ATT&CK v20, governed intelligence and deterministic evidence (2026-10-20)
 
 For the full history see [CHANGELOG.md](CHANGELOG.md).
 

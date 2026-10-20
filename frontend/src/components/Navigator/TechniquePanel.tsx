@@ -77,7 +77,7 @@ export function TechniquePanel({ attackId, onClose }: Props) {
           >
             {isSelected ? '✓ In my TTPs' : '+ Add to TTPs'}
           </button>
-          <button onClick={() => navigator.clipboard.writeText(`${location.origin}/navigator?technique=${attackId}`)}
+          <button onClick={() => navigator.clipboard.writeText(`${location.origin}/navigator?${new URLSearchParams({ technique: attackId, domain, ...(version ? { version } : {}) })}`)}
             className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">Link</button>
           {simulation && (
             <a

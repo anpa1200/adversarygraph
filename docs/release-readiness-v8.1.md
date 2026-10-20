@@ -7,7 +7,7 @@ all been configured or manually accepted.
 
 ## Required publication gates
 
-- Consistent 8.1.1 metadata and versioned release notes.
+- Consistent patch-release metadata and versioned release notes.
 - Full current-head CI: backend tests and coverage, PostgreSQL schema/migration
   authority and transactional regressions, frontend browser/build/audit,
   scanner tests, docs build/audit, Helm/Compose validation, secret and image scans.
