@@ -37,7 +37,7 @@ export function Navigator() {
   const context = `${domain}:${version ?? 'latest'}`;
   const [panel, setPanel] = useState<{ id: string; context: string } | null>(null);
   const selectedAttackId = panel?.context === context ? panel.id : null;
-  const setSelectedAttackId = (id: string | null) => setPanel(id ? { id, context } : null);
+  const setSelectedAttackId = useCallback((id: string | null) => setPanel(id ? { id, context } : null), [context]);
   const [importedLayers, setImportedLayers] = useState<Record<string, NavigatorLayer>>({});
   const importedLayer = importedLayers[context] ?? null;
   const setImportedLayer = (layer: NavigatorLayer) => setImportedLayers(previous => ({ ...previous, [context]: layer }));
@@ -137,7 +137,7 @@ export function Navigator() {
       toggleTechnique(id);
       setSelectedAttackId(id);
     },
-    [toggleTechnique, context]
+    [toggleTechnique, setSelectedAttackId]
   );
 
   // ── Expand all ────────────────────────────────────────────────────────────
