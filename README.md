@@ -1,5 +1,14 @@
 # AdversaryGraph
 
+## Reviewer starting point
+
+**CTI-to-detection workbench.** Andrey Pautov owns the CTI workflow, backend, frontend and documentation (see [MAINTAINERS.md](MAINTAINERS.md)). His contribution is the analyst workflow and evidence model around report ingestion, ATT&CK/ATLAS mapping, graph reasoning and detection review. MITRE data, external reports and integrated tools remain third-party work.
+
+**Role relevance:** CTI platform engineering, detection workflow design, full-stack security delivery.
+
+[Run the safe local demo and review validation scope](PORTFOLIO.md) · [Recorded local validation](validation.md)
+
+
 ![AdversaryGraph AI banner](docs/assets/adversarygraph-ai-banner.png)
 
 **Self-hosted AI-assisted CTI-to-detection workbench for ATT&CK mapping, hypothesis-driven threat hunting, Threat Radar early warning, Evidence-to-Detection Graph reasoning, IOC enrichment, CVE Library correlation, malware-analysis triage, asset attack-surface review, Attack Simulation, and SIEM validation.**
